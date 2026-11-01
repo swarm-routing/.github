@@ -58,6 +58,18 @@ starts from the newest open `handoff` issue and closes it when done.
 
 ## Pull requests
 
-Branch from `main`, one focused change per PR, Conventional-Commit title
-(squash-merged, so the title is the commit). Open a PR only when the change is
-ready for CI; merge when green.
+- Branch from `main` (`claude/<short-topic>` for agent work), one focused
+  change per PR.
+- **Every change goes through a PR to `main`**, opened as soon as the branch is
+  pushed, so all work is tracked.
+- **PRs are squash-merged** — the only merge method enabled in every repo. The
+  PR title becomes the commit on `main`, so it is a lowercase Conventional
+  Commit (`feat:`/`fix:`/`docs:`/`chore:`/`ci:`…, optional scope).
+- Merge when CI is green.
+
+## AI agents
+
+Every repo carries a `CLAUDE.md` (imports `AGENTS.md`; working defaults,
+response style, handoffs as issues) and an `AGENTS.md` (what the repo is,
+build & verify, golden rules, conventions, where to look), in the shape of
+AntHocNet's. Change a convention here and in each repo's `AGENTS.md` together.
