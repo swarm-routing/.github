@@ -40,8 +40,7 @@ flowchart LR
 Org-wide defaults (profile, issue forms, PR template, labels, `.clang-format`),
 the reusable workflows (`reusable-ns3-ci.yml`, `reusable-licence-check.yml`,
 `sync-labels.yml`), the licence-header gate, agent docs and per-directory
-licensing in every repository, the `ns3-dev:3.43-{debug,sanitized,optimized}`
-images with `ns3-build-contrib`, and the migration of AntHocNet's issues (13 moved; danieljoppi/AntHocNet#800 closed as done).
+licensing in every repository, the `ns3-dev` images with `ns3-build-contrib` (since ns3-containers#10/#33: the release ns-3 supports, older releases on demand), and the migration of AntHocNet's issues (13 moved; danieljoppi/AntHocNet#800 closed as done).
 
 **Exit criteria**
 
@@ -107,6 +106,7 @@ stay in AntHocNet until its `web/` moves.
 - **No protocol before its foundation.** No new protocol repository starts code before swarm-core has a consumer (ARA) green against `main`.
 - **No numbers without the three gates.** A comparator that cannot reproduce its own paper's trend ships as a written verdict, never as a leaderboard row.
 - **No per-network presets.** A network family changes the scenario, not a protocol's defaults (AntHocNet ADR-0019).
+- **No automatic CI on ns-3 releases ns-3 no longer supports.** ns-3 maintains its latest release only; automatic pipelines (images and every repo's CI) follow it, and older releases run on demand (CONTRIBUTING invariant 7).
 - **No `optimized` image in CI**, and no ns-3 `optimized` profile anywhere (`-march=native`).
 - **No copying from ns-3's `src/aodv` or `src/olsr`**, and no GPL code in a dual `core/`.
 - **No paywalled papers in public repositories**; they live in the private `papers` repository.
