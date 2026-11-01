@@ -1,0 +1,35 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: CI
+
+# This repo's own checks. Uses the local checker (not @main) so a PR that
+# changes it is tested with its own version.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Licence headers (the whole repo is tooling, so all of it is dual)
+        run: |
+          python3 -I tools/checks/check-headers.py --self-test
+          python3 -I tools/checks/check-headers.py --dual '' .
+          for f in LICENSE LICENSE-MIT LICENSING.md; do test -f "$f"; done
+      - name: Forms, labels, style parse
+        run: |
+          python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
+          python3 -m json.tool labels.json > /dev/null
+      - name: actionlint
+        run: |
+          pip install --quiet actionlint-py==1.7.7.23 shellcheck-py==0.10.0.1
+          actionlint .github/workflows/*.yml
