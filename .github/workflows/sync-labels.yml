@@ -1,0 +1,49 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT
+name: Sync labels
+
+# Applies labels.json (the org taxonomy) to the calling repository: creates
+# missing labels and updates colour/description of existing ones. Never
+# deletes a label. A repo adopts it with a 10-line caller:
+#
+#   on: { workflow_dispatch: {}, schedule: [{ cron: '17 4 1 * *' }] }
+#   permissions: { contents: read, issues: write }
+#   jobs:
+#     labels:
+#       uses: swarm-routing/.github/.github/workflows/sync-labels.yml@main
+#
+# Dispatching it here syncs this repository itself.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          path: .org
+          sparse-checkout: labels.json
+          persist-credentials: false
+      - name: Apply labels.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY' > labels.tsv
+          import json
+          for l in json.load(open('.org/labels.json'))['labels']:
+              print('\t'.join((l['name'], l['color'], l['description'])))
+          PY
+          while IFS=$'\t' read -r name color desc; do
+            gh label create "$name" --repo "$REPO" --color "$color" --description "$desc" --force
+          done < labels.tsv

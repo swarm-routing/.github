@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT
+#
+# Org-wide C++20 style for every swarm-routing repo. LLVM base, with the three
+# deviations AntHocNet's code already uses (4-space indent, 100 columns, left
+# pointer alignment) so code migrating from danieljoppi/AntHocNet reformats
+# with small diffs. Checked by reusable-ns3-ci.yml (`format` job,
+# clang-format-18, --dry-run -Werror). A repo may vendor a copy; the CI job
+# uses the repo's own file when present, this one otherwise.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+ColumnLimit: 100
+AccessModifierOffset: -4
+PointerAlignment: Left
+DerivePointerAlignment: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+SortIncludes: Never
+ReflowComments: false
+SpacesBeforeTrailingComments: 2

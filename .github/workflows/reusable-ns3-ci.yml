@@ -1,0 +1,192 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT
+name: Reusable ns-3 CI
+
+# One CI for every swarm-routing contrib module. Builds the caller's module(s)
+# inside ghcr.io/swarm-routing/ns3-dev:<version>-<profile> (a warm ns-3 tree,
+# so only the module compiles), runs their test.py suites and optional smoke
+# programs, and checks formatting and SPDX headers.
+#
+# Caller (e.g. swarm-routing/ARA/.github/workflows/ci.yml):
+#
+#   on: { push: { branches: [main] }, pull_request: {} }
+#   permissions: { contents: read, packages: read }
+#   jobs:
+#     ci:
+#       uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
+#       with:
+#         modules: ara=ns3
+#         dependencies: swarm-core=swarm-routing/ns3-swarm-core@main
+#         run: ara-example --seed=1
+#
+# Module specs are `name=path` (path relative to the caller's checkout) or a
+# bare path whose basename is the module name. The name must equal the
+# module's build_lib(LIBNAME ...). Dependencies are checked out and linked
+# first, in order.
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: "Space-separated module specs from this repo: `name=path` or `path`"
+        type: string
+        required: true
+      dependencies:
+        description: "Newline-separated `name=owner/repo@ref[:subdir]` modules to build first"
+        type: string
+        default: ''
+      ns3-versions:
+        description: "JSON list of ns-3 versions (image tags)"
+        type: string
+        default: '["3.43"]'
+      profiles:
+        description: "JSON list of image profiles: debug, sanitized, optimized"
+        type: string
+        default: '["debug", "sanitized"]'
+      test-suites:
+        description: "Space-separated test.py suites; default: one per module of this repo"
+        type: string
+        default: ''
+      extra-modules:
+        description: "Extra stock ns-3 modules, `a;b` (outside the image list they compile in the job)"
+        type: string
+        default: ''
+      run:
+        description: "Newline-separated `./ns3 run` programs (with args) as smoke tests"
+        type: string
+        default: ''
+      lsan-suppressions:
+        description: "Path (in this repo) of an LSan suppressions file for the sanitized leg"
+        type: string
+        default: ''
+      format:
+        description: "Run the clang-format-18 check"
+        type: boolean
+        default: true
+      header-exclude:
+        description: "Extended regex of paths exempt from the SPDX header check (vendored code)"
+        type: string
+        default: '^$'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ns-${{ matrix.version }} ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(inputs.ns3-versions) }}
+        profile: ${{ fromJSON(inputs.profiles) }}
+    container:
+      image: ghcr.io/swarm-routing/ns3-dev:${{ matrix.version }}-${{ matrix.profile }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      # Sanitized leg: fail on the first report; leaks are reported at exit.
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+          persist-credentials: false
+      - name: Check out dependencies
+        if: inputs.dependencies != ''
+        env:
+          DEPS: ${{ inputs.dependencies }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/dep-specs"
+          while read -r line; do
+            [ -n "$line" ] || continue
+            name=${line%%=*}; rest=${line#*=}
+            repo=${rest%%@*}; ref=${rest#*@}
+            sub=""; case "$ref" in *:*) sub=${ref#*:}; ref=${ref%%:*} ;; esac
+            dest="$GITHUB_WORKSPACE/deps/$name"
+            git clone --quiet --depth 1 --branch "$ref" \
+              "https://x-access-token:${TOKEN}@github.com/${repo}.git" "$dest"
+            echo "$name=$dest${sub:+/$sub}" >> "$RUNNER_TEMP/dep-specs"
+            echo "dependency $name: $repo@$ref ($(git -C "$dest" rev-parse --short HEAD))"
+          done <<< "$DEPS"
+      - name: Build + test
+        env:
+          MODULES: ${{ inputs.modules }}
+          SUITES: ${{ inputs.test-suites }}
+          EXTRA: ${{ inputs.extra-modules }}
+          RUNS: ${{ inputs.run }}
+          LSAN_SUPP: ${{ inputs.lsan-suppressions }}
+        run: |
+          set -euo pipefail
+          args=()
+          [ -f "$RUNNER_TEMP/dep-specs" ] && while read -r d; do args+=("$d"); done < "$RUNNER_TEMP/dep-specs"
+          own=()
+          for m in $MODULES; do
+            case "$m" in
+              *=*) own+=("${m%%=*}"); args+=("${m%%=*}=$GITHUB_WORKSPACE/src/${m#*=}") ;;
+              *)   own+=("$(basename "$m")"); args+=("$GITHUB_WORKSPACE/src/$m") ;;
+            esac
+          done
+          [ -n "$EXTRA" ] && args+=(--modules "$EXTRA")
+          for s in ${SUITES:-${own[*]}}; do args+=(--suite "$s"); done
+          while read -r r; do [ -n "$r" ] && args+=(--run "$r"); done <<< "$RUNS"
+          if [ -n "$LSAN_SUPP" ]; then
+            export LSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/src/$LSAN_SUPP:print_suppressions=0"
+          fi
+          ns3-build-contrib "${args[@]}"
+      - name: Keep test.py output on failure
+        if: failure()
+        run: cp -r /opt/ns-3/testpy-output "$GITHUB_WORKSPACE/testpy-output" 2>/dev/null || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: testpy-output-${{ matrix.version }}-${{ matrix.profile }}
+          path: testpy-output
+          retention-days: 3
+          if-no-files-found: ignore
+
+  format:
+    if: inputs.format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Org .clang-format unless the repo ships its own
+        run: |
+          [ -f .clang-format ] || curl -fsSL -o .clang-format \
+            https://raw.githubusercontent.com/swarm-routing/.github/main/.clang-format
+      - name: clang-format-18 --dry-run -Werror
+        run: |
+          files=$(git ls-files '*.h' '*.cc' '*.cpp' '*.hpp')
+          [ -z "$files" ] && { echo "no C++ files"; exit 0; }
+          # shellcheck disable=SC2086
+          clang-format-18 --dry-run -Werror $files
+
+  headers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: SPDX header on every original C++ / Python file
+        env:
+          EXCLUDE: ${{ inputs.header-exclude }}
+        run: |
+          bad=0
+          while read -r f; do
+            if ! head -n 5 "$f" | grep -q 'SPDX-License-Identifier: MIT'; then
+              echo "::error file=$f::missing 'SPDX-License-Identifier: MIT' in the first 5 lines"
+              bad=1
+            fi
+          done < <(git ls-files '*.h' '*.cc' '*.cpp' '*.hpp' '*.py' | grep -Ev "$EXCLUDE" || true)
+          exit $bad

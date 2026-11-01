@@ -1,0 +1,33 @@
+{
+  "_comment": "Org label taxonomy (mirrors danieljoppi/AntHocNet ADR-0013). Applied to a repo by .github/workflows/sync-labels.yml; release:vX.Y.Z labels are created per repo when a roadmap gates an issue.",
+  "labels": [
+    {"name": "bug", "color": "d73a4a", "description": "Type: defect, regression or wrong result"},
+    {"name": "enhancement", "color": "a2eeef", "description": "Type: new mechanism or capability"},
+    {"name": "chore", "color": "c5def5", "description": "Type: mechanical maintenance (format, CI, packaging)"},
+    {"name": "documentation", "color": "0075ca", "description": "Type: docs only"},
+    {"name": "verification", "color": "5319e7", "description": "Type: benchmark re-run / noise confirmation"},
+    {"name": "question", "color": "d876e3", "description": "Usage or behaviour question"},
+    {"name": "epic", "color": "3e4b9e", "description": "Umbrella issue; children are sub-issues"},
+    {"name": "handoff", "color": "fbca04", "description": "Work in flight handed to the next session"},
+
+    {"name": "protocol", "color": "0e8a16", "description": "Area: a protocol's core/ algorithm"},
+    {"name": "adapter", "color": "1d76db", "description": "Area: ns-3 translation layer"},
+    {"name": "ns3", "color": "006b75", "description": "Area: ns-3 build, versions, contrib module"},
+    {"name": "benchmark", "color": "b60205", "description": "Area: arenas, harness, ns3-tool, datasets"},
+    {"name": "observability", "color": "bfdadc", "description": "Area: ##RUN##/##BENCH##/##DIAG## lines, probes, traces"},
+    {"name": "packaging", "color": "ededed", "description": "Area: images, reusable workflows, install, release"},
+    {"name": "learn-site", "color": "f9d0c4", "description": "Area: the Colony Arena site and games"},
+    {"name": "literature", "color": "c2e0c6", "description": "Area: papers, fidelity notes, equation Rosetta Stones"},
+
+    {"name": "model:haiku-4.5", "color": "e4e669", "description": "Recommended model: mechanical / chore"},
+    {"name": "model:sonnet-5", "color": "fef2c0", "description": "Recommended model: well-specified plumbing, tooling, docs"},
+    {"name": "model:opus-4.8", "color": "f7c6c7", "description": "Recommended model: protocol semantics, root cause, CI-validated adapter work"},
+    {"name": "model:fable-5", "color": "d4c5f9", "description": "Recommended model: architectural / greenfield"},
+
+    {"name": "priority:P1", "color": "b60205", "description": "Fix first: regression or blocker that invalidates numbers"},
+    {"name": "priority:P2", "color": "d93f0b", "description": "Gates publishing a result or enabling a gated feature"},
+    {"name": "priority:P3", "color": "fbca04", "description": "Valuable, not blocking"},
+
+    {"name": "migrated", "color": "cccccc", "description": "Cloned from danieljoppi/AntHocNet during the org split"}
+  ]
+}
