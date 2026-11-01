@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Daniel Henrique Joppi
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 name: Handoff
 description: Hand work in flight to a fresh session (CONTRIBUTING.md). A handoff is always an issue, never a file in the repo.

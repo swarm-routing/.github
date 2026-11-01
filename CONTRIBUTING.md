@@ -16,7 +16,7 @@ is the long form.
    `LICENSE-MIT` and a `LICENSING.md` map. Every original `.h`, `.hpp`, `.cc`,
    `.cpp`, `.py`, `.sh` starts with
    ```cpp
-   // Copyright (c) 2026 Daniel Henrique Joppi
+   // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
    // SPDX-License-Identifier: MIT OR GPL-2.0-only   (or GPL-2.0-only)
    ```
    (`#` comments for Python and shell). The dependency goes one way: GPL code

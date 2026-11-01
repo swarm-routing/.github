@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 Daniel Henrique Joppi
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """Licence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).
 
@@ -62,7 +62,7 @@ def check_file(rel: str, text: str, dual: tuple, core: tuple, gpl_only: set,
         expr = "MIT OR GPL-2.0-only" if rel.startswith(dual) and rel not in gpl_only \
             else "GPL-2.0-only"
         out.append(f"{rel}:1: no {SPDX} in the first {HEAD_LINES} lines — add\n"
-                   f"    // Copyright (c) 2026 Daniel Henrique Joppi\n"
+                   f"    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n"
                    f"    // {SPDX}: {expr}\n  ('#' comments for Python/shell, after any shebang)")
         return out
     if rel.startswith(dual) and rel not in gpl_only and not head_has(text, DUAL_SPDX):
