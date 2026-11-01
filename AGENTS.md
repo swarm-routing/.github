@@ -15,6 +15,7 @@ Files here only take effect from `main` (GitHub reads community defaults and
 
 ```
 profile/README.md          org landing page
+ROADMAP.md                 the org's phases, exit criteria and non-goals (epics carry the work)
 CONTRIBUTING.md            org invariants + issue/label conventions (default for every repo)
 ISSUE_TEMPLATE/            default issue forms (AntHocNet's set + literature)
 pull_request_template.md   default PR template
