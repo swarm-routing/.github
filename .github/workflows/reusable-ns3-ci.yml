@@ -11,7 +11,13 @@ name: Reusable ns-3 CI
 #
 # Caller (e.g. swarm-routing/ARA/.github/workflows/ci.yml):
 #
-#   on: { push: { branches: [main] }, pull_request: {} }
+#   on:
+#     push: { branches: [main] }
+#     pull_request: {}
+#     workflow_dispatch:
+#       inputs:
+#         ns3-versions:   # on demand only: older ns-3 releases, e.g. ["3.42"]
+#           default: ''
 #   permissions: { contents: read, packages: read }
 #   jobs:
 #     ci:
@@ -20,6 +26,12 @@ name: Reusable ns-3 CI
 #         modules: ara=ns3
 #         dependencies: swarm-core=swarm-routing/ns3-swarm-core@main
 #         run: ara-example --seed=1
+#         versions: ${{ inputs.ns3-versions || '["latest"]' }}
+#
+# `versions` defaults to ["latest"]: the release ns-3 supports (it maintains its
+# latest only), via the `latest-<profile>` tags, so automatic CI follows ns-3
+# with no edit (CONTRIBUTING invariant 7). Older releases are on demand: their
+# images are history in ns3-containers, or built there on request.
 #
 # Module specs are `name=path` (path relative to the caller's checkout) or a
 # bare path whose basename is the module name. The name must equal the
@@ -37,9 +49,9 @@ on:
         type: string
         default: ''
       ns3-versions:
-        description: "JSON list of ns-3 versions (image tags)"
+        description: "JSON list of ns-3 versions (image tags); `latest` = the release ns-3 supports"
         type: string
-        default: '["3.43"]'
+        default: '["latest"]'
       profiles:
         description: "JSON list of image profiles: debug, sanitized, optimized"
         type: string

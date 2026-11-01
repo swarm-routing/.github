@@ -41,6 +41,13 @@ is the long form.
 6. **Comparator arms** (protocols we did not design) clear three gates before
    their numbers count: a fidelity sheet from the paper, the per-PR delivery
    smoke, and an anchor reproducing the paper's own trend.
+7. **Automatic CI targets the ns-3 release ns-3 supports.** ns-3 maintains its
+   latest release only (no maintenance branches, no backports), so push, PR
+   and scheduled CI build against `ghcr.io/swarm-routing/ns3-dev:latest-<profile>`
+   (`reusable-ns3-ci.yml`'s default). Older ns-3 releases run only on demand:
+   a manual `workflow_dispatch` that passes `versions`, on images
+   `ns3-containers` publishes once (history) or builds on request. A
+   published number pins a versioned `-<sha7>` image instead, never `latest`.
 
 ## Issues
 
