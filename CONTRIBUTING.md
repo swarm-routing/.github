@@ -8,13 +8,25 @@ is the long form.
 
 ## Invariants (every repo)
 
-1. **SPDX header.** Every original `.h`, `.cc`, `.py` starts with
+1. **Licensing per directory, as AntHocNet** ([LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
+   [ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
+   A simulator-free `core/` and the standalone tooling (`tools/`, Python CLIs,
+   CI and image scripts) are `MIT OR GPL-2.0-only`; ns-3 modules, the site,
+   docs and data are `GPL-2.0-only`. Each repo carries `LICENSE` (GPL-2.0),
+   `LICENSE-MIT` and a `LICENSING.md` map. Every original `.h`, `.hpp`, `.cc`,
+   `.cpp`, `.py`, `.sh` starts with
    ```cpp
    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
-   // SPDX-License-Identifier: MIT
+   // SPDX-License-Identifier: MIT OR GPL-2.0-only   (or GPL-2.0-only)
    ```
-   (`#` comments in Python.) Never copy GPLv2 code from ns-3's `src/aodv`,
-   `src/olsr` & co.; implement against public ns-3 interfaces. CI checks the header.
+   (`#` comments for Python and shell). The dependency goes one way: GPL code
+   may use the dual parts, never the reverse — a `core/` file includes only the
+   C++ standard library and other `core/` files. CI
+   (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
+   of it. Contributions are accepted under the licence of the directory they
+   land in. Write clean implementations against public ns-3 interfaces rather
+   than copying from ns-3's `src/aodv`, `src/olsr` & co.; third-party code keeps
+   its own licence and lands only with its provenance recorded.
 2. **POD wire messages.** Control headers are simulator-independent POD structs
    with bounds-checked little-endian readers/writers, a leading version byte, and
    deterministic roundtrip + fuzz tests.

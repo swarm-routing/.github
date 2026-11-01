@@ -1,0 +1,62 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable licence check
+
+# AntHocNet's per-directory licence rules (ADR-0028) for any swarm-routing repo:
+# every tracked .h/.hpp/.cc/.cpp/.py/.sh carries an SPDX line in its first five
+# lines; files under the dual roots carry exactly `MIT OR GPL-2.0-only`; C++
+# under a core root includes only the standard library and its own files.
+# Also requires LICENSE (GPL-2.0), LICENSE-MIT and LICENSING.md at the root.
+# The checker is tools/checks/check-headers.py in swarm-routing/.github.
+on:
+  workflow_call:
+    inputs:
+      dual-roots:
+        type: string
+        default: 'core/ tools/'
+      core-roots:
+        type: string
+        default: 'core/'
+      gpl-only:
+        type: string
+        default: ''
+      exclude:
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  licence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          path: .org
+          sparse-checkout: tools/checks
+          persist-credentials: false
+      - name: Licence texts present
+        run: |
+          for f in LICENSE LICENSE-MIT LICENSING.md; do
+            [ -f "$f" ] || { echo "::error file=$f::missing $f (see AntHocNet LICENSING.md / ADR-0028)"; exit 1; }
+          done
+          grep -q 'GNU GENERAL PUBLIC LICENSE' LICENSE || { echo "::error file=LICENSE::LICENSE must be the GPL-2.0 text"; exit 1; }
+      - name: SPDX headers and the one-way include rule
+        env:
+          DUAL: ${{ inputs.dual-roots }}
+          CORE: ${{ inputs.core-roots }}
+          GPL_ONLY: ${{ inputs.gpl-only }}
+          EXCLUDE: ${{ inputs.exclude }}
+        run: |
+          args=()
+          for d in $DUAL; do args+=(--dual "$d"); done
+          for c in $CORE; do args+=(--core "$c"); done
+          for g in $GPL_ONLY; do args+=(--gpl-only "$g"); done
+          python3 -I .org/tools/checks/check-headers.py --self-test
+          python3 -I .org/tools/checks/check-headers.py "${args[@]}" --exclude "$EXCLUDE" .

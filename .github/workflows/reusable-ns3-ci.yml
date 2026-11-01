@@ -1,11 +1,13 @@
 # Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
 name: Reusable ns-3 CI
 
 # One CI for every swarm-routing contrib module. Builds the caller's module(s)
 # inside ghcr.io/swarm-routing/ns3-dev:<version>-<profile> (a warm ns-3 tree,
 # so only the module compiles), runs their test.py suites and optional smoke
-# programs, and checks formatting and SPDX headers.
+# programs, checks formatting, and checks licence headers against
+# AntHocNet's per-directory rules (ADR-0028): `core/` and the tooling are
+# `MIT OR GPL-2.0-only`, ns-3 modules and everything else `GPL-2.0-only`.
 #
 # Caller (e.g. swarm-routing/ARA/.github/workflows/ci.yml):
 #
@@ -63,9 +65,21 @@ on:
         type: boolean
         default: true
       header-exclude:
-        description: "Extended regex of paths exempt from the SPDX header check (vendored code)"
+        description: "Extended regex of paths exempt from the licence-header check (vendored code)"
         type: string
-        default: '^$'
+        default: ''
+      dual-roots:
+        description: "Space-separated `MIT OR GPL-2.0-only` roots (AntHocNet ADR-0028); everything else is GPL-2.0-only"
+        type: string
+        default: 'core/ tools/'
+      core-roots:
+        description: "Space-separated simulator-free roots whose C++ may include only std headers and their own files"
+        type: string
+        default: 'core/'
+      gpl-only:
+        description: "Space-separated files under a dual root that stay GPL-2.0-only"
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -172,21 +186,9 @@ jobs:
           clang-format-18 --dry-run -Werror $files
 
   headers:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: SPDX header on every original C++ / Python file
-        env:
-          EXCLUDE: ${{ inputs.header-exclude }}
-        run: |
-          bad=0
-          while read -r f; do
-            if ! head -n 5 "$f" | grep -q 'SPDX-License-Identifier: MIT'; then
-              echo "::error file=$f::missing 'SPDX-License-Identifier: MIT' in the first 5 lines"
-              bad=1
-            fi
-          done < <(git ls-files '*.h' '*.cc' '*.cpp' '*.hpp' '*.py' | grep -Ev "$EXCLUDE" || true)
-          exit $bad
+    uses: swarm-routing/.github/.github/workflows/reusable-licence-check.yml@main
+    with:
+      dual-roots: ${{ inputs.dual-roots }}
+      core-roots: ${{ inputs.core-roots }}
+      gpl-only: ${{ inputs.gpl-only }}
+      exclude: ${{ inputs.header-exclude }}

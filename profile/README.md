@@ -20,6 +20,8 @@ protocol can be its own citable repository.
 | [swarm-routing.github.io](https://swarm-routing.github.io) | Colony Arena: interactive docs, visualizers, leaderboard |
 | [AntHocNet](https://github.com/danieljoppi/AntHocNet) | The reference AntHocNet implementation (joins the org after the cutover) |
 
-Every protocol is deterministic for a fixed seed, MIT-licensed, and compared by
-paired per-seed deltas over ≥ 20 seeds. Conventions:
+Every protocol is deterministic for a fixed seed and compared by
+paired per-seed deltas over ≥ 20 seeds. Licensing follows AntHocNet: each
+simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
+ns-3 modules, sites, docs and data are `GPL-2.0-only`. Conventions:
 [CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md).
