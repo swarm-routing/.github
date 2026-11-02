@@ -114,6 +114,10 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        # A container job's default shell is `sh`, which has no `pipefail`.
+        shell: bash
     env:
       # Sanitized leg: fail on the first report; leaks are reported at exit.
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
