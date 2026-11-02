@@ -183,7 +183,8 @@ def render_makefile(cfg):
     text = template("make/Makefile.in")
     for key in ("build", "test", "lint", "format", "clean"):
         cmd = cfg.get("make", {}).get(key, kind.get(key))
-        recipe = f"\t{cmd}" if cmd else f'\t@echo "make {key}: nothing to do in this repo (kind {cfg["kind"]})"'
+        lines = cmd.strip().splitlines() if cmd else [f'@echo "make {key}: nothing to do in this repo (kind {cfg["kind"]})"']
+        recipe = "\n".join(f"\t{line.strip()}" for line in lines)
         text = text.replace(f"@{key.upper()}@", recipe)
     module = cfg.get("module", cfg["title"].lower())
     return (text.replace("@TITLE@", cfg["title"]).replace("@MODULE@", module)
@@ -194,10 +195,21 @@ def render_makefile(cfg):
 def header_args(cfg):
     """check-headers.py flags from the repo's dual roots (the same list
     LICENSING.md is rendered from); a dual `core/` also gets the include check."""
-    args = [f"--dual {d}" if d else "--dual ''" for d in cfg["dual"]]
-    if "core/" in cfg["dual"]:
+    roots = [dual_root(d) for d in cfg["dual"]]
+    args = [f"--dual {d}" if d else "--dual ''" for d in roots]
+    if "" in roots or "core/" in roots:
         args.append("--core core/")
     return " ".join(args)
+
+
+def dual_root(d):
+    """A Git-relative directory prefix, as check-headers.py compares it:
+    `./tools`, `tools` and `tools/` all become `tools/`; '' stays the whole repo."""
+    d = d.strip().replace("\\", "/")
+    while d.startswith("./"):
+        d = d[2:]
+    d = d.strip("/")
+    return f"{d}/" if d else ""
 
 
 def values(cfg):

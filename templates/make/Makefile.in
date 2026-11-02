@@ -41,8 +41,8 @@ shell: ## an interactive shell in the dev image with this repo at /src
 	docker run --rm -it -v "$(CURDIR):/src" -w /src $(if $(PLATFORM),--platform $(PLATFORM)) @SHELL_IMAGE@ bash
 
 org-tools:  # the same templates CI checks against: refreshed to ORG_REF every time
-	@if [ -d "$(ORG_DIR)/.git" ]; then git -C "$(ORG_DIR)" fetch -q --depth 1 origin $(ORG_REF) && git -C "$(ORG_DIR)" checkout -q --detach FETCH_HEAD; \
-	else git clone -q --depth 1 --branch $(ORG_REF) https://github.com/swarm-routing/.github "$(ORG_DIR)"; fi
+	@[ -d "$(ORG_DIR)/.git" ] || { git init -q "$(ORG_DIR)" && git -C "$(ORG_DIR)" remote add origin https://github.com/swarm-routing/.github; }
+	@git -C "$(ORG_DIR)" fetch -q --depth 1 origin $(ORG_REF) && git -C "$(ORG_DIR)" checkout -q --detach FETCH_HEAD
 
 headers: org-tools ## licence headers (org rule 1)
 	python3 -I "$(ORG_DIR)/tools/checks/check-headers.py" @HEADER_ARGS@ .

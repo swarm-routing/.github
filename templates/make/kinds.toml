@@ -26,7 +26,9 @@ clean  = 'rm -rf build dist *.egg-info .pytest_cache'
 
 [container]
 build  = 'docker buildx build --load $(if $(PLATFORM),--platform $(PLATFORM)) -f $(DOCKERFILE) $(BUILD_ARGS) -t local/$(notdir $(CURDIR)):dev .'
-test   = '$(MAKE) build && test/run.sh local/$(notdir $(CURDIR)):dev'
+test   = '''
+$(MAKE) build
+test/run.sh local/$(notdir $(CURDIR)):dev'''
 lint   = 'shellcheck $$(git ls-files "*.sh") && actionlint'
 clean  = 'docker image rm -f local/$(notdir $(CURDIR)):dev'
 

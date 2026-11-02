@@ -117,7 +117,17 @@ run("apply", d)
 text = read(p)
 check('"Bash(ls)"' in text and "org-repo@swarm-routing" in text, "settings.json keeps the repo's keys and gains the org's")
 
-# 7. A no-change update reads well under the 2 KB budget (skills#2).
+# 7. Header-check flags: dual roots normalized, the core include check whenever core/ is dual.
+ha = lambda dual: org_sync.header_args({"dual": dual})
+check(ha(["./tools", "core"]) == "--dual tools/ --dual core/ --core core/", "dual roots are normalized to Git-relative prefixes")
+check(ha([""]) == "--dual '' --core core/", "a whole-repo dual licence still gets the core include check")
+check(ha(["tools/"]) == "--dual tools/", "no core check when core/ is not dual")
+
+# 8. A multi-line recipe renders one tab-indented line per command (no `make -n` side effects).
+mk = org_sync.render_makefile({"kind": "container", "dual": ["tools/"], "title": "demo", "repo": "demo"})
+check("\t$(MAKE) build\n\ttest/run.sh local/" in mk, "the container test recipe builds and tests on separate lines")
+
+# 9. A no-change update reads well under the 2 KB budget (skills#2).
 buf = io.StringIO()
 with contextlib.redirect_stdout(buf):
     for c in (["plan", "--json", d], ["apply", d], ["conflicts", d], ["check", d]):
