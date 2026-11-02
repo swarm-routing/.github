@@ -98,7 +98,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | PR title is a Conventional Commit | `reusable-pr-title.yml` | on in every caller |
 | clang-format (org `.clang-format`) | `reusable-ns3-ci.yml` `format` | on |
 | Strict warnings as errors on the repo's own modules (ns-3 headers exempt) | `reusable-ns3-ci.yml` `strict-warnings` | off; turn on from a module's first PR |
-| Determinism: same seed byte-identical, another seed differs (invariant 5) | `reusable-ns3-ci.yml` `determinism` | off; give it a short program with `{seed}` that prints its results (the marker lines) on stdout. Only stdout is compared: logging and sanitizer output on stderr are not results |
+| Determinism: same seed byte-identical, another seed differs (invariant 5) | `reusable-ns3-ci.yml` `determinism` | off; give it a short program with `{seed}` that prints its results (the marker lines) on stdout. Only stdout is compared: logging and sanitizer output on stderr are not results. A program that prints its seed (a `firstRun=` field, a run index) strips it with `determinism-normalize`, or the label alone would satisfy "seed 2 differs" |
 | C++ coverage (gcovr), report-only | `reusable-ns3-ci.yml` `coverage` | off |
 | ruff check + format (org `ruff.toml`) and Python coverage, report-only | `reusable-python-ci.yml` | on in every caller |
 
