@@ -187,8 +187,17 @@ def render_makefile(cfg):
         text = text.replace(f"@{key.upper()}@", recipe)
     module = cfg.get("module", cfg["title"].lower())
     return (text.replace("@TITLE@", cfg["title"]).replace("@MODULE@", module)
-            .replace("@HEADER_ARGS@", kind.get("headers", ""))
+            .replace("@HEADER_ARGS@", header_args(cfg))
             .replace("@SHELL_IMAGE@", kind.get("shell_image", "$(NS3_IMAGE)")))
+
+
+def header_args(cfg):
+    """check-headers.py flags from the repo's dual roots (the same list
+    LICENSING.md is rendered from); a dual `core/` also gets the include check."""
+    args = [f"--dual {d}" if d else "--dual ''" for d in cfg["dual"]]
+    if "core/" in cfg["dual"]:
+        args.append("--core core/")
+    return " ".join(args)
 
 
 def values(cfg):

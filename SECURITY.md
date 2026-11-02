@@ -25,12 +25,13 @@ promises nothing the code does not do.
 
 Report privately through GitHub's private vulnerability reporting: the
 repository's **Security** tab, then **Report a vulnerability**. If that is
-not available, open an issue that describes the input and the behaviour you
-saw, without a working exploit. This is a research project maintained on a
+not available, open an issue that only asks for a private contact, and put
+no vulnerability details in it. This is a research project maintained on a
 best-effort basis: expect an acknowledgement within a few days, not an SLA.
 
 ## Verifying what is published
 
 A repository that publishes something (an image, a release) says how to
-verify it in its own `SECURITY.md`. One that does not say has nothing
-published to verify yet.
+verify it in its own `SECURITY.md`. Where a repository's policy says
+nothing about verification, no verification process is documented for it
+yet; ask in an issue before relying on its artifacts.

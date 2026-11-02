@@ -33,11 +33,21 @@ def fresh():
     return d
 
 
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def write(path, text):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
 def edit(d, path, old, new):
     p = os.path.join(d, path)
-    text = open(p).read()
+    text = read(p)
     assert old in text, (path, old)
-    open(p, "w").write(text.replace(old, new, 1))
+    write(p, text.replace(old, new, 1))
 
 
 def check(cond, msg):
@@ -52,7 +62,7 @@ for kind in org_sync.KINDS:
     rc, _ = run("init", d, "--kind", kind, "--dual", "tools/")
     check(rc == 0, f"init --kind {kind} succeeds")
     check(run("check", d)[0] == 0, f"check is clean right after init ({kind})")
-    mk = open(os.path.join(d, "Makefile")).read()
+    mk = read(os.path.join(d, "Makefile"))
     for t in org_sync.MAKE_TARGETS:
         assert f"\n{t}:" in mk, (kind, t)
     check(not re.search(r"@[A-Z_]+@", mk), f"no unrendered @PLACEHOLDER@ in the {kind} Makefile")
@@ -70,7 +80,7 @@ check(run("check", d)[0] == 0, "apply restores the managed section")
 # 3. Repo text outside the markers survives apply.
 edit(d, "AGENTS.md", "## What this repo is\n", "## What this repo is\n\nLOCAL NOTE\n")
 run("apply", d)
-check("LOCAL NOTE" in open(os.path.join(d, "AGENTS.md")).read(), "text outside the markers survives apply")
+check("LOCAL NOTE" in read(os.path.join(d, "AGENTS.md")), "text outside the markers survives apply")
 
 # 4. The Makefile is the repo's: its recipes may change, its target names may not.
 edit(d, "Makefile", "python3 -m pytest -q", "python3 -m unittest")
@@ -84,9 +94,9 @@ edit(d, "Makefile", "\nsh:", "\nshell:")
 #    diverged one is a conflict that apply leaves alone until forced.
 d = fresh()
 os.makedirs(os.path.join(d, ".github"))
-open(os.path.join(d, ".github/org-sync.toml"), "w").write('kind = "data"\n')
+write(os.path.join(d, ".github/org-sync.toml"), 'kind = "data"\n')
 for f in ("AGENTS.md", "CLAUDE.md", "README.md"):
-    open(os.path.join(d, f), "w").write(open(os.path.join(ORG, f)).read())
+    write(os.path.join(d, f), read(os.path.join(ORG, f)))
 rc, out = run("plan", d)
 check("adopt     AGENTS.md#org-rules" in out and "adopt     CLAUDE.md#org" in out,
       "unmarked org sections identical to the templates are adopted")
@@ -94,7 +104,7 @@ check("adopt     README.md#badges" in out, "the badge row is inserted after the 
 edit(d, "AGENTS.md", "7. **Keep bounded structures bounded**", "7. **Keep bounded things bounded**")
 rc, out = run("apply", d)
 check(rc == 1 and "conflict  AGENTS.md#org-rules" in out, "a diverged unmarked section is a conflict")
-check("Keep bounded things bounded" in open(os.path.join(d, "AGENTS.md")).read(), "apply leaves a conflict untouched")
+check("Keep bounded things bounded" in read(os.path.join(d, "AGENTS.md")), "apply leaves a conflict untouched")
 rc, out = run("conflicts", d)
 check("-7. **Keep bounded things bounded**" in out, "conflicts prints the hunk")
 run("apply", d, "--force", "AGENTS.md#org-rules")
@@ -102,9 +112,9 @@ check(run("check", d)[0] == 0, "apply --force resolves it")
 
 # 6. The JSON item merges only the org's keys.
 p = os.path.join(d, ".claude/settings.json")
-open(p, "w").write('{"permissions": {"allow": ["Bash(ls)"]}}\n')
+write(p, '{"permissions": {"allow": ["Bash(ls)"]}}\n')
 run("apply", d)
-text = open(p).read()
+text = read(p)
 check('"Bash(ls)"' in text and "org-repo@swarm-routing" in text, "settings.json keeps the repo's keys and gains the org's")
 
 # 7. A no-change update reads well under the 2 KB budget (skills#2).
