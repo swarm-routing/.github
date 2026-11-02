@@ -42,7 +42,10 @@ name: Reusable ns-3 CI
 #   determinism      programs with a `{seed}` placeholder: their stdout (where
 #                    the marker lines go) for seed 1 twice must be byte-identical,
 #                    for seed 2 it must differ (org invariant 5, #26). stderr
-#                    (logging, sanitizer summaries) is not compared
+#                    (logging, sanitizer summaries) is not compared. A program
+#                    that prints its seed passes determinism-normalize (a sed -E
+#                    script) to strip it before the cross-seed comparison, else
+#                    the label alone would make the outputs differ
 # strict-warnings and coverage need an image whose ns3-build-contrib has the
 # options (swarm-routing/ns3-containers; the step fails clearly otherwise).
 #
@@ -99,6 +102,10 @@ on:
         default: '(.*/)?(test|examples)/'
       determinism:
         description: "Newline-separated `./ns3 run` programs with a `{seed}` placeholder that print their results (marker lines) on stdout; stdout of seed 1 twice must match byte for byte, seed 2 must differ"
+        type: string
+        default: ''
+      determinism-normalize:
+        description: "sed -E script applied to each output before the seed-1-vs-seed-2 comparison only, to drop fields that print the seed itself (e.g. 's/firstRun=[0-9]+//'); the seed-1 repeat is always compared raw"
         type: string
         default: ''
       format:
@@ -214,10 +221,12 @@ jobs:
         if: inputs.determinism != ''
         env:
           PROGS: ${{ inputs.determinism }}
+          NORMALIZE: ${{ inputs.determinism-normalize }}
         run: |
           set -euo pipefail
           cd /opt/ns-3
           out="$RUNNER_TEMP/determinism"; mkdir -p "$out"
+          norm() { if [ -n "$NORMALIZE" ]; then sed -E "$NORMALIZE" "$1"; else cat "$1"; fi; }
           n=0; fails=0
           while read -r p; do
             [ -n "$p" ] || continue
@@ -227,12 +236,16 @@ jobs:
               seed=${run%[ab]}
               ./ns3 run --no-build "${p//\{seed\}/$seed}" > "$out/$n-$run.txt"
             done
+            # Into files, so a broken normalize script stops the step (set -e)
+            # instead of comparing two empty streams.
+            norm "$out/$n-1a.txt" > "$out/$n-1a.norm"
+            norm "$out/$n-2.txt" > "$out/$n-2.norm"
             if ! cmp -s "$out/$n-1a.txt" "$out/$n-1b.txt"; then
               echo "::error::not deterministic: two runs with seed 1 differ: $p"
               diff "$out/$n-1a.txt" "$out/$n-1b.txt" | head -20 || true
               fails=$((fails + 1))
-            elif cmp -s "$out/$n-1a.txt" "$out/$n-2.txt"; then
-              echo "::error::seed ignored: seeds 1 and 2 give identical output: $p"
+            elif cmp -s "$out/$n-1a.norm" "$out/$n-2.norm"; then
+              echo "::error::seed ignored: seeds 1 and 2 give identical results: $p"
               fails=$((fails + 1))
             else
               echo "ok: $p ($(wc -l < "$out/$n-1a.txt") lines, identical for seed 1, different for seed 2)"
