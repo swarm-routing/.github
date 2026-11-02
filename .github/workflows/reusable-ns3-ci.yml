@@ -39,8 +39,10 @@ name: Reusable ns-3 CI
 #   coverage         gcov on this repo's modules on the debug leg of the first
 #                    version; gcovr table in the job log and summary, Cobertura
 #                    XML + HTML as an artifact; report-only, no threshold (#24)
-#   determinism      programs with a `{seed}` placeholder: seed 1 twice must be
-#                    byte-identical, seed 2 must differ (org invariant 5, #26)
+#   determinism      programs with a `{seed}` placeholder: their stdout (where
+#                    the marker lines go) for seed 1 twice must be byte-identical,
+#                    for seed 2 it must differ (org invariant 5, #26). stderr
+#                    (logging, sanitizer summaries) is not compared
 # strict-warnings and coverage need an image whose ns3-build-contrib has the
 # options (swarm-routing/ns3-containers; the step fails clearly otherwise).
 #
@@ -96,7 +98,7 @@ on:
         type: string
         default: '(.*/)?(test|examples)/'
       determinism:
-        description: "Newline-separated `./ns3 run` programs with a `{seed}` placeholder; seed 1 twice must match byte for byte, seed 2 must differ"
+        description: "Newline-separated `./ns3 run` programs with a `{seed}` placeholder that print their results (marker lines) on stdout; stdout of seed 1 twice must match byte for byte, seed 2 must differ"
         type: string
         default: ''
       format:
