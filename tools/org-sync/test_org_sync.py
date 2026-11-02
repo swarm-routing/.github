@@ -167,4 +167,30 @@ with contextlib.redirect_stdout(buf):
         org_sync.main(c)
 check(len(buf.getvalue()) < 2048, f"a no-change update prints {len(buf.getvalue())} bytes (< 2048)")
 
+# 10. YAML sections use `#` markers: the org's CodeRabbit settings are managed,
+# the repository's own path_instructions between them survive apply.
+cr = os.path.join(d, ".coderabbit.yaml")
+text = read(cr)
+check(
+    "# org-sync:begin coderabbit-head\n" in text and "# org-sync:end coderabbit-tail\n" in text,
+    "a YAML file gets `#` section markers",
+)
+check("auto_incremental_review: false" in text, "the org's review budget is in the managed head")
+own = '    - path: "src/**"\n      instructions: >-\n        LOCAL RULE\n'
+edit(
+    d,
+    ".coderabbit.yaml",
+    "# org-sync:begin coderabbit-tail\n",
+    own + "# org-sync:begin coderabbit-tail\n",
+)
+edit(d, ".coderabbit.yaml", "auto_incremental_review: false", "auto_incremental_review: true")
+rc, out = run("check", d)
+check(rc == 1 and ".coderabbit.yaml#coderabbit-head" in out, "an edit in the YAML head is drift")
+run("apply", d)
+text = read(cr)
+check(
+    run("check", d)[0] == 0 and "LOCAL RULE" in text and "auto_incremental_review: false" in text,
+    "apply restores the YAML head and keeps the repository's own instructions",
+)
+
 print("org-sync self-test: OK")

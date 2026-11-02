@@ -26,7 +26,8 @@ tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (+ test_org_sync.py)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections, README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
-                                the org-sync workflow, the marketplace keys of .claude/settings.json
+                                the org-sync workflow, the marketplace keys of .claude/settings.json,
+                                the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37)
 SECURITY.md                     the org default security policy (repos without their own get it)
 .github/workflows/         reusable-ns3-ci.yml, reusable-python-ci.yml, reusable-pr-title.yml, reusable-licence-check.yml,
                            reusable-org-sync-check.yml, sync-labels.yml, ci.yml
