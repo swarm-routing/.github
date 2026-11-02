@@ -1,0 +1,24 @@
+# Security Policy
+
+`{repo}` is research code for network simulation. This document records its
+security posture honestly; it promises nothing the code does not do. The
+org-wide policy is [swarm-routing/.github SECURITY.md](https://github.com/swarm-routing/.github/blob/main/SECURITY.md).
+
+## Trust boundary
+
+<!-- Which input is untrusted, the only code that parses it, and what that
+code guarantees. A protocol: its wire-format decoder (org invariant 3). A
+tool: the parsers of files it reads. If nothing parses untrusted input, say
+so in one line. -->
+{trust_boundary}
+
+## Known, by-design limitations (out of scope)
+
+{limitations}
+
+<!-- org-sync:begin reporting -->
+<!-- org-sync:end reporting -->
+
+## Verifying what it ships
+
+{verifying}

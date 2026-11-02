@@ -1,0 +1,14 @@
+# Licensing
+
+Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing).
+Licensed per directory, as AntHocNet
+([LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
+[ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
+
+| Path | Licence |
+|------|---------|
+{licensing_rows}
+
+`MIT OR GPL-2.0-only` means you may use that code under either licence, at
+your option ([LICENSE-MIT](LICENSE-MIT) or [LICENSE](LICENSE)). Every source
+file carries its SPDX identifier; CI checks it (`reusable-licence-check.yml`).

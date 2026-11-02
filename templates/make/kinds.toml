@@ -1,0 +1,47 @@
+# Per-kind commands for Makefile.in (seeded once; the repo owns its Makefile).
+# A target with nothing to do in a kind prints that and succeeds.
+
+[protocol]
+build  = 'docker run --rm -v "$(CURDIR):/src:ro" $(NS3_IMAGE) ns3-build-contrib @MODULE@=/src/ns3'
+test   = 'docker run --rm -v "$(CURDIR):/src:ro" $(NS3_IMAGE) ns3-build-contrib --test @MODULE@=/src/ns3'
+lint   = 'git ls-files "*.h" "*.cc" "*.cpp" "*.hpp" | xargs -r clang-format --dry-run --Werror'
+format = 'git ls-files "*.h" "*.cc" "*.cpp" "*.hpp" | xargs -r clang-format -i'
+clean  = 'rm -rf build'
+headers = '--dual core/'
+
+[c-cpp]
+build  = 'cmake -S . -B build && cmake --build build -j'
+test   = 'cmake -S . -B build && cmake --build build -j && ctest --test-dir build --output-on-failure'
+lint   = 'git ls-files "*.h" "*.cc" "*.cpp" "*.hpp" | xargs -r clang-format --dry-run --Werror'
+format = 'git ls-files "*.h" "*.cc" "*.cpp" "*.hpp" | xargs -r clang-format -i'
+clean  = 'rm -rf build'
+headers = '--dual core/'
+
+[python]
+build  = 'python3 -m pip install -e .'
+test   = 'python3 -m pytest -q'
+lint   = 'ruff check . && ruff format --check .'
+format = 'ruff format .'
+clean  = 'rm -rf build dist *.egg-info .pytest_cache'
+headers = "--dual ''"
+
+[container]
+build  = 'docker buildx build --load $(if $(PLATFORM),--platform $(PLATFORM)) -t local/$(notdir $(CURDIR)):dev .'
+test   = 'test/run.sh local/$(notdir $(CURDIR)):dev'
+lint   = 'shellcheck $$(git ls-files "*.sh") && actionlint'
+clean  = 'docker image rm -f local/$(notdir $(CURDIR)):dev'
+headers = '--dual tools/'
+
+[data]
+lint   = 'actionlint'
+headers = '--dual tools/'
+
+[site]
+lint   = 'actionlint'
+headers = '--dual tools/'
+
+[skills]
+test   = 'python3 -I tools/checks/check-plugins.py .'
+lint   = 'actionlint'
+headers = "--dual ''"
+shell_image = 'python:3.13-slim'
