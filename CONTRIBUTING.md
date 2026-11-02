@@ -83,8 +83,27 @@ starts from the newest open `handoff` issue and closes it when done.
   pushed, so all work is tracked.
 - **PRs are squash-merged** — the only merge method enabled in every repo. The
   PR title becomes the commit on `main`, so it is a lowercase Conventional
-  Commit (`feat:`/`fix:`/`docs:`/`chore:`/`ci:`…, optional scope).
+  Commit: `type(scope)!: subject`, scope and `!` optional, subject starting
+  lowercase. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
+  `build`, `ci`, `chore`, `revert` (the list `reusable-pr-title.yml` enforces).
 - Merge when CI is green.
+
+## Quality gates
+
+The org's reusable workflows carry the checks; a repo turns them on in its
+caller. Order of adoption and the decisions behind them: #35.
+
+| Check | Where | Default |
+|---|---|---|
+| PR title is a Conventional Commit | `reusable-pr-title.yml` | on in every caller |
+| clang-format (org `.clang-format`) | `reusable-ns3-ci.yml` `format` | on |
+| Strict warnings as errors on the repo's own modules (ns-3 headers exempt) | `reusable-ns3-ci.yml` `strict-warnings` | off; turn on from a module's first PR |
+| Determinism: same seed byte-identical, another seed differs (invariant 5) | `reusable-ns3-ci.yml` `determinism` | off; give it a short program with `{seed}` |
+| C++ coverage (gcovr), report-only | `reusable-ns3-ci.yml` `coverage` | off |
+| ruff check + format (org `ruff.toml`) and Python coverage, report-only | `reusable-python-ci.yml` | on in every caller |
+
+Coverage has no threshold: read it as a map of untested paths (AntHocNet #162).
+A floor, if ever, is chosen from evidence in its own issue.
 
 ## AI agents
 

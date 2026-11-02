@@ -33,6 +33,17 @@ name: Reusable ns-3 CI
 # with no edit (CONTRIBUTING invariant 7). Older releases are on demand: their
 # images are history in ns3-containers, or built there on request.
 #
+# Quality gates (all default off, so existing callers see no change; rule 10):
+#   strict-warnings  -Wall -Wextra -Wpedantic -Wshadow ... -Werror on this repo's
+#                    modules only; ns-3's headers are -isystem (#28)
+#   coverage         gcov on this repo's modules on the debug leg of the first
+#                    version; gcovr table in the job log and summary, Cobertura
+#                    XML + HTML as an artifact; report-only, no threshold (#24)
+#   determinism      programs with a `{seed}` placeholder: seed 1 twice must be
+#                    byte-identical, seed 2 must differ (org invariant 5, #26)
+# strict-warnings and coverage need an image whose ns3-build-contrib has the
+# options (swarm-routing/ns3-containers; the step fails clearly otherwise).
+#
 # Module specs are `name=path` (path relative to the caller's checkout) or a
 # bare path whose basename is the module name. The name must equal the
 # module's build_lib(LIBNAME ...). Dependencies are checked out and linked
@@ -70,6 +81,22 @@ on:
         default: ''
       lsan-suppressions:
         description: "Path (in this repo) of an LSan suppressions file for the sanitized leg"
+        type: string
+        default: ''
+      strict-warnings:
+        description: "Compile this repo's modules with strict warnings as errors (ns-3 headers exempt)"
+        type: boolean
+        default: false
+      coverage:
+        description: "Report gcov line/branch coverage of this repo's modules (debug leg of the first version; report-only)"
+        type: boolean
+        default: false
+      coverage-exclude:
+        description: "gcovr --exclude regex for source paths, relative to the repo root"
+        type: string
+        default: '(.*/)?(test|examples)/'
+      determinism:
+        description: "Newline-separated `./ns3 run` programs with a `{seed}` placeholder; seed 1 twice must match byte for byte, seed 2 must differ"
         type: string
         default: ''
       format:
@@ -153,9 +180,19 @@ jobs:
           EXTRA: ${{ inputs.extra-modules }}
           RUNS: ${{ inputs.run }}
           LSAN_SUPP: ${{ inputs.lsan-suppressions }}
+          STRICT: ${{ inputs.strict-warnings }}
+          COVERAGE: ${{ inputs.coverage && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] }}
         run: |
           set -euo pipefail
           args=()
+          for opt in strict:--strict-warnings coverage:--coverage; do
+            want=${opt%%:*}; flag=${opt#*:}
+            if { [ "$want" = strict ] && [ "$STRICT" = true ]; } || { [ "$want" = coverage ] && [ "$COVERAGE" = true ]; }; then
+              ns3-build-contrib --help | grep -q -- "$flag" || {
+                echo "::error::this image's ns3-build-contrib has no $flag (needs a current swarm-routing/ns3-containers image)"; exit 1; }
+              args+=("$flag")
+            fi
+          done
           [ -f "$RUNNER_TEMP/dep-specs" ] && while read -r d; do args+=("$d"); done < "$RUNNER_TEMP/dep-specs"
           own=()
           for m in $MODULES; do
@@ -171,6 +208,59 @@ jobs:
             export LSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/src/$LSAN_SUPP:print_suppressions=0"
           fi
           ns3-build-contrib "${args[@]}"
+      - name: Determinism (same seed byte-identical, another seed differs)
+        if: inputs.determinism != ''
+        env:
+          PROGS: ${{ inputs.determinism }}
+        run: |
+          set -euo pipefail
+          cd /opt/ns-3
+          out="$RUNNER_TEMP/determinism"; mkdir -p "$out"
+          n=0; fails=0
+          while read -r p; do
+            [ -n "$p" ] || continue
+            case "$p" in *'{seed}'*) ;; *) echo "::error::determinism program has no {seed} placeholder: $p"; exit 1 ;; esac
+            n=$((n + 1))
+            for run in 1a 1b 2; do
+              seed=${run%[ab]}
+              ./ns3 run --no-build "${p//\{seed\}/$seed}" > "$out/$n-$run.txt"
+            done
+            if ! cmp -s "$out/$n-1a.txt" "$out/$n-1b.txt"; then
+              echo "::error::not deterministic: two runs with seed 1 differ: $p"
+              diff "$out/$n-1a.txt" "$out/$n-1b.txt" | head -20 || true
+              fails=$((fails + 1))
+            elif cmp -s "$out/$n-1a.txt" "$out/$n-2.txt"; then
+              echo "::error::seed ignored: seeds 1 and 2 give identical output: $p"
+              fails=$((fails + 1))
+            else
+              echo "ok: $p ($(wc -l < "$out/$n-1a.txt") lines, identical for seed 1, different for seed 2)"
+            fi
+          done <<< "$PROGS"
+          [ "$fails" = 0 ]
+      - name: Coverage report (gcovr; report-only)
+        if: inputs.coverage && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        env:
+          EXCLUDE: ${{ inputs.coverage-exclude }}
+        run: |
+          set -euo pipefail
+          if ! command -v gcovr > /dev/null; then
+            timeout 600 apt-get update -qq
+            timeout 600 apt-get install -y -qq --no-install-recommends gcovr > /dev/null
+          fi
+          src="$GITHUB_WORKSPACE/src"
+          mkdir -p "$GITHUB_WORKSPACE/coverage"
+          cd /opt/ns-3/cmake-cache
+          gcovr --root "$src" --filter "$src/" --exclude "$src/$EXCLUDE" \
+            --txt --cobertura "$GITHUB_WORKSPACE/coverage/coverage.xml" \
+            --html-details "$GITHUB_WORKSPACE/coverage/index.html" --print-summary . \
+            | tee "$GITHUB_WORKSPACE/coverage/summary.txt"
+          { echo '### Coverage (report-only)'; echo '```'; cat "$GITHUB_WORKSPACE/coverage/summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.coverage && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        with:
+          name: coverage
+          path: coverage
+          retention-days: 7
       - name: Keep test.py output on failure
         if: failure()
         run: cp -r /opt/ns-3/testpy-output "$GITHUB_WORKSPACE/testpy-output" 2>/dev/null || true

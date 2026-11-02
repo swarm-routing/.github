@@ -1,0 +1,111 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable Python lint and coverage
+
+# Lint and coverage for the org's Python (ns3-tools' readers, tooling):
+#   ruff check (+ ruff format --check)   lint, fails on a finding (#25)
+#   coverage.py over the self-tests      line + branch coverage, report-only:
+#                                        no threshold (AntHocNet #162, #24)
+# A repo without its own ruff config gets the org's ruff.toml (explicit rule
+# list, so a ruff upgrade never widens it silently).
+# The tests are plain scripts (stdlib, no pytest dependency): each runs under
+# `coverage run`, and a non-zero exit fails the job as it does without coverage.
+#
+# Caller:
+#
+#   jobs:
+#     quality:
+#       uses: swarm-routing/.github/.github/workflows/reusable-python-ci.yml@main
+#       with:
+#         paths: python
+#         tests: python/tests/test_*.py
+#         source: python/ns3_tool
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: "Space-separated paths ruff checks"
+        type: string
+        required: true
+      ruff-format:
+        description: "Also require `ruff format --check`"
+        type: boolean
+        default: true
+      tests:
+        description: "Space-separated test script globs, each run as `coverage run <script>`; empty skips coverage"
+        type: string
+        default: ''
+      source:
+        description: "Space-separated packages/directories whose coverage is reported"
+        type: string
+        default: ''
+      python-version:
+        type: string
+        default: '3.13'
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Install ruff and coverage (pinned)
+        timeout-minutes: 5
+        run: python3 -m pip install --quiet ruff==0.17.1 coverage==7.16.2
+      - name: Org ruff.toml unless the repo has its own ruff config
+        run: |
+          if [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -qs '^\[tool\.ruff' pyproject.toml; then
+            echo "using the repo's own ruff config"
+          else
+            curl -fsSL -o ruff.toml https://raw.githubusercontent.com/swarm-routing/.github/main/ruff.toml
+          fi
+      - name: ruff check
+        env:
+          PATHS: ${{ inputs.paths }}
+        run: |
+          # shellcheck disable=SC2086  # PATHS word-splits on purpose
+          ruff check --output-format=github $PATHS
+      - name: ruff format --check
+        if: inputs.ruff-format
+        env:
+          PATHS: ${{ inputs.paths }}
+        run: |
+          # shellcheck disable=SC2086
+          ruff format --check --diff $PATHS
+      - name: Self-tests under coverage (report-only)
+        if: inputs.tests != ''
+        env:
+          TESTS: ${{ inputs.tests }}
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          src=()
+          for s in $SOURCE; do src+=(--source "$s"); done
+          n=0
+          # shellcheck disable=SC2086  # TESTS globs on purpose
+          for t in $TESTS; do
+            echo "== $t"
+            coverage run --parallel-mode --branch "${src[@]}" "$t"
+            n=$((n + 1))
+          done
+          [ "$n" -gt 0 ] || { echo "::error::no test matched: $TESTS"; exit 1; }
+          coverage combine --quiet
+          mkdir -p coverage
+          coverage report --show-missing | tee coverage/summary.txt
+          coverage xml -q -o coverage/coverage.xml
+          coverage html -q -d coverage/html
+          { echo '### Python coverage (report-only)'; echo '```'; tail -n 1 coverage/summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.tests != ''
+        with:
+          name: python-coverage
+          path: coverage
+          retention-days: 7

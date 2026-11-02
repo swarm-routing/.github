@@ -96,8 +96,12 @@ def shield(label, message, color):
 
 def git_slug(repo_dir):
     try:
-        url = subprocess.run(["git", "-C", repo_dir, "remote", "get-url", "origin"],
-                             capture_output=True, text=True, check=True).stdout.strip()
+        url = subprocess.run(
+            ["git", "-C", repo_dir, "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None
     m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$", url)
@@ -111,7 +115,9 @@ def load_config(repo_dir):
     cfg = tomllib.loads(text)
     if cfg.get("kind") not in KINDS:
         sys.exit(f"org-sync: {CONFIG}: kind must be one of {', '.join(KINDS)}")
-    cfg.setdefault("repo", git_slug(repo_dir) or "swarm-routing/" + os.path.basename(os.path.abspath(repo_dir)))
+    cfg.setdefault(
+        "repo", git_slug(repo_dir) or "swarm-routing/" + os.path.basename(os.path.abspath(repo_dir))
+    )
     cfg.setdefault("title", cfg["repo"].split("/")[1])
     cfg.setdefault("description", "**Status: empty.** Describe the repository here.")
     cfg.setdefault("ci_workflow", "ci.yml")
@@ -140,30 +146,46 @@ def badge_lines(cfg, repo_dir):
                 url = f"https://github.com/{repo}/actions/workflows/{wf}"
                 out.append(f"[![CI]({url}/badge.svg)]({url})")
         elif b == "licence":
-            out.append(f"[![Licence: {licence_text(cfg)}]({shield('licence', licence_text(cfg), 'blue')})](LICENSING.md)")
+            out.append(
+                f"[![Licence: {licence_text(cfg)}]({shield('licence', licence_text(cfg), 'blue')})](LICENSING.md)"
+            )
         elif b == "conventional":
-            out.append(f"[![Conventional Commits]({shield('Conventional Commits', '1.0.0', 'yellow')})]"
-                       "(https://www.conventionalcommits.org)")
+            out.append(
+                f"[![Conventional Commits]({shield('Conventional Commits', '1.0.0', 'yellow')})]"
+                "(https://www.conventionalcommits.org)"
+            )
         elif b == "cxx":
             cxx = cfg.get("cxx", "20")
-            out.append(f"[![C++{cxx}]({shield('C++', str(cxx), 'blue')}?logo=cplusplus)](AGENTS.md)")
+            out.append(
+                f"[![C++{cxx}]({shield('C++', str(cxx), 'blue')}?logo=cplusplus)](AGENTS.md)"
+            )
         elif b == "ns3":
-            out.append(f"[![Runs on ns-3]({shield('runs on', 'ns-3', 'informational')})](https://www.nsnam.org)")
+            out.append(
+                f"[![Runs on ns-3]({shield('runs on', 'ns-3', 'informational')})](https://www.nsnam.org)"
+            )
         elif b == "python":
             py = cfg.get("python", "3.10")
-            out.append(f"[![Python {py}+]({shield('python', py + '+', 'blue')}?logo=python)](AGENTS.md)")
+            out.append(
+                f"[![Python {py}+]({shield('python', py + '+', 'blue')}?logo=python)](AGENTS.md)"
+            )
         elif b == "ghcr" and cfg.get("image"):
             owner, name = repo.split("/")[0], cfg["image"]
-            out.append(f"[![GHCR: {name}]({shield('ghcr.io', f'{owner}/{name}', 'blue')}?logo=docker)]"
-                       f"(https://github.com/orgs/{owner}/packages/container/package/{name})")
+            out.append(
+                f"[![GHCR: {name}]({shield('ghcr.io', f'{owner}/{name}', 'blue')}?logo=docker)]"
+                f"(https://github.com/orgs/{owner}/packages/container/package/{name})"
+            )
         elif b == "cosign" and os.path.exists(os.path.join(repo_dir, "SECURITY.md")):
-            out.append(f"[![Images signed: cosign]({shield('images signed', 'cosign', 'success')})]"
-                       "(SECURITY.md#verifying-what-it-ships)")
+            out.append(
+                f"[![Images signed: cosign]({shield('images signed', 'cosign', 'success')})]"
+                "(SECURITY.md#verifying-what-it-ships)"
+            )
         elif b == "docs" and cfg.get("docs_url"):
             out.append(f"[![Docs]({shield('docs', 'site', 'blue')})]({cfg['docs_url']})")
         elif b == "claude-plugin":
-            out.append(f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
-                       "(https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)")
+            out.append(
+                f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
+                "(https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)"
+            )
     return "\n".join(out) + "\n" if out else ""
 
 
@@ -183,13 +205,20 @@ def render_makefile(cfg):
     text = template("make/Makefile.in")
     for key in ("build", "test", "lint", "format", "clean"):
         cmd = cfg.get("make", {}).get(key, kind.get(key))
-        lines = cmd.strip().splitlines() if cmd else [f'@echo "make {key}: nothing to do in this repo (kind {cfg["kind"]})"']
+        lines = (
+            cmd.strip().splitlines()
+            if cmd
+            else [f'@echo "make {key}: nothing to do in this repo (kind {cfg["kind"]})"']
+        )
         recipe = "\n".join(f"\t{line.strip()}" for line in lines)
         text = text.replace(f"@{key.upper()}@", recipe)
     module = cfg.get("module", cfg["title"].lower())
-    return (text.replace("@TITLE@", cfg["title"]).replace("@MODULE@", module)
-            .replace("@HEADER_ARGS@", header_args(cfg))
-            .replace("@SHELL_IMAGE@", kind.get("shell_image", "$(NS3_IMAGE)")))
+    return (
+        text.replace("@TITLE@", cfg["title"])
+        .replace("@MODULE@", module)
+        .replace("@HEADER_ARGS@", header_args(cfg))
+        .replace("@SHELL_IMAGE@", kind.get("shell_image", "$(NS3_IMAGE)"))
+    )
 
 
 def header_args(cfg):
@@ -214,14 +243,23 @@ def dual_root(d):
 
 def values(cfg):
     v = SafeDict(cfg)
-    v.update(repo=cfg["repo"], title=cfg["title"], description=cfg["description"].strip(),
-             licensing_rows=licensing_rows(cfg),
-             dual_rows="\n".join(f"    {d or 'everything':14}" for d in cfg["dual"]).rstrip(), date=datetime.date.today().isoformat(),
-             module=cfg.get("module", cfg["title"].lower()),
-             trust_boundary=cfg.get("trust_boundary", "Nothing in this repository parses untrusted input yet.").strip(),
-             limitations=cfg.get("limitations", "None recorded yet.").strip(),
-             posture=cfg.get("posture", "research code for network simulation").strip(),
-             verifying=cfg.get("verifying", "Nothing is released yet, so there is nothing to verify.").strip())
+    v.update(
+        repo=cfg["repo"],
+        title=cfg["title"],
+        description=cfg["description"].strip(),
+        licensing_rows=licensing_rows(cfg),
+        dual_rows="\n".join(f"    {d or 'everything':14}" for d in cfg["dual"]).rstrip(),
+        date=datetime.date.today().isoformat(),
+        module=cfg.get("module", cfg["title"].lower()),
+        trust_boundary=cfg.get(
+            "trust_boundary", "Nothing in this repository parses untrusted input yet."
+        ).strip(),
+        limitations=cfg.get("limitations", "None recorded yet.").strip(),
+        posture=cfg.get("posture", "research code for network simulation").strip(),
+        verifying=cfg.get(
+            "verifying", "Nothing is released yet, so there is nothing to verify."
+        ).strip(),
+    )
     return v
 
 
@@ -246,7 +284,12 @@ def items(cfg):
         ("seed", "LICENSING.md", "LICENSING.md.in", None),
         ("file", "docs/adr/0000-template.md", "adr/0000-template.md", None),
         ("seed", "docs/adr/README.md", "adr/README.md", None),
-        ("seed", "docs/adr/0001-record-architecture-decisions.md", "adr/0001-record-architecture-decisions.md", None),
+        (
+            "seed",
+            "docs/adr/0001-record-architecture-decisions.md",
+            "adr/0001-record-architecture-decisions.md",
+            None,
+        ),
         ("seed", "Makefile", "make/Makefile.in", None),
         ("targets", "Makefile", None, "targets"),
         ("file", ".github/workflows/org-sync.yml", "workflows/org-sync.yml", None),
@@ -277,7 +320,7 @@ def adopt_span(text, path, name):
     m = re.search(rule[0], text, re.M)
     if not m:
         return None
-    n = re.search(rule[1], text[m.start() + 1:], re.M)
+    n = re.search(rule[1], text[m.start() + 1 :], re.M)
     end = m.start() + 1 + n.start() if n else len(text)
     return m.start(), end
 
@@ -335,14 +378,18 @@ def evaluate(cfg, repo_dir, item):
     span = adopt_span(cur, path, name)
     ins = INSERT_AFTER.get((path, name))
     if not span and ins and (m := re.search(ins, cur, re.M)):
-        return "adopt", cur[:m.end()] + "\n" + wrap(name, want) + "\n" + cur[m.end():], "inserted"
+        return "adopt", cur[: m.end()] + "\n" + wrap(name, want) + "\n" + cur[m.end() :], "inserted"
     if not span:
-        return "conflict", None, f"no `{BEGIN.format(name)}` marker and no recognisable section to adopt"
+        return (
+            "conflict",
+            None,
+            f"no `{BEGIN.format(name)}` marker and no recognisable section to adopt",
+        )
     s, e = span
     old = cur[s:e]
     trail = ""
     if old.rstrip("\n") + "\n" != old:  # keep the blank lines that separated it from the next block
-        trail = old[len(old.rstrip("\n")) + 1:]
+        trail = old[len(old.rstrip("\n")) + 1 :]
     new = cur[:s] + wrap(name, want) + "\n" + trail + cur[e:]
     if old.rstrip("\n") + "\n" == want:
         return "adopt", new, "markers added; text identical"
@@ -384,7 +431,9 @@ def apply(cfg, repo_dir, force=()):
 def apply_once(cfg, repo_dir, force):
     changed, conflicts = [], []
     for item in items(cfg):
-        status, new, detail = evaluate(cfg, repo_dir, item)  # re-evaluated: a seed may have just created the file
+        status, new, detail = evaluate(
+            cfg, repo_dir, item
+        )  # re-evaluated: a seed may have just created the file
         name = label(item)
         if status == "conflict" and (name in force or "all" in force) and new is not None:
             status = "adopt"
@@ -408,7 +457,13 @@ def cmd_init(a):
         lines.append(f'title = "{a.title}"')
     if a.dual is not None:
         lines.append("dual = [" + ", ".join(f'"{d}"' for d in a.dual) + "]")
-    write(a.repo, CONFIG, "# org-sync configuration (swarm-routing/.github tools/org-sync).\n" + "\n".join(lines) + "\n")
+    write(
+        a.repo,
+        CONFIG,
+        "# org-sync configuration (swarm-routing/.github tools/org-sync).\n"
+        + "\n".join(lines)
+        + "\n",
+    )
     print(f"created   {CONFIG}")
     return cmd_apply(a)
 
@@ -434,7 +489,10 @@ def cmd_plan(a):
     else:
         for item, status, _, detail in rows:
             if status != "unchanged" or a.verbose:
-                print(f"{status:9} {label(item)}" + (f": {detail}" if detail and status != "unchanged" else ""))
+                print(
+                    f"{status:9} {label(item)}"
+                    + (f": {detail}" if detail and status != "unchanged" else "")
+                )
     return 0
 
 
@@ -458,8 +516,12 @@ def cmd_conflicts(a):
         print(f"== {label(item)}: {detail}")
         if new is not None:
             old = read(os.path.join(a.repo, item[1])) or ""
-            sys.stdout.writelines(l + "\n" for l in difflib.unified_diff(
-                old.splitlines(), new.splitlines(), "repo", "org-sync", lineterm="", n=3))
+            sys.stdout.writelines(
+                line + "\n"
+                for line in difflib.unified_diff(
+                    old.splitlines(), new.splitlines(), "repo", "org-sync", lineterm="", n=3
+                )
+            )
     if not n:
         print("org-sync: no conflicts")
     return 0
@@ -467,12 +529,19 @@ def cmd_conflicts(a):
 
 def cmd_check(a):
     cfg = load_config(a.repo)
-    drift = [(item, status, detail) for item, status, _, detail in plan(cfg, a.repo) if status != "unchanged"]
+    drift = [
+        (item, status, detail)
+        for item, status, _, detail in plan(cfg, a.repo)
+        if status != "unchanged"
+    ]
     for item, status, detail in drift:
         print(f"drift     {label(item)}: {status}" + (f" ({detail})" if detail else ""))
     if drift:
-        print(f"org-sync: {len(drift)} item(s) differ from swarm-routing/.github templates; "
-              "run `org_sync.py apply` (or `make org-sync-check` to see this again)", file=sys.stderr)
+        print(
+            f"org-sync: {len(drift)} item(s) differ from swarm-routing/.github templates; "
+            "run `org_sync.py apply` (or `make org-sync-check` to see this again)",
+            file=sys.stderr,
+        )
         return 1
     print("org-sync: in sync")
     return 0
@@ -491,8 +560,12 @@ def cmd_settings(a):
     meta = gh(f"repos/{repo}")
     pvr = gh(f"repos/{repo}/private-vulnerability-reporting")
     rules = gh(f"repos/{repo}/rulesets")
-    want = {"private_vulnerability_reporting": True, "allow_squash_merge": True,
-            "allow_merge_commit": False, "allow_rebase_merge": False}
+    want = {
+        "private_vulnerability_reporting": True,
+        "allow_squash_merge": True,
+        "allow_merge_commit": False,
+        "allow_rebase_merge": False,
+    }
     have = {
         "private_vulnerability_reporting": pvr.get("enabled") if isinstance(pvr, dict) else None,
         "allow_squash_merge": meta.get("allow_squash_merge"),
@@ -501,8 +574,11 @@ def cmd_settings(a):
         "rulesets": len(rules) if isinstance(rules, list) else rules,
     }
     report = {k: {"want": want.get(k), "have": have[k]} for k in have}
-    print(json.dumps(report, separators=(",", ":")) if a.json else
-          "\n".join(f"{k:32} have={v['have']} want={v['want']}" for k, v in report.items()))
+    print(
+        json.dumps(report, separators=(",", ":"))
+        if a.json
+        else "\n".join(f"{k:32} have={v['have']} want={v['want']}" for k, v in report.items())
+    )
     return 0
 
 
@@ -515,14 +591,22 @@ def main(argv=None):
         if name == "init":
             s.add_argument("--kind", required=True, choices=KINDS)
             s.add_argument("--title")
-            s.add_argument("--dual", nargs="*", help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)")
+            s.add_argument(
+                "--dual",
+                nargs="*",
+                help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)",
+            )
         if name in ("plan", "settings"):
             s.add_argument("--json", action="store_true")
         if name == "plan":
             s.add_argument("-v", "--verbose", action="store_true")
         if name == "apply":
-            s.add_argument("--force", nargs="+", metavar="ITEM",
-                           help="replace these conflicting sections with the template (ITEM as `plan` prints it, or all)")
+            s.add_argument(
+                "--force",
+                nargs="+",
+                metavar="ITEM",
+                help="replace these conflicting sections with the template (ITEM as `plan` prints it, or all)",
+            )
     a = p.parse_args(argv)
     return globals()[f"cmd_{a.cmd}"](a)
 
