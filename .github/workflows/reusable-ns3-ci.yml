@@ -236,11 +236,15 @@ jobs:
               seed=${run%[ab]}
               ./ns3 run --no-build "${p//\{seed\}/$seed}" > "$out/$n-$run.txt"
             done
+            # Into files, so a broken normalize script stops the step (set -e)
+            # instead of comparing two empty streams.
+            norm "$out/$n-1a.txt" > "$out/$n-1a.norm"
+            norm "$out/$n-2.txt" > "$out/$n-2.norm"
             if ! cmp -s "$out/$n-1a.txt" "$out/$n-1b.txt"; then
               echo "::error::not deterministic: two runs with seed 1 differ: $p"
               diff "$out/$n-1a.txt" "$out/$n-1b.txt" | head -20 || true
               fails=$((fails + 1))
-            elif cmp -s <(norm "$out/$n-1a.txt") <(norm "$out/$n-2.txt"); then
+            elif cmp -s "$out/$n-1a.norm" "$out/$n-2.norm"; then
               echo "::error::seed ignored: seeds 1 and 2 give identical results: $p"
               fails=$((fails + 1))
             else
