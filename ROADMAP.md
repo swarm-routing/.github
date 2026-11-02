@@ -21,19 +21,24 @@ flowchart LR
   P2 --> P3["Phase 3<br/>ARA"]
   P3 --> P4["Phase 4<br/>BeeAdHoc + tools + data"]
   P4 --> S["Colony Arena<br/>(site)"]
+  P1 --> O["Org templates<br/>+ hardening"]
+  P4 --> C["Comparators<br/>(non-swarm arms)"]
   P1 -.-> T["AntHocNet<br/>transfer (decision)"]
 ```
 
 | Phase | Owner repo · epic | Delivers | Status |
 |---|---|---|---|
 | 1 Foundations | `.github`, `ns3-containers` | org defaults, labels, reusable CI, licence gate; `ns3-dev` images; issue migration | done |
+| 1+ Org templates | [.github#6](https://github.com/swarm-routing/.github/issues/6) | `tools/org-sync` + `templates/`: AGENTS/CLAUDE org sections, badges, SECURITY.md, licence files, ADR template, per-repo Makefiles with the same target names; the `org-repo` skill ([skills](https://github.com/swarm-routing/skills)) | tool merged; per-repo adoption open |
+| 1+ Hardening | [.github#14](https://github.com/swarm-routing/.github/issues/14) | Scorecard, rulesets, merge policy, CI hygiene in every repo (from AntHocNet#328 and its children) | open |
 | 2 swarm-core | [ns3-swarm-core#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) | the shared `swarm-core` contrib module | not started |
 | 3 ARA | [ARA#3](https://github.com/swarm-routing/ARA/issues/3) | first protocol on swarm-core, through the three gates | blocked on 2 |
 | 4 BeeAdHoc | [BeeAdHoc#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) | second protocol; fidelity work can start now | fidelity open; code blocked on 2 |
-| 4 Tools | [ns3-tools#2](https://github.com/swarm-routing/ns3-tools/issues/2), [ns3-tools#7](https://github.com/swarm-routing/ns3-tools/issues/7) | the comparison harness, probes, arenas, `ns3-tool` CLI | migrated backlog |
+| 4 Tools | [ns3-tools#2](https://github.com/swarm-routing/ns3-tools/issues/2), [ns3-tools#7](https://github.com/swarm-routing/ns3-tools/issues/7) | the comparison harness, probes, arenas, `ns3-tool` CLI | harness + readers moved (ns3-tools#13); AntHocNet switch-over open |
+| 4 Comparators | [ns3-tools#15](https://github.com/swarm-routing/ns3-tools/issues/15) | non-swarm comparator arms (secure, learned, DTN), each its own module under `ns3-tools/ns3/arms/`; swarm-based variants with their protocol (BeeAdHoc#9, ARA#9, ARA#10) | migrated; gates pending (each arm needs its three before a number counts) |
 | 4 Data | [benchmarks#3](https://github.com/swarm-routing/benchmarks/issues/3) | dataset layout, manifest schema, validator | before the first anchor lands |
 | Site | [swarm-routing.github.io#3](https://github.com/swarm-routing/swarm-routing.github.io/issues/3) | Colony Arena: multi-protocol site and leaderboard | after a second `core/` and the data format |
-| Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | maintainer decision |
+| Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | technically unblocked (own images named by owner, danieljoppi/AntHocNet#845); waits on the Pages decision |
 
 ## Phase 1: foundations
 
@@ -41,6 +46,14 @@ Org-wide defaults (profile, issue forms, PR template, labels, `.clang-format`),
 the reusable workflows (`reusable-ns3-ci.yml`, `reusable-licence-check.yml`,
 `sync-labels.yml`), the licence-header gate, agent docs and per-directory
 licensing in every repository, the `ns3-dev` images with `ns3-build-contrib` (since ns3-containers#10/#33: the release ns-3 supports, older releases on demand), and the migration of AntHocNet's issues (13 moved; danieljoppi/AntHocNet#800 closed as done).
+
+A second wave (2026-11-02) moved the issues that are not specific to AntHocNet:
+14 moved (the comparators epic and its children to ns3-tools#15–#21, benchmark
+methodology to ns3-tools#22–#25, BeeSec/BeeAIS to BeeAdHoc#9, the swarm-based
+secure arms to ARA#9 and ARA#10); danieljoppi/AntHocNet#770 split, its
+harness package going to ns3-tools#26; danieljoppi/AntHocNet#656 closed as a
+duplicate of #843. Infrastructure items under danieljoppi/AntHocNet#328 link to
+the hardening epic .github#14.
 
 **Exit criteria**
 
@@ -110,4 +123,7 @@ stay in AntHocNet until its `web/` moves.
 - **No `optimized` image in CI**, and no ns-3 `optimized` profile anywhere (`-march=native`).
 - **No copying from ns-3's `src/aodv` or `src/olsr`**, and no GPL code in a dual `core/`.
 - **No paywalled papers in public repositories**; they live in the private `papers` repository.
-- **AntHocNet's own ladder stays in AntHocNet.** Issues not migrated (95 audited, 13 moved) keep their `release:` labels there; the undecided ones (danieljoppi/AntHocNet#595, #237, #319, #404, #112, #405) stay until the maintainer moves them.
+- **AntHocNet's own ladder stays in AntHocNet.** Issues not migrated (95 audited, 27 moved in two waves) keep their `release:` labels there; moved issues drop them, since the org has no release ladder of its own yet. The undecided ones (danieljoppi/AntHocNet#319, #112, #405) stay until the maintainer moves them.
+- **No learned arm without its gates.** The DRL comparator (ns3-tools#20) needs disjoint training and test seeds, one held-out family and a reported training budget, plus frozen, versioned weights; nothing about it is scheduled before those exist.
+- **DTN only where the oracle says so.** The store-carry-forward arm (ns3-tools#21) exists because danieljoppi/AntHocNet#580's trigger fired (the oracle delivers about 81 % on the disaster scene: the rest is partition-bound); it is scoped to the disaster family, not a general comparator.
+- **No second simulator for now.** The OMNeT++/INET adapter and the Veins arm stay deferred (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"); cross-simulator results would be qualitative only.
