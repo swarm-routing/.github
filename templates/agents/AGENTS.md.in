@@ -12,7 +12,7 @@ before changing anything. Org-wide conventions:
 ## Build & verify
 
 ```bash
-make help    # the org's standard targets (mk/org.mk): build, test, lint, format, check, clean, shell, ci
+make help    # the org's standard target names: build, test, lint, format, check, clean, shell, ci
 make check   # everything CI gates on
 ```
 
