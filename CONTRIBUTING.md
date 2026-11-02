@@ -45,7 +45,8 @@ is the long form.
    latest release only (no maintenance branches, no backports), so push, PR
    and scheduled CI build against `ghcr.io/swarm-routing/ns3-dev:latest-<profile>`
    (`reusable-ns3-ci.yml`'s default). Older ns-3 releases run only on demand:
-   a manual `workflow_dispatch` that passes `versions`, on images
+   a manual `workflow_dispatch` that passes `ns3-versions` (a JSON list such as
+   `["3.48"]`), on images
    `ns3-containers` publishes once (history) or builds on request. A
    published number pins a versioned `-<sha7>` image instead, never `latest`.
 

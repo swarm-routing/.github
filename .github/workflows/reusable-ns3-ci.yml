@@ -26,9 +26,9 @@ name: Reusable ns-3 CI
 #         modules: ara=ns3
 #         dependencies: swarm-core=swarm-routing/ns3-swarm-core@main
 #         run: ara-example --seed=1
-#         versions: ${{ inputs.ns3-versions || '["latest"]' }}
+#         ns3-versions: ${{ inputs.ns3-versions || '["latest"]' }}
 #
-# `versions` defaults to ["latest"]: the release ns-3 supports (it maintains its
+# `ns3-versions` defaults to ["latest"]: the release ns-3 supports (it maintains its
 # latest only), via the `latest-<profile>` tags, so automatic CI follows ns-3
 # with no edit (CONTRIBUTING invariant 7). Older releases are on demand: their
 # images are history in ns3-containers, or built there on request.
