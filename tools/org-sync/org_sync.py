@@ -197,9 +197,10 @@ def values(cfg):
              licensing_rows=licensing_rows(cfg),
              dual_rows="\n".join(f"    {d or 'everything':14}" for d in cfg["dual"]).rstrip(), date=datetime.date.today().isoformat(),
              module=cfg.get("module", cfg["title"].lower()),
-             trust_boundary=cfg.get("trust_boundary", "Nothing in this repository parses untrusted input yet."),
-             limitations=cfg.get("limitations", "None recorded yet."),
-             verifying=cfg.get("verifying", "Nothing is released yet, so there is nothing to verify."))
+             trust_boundary=cfg.get("trust_boundary", "Nothing in this repository parses untrusted input yet.").strip(),
+             limitations=cfg.get("limitations", "None recorded yet.").strip(),
+             posture=cfg.get("posture", "research code for network simulation").strip(),
+             verifying=cfg.get("verifying", "Nothing is released yet, so there is nothing to verify.").strip())
     return v
 
 
