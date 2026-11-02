@@ -210,6 +210,12 @@ jobs:
               *)   own+=("$(basename "$m")"); args+=("$GITHUB_WORKSPACE/src/$m") ;;
             esac
           done
+          # Judge this repo's modules only, not dependencies built alongside;
+          # images that predate --quality-modules apply the options to all.
+          if { [ "$STRICT" = true ] || [ "$COVERAGE" = true ]; } \
+             && [[ $(ns3-build-contrib --help) == *--quality-modules* ]]; then
+            args+=(--quality-modules "$(IFS=';'; echo "${own[*]}")")
+          fi
           [ -n "$EXTRA" ] && args+=(--modules "$EXTRA")
           for s in ${SUITES:-${own[*]}}; do args+=(--suite "$s"); done
           while read -r r; do [ -n "$r" ] && args+=(--run "$r"); done <<< "$RUNS"
