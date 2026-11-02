@@ -41,8 +41,8 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
           TYPES: ${{ inputs.types }}
         run: |
-          types=$(echo "$TYPES" | tr -s ' ' '|')
-          re="^(${types})(\([a-z0-9._/-]+\))?!?: [^A-Z ](.*[^ ])?$"
+          alts=$(echo "$TYPES" | tr -s ' ' '|')
+          re="^(${alts})(\([a-z0-9._/-]+\))?!?: [^A-Z ](.*[^ ])?$"
           if [[ "$TITLE" =~ $re ]]; then
             echo "ok: $TITLE"
           else
