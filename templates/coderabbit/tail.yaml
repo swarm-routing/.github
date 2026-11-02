@@ -1,0 +1,22 @@
+  tools:
+    shellcheck:
+      enabled: true
+    actionlint:
+      enabled: true
+    ruff:
+      enabled: true
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "LICENSING.md"
+chat:
+  auto_reply: true

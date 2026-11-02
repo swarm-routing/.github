@@ -9,7 +9,8 @@ The repository describes itself in `.github/org-sync.toml` (`init` writes it).
 Each managed item is one of:
 
   section  the text between `<!-- org-sync:begin NAME -->` and
-           `<!-- org-sync:end NAME -->` in a Markdown file; the rest of the file
+           `<!-- org-sync:end NAME -->` in a Markdown file (`# org-sync:begin
+           NAME` / `# org-sync:end NAME` in a YAML file); the rest of the file
            is the repository's own
   file     the whole file is the org's
   seed     created once from a template, then the repository's own
@@ -40,6 +41,16 @@ KINDS = ("protocol", "c-cpp", "python", "container", "data", "site", "skills")
 MAKE_TARGETS = ("help", "build", "test", "lint", "format", "check", "clean", "shell", "ci")
 BEGIN = "<!-- org-sync:begin {} -->"
 END = "<!-- org-sync:end {} -->"
+YAML_BEGIN = "# org-sync:begin {}"
+YAML_END = "# org-sync:end {}"
+
+
+def markers(path):
+    """The (begin, end) marker formats for a managed section in this file."""
+    if path.endswith((".yaml", ".yml")):
+        return YAML_BEGIN, YAML_END
+    return BEGIN, END
+
 
 # Badges per kind (swarm-routing/.github#8). Each appears only when its target
 # exists (see badge_lines).
@@ -294,6 +305,9 @@ def items(cfg):
         ("targets", "Makefile", None, "targets"),
         ("file", ".github/workflows/org-sync.yml", "workflows/org-sync.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
+        ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
+        ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),
+        ("section", ".coderabbit.yaml", "coderabbit/tail.yaml", "coderabbit-tail"),
     ]
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))
@@ -301,8 +315,9 @@ def items(cfg):
     return [i for i in out if i[1] not in skip and f"{i[1]}#{i[3]}" not in skip]
 
 
-def find_section(text, name):
-    b, e = BEGIN.format(name), END.format(name)
+def find_section(text, name, path=""):
+    begin, end = markers(path)
+    b, e = begin.format(name), end.format(name)
     i = text.find(b)
     if i < 0:
         return None
@@ -325,8 +340,9 @@ def adopt_span(text, path, name):
     return m.start(), end
 
 
-def wrap(name, body):
-    return f"{BEGIN.format(name)}\n{body}{END.format(name)}"
+def wrap(name, body, path=""):
+    begin, end = markers(path)
+    return f"{begin.format(name)}\n{body}{end.format(name)}"
 
 
 def evaluate(cfg, repo_dir, item):
@@ -369,7 +385,7 @@ def evaluate(cfg, repo_dir, item):
     # section
     if cur is None:
         return "create", None, "with its file"
-    span = find_section(cur, name)
+    span = find_section(cur, name, path)
     if span:
         s, e = span
         if cur[s:e] == want:
@@ -378,19 +394,23 @@ def evaluate(cfg, repo_dir, item):
     span = adopt_span(cur, path, name)
     ins = INSERT_AFTER.get((path, name))
     if not span and ins and (m := re.search(ins, cur, re.M)):
-        return "adopt", cur[: m.end()] + "\n" + wrap(name, want) + "\n" + cur[m.end() :], "inserted"
+        return (
+            "adopt",
+            cur[: m.end()] + "\n" + wrap(name, want, path) + "\n" + cur[m.end() :],
+            "inserted",
+        )
     if not span:
         return (
             "conflict",
             None,
-            f"no `{BEGIN.format(name)}` marker and no recognisable section to adopt",
+            f"no `{markers(path)[0].format(name)}` marker and no recognisable section to adopt",
         )
     s, e = span
     old = cur[s:e]
     trail = ""
     if old.rstrip("\n") + "\n" != old:  # keep the blank lines that separated it from the next block
         trail = old[len(old.rstrip("\n")) + 1 :]
-    new = cur[:s] + wrap(name, want) + "\n" + trail + cur[e:]
+    new = cur[:s] + wrap(name, want, path) + "\n" + trail + cur[e:]
     if old.rstrip("\n") + "\n" == want:
         return "adopt", new, "markers added; text identical"
     return "conflict", new, "existing text differs from the template"
