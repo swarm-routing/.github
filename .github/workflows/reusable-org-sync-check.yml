@@ -1,0 +1,42 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: org-sync check (reusable)
+
+# The org-managed files of the calling repository (its .github/org-sync.toml)
+# must match the templates in swarm-routing/.github@main: the shared AGENTS.md
+# and CLAUDE.md sections, the README badge row, SECURITY.md's reporting
+# section, LICENSE, the ADR template, the org-sync workflow, the marketplace
+# keys of .claude/settings.json, and the standard Makefile target names.
+# A public contract (AGENTS.md rule 10): inputs are only ever added.
+on:
+  workflow_call:
+    inputs:
+      org-ref:
+        description: 'swarm-routing/.github ref whose templates and tools/org-sync to check against'
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  org-sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          ref: ${{ inputs.org-ref }}
+          path: org
+          persist-credentials: false
+      - name: org-sync check
+        run: |
+          python3 -I org/tools/org-sync/org_sync.py check repo || {
+            echo "::error::org-managed files drifted from swarm-routing/.github templates. Run locally: python3 org_sync.py conflicts . && python3 org_sync.py apply ."
+            exit 1
+          }

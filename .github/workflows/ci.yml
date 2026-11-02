@@ -25,6 +25,8 @@ jobs:
           python3 -I tools/checks/check-headers.py --self-test
           python3 -I tools/checks/check-headers.py --dual '' .
           for f in LICENSE LICENSE-MIT LICENSING.md; do test -f "$f"; done
+      - name: org-sync self-test (tools/org-sync)
+        run: python3 -I tools/org-sync/test_org_sync.py
       - name: Forms, labels, style parse
         run: |
           python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"

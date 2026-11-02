@@ -1,0 +1,42 @@
+# AGENTS.md — guide for AI coding agents
+
+Operational guide for LLM agents working in `{repo}`. Read this
+before changing anything. Org-wide conventions:
+[`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md). Shape and rules mirror
+[AntHocNet's AGENTS.md](https://github.com/danieljoppi/AntHocNet/blob/main/AGENTS.md), the source repository.
+
+## What this repo is
+
+{description}
+
+## Build & verify
+
+```bash
+make help    # the org's standard target names: build, test, lint, format, check, clean, shell, ci
+make check   # everything CI gates on
+```
+
+## Golden rules (invariants — do not break)
+
+Org-wide (1–9), then this repo's own.
+
+<!-- org-sync:begin org-rules -->
+<!-- org-sync:end org-rules -->
+
+## Conventions
+
+<!-- org-sync:begin conventions -->
+<!-- org-sync:end conventions -->
+
+## Git workflow
+
+<!-- org-sync:begin git-workflow -->
+<!-- org-sync:end git-workflow -->
+
+## Where to look
+
+| You want to… | Go to |
+|--------------|-------|
+| The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
+| Record an architecture decision | [`docs/adr/`](docs/adr/) (`0000-template.md`) |
+| Pick up open work | this repo's issues — highest open `priority:P*` first; newest open `handoff` issue for work in flight |
