@@ -1,0 +1,13 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+#
+# The org's Python lint baseline (#25). reusable-python-ci.yml uses it for any
+# repo without its own ruff config, as reusable-ns3-ci.yml does .clang-format.
+# Rules are listed explicitly so a ruff upgrade never widens them silently;
+# a repo that wants more extends this in its own ruff.toml.
+line-length = 100
+target-version = "py310"
+
+[lint]
+# pycodestyle errors that are always bugs + pyflakes (ruff's classic default).
+select = ["E4", "E7", "E9", "F"]

@@ -29,7 +29,10 @@ def run(*argv):
 def fresh():
     d = tempfile.mkdtemp()
     subprocess.run(["git", "-C", d, "init", "-q"], check=True)
-    subprocess.run(["git", "-C", d, "remote", "add", "origin", "https://github.com/swarm-routing/demo"], check=True)
+    subprocess.run(
+        ["git", "-C", d, "remote", "add", "origin", "https://github.com/swarm-routing/demo"],
+        check=True,
+    )
     return d
 
 
@@ -73,7 +76,10 @@ run("init", d, "--kind", "python", "--dual", "")
 # 2. An edit inside a managed section is drift; apply restores it.
 edit(d, "AGENTS.md", "9. **Nothing shipped", "9. **Something shipped")
 rc, out = run("check", d)
-check(rc == 1 and "AGENTS.md#org-rules" in out, "an edit inside a managed section fails check, naming it")
+check(
+    rc == 1 and "AGENTS.md#org-rules" in out,
+    "an edit inside a managed section fails check, naming it",
+)
 run("apply", d)
 check(run("check", d)[0] == 0, "apply restores the managed section")
 
@@ -87,7 +93,9 @@ edit(d, "Makefile", "python3 -m pytest -q", "python3 -m unittest")
 check(run("check", d)[0] == 0, "changing a Makefile recipe is not drift")
 edit(d, "Makefile", "\nshell:", "\nsh:")
 rc, out = run("check", d)
-check(rc == 1 and "missing standard target(s): shell" in out, "a missing standard target fails check")
+check(
+    rc == 1 and "missing standard target(s): shell" in out, "a missing standard target fails check"
+)
 edit(d, "Makefile", "\nsh:", "\nshell:")
 
 # 5. An existing repo without markers: identical sections are adopted, a
@@ -98,13 +106,20 @@ write(os.path.join(d, ".github/org-sync.toml"), 'kind = "data"\n')
 for f in ("AGENTS.md", "CLAUDE.md", "README.md"):
     write(os.path.join(d, f), read(os.path.join(ORG, f)))
 rc, out = run("plan", d)
-check("adopt     AGENTS.md#org-rules" in out and "adopt     CLAUDE.md#org" in out,
-      "unmarked org sections identical to the templates are adopted")
+check(
+    "adopt     AGENTS.md#org-rules" in out and "adopt     CLAUDE.md#org" in out,
+    "unmarked org sections identical to the templates are adopted",
+)
 check("adopt     README.md#badges" in out, "the badge row is inserted after the title")
 edit(d, "AGENTS.md", "7. **Keep bounded structures bounded**", "7. **Keep bounded things bounded**")
 rc, out = run("apply", d)
-check(rc == 1 and "conflict  AGENTS.md#org-rules" in out, "a diverged unmarked section is a conflict")
-check("Keep bounded things bounded" in read(os.path.join(d, "AGENTS.md")), "apply leaves a conflict untouched")
+check(
+    rc == 1 and "conflict  AGENTS.md#org-rules" in out, "a diverged unmarked section is a conflict"
+)
+check(
+    "Keep bounded things bounded" in read(os.path.join(d, "AGENTS.md")),
+    "apply leaves a conflict untouched",
+)
 rc, out = run("conflicts", d)
 check("-7. **Keep bounded things bounded**" in out, "conflicts prints the hunk")
 run("apply", d, "--force", "AGENTS.md#org-rules")
@@ -115,17 +130,35 @@ p = os.path.join(d, ".claude/settings.json")
 write(p, '{"permissions": {"allow": ["Bash(ls)"]}}\n')
 run("apply", d)
 text = read(p)
-check('"Bash(ls)"' in text and "org-repo@swarm-routing" in text, "settings.json keeps the repo's keys and gains the org's")
+check(
+    '"Bash(ls)"' in text and "org-repo@swarm-routing" in text,
+    "settings.json keeps the repo's keys and gains the org's",
+)
+
 
 # 7. Header-check flags: dual roots normalized, the core include check whenever core/ is dual.
-ha = lambda dual: org_sync.header_args({"dual": dual})
-check(ha(["./tools", "core"]) == "--dual tools/ --dual core/ --core core/", "dual roots are normalized to Git-relative prefixes")
-check(ha([""]) == "--dual '' --core core/", "a whole-repo dual licence still gets the core include check")
+def ha(dual):
+    return org_sync.header_args({"dual": dual})
+
+
+check(
+    ha(["./tools", "core"]) == "--dual tools/ --dual core/ --core core/",
+    "dual roots are normalized to Git-relative prefixes",
+)
+check(
+    ha([""]) == "--dual '' --core core/",
+    "a whole-repo dual licence still gets the core include check",
+)
 check(ha(["tools/"]) == "--dual tools/", "no core check when core/ is not dual")
 
 # 8. A multi-line recipe renders one tab-indented line per command (no `make -n` side effects).
-mk = org_sync.render_makefile({"kind": "container", "dual": ["tools/"], "title": "demo", "repo": "demo"})
-check("\t$(MAKE) build\n\ttest/run.sh local/" in mk, "the container test recipe builds and tests on separate lines")
+mk = org_sync.render_makefile(
+    {"kind": "container", "dual": ["tools/"], "title": "demo", "repo": "demo"}
+)
+check(
+    "\t$(MAKE) build\n\ttest/run.sh local/" in mk,
+    "the container test recipe builds and tests on separate lines",
+)
 
 # 9. A no-change update reads well under the 2 KB budget (skills#2).
 buf = io.StringIO()

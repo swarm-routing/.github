@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: read
@@ -35,3 +36,16 @@ jobs:
         run: |
           pip install --quiet actionlint-py==1.7.7.23 shellcheck-py==0.10.0.1
           actionlint .github/workflows/*.yml
+
+  # The reusable workflows run here from this checkout, so a PR that changes
+  # one is tested with its own version.
+  python:
+    uses: ./.github/workflows/reusable-python-ci.yml
+    with:
+      paths: tools
+      tests: tools/org-sync/test_org_sync.py
+      source: tools
+
+  title:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-pr-title.yml

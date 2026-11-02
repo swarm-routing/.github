@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable PR title check
+
+# Every org repo squash-merges, so the PR title becomes the commit on main and
+# is what Commitizen reads for the next version (#20). The title must be a
+# lowercase Conventional Commit: `type(scope)!: subject`, the types listed in
+# CONTRIBUTING.md. Ported from AntHocNet's pr-title.yml (#29), in plain bash:
+# no third-party action and no token.
+#
+# Caller:
+#
+#   on:
+#     pull_request:
+#       types: [opened, edited, synchronize, reopened]
+#   permissions: {}
+#   jobs:
+#     title:
+#       uses: swarm-routing/.github/.github/workflows/reusable-pr-title.yml@main
+on:
+  workflow_call:
+    inputs:
+      types:
+        description: "Space-separated allowed types (default: CONTRIBUTING.md's list)"
+        type: string
+        default: 'feat fix docs style refactor perf test build ci chore revert'
+
+permissions: {}
+
+jobs:
+  title:
+    # Dependabot titles `chore(deps): Bump …` with a capital B and cannot be
+    # told otherwise; its type prefix is valid. A job skipped by `if:` still
+    # satisfies a required check.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Conventional Commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          TYPES: ${{ inputs.types }}
+        run: |
+          alts=$(echo "$TYPES" | tr -s ' ' '|')
+          re="^(${alts})(\([a-z0-9._/-]+\))?!?: [^A-Z ](.*[^ ])?$"
+          if [[ "$TITLE" =~ $re ]]; then
+            echo "ok: $TITLE"
+          else
+            echo "::error::PR title is not a lowercase Conventional Commit: '$TITLE'"
+            echo "Expected 'type(scope)!: subject' with type one of: $TYPES;"
+            echo "the subject starts lowercase, e.g. 'feat(ci): add the determinism gate'."
+            exit 1
+          fi

@@ -21,13 +21,15 @@ ISSUE_TEMPLATE/            default issue forms (AntHocNet's set + literature)
 pull_request_template.md   default PR template
 labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style
+ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
 tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags)
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (+ test_org_sync.py)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections, README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json
 SECURITY.md                     the org default security policy (repos without their own get it)
-.github/workflows/         reusable-ns3-ci.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, sync-labels.yml, ci.yml
+.github/workflows/         reusable-ns3-ci.yml, reusable-python-ci.yml, reusable-pr-title.yml, reusable-licence-check.yml,
+                           reusable-org-sync-check.yml, sync-labels.yml, ci.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
 ```
 
@@ -42,6 +44,7 @@ python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE
 python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
+pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
 clang-format-18 --style=file:.clang-format --dump-config >/dev/null
 ```
 
@@ -132,7 +135,8 @@ Org-wide (1–9), then this repo's own.
 
 | You want to… | Go to |
 |--------------|-------|
-| Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` |
+| Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` (quality inputs `strict-warnings`, `coverage`, `determinism`: CONTRIBUTING § Quality gates) |
+| Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` + CONTRIBUTING's type list |
 | Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
 | Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red until it runs `org_sync.py apply`: open those PRs with the change (the `org-repo` skill in `swarm-routing/skills` does it) |
