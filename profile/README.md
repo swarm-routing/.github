@@ -28,3 +28,7 @@ simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
 ns-3 modules, sites, docs and data are `GPL-2.0-only`. Plan: [ROADMAP.md](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md).
 Conventions:
 [CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md).
+
+Support the work: [sponsor @danieljoppi](https://github.com/sponsors/danieljoppi)
+(it keeps the ns-3 images, CI and benchmark campaigns running), or cite
+[AntHocNet's DOI](https://doi.org/10.5281/zenodo.20981979).
