@@ -21,6 +21,8 @@ flowchart LR
   P2 --> P3["Phase 3<br/>ARA"]
   P3 --> P4["Phase 4<br/>BeeAdHoc + tools + data"]
   P4 --> S["Colony Arena<br/>(site)"]
+  P4 --> P5["Phase 5<br/>Termite"]
+  P5 -.-> H["HOPNET<br/>(later)"]
   P1 --> O["Org templates<br/>+ hardening"]
   P4 --> C["Comparators<br/>(non-swarm arms)"]
   P1 -.-> T["AntHocNet<br/>transfer (decision)"]
@@ -40,7 +42,31 @@ flowchart LR
 | 4 Data | [benchmarks#3](https://github.com/swarm-routing/benchmarks/issues/3) | dataset layout, manifest schema, validator | before the first anchor lands |
 | Site | [swarm-routing.github.io#3](https://github.com/swarm-routing/swarm-routing.github.io/issues/3) | Colony Arena: multi-protocol site and leaderboard | after a second `core/` and the data format |
 | Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | technically unblocked (own images named by owner, danieljoppi/AntHocNet#845); waits on the Pages decision |
+| 5 Termite | [.github#51](https://github.com/swarm-routing/.github/issues/51) (moves to the repo's own epic once `swarm-routing/Termite` exists) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | repo missing; blocked on 2 and 3 |
+| Later: HOPNET | [.github#52](https://github.com/swarm-routing/.github/issues/52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | repo missing; not scheduled |
 | Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first |
+
+## Protocol repositories
+
+Every swarm protocol has its own repository (maintainer decision 2026-11-03,
+epic [.github#50](https://github.com/swarm-routing/.github/issues/50)): a
+simulator-agnostic `core/` and an ns-3 module on `swarm-core`, bootstrapped with
+`tools/org-sync/org_sync.py init <dir> --kind protocol`. Non-swarm comparator
+arms are not protocols of ours and live in `ns3-tools/ns3/arms/`; swarm-based
+variants (secure, trust-aware) live with the protocol they extend.
+
+| Protocol | Repository | Phase | Status |
+|---|---|---|---|
+| AntHocNet (Di Caro et al. 2005) | [danieljoppi/AntHocNet](https://github.com/danieljoppi/AntHocNet) | Transfer | exists outside the org; moves in or stays per [.github#2](https://github.com/swarm-routing/.github/issues/2) |
+| ARA (Güneş et al. 2002) | [swarm-routing/ARA](https://github.com/swarm-routing/ARA) | 3 | exists |
+| BeeAdHoc (Wedde & Farooq 2005) | [swarm-routing/BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | 4 | exists |
+| Termite (Roth & Wicker 2003/2005) | `swarm-routing/Termite` | 5 | **missing**: [.github#51](https://github.com/swarm-routing/.github/issues/51) |
+| HOPNET (Wang 2007) | `swarm-routing/HOPNET` | later | **missing**: [.github#52](https://github.com/swarm-routing/.github/issues/52) |
+
+Not planned as repositories: AntNet (wired networks, AntHocNet's ancestor), and
+the swarm-based variants above (BeeSec/BeeAIS in BeeAdHoc#9; trust-weighted ACO
+and ACO + watchdog in ARA#9, ARA#10). A repository is created by the maintainer
+when its phase is scheduled, never before.
 
 ## Phase 1: foundations
 
@@ -102,6 +128,25 @@ first anchor writes into it.
 - [ ] BeeAdHoc's interpretations each *settled (§x)* or *unresolved* in its fidelity sheet; module green; anchor re-recorded.
 - [ ] The harness runs any registered arm in the MANET and LEO arenas and emits the versioned marker lines.
 - [ ] `benchmarks` validates every run's manifest in CI and refuses edits to merged data.
+
+## Phase 5: Termite
+
+Termite (Roth & Wicker) routes by stigmergy: routing state rides inside data
+packets, with no control ants. AntHocNet's arm passed the delivery smoke but
+**missed** its anchor in v2.5.0 (the trend points the right way, the CIs span
+zero; danieljoppi/AntHocNet#587), so it starts with a pre-registered analysis
+of that miss. It is swarm-core's pheromone primitives' next consumer after the
+ant protocols, and leaves AntHocNet's `adaptive` module for its own repository,
+not for `ns3-tools`.
+
+**Exit criteria**
+
+- [ ] `swarm-routing/Termite` created and bootstrapped; fidelity sheet with every parameter sourced or marked.
+- [ ] The anchor miss explained in an issue before code (arm, scenario or power).
+- [ ] Module green in CI; three gates recorded, or a written infeasibility verdict.
+
+HOPNET (ants + zone routing, Wang 2007) follows later, thesis fidelity sheet
+first; it is the one published result benchmarked against AntHocNet directly.
 
 ## Colony Arena (the site)
 
