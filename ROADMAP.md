@@ -65,8 +65,9 @@ variants (secure, trust-aware) live with the protocol they extend.
 
 Not planned as repositories: AntNet (wired networks, AntHocNet's ancestor), and
 the swarm-based variants above (BeeSec/BeeAIS in BeeAdHoc#9; trust-weighted ACO
-and ACO + watchdog in ARA#9, ARA#10). A repository is created by the maintainer
-when its phase is scheduled, never before. The remaining swarm MANET protocols
+and ACO + watchdog in ARA#9, ARA#10). The maintainer creates a repository; it may
+exist early as an empty, bootstrapped placeholder (Termite and HOPNET, 2026-11-03),
+but no protocol code lands in it before its phase is scheduled. The remaining swarm MANET protocols
 the landscape never assessed (Ant-AODV, ANSI, PERA, ARAMA, EARA, BeeIP, APAR,
 SARA) each get a verdict (repo, fold into an existing protocol, or skip) in
 [.github#54](https://github.com/swarm-routing/.github/issues/54).
