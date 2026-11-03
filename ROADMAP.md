@@ -123,8 +123,10 @@ one is needed, it gets the infrastructure ns-3 has today, one repository per
 concern: a `<sim>-containers` repo (prebuilt, tested, signed images of
 OMNeT++ + INET, Veins = OMNeT++ + INET + SUMO, or CORE + EMANE for Linux
 emulation, built like `ns3-containers`), a `<sim>-tools` repo emitting the same
-versioned marker lines so `benchmarks` and the readers take its data unchanged,
-and a reusable CI workflow per simulator. Protocols need no fork: their `core/`
+versioned marker lines, and a reusable CI workflow per simulator. `benchmarks`
+takes that data only once its manifest and validator record which simulator
+and image produced a run (today they pin an `ns3-dev` image); that schema
+change is part of the epic, made before the first such run lands. Protocols need no fork: their `core/`
 is simulator-agnostic, so a new simulator is a new adapter in the protocol's
 repository. AntHocNet's issues for it (danieljoppi/AntHocNet#32, #65, #147–#153,
 #485) stay there until this starts; #150 (the OMNeT++/INET image) is the first
