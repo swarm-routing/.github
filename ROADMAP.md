@@ -24,6 +24,7 @@ flowchart LR
   P1 --> O["Org templates<br/>+ hardening"]
   P4 --> C["Comparators<br/>(non-swarm arms)"]
   P1 -.-> T["AntHocNet<br/>transfer (decision)"]
+  P4 -.-> X["Other simulators<br/>(deferred)"]
 ```
 
 | Phase | Owner repo · epic | Delivers | Status |
@@ -39,6 +40,7 @@ flowchart LR
 | 4 Data | [benchmarks#3](https://github.com/swarm-routing/benchmarks/issues/3) | dataset layout, manifest schema, validator | before the first anchor lands |
 | Site | [swarm-routing.github.io#3](https://github.com/swarm-routing/swarm-routing.github.io/issues/3) | Colony Arena: multi-protocol site and leaderboard | after a second `core/` and the data format |
 | Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | technically unblocked (own images named by owner, danieljoppi/AntHocNet#845); waits on the Pages decision |
+| Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first |
 
 ## Phase 1: foundations
 
@@ -114,6 +116,27 @@ stay in AntHocNet until its `web/` moves.
 - [ ] A second protocol in the browser with a byte-identical native-vs-WASM trace.
 - [ ] Leaderboard regenerated from `benchmarks` data in CI.
 
+## Later: other simulators (deferred)
+
+The org's focus is ns-3. Other simulators are planned but not scheduled: when
+one is needed, it gets the infrastructure ns-3 has today, one repository per
+concern: a `<sim>-containers` repo (prebuilt, tested, signed images of
+OMNeT++ + INET, Veins = OMNeT++ + INET + SUMO, or CORE + EMANE for Linux
+emulation, built like `ns3-containers`), a `<sim>-tools` repo emitting the same
+versioned marker lines, and a reusable CI workflow per simulator. `benchmarks`
+takes that data only once its manifest and validator record which simulator
+and image produced a run (today they pin an `ns3-dev` image); that schema
+change is part of the epic, made before the first such run lands. Protocols need no fork: their `core/`
+is simulator-agnostic, so a new simulator is a new adapter in the protocol's
+repository. AntHocNet's issues for it (danieljoppi/AntHocNet#32, #65, #147–#153,
+#485) stay there until this starts; #150 (the OMNeT++/INET image) is the first
+item to migrate. Epic: [.github#48](https://github.com/swarm-routing/.github/issues/48).
+
+**Trigger** (any of): phases 2–4 done and a protocol needs a result only another
+simulator gives; a venue or reviewer asks for cross-simulator confirmation; an
+emulation or real-stack claim is needed. Cross-simulator results stay
+qualitative: they confirm an ns-3 ranking, they do not replace its numbers.
+
 ## Non-goals
 
 - **No protocol before its foundation.** No new protocol repository starts code before swarm-core has a consumer (ARA) green against `main`.
@@ -126,4 +149,4 @@ stay in AntHocNet until its `web/` moves.
 - **AntHocNet's own ladder stays in AntHocNet.** Issues not migrated (95 audited, 27 moved in two waves) keep their `release:` labels there; moved issues drop them, since the org has no release ladder of its own yet. The undecided ones (danieljoppi/AntHocNet#319, #112, #405) stay until the maintainer moves them.
 - **No learned arm without its gates.** The DRL comparator (ns3-tools#20) needs disjoint training and test seeds, one held-out family and a reported training budget, plus frozen, versioned weights; nothing about it is scheduled before those exist.
 - **DTN only where the oracle says so.** The store-carry-forward arm (ns3-tools#21) exists because danieljoppi/AntHocNet#580's trigger fired (the oracle delivers about 81 % on the disaster scene: the rest is partition-bound); it is scoped to the disaster family, not a general comparator.
-- **No second simulator for now.** The OMNeT++/INET adapter and the Veins arm stay deferred (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"); cross-simulator results would be qualitative only.
+- **No second simulator for now.** ns-3 is the focus; OMNeT++/INET, Veins and CORE/EMANE are planned as their own container and tooling repositories, deferred until the trigger in [Later: other simulators](#later-other-simulators-deferred) fires (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"; org decision 2026-11-03, .github#48). Cross-simulator results would be qualitative only.
