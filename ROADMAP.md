@@ -42,8 +42,8 @@ flowchart LR
 | 4 Data | [benchmarks#3](https://github.com/swarm-routing/benchmarks/issues/3) | dataset layout, manifest schema, validator | before the first anchor lands |
 | Site | [swarm-routing.github.io#3](https://github.com/swarm-routing/swarm-routing.github.io/issues/3) | Colony Arena: multi-protocol site and leaderboard | after a second `core/` and the data format |
 | Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | technically unblocked (own images named by owner, danieljoppi/AntHocNet#845); waits on the Pages decision |
-| 5 Termite | [.github#51](https://github.com/swarm-routing/.github/issues/51) (moves to the repo's own epic once `swarm-routing/Termite` exists) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | repo missing; blocked on 2 and 3 |
-| Later: HOPNET | [.github#52](https://github.com/swarm-routing/.github/issues/52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | repo missing; not scheduled |
+| 5 Termite | [.github#51](https://github.com/swarm-routing/.github/issues/51) (moves to the repo's own epic) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | repo bootstrapped ([Termite#1](https://github.com/swarm-routing/Termite/pull/1)); code blocked on 2 and 3 |
+| Later: HOPNET | [.github#52](https://github.com/swarm-routing/.github/issues/52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | repo bootstrapped ([HOPNET#1](https://github.com/swarm-routing/HOPNET/pull/1)); not scheduled |
 | Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first |
 
 ## Protocol repositories
@@ -60,13 +60,16 @@ variants (secure, trust-aware) live with the protocol they extend.
 | AntHocNet (Di Caro et al. 2005) | [danieljoppi/AntHocNet](https://github.com/danieljoppi/AntHocNet) | Transfer | exists outside the org; moves in or stays per [.github#2](https://github.com/swarm-routing/.github/issues/2) |
 | ARA (Güneş et al. 2002) | [swarm-routing/ARA](https://github.com/swarm-routing/ARA) | 3 | exists |
 | BeeAdHoc (Wedde & Farooq 2005) | [swarm-routing/BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | 4 | exists |
-| Termite (Roth & Wicker 2003/2005) | `swarm-routing/Termite` | 5 | **missing**: [.github#51](https://github.com/swarm-routing/.github/issues/51) |
-| HOPNET (Wang 2007) | `swarm-routing/HOPNET` | later | **missing**: [.github#52](https://github.com/swarm-routing/.github/issues/52) |
+| Termite (Roth & Wicker 2003/2005) | [swarm-routing/Termite](https://github.com/swarm-routing/Termite) | 5 | exists (empty); plan [.github#51](https://github.com/swarm-routing/.github/issues/51) |
+| HOPNET (Wang 2007) | [swarm-routing/HOPNET](https://github.com/swarm-routing/HOPNET) | later | exists (empty); plan [.github#52](https://github.com/swarm-routing/.github/issues/52) |
 
 Not planned as repositories: AntNet (wired networks, AntHocNet's ancestor), and
 the swarm-based variants above (BeeSec/BeeAIS in BeeAdHoc#9; trust-weighted ACO
 and ACO + watchdog in ARA#9, ARA#10). A repository is created by the maintainer
-when its phase is scheduled, never before.
+when its phase is scheduled, never before. The remaining swarm MANET protocols
+the landscape never assessed (Ant-AODV, ANSI, PERA, ARAMA, EARA, BeeIP, APAR,
+SARA) each get a verdict (repo, fold into an existing protocol, or skip) in
+[.github#54](https://github.com/swarm-routing/.github/issues/54).
 
 ## Phase 1: foundations
 
@@ -141,7 +144,8 @@ not for `ns3-tools`.
 
 **Exit criteria**
 
-- [ ] `swarm-routing/Termite` created and bootstrapped; fidelity sheet with every parameter sourced or marked.
+- [x] `swarm-routing/Termite` created and bootstrapped (Termite#1).
+- [ ] Fidelity sheet with every parameter sourced or marked.
 - [ ] The anchor miss explained in an issue before code (arm, scenario or power).
 - [ ] Module green in CI; three gates recorded, or a written infeasibility verdict.
 

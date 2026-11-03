@@ -16,6 +16,8 @@ protocol can be its own citable repository.
 | [ns3-tools](https://github.com/swarm-routing/ns3-tools) | Diagnostic probes, comparison arenas, the `ns3-tool` CLI (sweep, compare, diagnose, scaffold) |
 | [ARA](https://github.com/swarm-routing/ARA) | Ant-Colony-Based Routing Algorithm (Güneş et al., 2002) |
 | [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | Honeybee routing (Wedde & Farooq, 2005) |
+| [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005) |
+| [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007) |
 | [benchmarks](https://github.com/swarm-routing/benchmarks) | Immutable 20-seed datasets, paired verdicts, reproducibility manifests |
 | [swarm-routing.github.io](https://swarm-routing.github.io) | Colony Arena: interactive docs, visualizers, leaderboard |
 | [AntHocNet](https://github.com/danieljoppi/AntHocNet) | The reference AntHocNet implementation (joins the org after the cutover) |
