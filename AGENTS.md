@@ -173,7 +173,7 @@ Org-wide (1–9), then this repo's own.
 | Change the org security policy | `SECURITY.md` (served to every repo without its own) and `templates/SECURITY.md.in` (a repo's own); write no claim a repo cannot back |
 | Change the C++ style | `.clang-format` (repos without their own use it in CI) |
 | Change the org landing page | `profile/README.md` |
-| Keep every repo's epic list and org-managed files current without hand PRs | `tools/org-bot/org_bot.py` (`run --task epics|org-sync|all`; `--self-test`), `org-bot.yml` (daily, on template pushes; secret `ORG_BOT_TOKEN`); CONTRIBUTING "Automation" |
+| Keep every repo's epic list and org-managed files current without hand PRs | `tools/org-bot/org_bot.py` (`run --task` `epics`, `org-sync` or `all`; `--self-test`), `org-bot.yml` (daily, on template pushes; secret `ORG_BOT_TOKEN`); CONTRIBUTING "Automation" |
 | Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py` (`repos`, `status`, `sync`; `--self-test`), the daily `zenodo.yml` (secret `ZENODO_TOKEN`); CONTRIBUTING "Releases and DOIs" |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
