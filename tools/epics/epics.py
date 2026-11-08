@@ -19,8 +19,10 @@ caller's `gh` login, or GH_TOKEN in a workflow.
 An epic is an issue labelled `epic`. Its status is derived, never typed:
   Done         closed as completed
   Dropped      closed as not planned
-  In progress  open, and at least one sub-issue closed
+  In progress  open, and at least one sub-issue closed (as done or not)
   Planned      open, no sub-issue closed yet
+An epic is Done or Dropped only once the epic itself is closed; one whose
+sub-issues are all closed stays In progress until someone closes it.
 So the lists stay true as long as epics have their children linked as
 sub-issues (CONTRIBUTING.md, Issues) and someone re-runs this script.
 
@@ -157,7 +159,7 @@ def link(e):
 
 
 def live_table(live):
-    rows = ["| Epic | Status | Sub-issues done |", "|------|--------|-----------------|"]
+    rows = ["| Epic | Status | Sub-issues closed |", "|------|--------|-------------------|"]
     rows += [f"| {link(e)} | {status(e)} | {progress(e)} |" for e in live]
     return rows
 
@@ -167,7 +169,7 @@ def done_block(done):
         return []
     rows = [
         "",
-        f"<details><summary>Done: {len(done)} epic{'s' if len(done) != 1 else ''}</summary>",
+        f"<details><summary>Closed: {len(done)} epic{'s' if len(done) != 1 else ''}</summary>",
         "",
     ]
     rows += ["| Epic | Closed |", "|------|--------|"]
@@ -206,9 +208,10 @@ def roadmap_section(data):
         GENERATED,
         "",
         "Every epic of every public repository, open first. A status is derived "
-        "from the issue: **Planned** (no sub-issue closed), **In progress** (at "
-        "least one closed), **Done** or **Dropped** (closed). Each repository's "
-        "README carries its own list.",
+        "from the issue: an open epic is **Planned** (no sub-issue closed) or "
+        "**In progress** (at least one closed); it is **Done** or **Dropped** "
+        "only once the epic itself is closed (as completed or as not planned). "
+        "Each repository's README carries its own list.",
     ]
     for repo in data["repos"]:
         lines += ["", f"### [{repo['name']}]({repo['url']})", ""]
@@ -221,8 +224,8 @@ def profile_section(data):
         BEGIN,
         GENERATED,
         "",
-        "| Repository | Epic | Status | Sub-issues done |",
-        "|------------|------|--------|-----------------|",
+        "| Repository | Epic | Status | Sub-issues closed |",
+        "|------------|------|--------|-------------------|",
     ]
     n = 0
     for repo in data["repos"]:
@@ -365,7 +368,7 @@ def self_test():
     ok(s.startswith(BEGIN) and s.endswith(END), "markers")
     ok(s.index("#3") < s.index("#9"), "in progress before planned")
     ok("| In progress | 1 / 2 |" in s and "| Planned | 0 / 2 |" in s, "status and progress")
-    ok("Done: 2 epics" in s and s.index("#2") < s.index("#1]"), "done list, newest first")
+    ok("Closed: 2 epics" in s and s.index("#2") < s.index("#1]"), "done list, newest first")
     ok("Dropped 2026-10-05" in s, "not planned is dropped")
     ok("No open epic" in readme_section(find(data, "y")), "empty repo")
     p = profile_section(data)
