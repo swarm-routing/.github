@@ -157,14 +157,24 @@ first; it is the one published result benchmarked against AntHocNet directly.
 
 The org site, generalized from AntHocNet's learn site: a protocol's own
 `core/` compiled to WebAssembly, rendered only, and a leaderboard generated from
-`benchmarks`. AntHocNet's learn-site issues (danieljoppi/AntHocNet#562, #626, #634, #602, #590, #751)
-stay in AntHocNet until its `web/` moves.
+`benchmarks`. Epic: swarm-routing/swarm-routing.github.io#3.
+
+Decided 2026-11-03: the site lives **only** in `swarm-routing.github.io`. No
+protocol repo deploys Pages and there are no redirect stubs (the old
+`danieljoppi.github.io/AntHocNet/` stays 404). Every protocol core in the
+site is built from its own repository at a pinned commit; nothing is vendored.
+AntHocNet's game, docs (`/AntHocNet/docs/`) and API (`/AntHocNet/api/`) move
+there; AntHocNet retires `pages.yml` and `web/` at cutover
+(swarm-routing/AntHocNet#850). Its open learn-site issues (#562, #634, #602,
+#590, #751, #846) migrate with the game.
 
 **Exit criteria**
 
-- [ ] Scaffold served from `main` with the browser smoke and axe green.
-- [ ] A second protocol in the browser with a byte-identical native-vs-WASM trace.
-- [ ] Leaderboard regenerated from `benchmarks` data in CI.
+- [ ] ADR accepted: lock file of pinned protocol commits, browser ABI, where the simulator and parity gate live, URL layout (site#7).
+- [ ] Scaffold served from `main` with the browser smoke and axe green (site#8).
+- [ ] AntHocNet's game, docs and API served from the site, built from AntHocNet's pinned commit; AntHocNet has no Pages deploy and its `core/` PRs still run parity (site#9, #10, #11; AntHocNet#850).
+- [ ] A second protocol in the browser with a byte-identical native-vs-WASM trace (site#13).
+- [ ] Leaderboard regenerated from `benchmarks` data in CI (site#12).
 
 ## Later: other simulators (deferred)
 
