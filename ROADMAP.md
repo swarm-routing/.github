@@ -37,19 +37,38 @@ flowchart LR
 | Phase | Owner repo · epic | Delivers | Status |
 |---|---|---|---|
 | 1 Foundations | `.github`, `ns3-containers` | org defaults, labels, reusable CI, licence gate; `ns3-dev` images; issue migration | done |
-| 1+ Org templates | [.github#6](https://github.com/swarm-routing/.github/issues/6) | `tools/org-sync` + `templates/`: AGENTS/CLAUDE org sections, badges, SECURITY.md, licence files, ADR template, per-repo Makefiles with the same target names; the `org-repo` skill ([skills](https://github.com/swarm-routing/skills)) | tool merged; per-repo adoption open |
-| 1+ Hardening | [.github#14](https://github.com/swarm-routing/.github/issues/14) | Scorecard, rulesets, merge policy, CI hygiene in every repo (from AntHocNet#328 and its children) | open |
-| 2 swarm-core | [ns3-swarm-core#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) | the shared `swarm-core` contrib module | not started |
-| 3 ARA | [ARA#3](https://github.com/swarm-routing/ARA/issues/3) | first protocol on swarm-core, through the three gates | blocked on 2 |
-| 4 BeeAdHoc | [BeeAdHoc#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) | second protocol; fidelity work can start now | fidelity open; code blocked on 2 |
-| 4 Tools | [ns3-tools#2](https://github.com/swarm-routing/ns3-tools/issues/2), [ns3-tools#7](https://github.com/swarm-routing/ns3-tools/issues/7) | the comparison harness, probes, arenas, `ns3-tool` CLI | harness + readers moved (ns3-tools#13); AntHocNet switch-over open |
+| 1+ Org templates | [.github#6](https://github.com/swarm-routing/.github/issues/6) | `tools/org-sync` + `templates/`: AGENTS/CLAUDE org sections, badges, SECURITY.md, licence files, ADR template, per-repo Makefiles with the same target names; the `org-repo` skill ([skills](https://github.com/swarm-routing/skills)) | tool and skill merged; 3 of 12 repos adopted (Termite, HOPNET, skills), the rest have adoption issues ([.github#9](https://github.com/swarm-routing/.github/issues/9)) |
+| 1+ Hardening | [.github#14](https://github.com/swarm-routing/.github/issues/14) | Scorecard, rulesets, merge policy, CI hygiene in every repo (from AntHocNet#328 and its children) | open; the order and the admin decisions are on [.github#35](https://github.com/swarm-routing/.github/issues/35) |
+| 2 swarm-core | [ns3-swarm-core#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) | the shared `swarm-core` contrib module | skeleton merged with every phase-1 gate on (#7); the primitives (#8) are the org's critical path |
+| 3 ARA | [ARA#3](https://github.com/swarm-routing/ARA/issues/3) | first protocol on swarm-core, through the three gates | fidelity sheet can start (ARA#4); code blocked on 2 |
+| 4 BeeAdHoc | [BeeAdHoc#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) | second protocol; fidelity work can start now | fidelity open (BeeAdHoc#13, #4, #5); code blocked on 2 |
+| 4 Tools | [ns3-tools#2](https://github.com/swarm-routing/ns3-tools/issues/2), [ns3-tools#7](https://github.com/swarm-routing/ns3-tools/issues/7) | the comparison harness, probes, arenas, `ns3-tool` CLI | harness + readers moved (ns3-tools#13); reader fixes, strict warnings, the `ns3-tool` CLI (ns3-tools#39), probes (#40) and AntHocNet's switch-over (#29) open |
 | 4 Comparators | [ns3-tools#15](https://github.com/swarm-routing/ns3-tools/issues/15) | non-swarm comparator arms (secure, learned, DTN), each its own module under `ns3-tools/ns3/arms/`; swarm-based variants with their protocol (BeeAdHoc#9, ARA#9, ARA#10) | migrated; gates pending (each arm needs its three before a number counts) |
-| 4 Data | [benchmarks#3](https://github.com/swarm-routing/benchmarks/issues/3) | dataset layout, manifest schema, validator | before the first anchor lands |
-| Site | [swarm-routing.github.io#3](https://github.com/swarm-routing/swarm-routing.github.io/issues/3) | Colony Arena: multi-protocol site and leaderboard | after a second `core/` and the data format |
-| Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | technically unblocked (own images named by owner, danieljoppi/AntHocNet#845); waits on the Pages decision |
-| 5 Termite | [.github#51](https://github.com/swarm-routing/.github/issues/51) (moves to the repo's own epic) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | repo bootstrapped ([Termite#1](https://github.com/swarm-routing/Termite/pull/1)); code blocked on 2 and 3 |
-| Later: HOPNET | [.github#52](https://github.com/swarm-routing/.github/issues/52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | repo bootstrapped ([HOPNET#1](https://github.com/swarm-routing/HOPNET/pull/1)); not scheduled |
+| 4 Data | [benchmarks#3](https://github.com/swarm-routing/benchmarks/issues/3) | dataset layout, manifest schema, validator | not started; must land before the first anchor |
+| Site | [swarm-routing.github.io#3](https://github.com/swarm-routing/swarm-routing.github.io/issues/3) | Colony Arena: multi-protocol site and leaderboard | served from `main`, AntHocNet's game, docs and API moved (cutover 2026-11-08); leaderboard and second protocol wait on the data format and a second `core/`; polish epic site#27 |
+| Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | **done**: [swarm-routing/AntHocNet](https://github.com/swarm-routing/AntHocNet), CI green after the move (AntHocNet#854); left: Zenodo, the first release DOI, the links ([.github#63](https://github.com/swarm-routing/.github/issues/63)) |
+| 5 Termite | [Termite#3](https://github.com/swarm-routing/Termite/issues/3) (was .github#51) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | fidelity sheet and anchor-miss pre-registration can start (Termite#4, #5); code blocked on 2 and 3 |
+| Later: HOPNET | [HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3) (was .github#52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | not scheduled; only the fidelity sheet may start (HOPNET#4) |
 | Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first |
+
+## Where to start
+
+Each workstream has a **handoff issue** written for a session with no chat history, a person's or an AI agent's: the goal and what "done" means, the state, the next steps in order, the commands, the pitfalls already hit, and the decisions that wait on the maintainer. Pick one, attach the repositories it names, and work its steps in order. Close it when its goal is met. A session that stops with work in flight updates it or opens a new one (each repository's `CLAUDE.md`, "Handoffs are always a ticket"). The live list is every open issue labelled [`handoff`](https://github.com/search?q=org%3Aswarm-routing+label%3Ahandoff+state%3Aopen&type=issues).
+
+| Workstream | Handoff | First tickets, in order | Can start now? |
+|---|---|---|---|
+| Phase 2: swarm-core primitives and glue (**critical path**) | [ns3-swarm-core#18](https://github.com/swarm-routing/ns3-swarm-core/issues/18) | ns3-swarm-core#8, #9 | yes |
+| ARA before code | [ARA#14](https://github.com/swarm-routing/ARA/issues/14) | ARA#8 (org template), #4 (fidelity sheet) | yes |
+| BeeAdHoc fidelity | [BeeAdHoc#14](https://github.com/swarm-routing/BeeAdHoc/issues/14) | BeeAdHoc#13, #8, #4, #5 | yes (#4 and #5 need the papers) |
+| Termite before code | [Termite#7](https://github.com/swarm-routing/Termite/issues/7) | Termite#5 (anchor-miss pre-registration), #4 (fidelity sheet) | yes |
+| Data: dataset format and validator | [benchmarks#9](https://github.com/swarm-routing/benchmarks/issues/9) | benchmarks#5, #3, then #7 | yes |
+| Tools: one harness, AntHocNet's switch-over | [ns3-tools#41](https://github.com/swarm-routing/ns3-tools/issues/41) | ns3-tools#14, #31, #28, #6, #39, then #29 | yes (#29 needs the maintainer's go-ahead) |
+| Images: trust `latest` | [ns3-containers#62](https://github.com/swarm-routing/ns3-containers/issues/62) | ns3-containers#55, #44, #43, #17, #13 | yes (#27 waits on a scope decision) |
+| Site: self-verifying deploys, polish | [swarm-routing.github.io#39](https://github.com/swarm-routing/swarm-routing.github.io/issues/39) | site#28, #30, #31, #29, #17, #18 | yes |
+| Org: templates and gates everywhere | [.github#64](https://github.com/swarm-routing/.github/issues/64) | .github#63, #55, #29, #26 | yes |
+| AntHocNet after the move | [AntHocNet#856](https://github.com/swarm-routing/AntHocNet/issues/856) | AntHocNet#460, #855, the hardening P2s; .github#2's Zenodo and DOI | with the maintainer's go-ahead per PR |
+
+The order that matters across them: swarm-core's primitives (ns3-swarm-core#8) come before any protocol code (ARA#5, then BeeAdHoc's port, Termite#6, HOPNET#5). The dataset format (benchmarks#3) comes before the first anchor result. The site's leaderboard (site#12) and second protocol (site#13) follow those two. HOPNET has no handoff: it is not scheduled, and only its fidelity sheet (HOPNET#4) may start.
 
 ## Epics
 
@@ -62,11 +81,11 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#6](https://github.com/swarm-routing/.github/issues/6) org repo template — security policy, README badges and community files, applied and kept in sync by a tool and a skill | In progress | 3 / 26 |
+| [#6](https://github.com/swarm-routing/.github/issues/6) org repo template — security policy, README badges and community files, applied and kept in sync by a tool and a skill | In progress | 4 / 28 |
+| [#50](https://github.com/swarm-routing/.github/issues/50) One repository per swarm protocol: create the missing ones (Termite, HOPNET) | In progress | 2 / 3 |
 | [#14](https://github.com/swarm-routing/.github/issues/14) Repository hardening for every org repo: Scorecard, rulesets, merge policy, CI hygiene | Planned | 0 / 11 |
 | [#35](https://github.com/swarm-routing/.github/issues/35) code quality across the org — order of work and maintainer decisions | Planned | no sub-issues yet |
 | [#48](https://github.com/swarm-routing/.github/issues/48) Other simulators: container and tooling repos for OMNeT++/INET, Veins and CORE/EMANE (deferred; ns-3 first) | Planned | no sub-issues yet |
-| [#50](https://github.com/swarm-routing/.github/issues/50) One repository per swarm protocol: create the missing ones (Termite, HOPNET) | Planned | 0 / 3 |
 
 ### [AntHocNet](https://github.com/swarm-routing/AntHocNet)
 
@@ -130,7 +149,7 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) BeeAdHoc as a standalone hexagonal protocol (Phase 4) | Planned | 0 / 2 |
+| [#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) BeeAdHoc as a standalone hexagonal protocol (Phase 4) | Planned | 0 / 3 |
 
 ### [benchmarks](https://github.com/swarm-routing/benchmarks)
 
@@ -138,7 +157,9 @@ No open epic: the work here is tracked as single issues.
 
 ### [HOPNET](https://github.com/swarm-routing/HOPNET)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#3](https://github.com/swarm-routing/HOPNET/issues/3) HOPNET as a standalone hexagonal protocol (later: not scheduled) | Planned | 0 / 2 |
 
 ### [ns3-containers](https://github.com/swarm-routing/ns3-containers)
 
@@ -168,7 +189,7 @@ No open epic: the work here is tracked as single issues.
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#2](https://github.com/swarm-routing/ns3-tools/issues/2) A protocol-agnostic comparison harness, packaged on its own | Planned | 0 / 5 |
+| [#2](https://github.com/swarm-routing/ns3-tools/issues/2) A protocol-agnostic comparison harness, packaged on its own | Planned | 0 / 7 |
 | [#7](https://github.com/swarm-routing/ns3-tools/issues/7) metrics 2026 — age of information, delay percentile/CDF export, energy-per-bit, route lifetime/convergence as CSV metrics | Planned | 0 / 1 |
 | [#15](https://github.com/swarm-routing/ns3-tools/issues/15) Comparators: swarm, learned and secure protocols under identical conditions | Planned | 0 / 10 |
 | [#34](https://github.com/swarm-routing/ns3-tools/issues/34) promote AntHocNet's vendored comparator modules into ns3/arms/: aomdv, gpsr, qrouting, oracle | Planned | 0 / 2 |
@@ -187,7 +208,9 @@ No open epic: the work here is tracked as single issues.
 
 ### [Termite](https://github.com/swarm-routing/Termite)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#3](https://github.com/swarm-routing/Termite/issues/3) Termite as a standalone hexagonal protocol (Phase 5) | Planned | 0 / 3 |
 
 <!-- epics:end -->
 
@@ -202,11 +225,11 @@ variants (secure, trust-aware) live with the protocol they extend.
 
 | Protocol | Repository | Phase | Status |
 |---|---|---|---|
-| AntHocNet (Di Caro et al. 2005) | [danieljoppi/AntHocNet](https://github.com/danieljoppi/AntHocNet) | Transfer | exists outside the org; moves in or stays per [.github#2](https://github.com/swarm-routing/.github/issues/2) |
+| AntHocNet (Di Caro et al. 2005) | [swarm-routing/AntHocNet](https://github.com/swarm-routing/AntHocNet) | Transfer | in the org since the 2026-11 transfer ([.github#2](https://github.com/swarm-routing/.github/issues/2)); keeps its own release ladder |
 | ARA (Güneş et al. 2002) | [swarm-routing/ARA](https://github.com/swarm-routing/ARA) | 3 | exists |
 | BeeAdHoc (Wedde & Farooq 2005) | [swarm-routing/BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | 4 | exists |
-| Termite (Roth & Wicker 2003/2005) | [swarm-routing/Termite](https://github.com/swarm-routing/Termite) | 5 | exists (empty); plan [.github#51](https://github.com/swarm-routing/.github/issues/51) |
-| HOPNET (Wang 2007) | [swarm-routing/HOPNET](https://github.com/swarm-routing/HOPNET) | later | exists (empty); plan [.github#52](https://github.com/swarm-routing/.github/issues/52) |
+| Termite (Roth & Wicker 2003/2005) | [swarm-routing/Termite](https://github.com/swarm-routing/Termite) | 5 | exists (no code yet); epic [Termite#3](https://github.com/swarm-routing/Termite/issues/3) |
+| HOPNET (Wang 2007) | [swarm-routing/HOPNET](https://github.com/swarm-routing/HOPNET) | later | exists (no code yet); epic [HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3), not scheduled |
 
 Not planned as repositories: AntNet (wired networks, AntHocNet's ancestor), and
 the swarm-based variants above (BeeSec/BeeAIS in BeeAdHoc#9; trust-weighted ACO
@@ -230,7 +253,10 @@ methodology to ns3-tools#22–#25, BeeSec/BeeAIS to BeeAdHoc#9, the swarm-based
 secure arms to ARA#9 and ARA#10); danieljoppi/AntHocNet#770 split, its
 harness package going to ns3-tools#26; danieljoppi/AntHocNet#656 closed as a
 duplicate of #843. Infrastructure items under danieljoppi/AntHocNet#328 link to
-the hardening epic .github#14.
+the hardening epic .github#14. A third wave (2026-11-08) moved the learn-site
+issues with the game to swarm-routing.github.io: AntHocNet#562 (site#21),
+#590 (site#22), #602 (site#23) and #751 (site#24); #634 closed as done and #846
+as fixed.
 
 **Exit criteria**
 
@@ -290,13 +316,14 @@ not for `ns3-tools`.
 
 **Exit criteria**
 
-- [x] `swarm-routing/Termite` created and bootstrapped (Termite#1).
+- [x] `swarm-routing/Termite` created and bootstrapped (Termite#1); its epic is Termite#3.
 - [ ] Fidelity sheet with every parameter sourced or marked.
 - [ ] The anchor miss explained in an issue before code (arm, scenario or power).
 - [ ] Module green in CI; three gates recorded, or a written infeasibility verdict.
 
 HOPNET (ants + zone routing, Wang 2007) follows later, thesis fidelity sheet
-first; it is the one published result benchmarked against AntHocNet directly.
+first (epic HOPNET#3); it is the one published result benchmarked against
+AntHocNet directly.
 
 ## Colony Arena (the site)
 
@@ -310,14 +337,14 @@ cutover no protocol repo deploys Pages, and there are no redirect stubs (the old
 site is built from its own repository at a pinned commit; nothing is vendored.
 AntHocNet's game, docs (`/AntHocNet/docs/`) and API (`/AntHocNet/api/`) move
 there; AntHocNet retires `pages.yml` and `web/` at cutover
-([AntHocNet#850](https://github.com/swarm-routing/AntHocNet/issues/850)). Its open learn-site issues ([#562](https://github.com/swarm-routing/AntHocNet/issues/562), [#634](https://github.com/swarm-routing/AntHocNet/issues/634), [#602](https://github.com/swarm-routing/AntHocNet/issues/602),
+([AntHocNet#850](https://github.com/swarm-routing/AntHocNet/issues/850); done 2026-11-08 in AntHocNet#852 and site#11). Its open learn-site issues ([#562](https://github.com/swarm-routing/AntHocNet/issues/562), [#634](https://github.com/swarm-routing/AntHocNet/issues/634), [#602](https://github.com/swarm-routing/AntHocNet/issues/602),
 [#590](https://github.com/swarm-routing/AntHocNet/issues/590), [#751](https://github.com/swarm-routing/AntHocNet/issues/751), [#846](https://github.com/swarm-routing/AntHocNet/issues/846)) migrate with the game.
 
 **Exit criteria**
 
-- [ ] ADR accepted: lock file of pinned protocol commits, browser ABI, where the simulator and parity gate live, URL layout ([site#7](https://github.com/swarm-routing/swarm-routing.github.io/issues/7)).
-- [ ] Scaffold served from `main` with the browser smoke and axe green ([site#8](https://github.com/swarm-routing/swarm-routing.github.io/issues/8)).
-- [ ] AntHocNet's game, docs and API served from the site, built from AntHocNet's pinned commit; AntHocNet has no Pages deploy and its `core/` PRs still run parity ([site#9](https://github.com/swarm-routing/swarm-routing.github.io/issues/9), [#10](https://github.com/swarm-routing/swarm-routing.github.io/issues/10), [#11](https://github.com/swarm-routing/swarm-routing.github.io/issues/11); [AntHocNet#850](https://github.com/swarm-routing/AntHocNet/issues/850)).
+- [x] ADR accepted: lock file of pinned protocol commits, browser ABI, where the simulator and parity gate live, URL layout ([site#7](https://github.com/swarm-routing/swarm-routing.github.io/issues/7)).
+- [x] Scaffold served from `main` with the browser smoke and axe green ([site#8](https://github.com/swarm-routing/swarm-routing.github.io/issues/8)).
+- [x] AntHocNet's game, docs and API served from the site, built from AntHocNet's pinned commit; AntHocNet has no Pages deploy and its `core/` PRs still run parity ([site#9](https://github.com/swarm-routing/swarm-routing.github.io/issues/9), [#10](https://github.com/swarm-routing/swarm-routing.github.io/issues/10), [#11](https://github.com/swarm-routing/swarm-routing.github.io/issues/11); [AntHocNet#850](https://github.com/swarm-routing/AntHocNet/issues/850)).
 - [ ] A second protocol in the browser with a byte-identical native-vs-WASM trace ([site#13](https://github.com/swarm-routing/swarm-routing.github.io/issues/13)).
 - [ ] Leaderboard regenerated from `benchmarks` data in CI ([site#12](https://github.com/swarm-routing/swarm-routing.github.io/issues/12)).
 
@@ -351,7 +378,7 @@ qualitative: they confirm an ns-3 ranking, they do not replace its numbers.
 - **No `optimized` image in CI**, and no ns-3 `optimized` profile anywhere (`-march=native`).
 - **No copying from ns-3's `src/aodv` or `src/olsr`**, and no GPL code in a dual `core/`.
 - **No paywalled papers in public repositories**; they live in the private `papers` repository.
-- **AntHocNet's own ladder stays in AntHocNet.** Issues not migrated (95 audited, 27 moved in two waves) keep their `release:` labels there; moved issues drop them, since the org has no release ladder of its own yet. The undecided ones (danieljoppi/AntHocNet#319, #112, #405) stay until the maintainer moves them.
+- **AntHocNet's own ladder stays in AntHocNet.** Issues not migrated (95 audited, 31 moved in three waves) keep their `release:` labels there; moved issues drop them, since the org has no release ladder of its own yet. The undecided ones (danieljoppi/AntHocNet#319, #112, #405) stay until the maintainer moves them.
 - **No learned arm without its gates.** The DRL comparator (ns3-tools#20) needs disjoint training and test seeds, one held-out family and a reported training budget, plus frozen, versioned weights; nothing about it is scheduled before those exist.
 - **DTN only where the oracle says so.** The store-carry-forward arm (ns3-tools#21) exists because danieljoppi/AntHocNet#580's trigger fired (the oracle delivers about 81 % on the disaster scene: the rest is partition-bound); it is scoped to the disaster family, not a general comparator.
 - **No second simulator for now.** ns-3 is the focus; OMNeT++/INET, Veins and CORE/EMANE are planned as their own container and tooling repositories, deferred until the trigger in [Later: other simulators](#later-other-simulators-deferred) fires (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"; org decision 2026-11-03, .github#48). Cross-simulator results would be qualitative only.
