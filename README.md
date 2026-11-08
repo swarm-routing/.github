@@ -35,8 +35,8 @@ Inputs are documented at the top of the workflow file.
 
 What is planned and in progress here: the issues labelled [`epic`](https://github.com/swarm-routing/.github/issues?q=label%3Aepic). An epic's open sub-issues carry a `priority:*` and a `model:*` label, so a contributor or an AI agent can pick one up ([how issues work](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#issues)). The whole org's plan: the [roadmap](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#epics).
 
-| Epic | Status | Sub-issues done |
-|------|--------|-----------------|
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
 | [#6](https://github.com/swarm-routing/.github/issues/6) org repo template — security policy, README badges and community files, applied and kept in sync by a tool and a skill | In progress | 3 / 26 |
 | [#14](https://github.com/swarm-routing/.github/issues/14) Repository hardening for every org repo: Scorecard, rulesets, merge policy, CI hygiene | Planned | 0 / 11 |
 | [#35](https://github.com/swarm-routing/.github/issues/35) code quality across the org — order of work and maintainer decisions | Planned | no sub-issues yet |
