@@ -118,6 +118,20 @@ starts from the newest open `handoff` issue and closes it when done.
   `build`, `ci`, `chore`, `revert` (the list `reusable-pr-title.yml` enforces).
 - Merge when CI is green.
 
+## Automation
+
+Two scheduled workflows in this repository keep the org current. Both are dry
+runs until their secret is set, and the secrets belong to the maintainer:
+
+| Workflow | What it does | Secret |
+|---|---|---|
+| `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted. The same change is never proposed twice; an older bot PR is closed as superseded. It never merges | `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write. A GitHub App token can replace it (#21) |
+| `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
+
+The bot's PRs are generated content only; merge them when CI is green. You
+still refresh the epic lists in your own PR when you change an epic: the bot
+catches what was missed, it is not the process.
+
 ## Releases and DOIs
 
 A citable repository carries a `CITATION.cff` whose `doi:` is its Zenodo

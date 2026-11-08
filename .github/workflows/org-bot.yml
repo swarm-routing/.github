@@ -1,0 +1,89 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: org-bot
+
+# Keep every public org repository in step with this one, through PRs it opens
+# (tools/org-bot/org_bot.py):
+# - epics: the README's `## Epics` section, plus ROADMAP.md#epics and the
+#   profile here, regenerated from the issues;
+# - org-sync: `org_sync.py apply` in each repository with a
+#   .github/org-sync.toml, so a template change here reaches every adopting
+#   repository the same day instead of turning its check red.
+# Daily, on every push to main that changes the templates or the generators,
+# and on demand. One PR per repository and task; the same change is never
+# proposed twice, and an older bot PR is closed as superseded. The bot never
+# merges.
+#
+# It needs the ORG_BOT_TOKEN secret: a fine-grained personal access token (or
+# a GitHub App token, #21) on the swarm-routing org, all repositories, with
+# Contents, Pull requests and Workflows read and write. PRs opened with it run
+# CI; PRs opened with the workflow's GITHUB_TOKEN would not. Without the
+# secret every run is a dry run. This workflow has no pull_request trigger, so
+# the token never runs on code from a pull request.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'templates/**'
+      - 'tools/org-sync/**'
+      - 'tools/epics/**'
+      - 'tools/org-bot/**'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'What to refresh'
+        type: choice
+        options: [all, epics, org-sync]
+        default: all
+      repos:
+        description: 'Comma-separated repository names (default: every public repo)'
+        type: string
+        default: ''
+      dry-run:
+        description: 'Clone read-only and print what would be proposed'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: org-bot
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ORG_BOT_TOKEN: ${{ secrets.ORG_BOT_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      TASK: ${{ inputs.task || 'all' }}
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: python3 -I tools/org-bot/org_bot.py --self-test
+      - name: Refresh
+        run: |
+          set -o pipefail
+          args=(run --task "$TASK")
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::ORG_BOT_TOKEN is not set: dry run only"
+          python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee "$RUNNER_TEMP/org-bot.txt"
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### org-bot ($TASK)"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
