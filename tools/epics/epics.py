@@ -57,10 +57,18 @@ ORDER = {"In progress": 0, "Planned": 1}
 # --- data ---------------------------------------------------------------
 
 
+class GhError(SystemExit):
+    """A failed `gh api` call; `missing` is true for HTTP 404 only."""
+
+    def __init__(self, path, stderr):
+        super().__init__(f"gh api {path}: {stderr}")
+        self.missing = "HTTP 404" in stderr
+
+
 def gh_api(path):
     r = subprocess.run(["gh", "api", path], capture_output=True, text=True)
     if r.returncode != 0:
-        raise SystemExit(f"gh api {path}: {r.stderr.strip()}")
+        raise GhError(path, r.stderr.strip())
     return json.loads(r.stdout)
 
 
@@ -251,7 +259,8 @@ def replace(text, section, insert):
 def write(path, section, check, insert):
     if not os.path.exists(path):
         raise SystemExit(f"{path}: missing (a README needs at least its title first)")
-    old = open(path, encoding="utf-8").read()
+    with open(path, encoding="utf-8") as f:
+        old = f.read()
     new = replace(old, section, insert)
     if new == old:
         print(f"{path}: up to date")
@@ -290,7 +299,9 @@ def check_all(data):
         try:
             raw = gh_api(f"repos/{ORG}/{repo['name']}/readme")
             text = base64.b64decode(raw["content"]).decode("utf-8")
-        except SystemExit:
+        except GhError as e:
+            if not e.missing:  # an outage or a token problem is not drift
+                raise
             text = ""
         i, j = text.find(BEGIN), text.find(END)
         have = text[i : j + len(END)] if i >= 0 and j > i else None
@@ -361,6 +372,8 @@ def self_test():
     ok("#1]" not in p and "#3]" in p and "[.github]" in p, "profile lists open epics only")
     r = roadmap_section(data)
     ok(r.index("### [.github]") < r.index("### [x]") < r.index("### [y]"), "roadmap order")
+    ok(GhError("x", "gh: Not Found (HTTP 404)").missing, "404 is a missing README")
+    ok(not GhError("x", "gh: API rate limit exceeded (HTTP 403)").missing, "403 is an error")
     try:
         find(data, "papers")
         ok(False, "unknown repo accepted")

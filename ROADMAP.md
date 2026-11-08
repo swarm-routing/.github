@@ -13,8 +13,10 @@ repositories where needed), and live status is the org's GitHub Project board
 PR that closes its epic. Changing a phase's scope or exit criteria is a PR to
 this file, like any other decision. [Epics](#epics) below lists every epic of
 every public repository with its status, generated from the issues by
-`tools/epics/epics.py` (the same list is in each repository's README); it is
-refreshed whenever an epic opens, gains its first closed sub-issue, or closes.
+`tools/epics/epics.py` (the same list is in each repository's README).
+Whoever opens, closes or re-scopes an epic, or changes one of its sub-issues,
+refreshes it in that PR or the next one (CONTRIBUTING, "Epics are the public
+plan"); the weekly `epics` workflow only reports drift.
 
 ## The ladder
 
