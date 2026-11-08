@@ -159,8 +159,8 @@ The org site, generalized from AntHocNet's learn site: a protocol's own
 `core/` compiled to WebAssembly, rendered only, and a leaderboard generated from
 `benchmarks`. Epic: swarm-routing/swarm-routing.github.io#3.
 
-Decided 2026-11-03: the site lives **only** in `swarm-routing.github.io`. No
-protocol repo deploys Pages and there are no redirect stubs (the old
+Decided 2026-11-03: the site lives **only** in `swarm-routing.github.io`. After the
+cutover no protocol repo deploys Pages, and there are no redirect stubs (the old
 `danieljoppi.github.io/AntHocNet/` stays 404). Every protocol core in the
 site is built from its own repository at a pinned commit; nothing is vendored.
 AntHocNet's game, docs (`/AntHocNet/docs/`) and API (`/AntHocNet/api/`) move
