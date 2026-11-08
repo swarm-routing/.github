@@ -25,6 +25,7 @@ ruff.toml                  the Python lint baseline (explicit rules), used where
 tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags)
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (+ test_org_sync.py)
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
+tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections, README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
@@ -32,7 +33,7 @@ templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org s
 SECURITY.md                     the org default security policy (repos without their own get it)
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/workflows/         reusable-ns3-ci.yml, reusable-python-ci.yml, reusable-pr-title.yml, reusable-licence-check.yml,
-                           reusable-org-sync-check.yml, sync-labels.yml, epics.yml, ci.yml
+                           reusable-org-sync-check.yml, sync-labels.yml, epics.yml, zenodo.yml, ci.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
 ```
 
@@ -48,6 +49,8 @@ python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
+python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo
+python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
 clang-format-18 --style=file:.clang-format --dump-config >/dev/null
 ```
@@ -167,6 +170,7 @@ Org-wide (1–9), then this repo's own.
 | Change the org security policy | `SECURITY.md` (served to every repo without its own) and `templates/SECURITY.md.in` (a repo's own); write no claim a repo cannot back |
 | Change the C++ style | `.clang-format` (repos without their own use it in CI) |
 | Change the org landing page | `profile/README.md` |
+| Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py` (`repos`, `status`, `sync`; `--self-test`), the daily `zenodo.yml` (secret `ZENODO_TOKEN`); CONTRIBUTING "Releases and DOIs" |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
 | The reference implementation and its history | [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |

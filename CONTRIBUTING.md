@@ -118,6 +118,25 @@ starts from the newest open `handoff` issue and closes it when done.
   `build`, `ci`, `chore`, `revert` (the list `reusable-pr-title.yml` enforces).
 - Merge when CI is green.
 
+## Releases and DOIs
+
+A citable repository carries a `CITATION.cff` whose `doi:` is its Zenodo
+**concept** DOI (it always resolves to the newest version; #45). Zenodo's
+GitHub integration archives each published release and mints its version DOI.
+The daily `zenodo` workflow here (`tools/zenodo/zenodo.py`) is the check behind
+it:
+- it lists every such repository's releases against every version of its concept;
+- it archives a release still missing after 12 hours as a new version, with
+  that tag's `CITATION.cff` metadata (title, abstract, authors, keywords) and
+  its `github.com/swarm-routing/<repo>/tree/<tag>` link;
+- it never adds a release older than the newest archived one, since that would
+  become the concept's newest version. The run fails and opens an issue
+  instead.
+
+Its Zenodo token (`ZENODO_TOKEN`, scopes `deposit:write` and `deposit:actions`)
+belongs to the maintainer. Without it every run is a dry run. Never type a DOI:
+read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
+
 ## Quality gates
 
 The org's reusable workflows carry the checks; a repo turns them on in its

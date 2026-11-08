@@ -1,0 +1,111 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: zenodo
+
+# Is every release of every org repository on Zenodo? Zenodo's GitHub
+# integration archives each published release. This is the check behind it,
+# and the repair when it missed one (AntHocNet's v2.6.1). Daily, for each public
+# repository whose CITATION.cff names a Zenodo DOI, tools/zenodo/zenodo.py:
+# - lists its releases against every version of that concept;
+# - archives each one still missing after the grace period (12 h, so the
+#   integration finishes first) as a new version, with that tag's CITATION.cff
+#   metadata and its swarm-routing/<repo> link.
+# A missing release older than the newest archived one is not added (it would
+# become the concept's newest version): the run fails and opens an issue here.
+# Without the ZENODO_TOKEN secret (a Zenodo personal access token with
+# deposit:write and deposit:actions) every run is a dry run.
+on:
+  schedule:
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: 'Comma-separated repository names (default: every public repo with a Zenodo DOI in CITATION.cff)'
+        type: string
+        default: ''
+      dry-run:
+        description: 'Read only: report what would be archived'
+        type: boolean
+        default: false
+      grace-hours:
+        description: 'A release younger than this is left to the GitHub integration'
+        type: string
+        default: '12'
+  pull_request:
+    paths:
+      - 'tools/zenodo/**'
+      - '.github/workflows/zenodo.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zenodo   # never two runs publishing at once
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+      GRACE: ${{ inputs.grace-hours || '12' }}
+      EVENT: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: python3 -I tools/zenodo/zenodo.py --self-test
+      - name: Check and archive
+        id: sync
+        run: |
+          set -o pipefail
+          mode=()
+          if [ "$EVENT" = pull_request ] || [ "$DRY_RUN" = true ]; then
+            mode=(--dry-run)
+          elif [ -z "$ZENODO_TOKEN" ]; then
+            echo "::warning::ZENODO_TOKEN is not set: dry run only"
+            mode=(--dry-run)
+          fi
+          sel=()
+          [ -n "$REPOS" ] && sel=(--repos "$REPOS")
+          list=$(python3 -I tools/zenodo/zenodo.py repos --json "${sel[@]}" | tail -n 1)
+          echo "repositories: $list"
+          report="$RUNNER_TEMP/zenodo.txt"
+          rc=0
+          for r in $(echo "$list" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); do
+            python3 -I tools/zenodo/zenodo.py sync --repo "swarm-routing/$r" \
+              --grace-hours "$GRACE" "${mode[@]}" 2>&1 | tee -a "$report" || rc=1
+          done
+          exit "$rc"
+      - name: Open or update the issue
+        if: ${{ failure() && steps.sync.outcome == 'failure' && github.event_name != 'pull_request' }}
+        run: |
+          title='[zenodo] a release is not archived'
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "The \`zenodo\` run ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) could not bring every release onto Zenodo:"
+            echo
+            printf '%s\n' '```'
+            grep -v ': archived' "$RUNNER_TEMP/zenodo.txt" || true
+            printf '%s\n' '```'
+            echo
+            cat <<'EOF'
+          A *stranded* release is older than the newest archived one: adding it through the API would make it the concept's newest version, so it is the maintainer's call (Zenodo's upload form can add it as an older version). Anything else is an API error: re-run the `zenodo` workflow once it is fixed; a draft left by a failed run is reused.
+          EOF
+          } > "$body"
+          n=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body-file "$body"
+          else
+            gh issue create --title "$title" --body-file "$body" \
+              --label bug --label packaging --label model:sonnet-5 --label priority:P2
+          fi

@@ -9,6 +9,7 @@ Org-wide defaults for every `swarm-routing` repository.
 | `ISSUE_TEMPLATE/`, `pull_request_template.md` | Default forms for repos without their own |
 | `labels.json` + `.github/workflows/sync-labels.yml` | The label taxonomy and the reusable workflow that applies it to a repo |
 | `ROADMAP.md`, `tools/epics/epics.py` | The org plan, and every repository's epics generated into it, into each README and into the profile |
+| `tools/zenodo/zenodo.py` + `.github/workflows/zenodo.yml` | Daily: every release of every repository whose `CITATION.cff` names a Zenodo DOI is on Zenodo; one the GitHub integration missed is archived (CONTRIBUTING, Releases and DOIs) |
 | `.clang-format` | LLVM-based C++20 style |
 | `.github/workflows/reusable-ns3-ci.yml` | Build + test.py + smoke of a contrib module in `ghcr.io/swarm-routing/ns3-dev`, plus format and SPDX checks |
 

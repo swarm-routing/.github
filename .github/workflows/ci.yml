@@ -30,6 +30,8 @@ jobs:
         run: python3 -I tools/org-sync/test_org_sync.py
       - name: epics self-test (tools/epics)
         run: python3 -I tools/epics/epics.py --self-test
+      - name: zenodo self-test (tools/zenodo)
+        run: python3 -I tools/zenodo/zenodo.py --self-test
       - name: Forms, labels, style parse
         run: |
           python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
