@@ -335,6 +335,15 @@ def cmd_sync(args, gh, zen, now):
     concept = resolve_concept(gh, args.repo, args.concept)
     versions, latest_id = zen.versions(concept)
     rows = classify(gh.releases(args.repo), versions, now, args.grace_hours)
+    if any(r["state"] == "missing" for r in rows) and not any(
+        r["state"] == "archived" for r in rows
+    ):
+        # No release matches a Zenodo version (an empty `version`, another naming
+        # scheme): every release would look missing, and each publish is permanent.
+        raise Failure(
+            f"{args.repo}: no release matches any of the {len(versions)} Zenodo versions of "
+            f"concept {concept}; refusing to archive any (check the versions' `version` field)"
+        )
     name = args.repo.split("/", 1)[1]
     for r in rows:
         if r["state"] != "missing":
@@ -344,7 +353,10 @@ def cmd_sync(args, gh, zen, now):
             continue
         if not zen.token:
             raise Failure("zenodo: ZENODO_TOKEN is not set (scopes deposit:write, deposit:actions)")
-        files = [(f"{name}-{r['tag']}.zip", gh.zipball(args.repo, r["tag"]))]
+        zipped = gh.zipball(args.repo, r["tag"])
+        if not zipped or not zipped.startswith(b"PK"):
+            raise Failure(f"{args.repo} {r['tag']}: the source zip download is empty or not a zip")
+        files = [(f"{name}-{r['tag']}.zip", zipped)]
         cff = gh.file(args.repo, "CITATION.cff", ref=r["tag"])
         got = new_version(
             zen, latest_id, concept, args.repo, r["tag"], r["published"][:10], files, cff
@@ -426,7 +438,7 @@ def self_test():
 
     class FakeGitHub:
         def __init__(self, releases, cff=CFF):
-            self.rel, self.cff, self.reads = releases, cff, []
+            self.rel, self.cff, self.reads, self.zip = releases, cff, [], None
 
         def releases(self, repo):
             return sorted(self.rel, key=lambda r: r["published"])
@@ -436,7 +448,7 @@ def self_test():
             return self.cff
 
         def zipball(self, repo, tag):
-            return f"zip of {tag}".encode()
+            return self.zip if self.zip is not None else f"PK zip of {tag}".encode()
 
     class State:
         def reset(self, versions=("v1.0.0", "v1.1.0"), concept="100", leftover=False):
@@ -637,7 +649,7 @@ def self_test():
         "sync ok",
         err is None and rows[-1]["state"] == "archived" and rows[-1]["doi"] == "10.0/z.200",
     )
-    check("sync uploaded the tag's zip", st.uploads == {"R-v1.2.0.zip": b"zip of v1.2.0"})
+    check("sync uploaded the tag's zip", st.uploads == {"R-v1.2.0.zip": b"PK zip of v1.2.0"})
     check("CITATION.cff read at the tag", ("CITATION.cff", "v1.2.0") in gh.reads)
     m = st.meta or {}
     check(
@@ -701,6 +713,34 @@ def self_test():
         and rows[-1]["doi"] == "10.0/z.300"
         and not any(c[1].endswith("/newversion") for c in st.calls),
     )
+    # no release matches any Zenodo version: refused, nothing written
+    st.reset(versions=("release-1", "release-2"))
+    rows, err, out, _ = run("sync")
+    check(
+        "no match refused",
+        err and "no release matches" in err and all(c[0] == "GET" for c in st.calls),
+    )
+    st.reset(versions=("release-1",))
+    rows, err, out, _ = run("sync", token=None, dry_run=True)
+    check("no match refused in a dry run too", err and "no release matches" in err)
+    # an empty or non-zip download is refused before the draft is touched
+    for bad in (b"", None, b"<html>not found</html>"):
+        st.reset()
+        gh_bad = FakeGitHub(rel)
+        gh_bad.zip = bad if bad is not None else b""
+        ns = argparse.Namespace(
+            repo="org/R", concept=None, grace_hours=12.0, dry_run=False, sandbox=False
+        )
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_sync(ns, gh_bad, Zenodo(base, "t0k"), now)
+            err = None
+        except Failure as e:
+            err = str(e)
+        check(
+            f"bad zip {bad!r} refused",
+            err and "not a zip" in err and all(c[0] == "GET" for c in st.calls),
+        )
     # a version record passed as --concept is refused
     st.reset()
     rows, err, out, _ = run("status", concept="101")
