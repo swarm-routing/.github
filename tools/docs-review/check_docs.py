@@ -376,6 +376,14 @@ def self_test():
         }
     )
     expect("no badge row fails", has(r, "FAIL", "badge row"))
+    r = repo(drop=("README.md",))
+    expect("no README fails", has(r, "FAIL", "no README.md"))
+    r = repo({"README.md": "ARA\n\n" + readme_ok})
+    expect("a README not starting with a title fails", has(r, "FAIL", "`# Title`"))
+    r = repo(drop=("AGENTS.md",))
+    expect("no AGENTS.md fails", has(r, "FAIL", "missing") and r.fail)
+    r = repo(drop=("CLAUDE.md",))
+    expect("no CLAUDE.md fails", has(r, "FAIL", "@AGENTS.md"))
     r = repo(
         {
             "README.md": readme_ok.replace(
