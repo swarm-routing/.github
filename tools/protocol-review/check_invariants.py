@@ -178,7 +178,9 @@ def check(repo, base="origin/main"):
             if m.group(1) == "<" and "/" in path and not in_core:
                 bad.append(f"{f}: #include <{path}>")
             elif m.group(1) == '"' and (
-                path.startswith(("ns3/", "ns2/", "emscripten")) or "../" in path
+                path.startswith(("ns3/", "ns2/", "emscripten"))
+                or not under(os.path.normpath(os.path.join(os.path.dirname(f), path)), cfg["core"])
+                and not in_core
             ):
                 bad.append(f'{f}: #include "{path}"')
     if bad:
@@ -374,6 +376,8 @@ def self_test():
     expect("rule 2: an ns-3 include in core/ fails", has(r, "FAIL", "rule 2"))
     r = repo({}, {"core/a.cc": good_core + '#include "../ns3/m.h"\n', "core/tests/t.cc": test})
     expect("rule 2: a quoted include leaving core/ fails", has(r, "FAIL", "rule 2"))
+    r = repo({}, {"core/a.cc": good_core, "core/tests/t.cc": test + '#include "../a.h"\n'})
+    expect("rule 2: a test's ../ include that stays in core/ passes", not has(r, "FAIL", "rule 2"))
     r = repo(
         {"core/include/ara/core/x.h": hdr.format(DUAL) + "int x();\n"},
         {"core/a.cc": good_core + "#include <ara/core/x.h>\n", "core/tests/t.cc": test},
