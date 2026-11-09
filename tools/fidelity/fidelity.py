@@ -9,8 +9,12 @@ that gives it, or says plainly that it is a repo choice or unknown. This tool
 keeps that mapping honest; the reading of the paper is still the author's.
 
   fidelity.py skeleton --protocol NAME [--key KEY --citation TEXT]   empty sheet, org shape
-  fidelity.py check FILE              every row sourced; exit 1 on a problem
-  fidelity.py row FILE                one summary row (the .github#54 review shape)
+  fidelity.py check FILE              shape and Source cells valid (a reference, a reasoned
+                                      repo choice, or unknown); lists the unknowns and
+                                      repo choices; exit 1 on a problem. Passing does not
+                                      mean every row comes from the paper.
+  fidelity.py row FILE [--protocol]   one summary row (the .github#54 review shape); the
+                                      name comes from the sheet's H1 unless --protocol
   fidelity.py --self-test
 
 The sheet has four required sections, each a Markdown table:
@@ -228,6 +232,12 @@ Every row cites its source (`[KEY] §x`, `Table N`, `Fig. N`, `eq. N`), or says
 """
 
 
+def protocol_name(text, directory):
+    """The name skeleton() wrote in the H1; else the sheet's directory."""
+    h1 = re.search(r"^#\s+(.+?):\s*fidelity sheet\s*$", text, re.M)
+    return h1.group(1).strip() if h1 else os.path.basename(directory)
+
+
 def row_line(summary, protocol):
     srcs = "; ".join(f"[{r[0]}] {r[1]}" for r in summary["sources"])
     access = ", ".join(sorted({r[2] for r in summary["sources"]}))
@@ -310,6 +320,12 @@ def self_test():
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(good.replace("[G02] §3.1", "[G02] somewhere"))
         expect("main check exit 1", main(["check", p]) == 1)
+        docs = os.path.join(d, "docs")
+        os.makedirs(docs)
+        with open(os.path.join(docs, "fidelity.md"), "w", encoding="utf-8") as fh:
+            fh.write(good)
+        expect("row names the protocol from the H1, not docs/", protocol_name(good, docs) == "ARA")
+        expect("row falls back to the directory", protocol_name("no h1", docs) == "docs")
 
     for f in failures:
         print(f"FAIL: {f}")
@@ -356,7 +372,7 @@ def main(argv=None):
             for prob in problems:
                 print(f"{args.file}: {prob}", file=sys.stderr)
             return 1
-        name = args.protocol or os.path.basename(os.path.dirname(os.path.abspath(args.file)))
+        name = args.protocol or protocol_name(text, os.path.dirname(os.path.abspath(args.file)))
         print(row_line(summary, name))
         return 0
     p.print_help()

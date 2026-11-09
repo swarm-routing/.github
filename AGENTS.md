@@ -27,7 +27,7 @@ tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (+
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
-tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), every row sourced (check), the review row (row)
+tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), the review row (row)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections, README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
