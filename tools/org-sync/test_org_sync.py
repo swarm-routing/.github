@@ -336,6 +336,17 @@ for f in ("LICENSE", ".github/workflows/org-sync.yml", "core/x.h"):
     rc, out = run("reseed", f, d)
     after = read(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None
     check(rc == 2 and "is not a seed" in out and before == after, f"reseed refuses {f}")
+outside = os.path.join(tempfile.mkdtemp(), "elsewhere.md")
+write(outside, "NOT THE REPO'S\n")
+os.remove(os.path.join(d, "SECURITY.md"))
+os.symlink(outside, os.path.join(d, "SECURITY.md"))
+rc, out = run("reseed", "SECURITY.md", d)
+check(
+    rc == 2 and "resolves outside the repository" in out and read(outside) == "NOT THE REPO'S\n",
+    "reseed refuses a seed symlinked outside the repository, leaving the target unchanged",
+)
+os.remove(os.path.join(d, "SECURITY.md"))
+run("reseed", "SECURITY.md", d)
 os.remove(os.path.join(d, "CONTEXT.md"))
 adr = "docs/adr/0001-record-architecture-decisions.md"
 edit(d, adr, "- **Date:** " + org_sync.datetime.date.today().isoformat(), "- **Date:** 2020-01-02")

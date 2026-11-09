@@ -723,6 +723,13 @@ def cmd_reseed(a):
         what = f"managed as {'/'.join(kinds)}" if kinds else "not an org-sync item"
         print(f"org-sync: {path} is not a seed ({what}); reseed only re-renders seeds")
         return 2
+    # the seed path is the org's, but a symlink in the repo (the file or a parent
+    # directory) could still point it outside: never read or write through one
+    root = os.path.realpath(a.repo)
+    target = os.path.realpath(os.path.join(a.repo, path))
+    if os.path.commonpath([root, target]) != root:
+        print(f"org-sync: {path} resolves outside the repository ({target}); not reseeded")
+        return 2
     item = next(i for i in items(cfg) if i[0] == "seed" and i[1] == path)
     cur = read(os.path.join(a.repo, path))
     new = fresh_seed(cfg, a.repo, item, cur)
