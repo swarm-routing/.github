@@ -88,11 +88,14 @@ class GitHub:
             raise Failure(f"gh api {path}: {r.stderr.strip()}")
         return json.loads(r.stdout or "null")
 
-    def paged(self, path):
+    def paged(self, path, required=False):
         sep = "&" if "?" in path else "?"
         out, page = [], 1
         while True:
             got = self.get(f"{path}{sep}per_page=100&page={page}")
+            if got is None and required:
+                # a mistyped or invisible repository is not "no open PRs"
+                raise Failure(f"pr_status: {path.split('?')[0]} not found (404)")
             items = got.get("check_runs", []) if isinstance(got, dict) else got or []
             out += items
             if len(items) < 100:
@@ -156,7 +159,10 @@ def strip_html(body):
 
 
 def clean(s):
-    s = re.sub(r"[*_`]", "", s).strip()
+    # text from PR authors and commenters: no control characters (escape sequences) reach the terminal
+    s = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", s)
+    # Markdown emphasis and code marks only, so `pr_status.py` and `self_test()` keep their underscores
+    s = re.sub(r"\*\*|`|(?<!\w)_|_(?!\w)", "", s).strip()
     return s if len(s) <= TITLE_MAX else s[: TITLE_MAX - 1] + "…"
 
 
@@ -234,7 +240,7 @@ def open_prs(gh, repos, author=None):
     out = []
     for name in repos:
         repo = full_repo(name)
-        for pr in gh.paged(f"repos/{repo}/pulls?state=open"):
+        for pr in gh.paged(f"repos/{repo}/pulls?state=open", required=True):
             if author and (pr.get("user") or {}).get("login") != author:
                 continue
             out.append(pr_state(gh, repo, pr["number"]))
@@ -472,6 +478,11 @@ def self_test():
         heading(CR_BODY, "coderabbitai[bot]") == ("Minor", "Add the missing failing fixtures."),
     )
     check("heading old", heading(CR_OLD, "coderabbitai[bot]") == ("Major", "Guard the empty list."))
+    check(
+        "identifiers keep their underscores",
+        clean("Fix `pr_status.py` in _self_test()_") == "Fix pr_status.py in self_test()",
+    )
+    check("control characters are dropped", "\x1b" not in clean("a\x1b[31mred\x07b"))
     stripped = strip_html(CR_BODY)
     check("details stripped", "IGNORED" not in stripped and "details>" not in stripped)
     check("comments, pictures stripped", "<!--" not in stripped and "<picture>" not in stripped)
@@ -563,6 +574,11 @@ def self_test():
     try:
         run(["threads", "alpha"])
         check("bad ref refused", False)
+    except Failure:
+        pass
+    try:
+        run(["list", "--repos", "no-such-repo"])
+        check("a missing repository fails instead of listing no PRs", False)
     except Failure:
         pass
     try:
