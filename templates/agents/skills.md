@@ -7,7 +7,9 @@ when the task matches its description. Other agents (Codex, Cursor, Copilot, …
 install the same skills with `npx skills add swarm-routing/skills`
 ([skills.sh](https://skills.sh)). A skill is the procedure; the script does the
 work and runs without it (golden rule 9), so an agent without the skill starts
-from the script.
+from the script. If Claude Code says the plugin is missing (it was called
+`org-repo` before 2026-11-09, and a cached marketplace keeps the old list), run
+`claude plugin marketplace update swarm-routing` and start a new session.
 
 | Task | Script (any agent) | Skill |
 |------|--------------------|-------|
