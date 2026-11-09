@@ -15,6 +15,10 @@ keeps that mapping honest; the reading of the paper is still the author's.
                                       mean every row comes from the paper.
   fidelity.py row FILE [--protocol]   one summary row (the .github#54 review shape); the
                                       name comes from the sheet's H1 unless --protocol
+  fidelity.py verify FILE --text KEY=PATH [...]
+                                      each [KEY] locator against the source's extracted
+                                      text (pdfx.py text): the place exists, and a Table N
+                                      row's value is in that table; exit 1 on a miss
   fidelity.py --self-test
 
 The sheet has four required sections, each a Markdown table:
@@ -220,6 +224,163 @@ def check_text(text):
     return problems, summary
 
 
+# --- verify: locators and values against the source's extracted text --------------------
+
+LEADERS = re.compile(r"(\s\.){3,}|\.{4,}")  # a table-of-contents line, not the body
+HEADING = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+[A-Z]")  # "4.2.5 Route", "4.1. Simulation"
+WORDS = dict(enumerate("zero one two three four five six seven eight nine ten".split()))
+WORDS = {str(k): v for k, v in WORDS.items()}
+CAPTION = re.compile(r"^(Table|Figure|Fig\.|Listing)\s+(\d+(?:\.\d+)*)\b")
+
+
+def _norm(s):
+    # pdftotext splits numbers ("2 . 0"), ligatures, and stray spaces
+    s = s.replace("ﬁ", "fi").replace("ﬂ", "fl").replace("−", "-")
+    return re.sub(r"(?<=\d)\s*\.\s*(?=\d)", ".", s)
+
+
+STOP = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "that",
+    "this",
+    "per",
+    "value",
+    "number",
+    "after",
+    "before",
+    "scenario",
+}
+
+
+def _label_words(text):
+    """The words that name a parameter: 3+ letters, or a Greek symbol, lower-cased."""
+    words = {w.lower() for w in re.findall(r"[A-Za-z]{3,}", text)} - STOP
+    return words | set(re.findall(r"[α-ωΑ-Ω]", text))
+
+
+def _blocks(lines):
+    """Index the body: {('§', '4.2.5'): (start, end), ('Table', '4.1'): ...}."""
+    marks = []
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if not line or LEADERS.search(line):
+            continue
+        m = CAPTION.match(line)
+        if m:
+            kind = "Figure" if m.group(1) in ("Figure", "Fig.") else m.group(1)
+            marks.append((i, (kind, m.group(2))))
+            continue
+        m = HEADING.match(line)
+        if m and len(line) < 90:
+            marks.append((i, ("§", m.group(1))))
+    out = {}
+    for n, (i, key) in enumerate(marks):
+        end = marks[n + 1][0] if n + 1 < len(marks) else len(lines)
+        if key[0] in ("Table", "Figure", "Listing"):
+            end = min(end, i + 60)  # a caption's block is short
+        if key[0] == "Table":
+            # rows are short lines; a bare page number or running prose ends the table
+            for j in range(i + 1, end):
+                row = lines[j].strip()
+                if re.fullmatch(r"\d{1,4}", row) or len(row) > 70:
+                    end = j
+                    break
+        out.setdefault(key, (i, end))
+    return out
+
+
+def _locators(cell):
+    """[(key, kind, number)] for the Table/Fig./Listing/§/eq. locators of a Source cell."""
+    out = []
+    for part in cell.split(";"):
+        m = re.match(r"\s*\[([A-Za-z0-9_-]+)\]\s+(.*)", part)
+        if not m:
+            continue
+        for loc in m.group(2).split(","):
+            loc = loc.strip()
+            for pat, kind in (
+                (r"Table\s(\d+(?:\.\d+)*)", "Table"),
+                (r"Fig\.\s(\d+(?:\.\d+)*)", "Figure"),
+                (r"Listing\s(\d+(?:\.\d+)*)", "Listing"),
+                (r"§\s?(\d+(?:\.\d+)*)", "§"),
+                (r"eq\.\s(\d+(?:\.\d+)*)", "eq."),
+            ):
+                lm = re.fullmatch(pat + r"[a-z]?", loc)
+                if lm:
+                    out.append((m.group(1), kind, lm.group(1)))
+    return out
+
+
+def verify_text(sheet, texts):
+    """(errors, warnings) for a sheet against {KEY: extracted text}."""
+    sections = parse(sheet)
+    index = {k: (_norm(v).splitlines(), _blocks(_norm(v).splitlines())) for k, v in texts.items()}
+    errors, warns, checked, skipped = [], [], 0, {}
+    for name, src_col, val_col in (("Mechanisms", 1, None), ("Parameters", 2, 1)):
+        for row in sections.get(name, [None, []])[1]:
+            if len(row) <= src_col:
+                continue
+            value = row[val_col] if val_col is not None else ""
+            first = re.search(r"\d+(?:\.\d+)?", _norm(value)) if value not in EMPTY else None
+            for key, kind, num in _locators(row[src_col]):
+                if key not in index:
+                    skipped[key] = skipped.get(key, 0) + 1
+                    continue
+                lines, blocks = index[key]
+                checked += 1
+                where = f"## {name} `{row[0]}`: [{key}] {kind} {num}"
+                if kind == "eq.":
+                    if not any(re.search(rf"\({re.escape(num)}\)\s*$", ln) for ln in lines):
+                        warns.append(f"{where}: no '({num})' equation label found")
+                    continue
+                span = blocks.get((kind, num))
+                if not span:
+                    errors.append(f"{where}: not found in the text")
+                    continue
+                if not first:
+                    continue
+                block = lines[span[0] : span[1]]
+                body = " ".join(block)
+                hit = rf"(?<![\d.]){re.escape(first.group(0))}(?![\d])"
+                if kind == "Table":
+                    # a table row is one line: the value must sit next to a word of
+                    # the parameter's name, or a small number matches any row
+                    names = _label_words(row[0])
+                    on_line = [ln for ln in block if re.search(hit, ln)]
+                    rows = [_label_words(ln) for ln in block]
+                    # a word on only one row of the table names that row
+                    own = {w for w in names if sum(w in r for r in rows) == 1}
+
+                    def names_it(ln, names=names, own=own):
+                        words = _label_words(ln)
+                        return names <= words or bool(own & words)
+
+                    if on_line and (not names or any(names_it(ln) for ln in on_line)):
+                        continue
+                    if on_line:
+                        errors.append(
+                            f"{where}: {first.group(0)} is in that table, but not on a row naming "
+                            f"{', '.join(sorted(names))}"
+                        )
+                        continue
+                elif re.search(hit, body):
+                    continue
+                word = WORDS.get(first.group(0))
+                if word and re.search(rf"\b{word}\b", body, re.I):
+                    continue  # prose writes small numbers out ("the nominal value of K is zero")
+                if kind == "Table":
+                    errors.append(f"{where}: value {first.group(0)} is not in that table")
+                else:
+                    warns.append(f"{where}: value {first.group(0)} not found in that {kind}")
+    for key, n in sorted(skipped.items()):
+        warns.append(f"[{key}]: {n} locator(s) not checked: no --text {key}=PATH given")
+    return errors, warns, checked
+
+
 def skeleton(protocol, key="P1", citation="TODO: authors, title, venue, year, DOI"):
     return f"""# {protocol}: fidelity sheet
 
@@ -367,6 +528,69 @@ def self_test():
         expect("row names the protocol from the H1, not docs/", protocol_name(good, docs) == "ARA")
         expect("row falls back to the directory", protocol_name("no h1", docs) == "docs")
 
+    paper = (
+        "Contents\n4.2.5 Route Selection . . . . . . 74\n"
+        "4.2.5 Route Selection\nThe nominal value of K is zero, F sharpens (4.3)\n"
+        "4.3 Properties\ntext\n"
+        "Table 4.1: Simulation Parameters\ninitial pheromone 1\npheromone ceiling 10000\n"
+        "τ (decay rate) 0 . 105\nRREQs per Route Request 2\n"
+        "7.3.1 Setup\nF = 10 . 0, τ = 2 . 0\n"
+    )
+    vsheet = (
+        skeleton("T", "R05", "Roth 2005")
+        .replace(
+            "| TODO | — | unknown | |",
+            "| ceiling | 10000 | [R05] Table 4.1 | |\n"
+            "| decay τ | 0.105 per 1 s | [R05] Table 4.1 | |\n"
+            "| K | 0 | [R05] §4.2.5 | |\n"
+            "| F | 10 | [R05] Table 4.1 | |\n"
+            "| γc | 1 | [R05] Table 7.9 | |",
+        )
+        .replace(
+            "| TODO | unknown | — | unknown |",
+            "| route selection | [R05] §4.2.5, eq. 4.3 | x | as written |",
+        )
+    )
+    errs, warns, n = verify_text(vsheet, {"R05": paper})
+    expect(
+        "verify: a value in its table passes", not any("ceiling" in e or "decay" in e for e in errs)
+    )
+    expect(
+        "verify: a value missing from the table fails",
+        any("`F`" in e and ("not in that table" in e or "not on a row naming" in e) for e in errs),
+    )
+    small = vsheet.replace(
+        "| F | 10 | [R05] Table 4.1 | |", "| pheromone sensitivity F | 1 | [R05] Table 4.1 | |"
+    )
+    errs2, _, _ = verify_text(small, {"R05": paper})
+    expect(
+        "verify: a small number on another row's line fails",
+        any("sensitivity" in e and "not on a row naming" in e for e in errs2),
+    )
+    expect(
+        "verify: a missing locator fails", any("Table 7.9" in e and "not found" in e for e in errs)
+    )
+    expect(
+        "verify: a section value and an equation label pass",
+        not any("§ 4.2.5" in w for w in warns) and not any("eq." in w for w in warns),
+    )
+    expect("verify: the table of contents is not the body", n >= 6)
+    _, w4, n4 = verify_text(vsheet, {"R5": paper})
+    expect(
+        "verify: a key without --text is reported, not silently skipped",
+        n4 == 0 and any("[R05]" in w and "not checked" in w for w in w4),
+    )
+    dotted = "3. The Routing Algorithm\n3.1. Route Discovery Phase\nants\n4.1. Simulation Environment\n50 nodes\n"
+    e3, _, _ = verify_text(
+        skeleton("A", "G02", "G").replace(
+            "| TODO | — | unknown | |", "| nodes | 50 | [G02] §4.1 | |"
+        ),
+        {"G02": dotted},
+    )
+    expect("verify: headings written '4.1.' are found", e3 == [])
+    probs, _ = check_text(vsheet)
+    expect("verify fixture is itself a valid sheet", probs == [])
+
     for f in failures:
         print(f"FAIL: {f}")
     print(f"fidelity.py self-test: {'ok' if not failures else f'{len(failures)} failed'}")
@@ -386,9 +610,38 @@ def main(argv=None):
     r = sub.add_parser("row")
     r.add_argument("file")
     r.add_argument("--protocol", default="")
+    v = sub.add_parser("verify")
+    v.add_argument("file")
+    v.add_argument("--text", action="append", required=True, metavar="KEY=PATH")
     args = p.parse_args(argv)
     if args.self_test:
         return self_test()
+    if args.cmd == "verify":
+        texts = {}
+        try:
+            for kv in args.text:
+                key, _, path = kv.partition("=")
+                if not key or not path:
+                    print(f"fidelity verify: --text {kv!r} is not KEY=PATH (e.g. R05=thesis.txt)")
+                    return 2
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    texts[key] = fh.read()
+            with open(args.file, encoding="utf-8") as fh:
+                errors, warns, checked = verify_text(fh.read(), texts)
+        except (OSError, Failure) as e:
+            print(f"fidelity verify: {e}")
+            return 2
+        for e in errors:
+            print(f"FAIL {e}")
+        for w in warns:
+            print(f"WARN {w}")
+        print(
+            f"fidelity verify: {checked} locator(s) checked; "
+            f"{len(errors)} miss(es), {len(warns)} warning(s)"
+        )
+        if not checked:
+            print("fidelity verify: nothing was checked: no locator of a key given with --text")
+        return 1 if errors or not checked else 0
     if args.cmd == "skeleton":
         sys.stdout.write(skeleton(args.protocol, args.key, args.citation))
         return 0

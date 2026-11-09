@@ -54,10 +54,10 @@ def markers(path):
 
 # Badges per kind (swarm-routing/.github#8). Each appears only when its target
 # exists (see badge_lines).
-BASE_BADGES = ["ci", "licence", "conventional"]
+BASE_BADGES = ["ci", "licence", "conventional", "arena"]
 KIND_BADGES = {
-    "protocol": ["cxx", "ns3"],
-    "c-cpp": ["cxx"],
+    "protocol": ["cxx", "ns3", "ns3dev"],
+    "c-cpp": ["cxx", "ns3dev"],
     "python": ["python"],
     "container": ["ghcr", "cosign"],
     "data": [],
@@ -153,6 +153,15 @@ def licence_text(cfg):
     return "GPL-2.0-only"
 
 
+def arena_id(cfg):
+    """The project's id on the site; none for the site itself and the skills repo,
+    which have no project page, unless `[docs] arena_id` says otherwise."""
+    docs = cfg.get("docs", {})
+    if "arena_id" in docs:
+        return docs["arena_id"]
+    return "" if cfg["kind"] in ("site", "skills") else cfg["title"]
+
+
 def badge_lines(cfg, repo_dir):
     repo, out = cfg["repo"], []
     for b in cfg["badges"]:
@@ -197,6 +206,17 @@ def badge_lines(cfg, repo_dir):
             )
         elif b == "docs" and cfg.get("docs_url"):
             out.append(f"[![Docs]({shield('docs', 'site', 'blue')})]({cfg['docs_url']})")
+        elif b == "arena" and arena_id(cfg):
+            # the project's page on the org site (Colony Arena), as in site/hub/projects.json
+            url = f"https://swarm-routing.github.io/arena/{arena_id(cfg)}/"
+            out.append(
+                f"[![Colony Arena: {arena_id(cfg)}]({shield('Colony Arena', 'project page', 'orange')})]({url})"
+            )
+        elif b == "ns3dev":
+            out.append(
+                f"[![Built on: ns3-dev]({shield('built on', 'ns3-dev image', 'blue')}?logo=docker)]"
+                "(https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev)"
+            )
         elif b == "claude-plugin":
             out.append(
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
@@ -511,6 +531,19 @@ def cmd_init(a):
         lines.append("dual = [" + ", ".join(f'"{d}"' for d in a.dual) + "]")
     if a.dockerfile:
         lines.append(f'dockerfile = "{a.dockerfile}"')
+    if a.kind not in ("site", "skills"):
+        # a new repository has no page on the site until site/hub/projects.json lists it,
+        # so its arena badge waits for the id (#96)
+        lines += [
+            "",
+            "[docs]",
+            f'arena_id = "{a.arena_id or ""}"'
+            + (
+                ""
+                if a.arena_id
+                else "  # its id in swarm-routing.github.io site/hub/projects.json, once listed"
+            ),
+        ]
     write(
         a.repo,
         CONFIG,
@@ -645,6 +678,11 @@ def main(argv=None):
         if name == "init":
             s.add_argument("--kind", required=True, choices=KINDS)
             s.add_argument("--title")
+            s.add_argument(
+                "--arena-id",
+                help="the project's id in the site's site/hub/projects.json; without it the "
+                "arena badge waits until [docs] arena_id is set",
+            )
             s.add_argument(
                 "--dockerfile",
                 help="container kind: the Dockerfile the seeded Makefile builds (default Dockerfile); "
