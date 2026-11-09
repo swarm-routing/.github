@@ -158,9 +158,13 @@ def strip_html(body):
     return re.sub(r"<img\b[^>]*>", "", text, flags=re.I)
 
 
+def plain(s):
+    """Text from PR authors and commenters, without control characters (escape sequences)."""
+    return re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(s))
+
+
 def clean(s):
-    # text from PR authors and commenters: no control characters (escape sequences) reach the terminal
-    s = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", s)
+    s = plain(s)
     # Markdown emphasis and code marks only, so `pr_status.py` and `self_test()` keep their underscores
     s = re.sub(r"\*\*|`|(?<!\w)_|_(?!\w)", "", s).strip()
     return s if len(s) <= TITLE_MAX else s[: TITLE_MAX - 1] + "…"
@@ -251,7 +255,8 @@ def open_prs(gh, repos, author=None):
 
 
 def thread_line(t):
-    where = f"{t['path']}:{t['line']}" if t.get("line") is not None else f"{t['path']}"
+    path = plain(t["path"])  # not clean(): `__init__.py` keeps its underscores
+    where = f"{path}:{t['line']}" if t.get("line") is not None else path
     mark = " [resolved]" if t.get("resolved") else ""
     mark += " [outdated]" if t.get("outdated") else ""
     return f"  {t['severity']} · {t['title']} · {where} · {t['id']}{mark}"
@@ -483,6 +488,7 @@ def self_test():
         clean("Fix `pr_status.py` in _self_test()_") == "Fix pr_status.py in self_test()",
     )
     check("control characters are dropped", "\x1b" not in clean("a\x1b[31mred\x07b"))
+    check("a path keeps its underscores", plain("pkg/__init__.py\x1b") == "pkg/__init__.py ")
     stripped = strip_html(CR_BODY)
     check("details stripped", "IGNORED" not in stripped and "details>" not in stripped)
     check("comments, pictures stripped", "<!--" not in stripped and "<picture>" not in stripped)
