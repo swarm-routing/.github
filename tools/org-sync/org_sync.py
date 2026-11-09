@@ -75,7 +75,11 @@ ADOPT = {
     ("SECURITY.md", "reporting"): (r"^## Reporting a vulnerability\n", r"^## "),
 }
 # Sections with nothing to adopt: inserted after the first match of the regex.
-INSERT_AFTER = {("README.md", "badges"): r"^# .*\n"}
+INSERT_AFTER = {
+    ("README.md", "badges"): r"^# .*\n",
+    # new in every AGENTS.md: placed before the repository's own table
+    ("AGENTS.md", "skills"): r"\n(?=\n## Where to look\n)",
+}
 
 
 class SafeDict(dict):
@@ -286,6 +290,7 @@ def items(cfg):
         ("section", "AGENTS.md", "agents/org-rules.md", "org-rules"),
         ("section", "AGENTS.md", "agents/conventions.md", "conventions"),
         ("section", "AGENTS.md", "agents/git-workflow.md", "git-workflow"),
+        ("section", "AGENTS.md", "agents/skills.md", "skills"),
         ("seed", "CLAUDE.md", "claude/CLAUDE.md.in", None),
         ("section", "CLAUDE.md", "claude/org.md", "org"),
         ("seed", "CONTEXT.md", "CONTEXT.md.in", None),

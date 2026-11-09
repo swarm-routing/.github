@@ -124,6 +124,12 @@ rc, out = run("conflicts", d)
 check("-7. **Keep bounded things bounded**" in out, "conflicts prints the hunk")
 run("apply", d, "--force", "AGENTS.md#org-rules")
 check(run("check", d)[0] == 0, "apply --force resolves it")
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "<!-- org-sync:begin skills -->\n## Agent skills" in agents
+    and agents.index("## Agent skills") < agents.index("## Where to look"),
+    "the skills section is inserted before the repository's own Where-to-look table",
+)
 
 # 6. The JSON item merges only the org's keys.
 p = os.path.join(d, ".claude/settings.json")
