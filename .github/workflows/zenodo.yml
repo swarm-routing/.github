@@ -13,7 +13,8 @@ name: zenodo
 # A missing release older than the newest archived one is not added (it would
 # become the concept's newest version): the run fails and opens an issue here.
 # Without the ZENODO_TOKEN secret (a Zenodo personal access token with
-# deposit:write and deposit:actions) every run is a dry run.
+# deposit:write and deposit:actions) every run is a dry run. Runs on a pull
+# request are dry runs too, and the token is not passed to them.
 on:
   schedule:
     - cron: '41 3 * * *'
@@ -53,7 +54,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+      # A pull_request run is a dry run and never gets the token: a PR from a
+      # branch of this repository would otherwise run its own code with it.
+      ZENODO_TOKEN: ${{ github.event_name != 'pull_request' && secrets.ZENODO_TOKEN || '' }}
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
       GRACE: ${{ inputs.grace-hours || '12' }}
