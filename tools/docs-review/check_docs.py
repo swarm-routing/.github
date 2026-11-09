@@ -381,7 +381,13 @@ def self_test():
     r = repo({"README.md": "ARA\n\n" + readme_ok})
     expect("a README not starting with a title fails", has(r, "FAIL", "`# Title`"))
     r = repo(drop=("AGENTS.md",))
-    expect("no AGENTS.md fails", has(r, "FAIL", "missing") and r.fail)
+    expect(
+        "no AGENTS.md fails",
+        any(
+            x["level"] == "FAIL" and x["area"] == "AGENTS.md" and x["msg"] == "missing"
+            for x in r.rows
+        ),
+    )
     r = repo(drop=("CLAUDE.md",))
     expect("no CLAUDE.md fails", has(r, "FAIL", "@AGENTS.md"))
     r = repo(
