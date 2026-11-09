@@ -133,12 +133,14 @@ def diff(repo, base):
     added = {}
     for f in sorted(changed - untracked):
         # one diff per file, so the file name never has to be parsed back out
-        n = 0
+        n, in_hunk = 0, False
         for line in git(repo, "diff", "-U0", mb, "--", f).splitlines():
             hunk = re.match(r"@@ -\S+ \+(\d+)", line)
             if hunk:
-                n = int(hunk.group(1))
-            elif line.startswith("+") and not line.startswith("+++"):
+                n, in_hunk = int(hunk.group(1)), True
+            elif in_hunk and line.startswith("+"):
+                # inside a hunk every '+' line is added, even `++i;` (shown as `+++i;`);
+                # the `+++ b/file` header only comes before the first hunk
                 added.setdefault(f, []).append((n, line[1:]))
                 n += 1
     for f in untracked:
@@ -593,6 +595,11 @@ def self_test():
 
     r = repo({}, {"core/a.cc": good_core + "int g() { return rand(); }\n", "core/tests/t.cc": test})
     expect("rule 5: rand() in core/ fails", has(r, "FAIL", "rule 5"))
+    r = repo(
+        {"core/a.cc": good_core + "int g(int i) {\n  return i;\n}\n", "core/tests/t.cc": test},
+        {"core/a.cc": good_core + "int g(int i) {\n++i; return rand();\n}\n"},
+    )
+    expect("an added line starting with ++ (shown as +++) is still read", has(r, "FAIL", "rule 5"))
     r = repo({}, {"ns3/m.cc": hdr.format(GPL) + "auto t = std::chrono::system_clock::now();\n"})
     expect("rule 5: a wall clock in ns3/ warns", has(r, "WARN", "rule 5") and not r.fail)
     r = repo(
