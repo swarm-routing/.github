@@ -4,8 +4,9 @@ name: Reusable Codecov upload
 
 # Uploads a coverage report another job of the same run kept as an artifact
 # (reusable-ns3-ci.yml keeps `coverage`, with coverage.xml) to Codecov. A
-# workflow of its own because Codecov's tokenless upload needs
-# `id-token: write`, which a caller must grant: asking for it inside
+# workflow of its own because the upload authenticates with GitHub OIDC (the
+# org's choice: no Codecov token is stored anywhere), which needs
+# `id-token: write`; a caller must grant it, and asking for it inside
 # reusable-ns3-ci.yml would fail every caller that does not (rule 10).
 #
 # Caller (after its reusable-ns3-ci.yml job `ci`, with `coverage: true`):
@@ -14,12 +15,9 @@ name: Reusable Codecov upload
 #     needs: ci
 #     permissions: { contents: read, id-token: write }
 #     uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main
-#     secrets:
-#       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 #
-# OIDC when the caller grants it and no CODECOV_TOKEN is set, else the token.
-# A failed upload (Codecov down, a fork's pull request with neither) never
-# fails CI: coverage stays report-only (swarm-routing/.github#24).
+# A failed upload (Codecov down; a fork's pull request, which gets no OIDC
+# token) never fails CI: coverage stays report-only (swarm-routing/.github#24).
 on:
   workflow_call:
     inputs:
@@ -35,10 +33,6 @@ on:
         description: "Codecov flags for this upload (e.g. ns3, python)"
         type: string
         default: ''
-    secrets:
-      CODECOV_TOKEN:
-        description: "Codecov upload token; without it the upload uses OIDC"
-        required: false
 
 permissions:
   contents: read
@@ -58,11 +52,10 @@ jobs:
         with:
           name: ${{ inputs.artifact }}
           path: ${{ runner.temp }}/coverage
-      - name: Report paths and authentication
+      - name: Report paths
         id: prep
         env:
           FILES: ${{ inputs.files }}
-          TOKEN: ${{ secrets.CODECOV_TOKEN }}
           DIR: ${{ runner.temp }}/coverage
         run: |
           set -euo pipefail
@@ -70,12 +63,10 @@ jobs:
           IFS=, read -ra fs <<< "$FILES"
           for f in "${fs[@]}"; do out+=("$DIR/$f"); done
           echo "files=$(IFS=,; echo "${out[*]}")" >> "$GITHUB_OUTPUT"
-          if [ -n "$TOKEN" ]; then echo "oidc=false" >> "$GITHUB_OUTPUT"; else echo "oidc=true" >> "$GITHUB_OUTPUT"; fi
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ${{ steps.prep.outputs.files }}
           disable_search: true
           flags: ${{ inputs.flags }}
-          use_oidc: ${{ steps.prep.outputs.oidc }}
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           fail_ci_if_error: false
