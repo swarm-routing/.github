@@ -46,6 +46,18 @@ name: Reusable ns-3 CI
 #                    that prints its seed passes determinism-normalize (a sed -E
 #                    script) to strip it before the cross-seed comparison, else
 #                    the label alone would make the outputs differ
+#   sonar            SonarQube Cloud CI-based analysis of this repo's modules on the
+#                    coverage leg (implies coverage): the compile database of this
+#                    repo's files (ns-3's own entries dropped) at
+#                    build/compile_commands.json and gcovr's SonarQube report at
+#                    coverage-sonar.xml, both in the checkout, then
+#                    sonarqube-scan-action with the repo's sonar-project.properties.
+#                    Pass `secrets: { SONAR_TOKEN: ... }`. Skipped with a notice when
+#                    the token is absent (fork PRs) and with a warning while the
+#                    project still has Automatic Analysis on in SonarQube Cloud
+# Codecov: a caller adds a job `needs: <this job>` that calls
+# reusable-codecov.yml with `permissions: { contents: read, id-token: write }`;
+# it uploads the `coverage` artifact this workflow keeps (coverage.xml).
 # strict-warnings and coverage need an image whose ns3-build-contrib has the
 # options (swarm-routing/ns3-containers; the step fails clearly otherwise).
 #
@@ -100,6 +112,10 @@ on:
         description: "gcovr --exclude regex for source paths, relative to the repo root"
         type: string
         default: '(.*/)?(test|examples)/'
+      sonar:
+        description: "SonarQube Cloud CI analysis on the coverage leg (implies coverage); needs secret SONAR_TOKEN and the repo's sonar-project.properties"
+        type: boolean
+        default: false
       determinism:
         description: "Newline-separated `./ns3 run` programs with a `{seed}` placeholder that print their results (marker lines) on stdout; stdout of seed 1 twice must match byte for byte, seed 2 must differ"
         type: string
@@ -128,6 +144,10 @@ on:
         description: "Space-separated files under a dual root that stay GPL-2.0-only"
         type: string
         default: ''
+    secrets:
+      SONAR_TOKEN:
+        description: "SonarQube Cloud token for the `sonar` input; absent (fork PRs): the analysis is skipped"
+        required: false
 
 permissions:
   contents: read
@@ -163,6 +183,8 @@ jobs:
         with:
           path: src
           persist-credentials: false
+          # SonarQube Cloud reads the history (blame, new code); the rest needs none
+          fetch-depth: ${{ inputs.sonar && '0' || '1' }}
       - name: Check out dependencies
         if: inputs.dependencies != ''
         env:
@@ -190,7 +212,7 @@ jobs:
           RUNS: ${{ inputs.run }}
           LSAN_SUPP: ${{ inputs.lsan-suppressions }}
           STRICT: ${{ inputs.strict-warnings }}
-          COVERAGE: ${{ inputs.coverage && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] }}
+          COVERAGE: ${{ (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] }}
         run: |
           set -euo pipefail
           args=()
@@ -259,9 +281,10 @@ jobs:
           done <<< "$PROGS"
           [ "$fails" = 0 ]
       - name: Coverage report (gcovr; report-only)
-        if: inputs.coverage && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
         env:
           EXCLUDE: ${{ inputs.coverage-exclude }}
+          SONAR: ${{ inputs.sonar }}
         run: |
           set -euo pipefail
           if ! command -v gcovr > /dev/null; then
@@ -271,13 +294,78 @@ jobs:
           src="$GITHUB_WORKSPACE/src"
           mkdir -p "$GITHUB_WORKSPACE/coverage"
           cd /opt/ns-3/cmake-cache
-          gcovr --root "$src" --filter "$src/" --exclude "$src/$EXCLUDE" \
+          sonar_args=()
+          if [ "$SONAR" = true ]; then sonar_args=(--sonarqube "$src/coverage-sonar.xml"); fi
+          gcovr --root "$src" --filter "$src/" --exclude "$src/$EXCLUDE" "${sonar_args[@]}" \
             --txt --cobertura "$GITHUB_WORKSPACE/coverage/coverage.xml" \
             --html-details "$GITHUB_WORKSPACE/coverage/index.html" --print-summary . \
             | tee "$GITHUB_WORKSPACE/coverage/summary.txt"
           { echo '### Coverage (report-only)'; echo '```'; cat "$GITHUB_WORKSPACE/coverage/summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: SonarQube Cloud — token, analysis method, compile database
+        id: sonar
+        if: inputs.sonar && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/src"
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::notice::SonarQube Cloud analysis skipped: no SONAR_TOKEN (a fork's pull request, or the caller passed none)"
+            echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ ! -f "$src/sonar-project.properties" ]; then
+            echo "::error::sonar: true needs sonar-project.properties in the repository (org-sync seeds it)"; exit 1
+          fi
+          key=$(sed -n 's/^sonar\.projectKey=//p' "$src/sonar-project.properties")
+          # Automatic Analysis and CI analysis exclude each other: the scanner
+          # fails while the project is on Automatic Analysis, so skip, loudly.
+          auto=$(python3 -I - "$key" <<'PY'
+          import json, sys, urllib.request
+          url = "https://sonarcloud.io/api/navigation/component?component=" + sys.argv[1]
+          try:
+              with urllib.request.urlopen(url, timeout=30) as r:
+                  print(str(json.load(r).get("autoscanEnabled", False)).lower())
+          except OSError as e:
+              print("error:", e)
+          PY
+          )
+          if [ "$auto" != false ]; then
+            echo "::warning::SonarQube Cloud analysis skipped for $key: ${auto/true/Automatic Analysis is on}. Switch the project to CI-based analysis (SonarQube Cloud: Administration > Analysis Method) so CI imports coverage"
+            echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # The compile database of this repository's files only: contrib/<module>
+          # links to the checkout, so a realpath inside it is ours; ns-3's own
+          # and the dependencies' entries are dropped.
+          mkdir -p "$src/build"
+          python3 -I - "$src" /opt/ns-3/cmake-cache/compile_commands.json "$src/build/compile_commands.json" <<'PY'
+          import json, os, sys
+          src, db, out = os.path.realpath(sys.argv[1]), sys.argv[2], sys.argv[3]
+          keep = []
+          for e in json.load(open(db)):
+              f = os.path.realpath(os.path.join(e["directory"], e["file"]))
+              if f.startswith(src + os.sep):
+                  keep.append({**e, "file": f})
+          if not keep:
+              sys.exit("sonar: no compile command of this repository in " + db)
+          json.dump(keep, open(out, "w"), indent=1)
+          print(f"sonar: {len(keep)} compile commands of this repository")
+          PY
+          for tool in unzip curl; do
+            command -v "$tool" > /dev/null || {
+              timeout 600 apt-get update -qq
+              timeout 600 apt-get install -y -qq --no-install-recommends unzip curl > /dev/null
+              break; }
+          done
+          echo "run=true" >> "$GITHUB_OUTPUT"
+      - name: SonarQube Cloud analysis
+        if: steps.sonar.outputs.run == 'true'
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
+        with:
+          projectBaseDir: src
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: inputs.coverage && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
         with:
           name: coverage
           path: coverage

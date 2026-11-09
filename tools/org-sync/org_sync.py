@@ -44,6 +44,7 @@ ORG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 TEMPLATES = os.path.join(ORG, "templates")
 CONFIG = ".github/org-sync.toml"
 KINDS = ("protocol", "c-cpp", "python", "container", "data", "site", "skills")
+CXX_KINDS = ("protocol", "c-cpp")
 MAKE_TARGETS = ("help", "build", "test", "lint", "format", "check", "clean", "shell", "ci")
 BEGIN = "<!-- org-sync:begin {} -->"
 END = "<!-- org-sync:end {} -->"
@@ -59,13 +60,30 @@ def markers(path):
 
 
 # Badges per kind (swarm-routing/.github#8). Each appears only when its target
-# exists (see badge_lines).
+# exists (see badge_lines). `sonar` is the four SonarQube Cloud badges
+# (quality gate, bugs, security, maintainability); `sonar-gate`, `sonar-bugs`,
+# `sonar-security` and `sonar-maintainability` pick one.
+SONAR_METRICS = {
+    "sonar-gate": ("Quality Gate Status", "alert_status"),
+    "sonar-bugs": ("Bugs", "bugs"),
+    "sonar-security": ("Security Rating", "security_rating"),
+    "sonar-maintainability": ("Maintainability Rating", "sqale_rating"),
+}
 BASE_BADGES = ["ci", "licence", "conventional", "arena"]
 KIND_BADGES = {
-    "protocol": ["cxx", "ns3", "ns3dev"],
-    "c-cpp": ["cxx", "ns3dev"],
+    "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
+    "c-cpp": ["cxx", "ns3dev", "sonar", "codecov", "coderabbit"],
     "python": ["python"],
-    "container": ["ghcr", "cosign"],
+    "container": [
+        "ghcr",
+        "cosign",
+        "container-security",
+        "sonar-gate",
+        "sonar-security",
+        "hadolint",
+        "trivy",
+        "coderabbit",
+    ],
     "data": [],
     "site": ["docs"],
     "skills": ["claude-plugin"],
@@ -168,9 +186,35 @@ def arena_id(cfg):
     return "" if cfg["kind"] in ("site", "skills") else cfg["title"]
 
 
+def sonar_key(cfg):
+    """The SonarQube Cloud project key: `[quality] sonar_key`, else
+    `<owner>_<repo>` as SonarQube Cloud names an imported GitHub repository."""
+    return cfg.get("quality", {}).get("sonar_key") or cfg["repo"].replace("/", "_")
+
+
+def uploads_coverage(cfg, repo_dir):
+    """True when a workflow of the repository sends coverage to Codecov (the
+    reusable-codecov.yml job), so the badge never reads `unknown`."""
+    wfdir = os.path.join(repo_dir, ".github/workflows")
+    try:
+        names = sorted(os.listdir(wfdir))
+    except OSError:
+        return False
+    return any("reusable-codecov.yml" in (read(os.path.join(wfdir, n)) or "") for n in names)
+
+
+def check_runs_badge(repo, label, job, logo):
+    """A live badge for one job's check run on main (shields.io check-runs)."""
+    q = f"nameFilter={quote(job)}&label={quote(label)}&logo={logo}"
+    return f"https://img.shields.io/github/check-runs/{repo}/main?{q}"
+
+
 def badge_lines(cfg, repo_dir):
     repo, out = cfg["repo"], []
+    names = []
     for b in cfg["badges"]:
+        names += list(SONAR_METRICS) if b == "sonar" else [b]
+    for b in names:
         if b == "ci":
             wf = cfg["ci_workflow"]
             if os.path.exists(os.path.join(repo_dir, ".github/workflows", wf)):
@@ -223,6 +267,40 @@ def badge_lines(cfg, repo_dir):
                 f"[![Built on: ns3-dev]({shield('built on', 'ns3-dev image', 'blue')}?logo=docker)]"
                 "(https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev)"
             )
+        elif b in SONAR_METRICS:
+            alt, metric = SONAR_METRICS[b]
+            key = sonar_key(cfg)
+            out.append(
+                f"[![{alt}](https://sonarcloud.io/api/project_badges/measure?project={key}&metric={metric})]"
+                f"(https://sonarcloud.io/summary/new_code?id={key})"
+            )
+        elif b == "codecov" and uploads_coverage(cfg, repo_dir):
+            out.append(
+                f"[![codecov](https://codecov.io/gh/{repo}/graph/badge.svg)](https://codecov.io/gh/{repo})"
+            )
+        elif b == "coderabbit":
+            camp = quote(repo, safe="")
+            out.append(
+                f"[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/{repo}"
+                f"?utm_source=oss&utm_medium=github&utm_campaign={camp}&labelColor=171717&color=FF570A"
+                "&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)"
+            )
+        elif b == "container-security" and os.path.exists(
+            os.path.join(repo_dir, ".github/workflows/container-security.yml")
+        ):
+            url = f"https://github.com/{repo}/actions/workflows/container-security.yml"
+            out.append(f"[![Container Security (Hadolint & Trivy)]({url}/badge.svg)]({url})")
+        elif b in ("hadolint", "trivy") and os.path.exists(
+            os.path.join(repo_dir, ".github/workflows/container-security.yml")
+        ):
+            # live: the job's last check run on main, never a fixed "passing"
+            if b == "hadolint":
+                img = check_runs_badge(repo, "Hadolint", "hadolint", "docker")
+                link = f"https://github.com/{repo}/actions/workflows/container-security.yml"
+            else:
+                img = check_runs_badge(repo, "Trivy", "trivy-config", "aquasecurity")
+                link = f"https://github.com/{repo}/security/code-scanning"
+            out.append(f"[![{b.capitalize()}]({img})]({link})")
         elif b == "claude-plugin":
             out.append(
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
@@ -309,6 +387,7 @@ def values(cfg):
         dual_rows="\n".join(f"    {d or 'everything':14}" for d in cfg["dual"]).rstrip(),
         date=datetime.date.today().isoformat(),
         module=cfg.get("module", cfg["title"].lower()),
+        sonar_key=sonar_key(cfg),
         trust_boundary=cfg.get(
             "trust_boundary", "Nothing in this repository parses untrusted input yet."
         ).strip(),
@@ -359,6 +438,13 @@ def items(cfg):
     ]
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))
+    if cfg["kind"] in CXX_KINDS:
+        # SonarQube Cloud and Codecov settings for the reusable ns-3 CI's
+        # `sonar` input and reusable-codecov.yml; the repository's own once written
+        out.append(("seed", ".codecov.yml", "quality/codecov.yml", None))
+        out.append(
+            ("seed", "sonar-project.properties", "quality/sonar-project.properties.in", None)
+        )
     skip = set(cfg.get("skip", []))
     return [i for i in out if i[1] not in skip and f"{i[1]}#{i[3]}" not in skip]
 
