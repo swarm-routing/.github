@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """The org's golden rules (1-9), checked mechanically on a repository's diff.
 
-    check_invariants.py [REPO_DIR] [--base REF]   PASS/WARN/FAIL per rule; exit 1 on a FAIL
+    check_invariants.py [REPO_DIR] [--base REF] [--pr-body FILE] [--json]
+                                    PASS/WARN/FAIL per rule, HINTs; exit 1 on a FAIL
     check_invariants.py --self-test
 
 The diff is everything between the merge base with REF (default origin/main)
@@ -12,7 +13,18 @@ and, under it, the files or lines it is about; the agent reads this summary,
 not the diff (AntHocNet ADR-0014). FAIL means a broken invariant; WARN means
 "look and confirm". It checks what is cheap to check and easy to miss. It
 does not judge correctness, pairing (rule 6) or whether a structure is
-bounded (rule 7): that is the reviewer's part.
+bounded (rule 7): that is the reviewer's part. For those two it prints HINT
+lines, candidate spots to judge first, which never change the exit code:
+
+    rule 7  a container declared in the diff (core/ or a simulator dir) that
+            grows in the diff (push_back, emplace, insert, [] =) with no
+            pop/erase/clear/resize or max/cap/limit name on it in the changed files
+    rule 6  a sentence in the changed Markdown or the --pr-body text with a seed
+            or run count below 20, or a comparison (a number with "beats",
+            "better than", "vs", a metric such as PDR, or a protocol name) and
+            no seed count
+
+--json prints the same checks as {"result": …, "checks": [{level, message, items}]}.
 
 A repository tunes it in `.github/org-sync.toml` (the org-sync config every
 adopting repo has), all keys optional:
@@ -31,6 +43,7 @@ Generalised from AntHocNet's .claude/skills/protocol-review/check_invariants.sh
 
 import argparse
 import fnmatch
+import json
 import os
 import re
 import subprocess
@@ -49,6 +62,35 @@ NONDET = re.compile(
     r"|system_clock::now|steady_clock::now|high_resolution_clock::now"
 )
 UNORDERED = re.compile(r"std::unordered_(?:map|set|multimap|multiset)\b")
+# rule 7 hints: a growing container type, how it grows, how it is kept bounded
+CONTAINER = re.compile(
+    r"\b(?:std::)?((?:unordered_)?(?:multi)?(?:map|set)|vector|deque|(?:forward_)?list"
+    r"|(?:priority_)?queue)\s*<"
+)
+GROW = r"push_back|push_front|push|emplace\w*|try_emplace|insert\w*"
+SHRINK = r"pop\w*|erase|clear|resize|shrink_to_fit|extract"
+CAP = re.compile(r"(?i)max|cap|limit")
+# rule 6 hints: seed counts, percentages, protocol-versus-protocol claims
+SEEDS = re.compile(
+    r"(?<![\w.-])(\d+)(?:\s+|-)(?:(?:paired|independent|random|more|different)\s+)?"
+    r"(?:seeds?|runs|replications)\b",
+    re.I,
+)
+PERCENT = re.compile(r"\d\s*%")
+COMPARE = re.compile(
+    r"(?<![\w-])(?:beats?|outperform\w*|(?:better|worse|higher|lower|faster|slower) than"
+    r"|ahead of|versus|vs\.?)(?![\w-])",
+    re.I,
+)
+METRIC = re.compile(r"\b(?:PDR|delivery ratio|throughput|delay|latency|overhead|NRL)\b", re.I)
+PROTOCOL = re.compile(
+    r"\b(?:AntHocNet|AODV|AOMDV|OLSR|DSDV|DSR|HWMP|GPSR|ARA|BeeAdHoc|Termite|HOPNET)\b", re.I
+)
+# what is not prose: inline code, link targets, issue and PR numbers
+NOT_PROSE = re.compile(r"`[^`]*`|\]\([^)]*\)|https?://\S+|\b[\w.-]*#\d+")
+# a line that is its own unit: a table row, a list item, a heading, a rule
+OWN_UNIT = re.compile(r"\s*(?:\||[-*+]\s|\d+[.)]\s|#|---|===)")
+SENTENCE = re.compile(r"(?<!vs\.)(?<!e\.g\.)(?<!i\.e\.)(?<=[.!?])\s+(?=[A-Z(\"])")
 
 
 def git(repo, *args, check=True):
@@ -76,7 +118,7 @@ def config(repo):
 
 
 def diff(repo, base):
-    """(changed files, {file: [added lines]}, new files)."""
+    """(changed files, {file: [(line number, added line)]}, new files, merge base)."""
     mb = git(repo, "merge-base", base, "HEAD", check=False).strip() or base
 
     def names(*args):
@@ -91,14 +133,19 @@ def diff(repo, base):
     added = {}
     for f in sorted(changed - untracked):
         # one diff per file, so the file name never has to be parsed back out
+        n = 0
         for line in git(repo, "diff", "-U0", mb, "--", f).splitlines():
-            if line.startswith("+") and not line.startswith("+++"):
-                added.setdefault(f, []).append(line[1:])
+            hunk = re.match(r"@@ -\S+ \+(\d+)", line)
+            if hunk:
+                n = int(hunk.group(1))
+            elif line.startswith("+") and not line.startswith("+++"):
+                added.setdefault(f, []).append((n, line[1:]))
+                n += 1
     for f in untracked:
         p = os.path.join(repo, f)
         if os.path.isfile(p):
             with open(p, encoding="utf-8", errors="replace") as fh:
-                added[f] = fh.read().splitlines()
+                added[f] = list(enumerate(fh.read().splitlines(), 1))
     changed = {f for f in changed if os.path.exists(os.path.join(repo, f))}
     return sorted(changed), added, sorted(new & set(changed)), mb
 
@@ -118,8 +165,11 @@ def head(repo, f, n=6):
 class Report:
     def __init__(self):
         self.lines, self.fail, self.warn = [], False, False
+        self.checks, self.hints = [], 0
 
     def add(self, level, msg, items=()):
+        self.checks.append({"level": level, "message": msg, "items": list(items)})
+        self.hints += level == "HINT"
         self.lines.append(f"{level:5} {msg}")
         self.lines += [f"        {i}" for i in list(items)[:12]]
         if len(items) > 12:
@@ -128,9 +178,119 @@ class Report:
         self.warn |= level == "WARN"
 
 
-def check(repo, base="origin/main"):
+def _match_angle(text, i):
+    """Index just past the `>` closing the `<` at text[i], or -1."""
+    depth = 0
+    for j in range(i, len(text)):
+        depth += {"<": 1, ">": -1}.get(text[j], 0)
+        if depth == 0:
+            return j + 1
+    return -1
+
+
+def container_hints(repo, files, numbered):
+    """Rule 7: a container declared in the diff that grows in the diff, with no
+    pop/erase/clear/resize or max/cap/limit name on it anywhere in the changed files."""
+    texts = {}
+    for f in files:
+        try:
+            with open(os.path.join(repo, f), encoding="utf-8", errors="replace") as fh:
+                texts[f] = fh.read().splitlines()
+        except OSError:
+            texts[f] = []
+    hints = []
+    for f in files:
+        for n, line in numbered.get(f, []):
+            for m in CONTAINER.finditer(line):
+                end = _match_angle(line, m.end() - 1)
+                d = re.match(r"\s*(\w+)\s*(?:[;={]|$)", line[end:]) if end > 0 else None
+                if not d:
+                    continue
+                name, kind = d.group(1), m.group(1)
+                grow = re.compile(
+                    rf"\b{name}\s*(?:\.|->)\s*({GROW})\s*\(|\b{name}\s*\[[^\]]*\]\s*(=)(?!=)"
+                )
+                bound = re.compile(
+                    rf"\b{name}\s*(?:\.|->)\s*(?:{SHRINK})\b|\berase(?:_if)?\s*\(\s*{name}\b"
+                )
+                at = [
+                    (g, gn, gm.group(1) or "[]=")
+                    for g in files
+                    for gn, gl in numbered.get(g, [])
+                    if (gm := grow.search(gl))
+                ]
+                capped = any(
+                    bound.search(tl)
+                    or (re.search(rf"\b{name}\b", tl) and CAP.search(tl.replace(name, "")))
+                    for g in files
+                    for tl in texts[g]
+                )
+                if at and not capped:
+                    g, gn, op = at[0]
+                    hints.append(f"{f}:{n} {name} ({kind}): {op} at {g}:{gn}, no cap or eviction")
+    return hints
+
+
+def _sentences(lines):
+    """[(line number, sentence)] from [(line number, text)], paragraphs joined."""
+    out, para, fence = [], [], False
+
+    def flush():
+        text, starts = "", []
+        for n, t in para:
+            starts.append((len(text), n))
+            text += t.strip() + " "
+        pos = 0
+        for sent in SENTENCE.split(text):
+            pos = text.find(sent, pos)
+            if sent.strip():
+                out.append((next(ln for off, ln in reversed(starts) if off <= pos), sent.strip()))
+            pos += len(sent)
+        para.clear()
+
+    prev = None
+    for n, t in lines:
+        if t.lstrip().startswith("```"):
+            fence = not fence
+            flush()
+            continue
+        if fence or not t.strip() or (prev is not None and n != prev + 1) or OWN_UNIT.match(t):
+            flush()
+        if not fence and t.strip():
+            para.append((n, t))
+        prev = n
+    flush()
+    return out
+
+
+def claim_hints(sources):
+    """Rule 6: a sentence with a seed/run count below 20, or a comparison claim
+    with no count: a number with a comparison ("beats", "better than", "vs"), a
+    metric (PDR, delay, …) or a protocol name."""
+    hints = []
+    for label, lines in sources:
+        for n, sent in _sentences(lines):
+            prose = NOT_PROSE.sub(" ", sent)
+            counts = [int(m.group(1)) for m in SEEDS.finditer(prose)]
+            number = PERCENT.search(prose) or (COMPARE.search(prose) and re.search(r"\d", prose))
+            claim = number and (
+                COMPARE.search(prose) or METRIC.search(prose) or PROTOCOL.search(prose)
+            )
+            if counts and min(counts) < 20:
+                why = f"{min(counts)} seeds/runs, below 20"
+            elif claim and not counts:
+                why = "no seed count"
+            else:
+                continue
+            short = sent if len(sent) <= 90 else sent[:87] + "…"
+            hints.append(f'{label}:{n} "{short}" ({why})')
+    return hints
+
+
+def check(repo, base="origin/main", pr_body=None):
     cfg = config(repo)
-    changed, added, new, mb = diff(repo, base)
+    changed, numbered, new, mb = diff(repo, base)
+    added = {f: [t for _, t in lines] for f, lines in numbered.items()}
     r = Report()
     # .claude/ ships nothing (rule 9), so the licence gate skips it, as
     # check-headers.py does with the repo's exclusions
@@ -300,13 +460,32 @@ def check(repo, base="origin/main"):
 
     if not r.lines:
         r.add("PASS", "nothing in the diff that these rules cover")
+
+    # rules 6 and 7 need judgement: HINT lines point at candidate spots, never fail
+    grown = [
+        f
+        for f in changed
+        if f.endswith(CXX) and (under(f, cfg["core"]) or under(f, cfg["sim_dirs"]))
+    ]
+    hints = container_hints(repo, grown, numbered)
+    if hints:
+        r.add("HINT", "rule 7: a new container grows with no cap or eviction in sight", hints)
+    sources = [(f, numbered.get(f, [])) for f in changed if f.endswith(".md")]
+    if pr_body:
+        with open(pr_body, encoding="utf-8", errors="replace") as fh:
+            sources.append(("PR body", list(enumerate(fh.read().splitlines(), 1))))
+    hints = claim_hints(sources)
+    if hints:
+        r.add("HINT", "rule 6: a comparison needs >= 20 paired seeds and its run linked", hints)
+
     r.lines.append("----")
+    tail = f"; {r.hints} hint(s) to judge (rules 6, 7)" if r.hints else ""
     if r.fail:
-        r.lines.append("FAIL  invariant violation: fix before merge")
+        r.lines.append("FAIL  invariant violation: fix before merge" + tail)
     elif r.warn:
-        r.lines.append("WARN  review the warnings above")
+        r.lines.append("WARN  review the warnings above" + tail)
     else:
-        r.lines.append("PASS  mechanical invariants clean")
+        r.lines.append("PASS  mechanical invariants clean" + tail)
     return r
 
 
@@ -474,6 +653,68 @@ def self_test():
         {"core/x y.cc": hdr.format(DUAL) + "int r() { return rand(); }\n", "core/tests/t.cc": test},
     )
     expect("added lines of a tracked path with a space are read", has(r, "FAIL", "rule 5"))
+    # rules 6 and 7: HINT lines, never a FAIL or a WARN
+    unbounded_h = hdr.format(DUAL) + (
+        "#include <deque>\nstruct C {\n  void On(int id);\n  std::deque<int> seen_;\n};\n"
+    )
+    grows = hdr.format(DUAL) + '#include "c.h"\nvoid C::On(int id) { seen_.push_back(id); }\n'
+    r = repo({}, {"core/c.h": unbounded_h, "core/c.cc": grows, "core/tests/t.cc": test})
+    expect(
+        "rule 7: an unbounded deque is hinted, the verdict stays PASS",
+        has(r, "HINT", "rule 7")
+        and "core/c.h:6 seen_ (deque): push_back at core/c.cc:4" in "\n".join(r.lines)
+        and not (r.fail or r.warn),
+    )
+    capped = grows.replace(
+        "seen_.push_back(id); }",
+        "seen_.push_back(id);\n  if (seen_.size() > 64) seen_.erase(seen_.begin()); }",
+    )
+    r = repo({}, {"core/c.h": unbounded_h, "core/c.cc": capped, "core/tests/t.cc": test})
+    expect("rule 7: a deque with an erase is not hinted", not has(r, "HINT", "rule 7"))
+    by_cap = grows.replace("{ seen_", "{ if (seen_.size() < cfg.maxSeen) seen_")
+    r = repo({}, {"core/c.h": unbounded_h, "core/c.cc": by_cap, "core/tests/t.cc": test})
+    expect("rule 7: a max name on the container is not hinted", not has(r, "HINT", "rule 7"))
+    r = repo({}, {"core/c.h": unbounded_h, "core/tests/t.cc": test})
+    expect("rule 7: a container that does not grow is not hinted", not has(r, "HINT", "rule 7"))
+    r = repo({}, {"docs/x.cc": unbounded_h + grows.split("\n", 2)[2]})
+    expect("rule 7: only core/ and simulator dirs are looked at", not has(r, "HINT", "rule 7"))
+
+    r = repo({}, {"results.md": "# Results\n\nARA gains 4.1 % on 5 seeds.\n"})
+    expect(
+        "rule 6: '4.1 % on 5 seeds' is hinted, the verdict stays PASS",
+        has(r, "HINT", "rule 6")
+        and "results.md:3" in "\n".join(r.lines)
+        and "(5 seeds/runs, below 20)" in "\n".join(r.lines)
+        and r.lines[-1].startswith("PASS")
+        and "1 hint(s)" in r.lines[-1],
+    )
+    r = repo(
+        {},
+        {"docs/results.md": "ARA beats AODV by 4.1 % PDR (20 paired seeds, run 123).\n"},
+    )
+    expect("rule 6: '20 paired seeds, run 123' is not hinted", not has(r, "HINT", "rule 6"))
+    r = repo({}, {"docs/results.md": "BeeAdHoc delivers 3 % more than AODV.\n"})
+    expect("rule 6: a claim with no seed count is hinted", has(r, "HINT", "rule 6"))
+    r = repo(
+        {},
+        {
+            "docs/how.md": "Coverage of `core/` is 90 %. The native-vs-WASM gate runs "
+            "`parity.sh 120` on CI ([#850](https://x/850)).\n"
+        },
+    )
+    expect("rule 6: numbers that compare no protocols are not hinted", not has(r, "HINT", "rule 6"))
+    body = os.path.join(tempfile.mkdtemp(), "pr.md")
+    with open(body, "w") as fh:
+        fh.write("## Summary\n\nOLSR leads at 99.8 % PDR.\n")
+    d = tempfile.mkdtemp()
+    git(d, "init", "-q", "-b", "main")
+    git(d, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "b")
+    r = check(d, base="main", pr_body=body)
+    expect(
+        "rule 6: --pr-body is read",
+        has(r, "HINT", "rule 6") and "PR body:3" in "\n".join(r.lines),
+    )
+
     r = repo({}, {"README.md": "text\n"})
     expect("a docs-only diff has nothing to check", has(r, "PASS", "nothing in the diff"))
 
@@ -487,13 +728,19 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("repo", nargs="?", default=".")
     p.add_argument("--base", default="origin/main")
+    p.add_argument("--pr-body", metavar="FILE", help="also look for rule 6 claims in this text")
+    p.add_argument("--json", action="store_true", help="the checks as JSON, for tools")
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
     if a.self_test:
         return self_test()
     repo = git(a.repo, "rev-parse", "--show-toplevel").strip()
-    rep = check(repo, a.base)
-    print("\n".join(rep.lines))
+    rep = check(repo, a.base, a.pr_body)
+    if a.json:
+        result = "FAIL" if rep.fail else "WARN" if rep.warn else "PASS"
+        print(json.dumps({"result": result, "checks": rep.checks}, indent=1))
+    else:
+        print("\n".join(rep.lines))
     return 1 if rep.fail else 0
 
 
