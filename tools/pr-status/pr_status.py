@@ -12,12 +12,12 @@ Usage:
 `list` prints one line per open PR, then one line per unresolved review
 thread under it:
 
-  .github#95 593400c ci=pass(success=3,skipped=1) merge=clean threads=1 · feat(x): title
+  .github#95 593400c ci=fail(failure=1,success=3) failed=lint merge=clean threads=1 · feat(x): t
     Minor · Add the missing failing fixtures. · tools/x.py:58 · 4518902668
 
 - `ci` is the verdict over the head commit's check runs and commit statuses
   (fail > pending > pass; `none` when nothing reported), then the count of
-  each conclusion;
+  each conclusion and the names of the failed checks;
 - `merge` is GitHub's mergeable_state (`unknown` until GitHub has computed it),
   and `draft` is printed for a draft;
 - a thread line is `severity · title · path:line · comment id`. For a
@@ -119,14 +119,19 @@ def parse_ref(ref):
 
 
 def ci_summary(gh, repo, sha):
-    """The verdict and the count of each conclusion over check runs and statuses."""
-    counts = Counter()
+    """The verdict, the count of each conclusion and the failed checks' names."""
+    counts, failed = Counter(), []
     for run in gh.paged(f"repos/{repo}/commits/{sha}/check-runs"):
         done = run.get("status") == "completed"
-        counts[(run.get("conclusion") or "pending") if done else "pending"] += 1
+        state = (run.get("conclusion") or "pending") if done else "pending"
+        counts[state] += 1
+        if state in FAILED:
+            failed.append(run.get("name") or "?")
     status = gh.get(f"repos/{repo}/commits/{sha}/status") or {}
     for s in status.get("statuses", []):
         counts[s.get("state") or "pending"] += 1
+        if s.get("state") in FAILED:
+            failed.append(s.get("context") or "?")
     if not counts:
         verdict = "none"
     elif FAILED & set(counts):
@@ -135,7 +140,7 @@ def ci_summary(gh, repo, sha):
         verdict = "pending"
     else:
         verdict = "pass"
-    return {"verdict": verdict, "counts": dict(sorted(counts.items()))}
+    return {"verdict": verdict, "counts": dict(sorted(counts.items())), "failed": sorted(failed)}
 
 
 def strip_html(body):
@@ -250,6 +255,7 @@ def pr_lines(p):
     c = p["ci"]
     counts = ",".join(f"{k}={v}" for k, v in c["counts"].items())
     ci = f"ci={c['verdict']}" + (f"({counts})" if counts else "")
+    ci += f" failed={','.join(c['failed'])}" if c["failed"] else ""
     th = "?" if p["unresolved"] is None else p["unresolved"]
     draft = " draft" if p["draft"] else ""
     title = clean(p["title"])
@@ -382,7 +388,7 @@ def fixture():
                 {"status": "completed", "conclusion": "success"},
                 {"status": "completed", "conclusion": "success"},
                 {"status": "completed", "conclusion": "skipped"},
-                {"status": "completed", "conclusion": "failure"},
+                {"name": "lint", "status": "completed", "conclusion": "failure"},
             ]
         },
         f"repos/swarm-routing/alpha/commits/{'a' * 40}/status": {
@@ -482,7 +488,7 @@ def self_test():
     check(
         "pr line",
         lines[0]
-        == "alpha#5 aaaaaaa ci=fail(failure=1,skipped=1,success=3) merge=clean threads=3 · feat(x): a change",
+        == "alpha#5 aaaaaaa ci=fail(failure=1,skipped=1,success=3) failed=lint merge=clean threads=3 · feat(x): a change",
     )
     check(
         "unresolved thread line",
@@ -512,7 +518,12 @@ def self_test():
     check(
         "json",
         [p["number"] for p in js] == [5, 6]
-        and js[0]["ci"] == {"verdict": "fail", "counts": {"failure": 1, "skipped": 1, "success": 3}}
+        and js[0]["ci"]
+        == {
+            "verdict": "fail",
+            "counts": {"failure": 1, "skipped": 1, "success": 3},
+            "failed": ["lint"],
+        }
         and js[0]["unresolved"] == 3
         and js[0]["threads"][0]["replies"] == 1
         and js[1]["unresolved"] is None,
