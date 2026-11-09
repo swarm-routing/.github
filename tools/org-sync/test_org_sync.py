@@ -70,8 +70,24 @@ for kind in org_sync.KINDS:
         assert f"\n{t}:" in mk, (kind, t)
     check(not re.search(r"@[A-Z_]+@", mk), f"no unrendered @PLACEHOLDER@ in the {kind} Makefile")
 
+    lic = re.search(r"SPDX-License-Identifier: (.*)", mk).group(1)
+    check(lic == "GPL-2.0-only", f"a partly dual repo's Makefile is GPL-2.0-only ({kind})")
+    if kind == "protocol":
+        check("if [ -d ns3 ]" in mk, "a protocol repo's build/test wait for ns3/")
+
+# single dual-licensed files keep no trailing slash; directories get one
+check(org_sync.dual_root("test/run.sh") == "test/run.sh", "a dual file root stays a file")
+check(
+    org_sync.dual_root("./tools") == "tools/" and org_sync.dual_root(".github/") == ".github/",
+    "a dual directory root ends in /",
+)
+
 d = fresh()
 run("init", d, "--kind", "python", "--dual", "")
+check(
+    "SPDX-License-Identifier: MIT OR GPL-2.0-only" in read(os.path.join(d, "Makefile")),
+    "a fully dual repo's Makefile is dual",
+)
 
 # 2. An edit inside a managed section is drift; apply restores it.
 edit(d, "AGENTS.md", "9. **Nothing shipped", "9. **Something shipped")

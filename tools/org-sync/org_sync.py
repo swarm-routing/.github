@@ -232,6 +232,10 @@ def render_makefile(cfg):
     return (
         text.replace("@TITLE@", cfg["title"])
         .replace("@MODULE@", module)
+        .replace(
+            "@MAKEFILE_LICENSE@", "MIT OR GPL-2.0-only" if cfg["dual"] == [""] else "GPL-2.0-only"
+        )
+        .replace("@DOCKERFILE@", cfg.get("dockerfile", "Dockerfile"))
         .replace("@HEADER_ARGS@", header_args(cfg))
         .replace("@SHELL_IMAGE@", kind.get("shell_image", "$(NS3_IMAGE)"))
     )
@@ -253,8 +257,13 @@ def dual_root(d):
     d = d.strip().replace("\\", "/")
     while d.startswith("./"):
         d = d[2:]
+    is_dir = d.endswith("/") or "." not in d.rsplit("/", 1)[-1]
     d = d.strip("/")
-    return f"{d}/" if d else ""
+    if not d:
+        return ""
+    # a single dual-licensed file (`test/run.sh`) stays a file path: a trailing
+    # slash would make check-headers.py's prefix test never match it
+    return f"{d}/" if is_dir else d
 
 
 def values(cfg):
