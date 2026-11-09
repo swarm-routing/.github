@@ -78,7 +78,8 @@ ADOPT = {
 INSERT_AFTER = {
     ("README.md", "badges"): r"^# .*\n",
     # new in every AGENTS.md: placed before the repository's own table
-    ("AGENTS.md", "skills"): r"\n(?=\n## Where to look\n)",
+    # (with or without a blank line before the heading)
+    ("AGENTS.md", "skills"): r"\n(?=\n?## Where to look\n)",
 }
 
 

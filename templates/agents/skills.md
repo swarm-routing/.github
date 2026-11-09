@@ -16,4 +16,6 @@ from the script.
 
 A skill only this repository uses lives in its own `.claude/skills/`; a skill
 two repositories need moves to the plugin. Skills that read the private papers
-library stay in `swarm-routing/papers`.
+library stay in `swarm-routing/papers`. This section is managed by org-sync: add
+a row in `swarm-routing/.github` `templates/agents/skills.md`, not here (an edit
+here is undone by the next `org_sync.py apply`).
