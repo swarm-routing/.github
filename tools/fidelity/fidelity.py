@@ -319,7 +319,7 @@ def verify_text(sheet, texts):
     """(errors, warnings) for a sheet against {KEY: extracted text}."""
     sections = parse(sheet)
     index = {k: (_norm(v).splitlines(), _blocks(_norm(v).splitlines())) for k, v in texts.items()}
-    errors, warns, checked = [], [], 0
+    errors, warns, checked, skipped = [], [], 0, {}
     for name, src_col, val_col in (("Mechanisms", 1, None), ("Parameters", 2, 1)):
         for row in sections.get(name, [None, []])[1]:
             if len(row) <= src_col:
@@ -328,6 +328,7 @@ def verify_text(sheet, texts):
             first = re.search(r"\d+(?:\.\d+)?", _norm(value)) if value not in EMPTY else None
             for key, kind, num in _locators(row[src_col]):
                 if key not in index:
+                    skipped[key] = skipped.get(key, 0) + 1
                     continue
                 lines, blocks = index[key]
                 checked += 1
@@ -375,6 +376,8 @@ def verify_text(sheet, texts):
                     errors.append(f"{where}: value {first.group(0)} is not in that table")
                 else:
                     warns.append(f"{where}: value {first.group(0)} not found in that {kind}")
+    for key, n in sorted(skipped.items()):
+        warns.append(f"[{key}]: {n} locator(s) not checked: no --text {key}=PATH given")
     return errors, warns, checked
 
 
@@ -572,6 +575,11 @@ def self_test():
         not any("§ 4.2.5" in w for w in warns) and not any("eq." in w for w in warns),
     )
     expect("verify: the table of contents is not the body", n >= 6)
+    _, w4, n4 = verify_text(vsheet, {"R5": paper})
+    expect(
+        "verify: a key without --text is reported, not silently skipped",
+        n4 == 0 and any("[R05]" in w and "not checked" in w for w in w4),
+    )
     dotted = "3. The Routing Algorithm\n3.1. Route Discovery Phase\nants\n4.1. Simulation Environment\n50 nodes\n"
     e3, _, _ = verify_text(
         skeleton("A", "G02", "G").replace(
@@ -610,12 +618,19 @@ def main(argv=None):
         return self_test()
     if args.cmd == "verify":
         texts = {}
-        for kv in args.text:
-            key, _, path = kv.partition("=")
-            with open(path, encoding="utf-8", errors="replace") as fh:
-                texts[key] = fh.read()
-        with open(args.file, encoding="utf-8") as fh:
-            errors, warns, checked = verify_text(fh.read(), texts)
+        try:
+            for kv in args.text:
+                key, _, path = kv.partition("=")
+                if not key or not path:
+                    print(f"fidelity verify: --text {kv!r} is not KEY=PATH (e.g. R05=thesis.txt)")
+                    return 2
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    texts[key] = fh.read()
+            with open(args.file, encoding="utf-8") as fh:
+                errors, warns, checked = verify_text(fh.read(), texts)
+        except (OSError, Failure) as e:
+            print(f"fidelity verify: {e}")
+            return 2
         for e in errors:
             print(f"FAIL {e}")
         for w in warns:
@@ -624,7 +639,9 @@ def main(argv=None):
             f"fidelity verify: {checked} locator(s) checked; "
             f"{len(errors)} miss(es), {len(warns)} warning(s)"
         )
-        return 1 if errors else 0
+        if not checked:
+            print("fidelity verify: nothing was checked: no locator of a key given with --text")
+        return 1 if errors or not checked else 0
     if args.cmd == "skeleton":
         sys.stdout.write(skeleton(args.protocol, args.key, args.citation))
         return 0
