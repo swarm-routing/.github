@@ -531,6 +531,19 @@ def cmd_init(a):
         lines.append("dual = [" + ", ".join(f'"{d}"' for d in a.dual) + "]")
     if a.dockerfile:
         lines.append(f'dockerfile = "{a.dockerfile}"')
+    if a.kind not in ("site", "skills"):
+        # a new repository has no page on the site until site/hub/projects.json lists it,
+        # so its arena badge waits for the id (#96)
+        lines += [
+            "",
+            "[docs]",
+            f'arena_id = "{a.arena_id or ""}"'
+            + (
+                ""
+                if a.arena_id
+                else "  # its id in swarm-routing.github.io site/hub/projects.json, once listed"
+            ),
+        ]
     write(
         a.repo,
         CONFIG,
@@ -665,6 +678,11 @@ def main(argv=None):
         if name == "init":
             s.add_argument("--kind", required=True, choices=KINDS)
             s.add_argument("--title")
+            s.add_argument(
+                "--arena-id",
+                help="the project's id in the site's site/hub/projects.json; without it the "
+                "arena badge waits until [docs] arena_id is set",
+            )
             s.add_argument(
                 "--dockerfile",
                 help="container kind: the Dockerfile the seeded Makefile builds (default Dockerfile); "
