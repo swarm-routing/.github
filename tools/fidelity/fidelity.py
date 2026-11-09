@@ -178,8 +178,14 @@ def check_text(text):
                 problems.append(
                     f"## Parameters `{label}`: no value, but its source is not `unknown`"
                 )
-            if name == "Mechanisms" and kind != "unknown" and row[3].lower().startswith("unknown"):
-                open_rows.append(label)  # cites a section that does not settle it
+            status = row[3].strip().lower()
+            if (
+                name == "Mechanisms"
+                and kind != "unknown"
+                and (status == "unknown" or status.startswith("unknown:"))
+            ):
+                # a cited section, or a repo choice, that does not settle the mechanism
+                open_rows.append(label)
             if name == "Mechanisms" and row[3] in EMPTY:
                 problems.append(
                     f"## Mechanisms `{label}`: empty status (as written, deviation: …, not implemented: …, or unknown)"
@@ -333,6 +339,13 @@ def self_test():
     )
     expect("…and the row carries it", "open: FANT flooded" in row_line(summ, "ARA"))
     expect("no open rows by default", summ and check_text(good)[1]["open"] == [])
+    for st, want in (
+        ("unknown", True),
+        ("Unknown: which acknowledgement?", True),
+        ("unknownness", False),
+    ):
+        _, s = check_text(good.replace("| as written |", f"| {st} |"))
+        expect(f"status `{st}` open={want}", bool(s and s["open"]) == want)
     probs, _ = check_text(good.replace("[G02] §3.1", "[G02] the paper"))
     expect("the error names every locator form", probs and all(s in probs[0] for _, s in LOCATORS))
     expect("skeleton is the org shape", all(f"## {s}" in skeleton("X") for s in REQUIRED))
