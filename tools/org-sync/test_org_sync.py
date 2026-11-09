@@ -65,6 +65,7 @@ for kind in org_sync.KINDS:
     rc, _ = run("init", d, "--kind", kind, "--dual", "tools/")
     check(rc == 0, f"init --kind {kind} succeeds")
     check(run("check", d)[0] == 0, f"check is clean right after init ({kind})")
+    check("differs" not in run("seeds", d)[1], f"every seed reads same right after init ({kind})")
     mk = read(os.path.join(d, "Makefile"))
     for t in org_sync.MAKE_TARGETS:
         assert f"\n{t}:" in mk, (kind, t)
@@ -281,5 +282,72 @@ check(
     run("check", d)[0] == 0 and "LOCAL RULE" in text and "auto_incremental_review: false" in text,
     "apply restores the YAML head and keeps the repository's own instructions",
 )
+
+# 11. Seeds: `seeds` reports each against today's render (information, exit 0);
+# `reseed` takes today's render for one seed and refuses anything else (#91).
+d = fresh()
+run("init", d, "--kind", "protocol", "--title", "demo", "--dual", "core/")
+rc, out = run("seeds", d)
+check(
+    rc == 0 and "same      SECURITY.md" in out and "differs" not in out and "missing" not in out,
+    "right after init every seed reads same",
+)
+edit(
+    d,
+    ".github/org-sync.toml",
+    'kind = "protocol"\n',
+    'kind = "protocol"\ntrust_boundary = "The wire decoder is the only parser."\n',
+)
+rc, out = run("seeds", d)
+check(
+    rc == 0 and "differs   SECURITY.md (2 lines)" in out and "same      Makefile" in out,
+    "a config change shows the seed it reaches as differs, with its line count",
+)
+check(run("check", d)[0] == 0, "a differing seed is not drift: check stays clean")
+edit(
+    d,
+    "Makefile",
+    "SPDX-License-Identifier: GPL-2.0-only",
+    "SPDX-License-Identifier: MIT OR GPL-2.0-only",
+)
+rc, out = run("seeds", d)
+check("differs   Makefile (2 lines)" in out, "an old Makefile header (#86) shows as differs")
+edit(d, "SECURITY.md", "## Verifying what it ships", "LOCAL NOTE\n\n## Verifying what it ships")
+rc, out = run("reseed", "SECURITY.md", d)
+sec = read(os.path.join(d, "SECURITY.md"))
+check(
+    rc == 0
+    and "+The wire decoder is the only parser." in out
+    and "-LOCAL NOTE" in out
+    and "reseeded  SECURITY.md" in out,
+    "reseed prints the diff it writes",
+)
+check(
+    "The wire decoder is the only parser." in sec
+    and "LOCAL NOTE" not in sec
+    and "<!-- org-sync:begin reporting -->\n## Reporting" in sec,
+    "reseed writes today's render, its managed section filled in",
+)
+run("reseed", "Makefile", d)
+rc, out = run("seeds", d)
+check("differs" not in out and run("check", d)[0] == 0, "after reseed the seeds read same again")
+for f in ("LICENSE", ".github/workflows/org-sync.yml", "core/x.h"):
+    before = read(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None
+    rc, out = run("reseed", f, d)
+    after = read(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None
+    check(rc == 2 and "is not a seed" in out and before == after, f"reseed refuses {f}")
+os.remove(os.path.join(d, "CONTEXT.md"))
+adr = "docs/adr/0001-record-architecture-decisions.md"
+edit(d, adr, "- **Date:** " + org_sync.datetime.date.today().isoformat(), "- **Date:** 2020-01-02")
+rc, out = run("seeds", d)
+check("missing   CONTEXT.md" in out, "a deleted seed reads missing")
+check(f"same      {adr}" in out, "a dated seed keeps its own date: same")
+rc, out = run("seeds", "--json", d)
+check(
+    '{"file":"CONTEXT.md","status":"missing","lines":0}' in out,
+    "seeds --json gives file, status and lines",
+)
+run("reseed", "CONTEXT.md", d)
+check(os.path.exists(os.path.join(d, "CONTEXT.md")), "reseed creates a missing seed")
 
 print("org-sync self-test: OK")
