@@ -272,13 +272,18 @@ def run(args, gh=None, clone_url=None):
         )
     work = tempfile.mkdtemp(prefix="org-bot-")
     data = os.path.join(work, "epics.json")
-    # Always every public repository's epics: .github's ROADMAP and profile list
-    # them all, so a run limited by --repos must not regenerate them from part
-    # of the data (it would delete the other repositories' sections).
+    # A run with the epics task fetches every public repository's epics:
+    # .github's ROADMAP and profile list them all, so a run limited by --repos
+    # must not regenerate them from part of the data (it would delete the other
+    # repositories' sections). org-sync reads no epic data, so an org-sync-only
+    # run fetches just the repositories it touches.
     if args.data:
         shutil.copy(args.data, data)
     else:
-        sh([sys.executable, "-I", EPICS, "fetch", "--out", data], env=gh.env)
+        fetch = [sys.executable, "-I", EPICS, "fetch", "--out", data]
+        if args.repos and "epics" not in tasks:
+            fetch += ["--repos", args.repos]
+        sh(fetch, env=gh.env)
     repos = [r["name"] for r in json.load(open(data))["repos"]]  # public, not archived, not forks
     if args.repos:
         wanted = [n.strip() for n in args.repos.split(",") if n.strip()]
@@ -610,6 +615,30 @@ def self_test():
     check("--repos picks the repositories", [r for r, _ in seen] == ["beta"])
     check("--repos keeps every repository's data", seen and seen[0][1] == ["alpha", "beta"])
     check("--repos rejects an unknown name", unknown)
+
+    # and the API path itself: with no --data, the epics fetch gets no --repos
+    # filter (the bug), while an org-sync-only run fetches only its repositories
+    fetches = []
+    real_sh = globals()["sh"]
+
+    def fake_sh(cmd, cwd=None, env=None, check=True):
+        if len(cmd) > 3 and cmd[2] == EPICS and cmd[3] == "fetch":
+            fetches.append(cmd)
+            shutil.copy(wide, cmd[cmd.index("--out") + 1])
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return real_sh(cmd, cwd=cwd, env=env, check=check)
+
+    globals()["sh"], globals()["generate"] = fake_sh, spy_generate
+    try:
+        go(FakeGitHub(), repos="beta", data="")
+        go(FakeGitHub(), repos="beta", data="", task="org-sync")
+    finally:
+        globals()["sh"], globals()["generate"] = real_sh, real_generate
+    check("epics fetch is never limited by --repos", fetches and "--repos" not in fetches[0])
+    check(
+        "org-sync-only fetch is limited to its repositories",
+        len(fetches) == 2 and fetches[1][-2:] == ["--repos", "beta"],
+    )
     # a stale bot branch of that name (its PR closed by hand, unrelated history) is overwritten
     git_dir = os.path.join(remotes, ORG, "alpha.git")
     empty_tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # git's well-known empty tree
