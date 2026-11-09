@@ -14,7 +14,9 @@ of each public repository:
             .github also ROADMAP.md#epics and the profile's open epics.
   org-sync  tools/org-sync/org_sync.py apply, in each repository with a
             .github/org-sync.toml. Sections the repository owns
-            (`org_sync.py conflicts`) are never forced; the PR lists them.
+            (`org_sync.py conflicts`) are never forced; the PR lists them,
+            and the seeds that differ from today's render (`org_sync.py
+            seeds`), for information: the bot never changes a seed.
 
 When a run changes files, the bot opens one PR per repository and task:
 - the branch is `org-bot/<task>-<hash of the change>`;
@@ -171,6 +173,14 @@ def generate(task, repo, clone, data, out):
         r = sh([sys.executable, "-I", ORG_SYNC, "conflicts", clone], check=False)
         if r.stdout.strip():
             out.append("conflicts left to the repository:\n" + r.stdout.strip())
+        # seeds are the repository's own: listed for information, never changed (#91)
+        r = sh([sys.executable, "-I", ORG_SYNC, "seeds", clone], check=False)
+        differ = [ln for ln in r.stdout.splitlines() if ln.startswith(("differs", "missing"))]
+        if differ:
+            out.append(
+                "seeds that differ from today's render (the repository's own, not changed "
+                "here; `org_sync.py reseed FILE` takes the template):\n" + "\n".join(differ)
+            )
     return out
 
 
@@ -655,6 +665,25 @@ def self_test():
     pushed = sh(["git", "--git-dir", git_dir, "rev-parse", branches["org-sync"]]).stdout.strip()
     check(
         "stale branch overwritten", "opened #42" in out and "FAILED" not in out and pushed != orphan
+    )
+    # org-sync notes list the seeds that differ, for information, and leave them alone
+    adopted = os.path.join(work, "adopted")
+    os.makedirs(adopted)
+    sh(["git", "-C", adopted, "init", "-q"])
+    sh([sys.executable, "-I", ORG_SYNC, "init", adopted, "--kind", "data", "--title", "demo"])
+    cfg = os.path.join(adopted, ".github", "org-sync.toml")
+    with open(cfg) as fh:
+        text = fh.read()
+    with open(cfg, "w") as fh:
+        fh.write(text.replace('kind = "data"\n', 'kind = "data"\nposture = "a dataset"\n'))
+    with open(os.path.join(adopted, "SECURITY.md")) as fh:
+        before = fh.read()
+    notes = generate("org-sync", "adopted", adopted, data, [])
+    with open(os.path.join(adopted, "SECURITY.md")) as fh:
+        after = fh.read()
+    check(
+        "org-sync notes list differing seeds, unchanged",
+        any("differs   SECURITY.md (2 lines)" in n for n in notes) and before == after,
     )
     # org_sync.py apply: exit 1 with only stdout is owned sections left alone; anything else fails
     check(

@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """Apply the swarm-routing org templates to a repository, and check for drift.
 
-Usage: org_sync.py {init,plan,apply,conflicts,check,settings} [REPO_DIR] [options]
+Usage: org_sync.py {init,plan,apply,conflicts,check,seeds,settings} [REPO_DIR] [options]
+       org_sync.py reseed FILE [REPO_DIR]
 
 The repository describes itself in `.github/org-sync.toml` (`init` writes it).
 Each managed item is one of:
@@ -13,14 +14,19 @@ Each managed item is one of:
            NAME` / `# org-sync:end NAME` in a YAML file); the rest of the file
            is the repository's own
   file     the whole file is the org's
-  seed     created once from a template, then the repository's own
+  seed     created once from a template, then the repository's own: `check`
+           never compares it again. `seeds` reports, for information (exit
+           0), whether each reads `same` as today's render, `differs (N
+           lines)` or is `missing` (managed sections inside it are left to
+           `check`); `reseed FILE` prints the diff and writes today's render
+           over that one seed, and refuses any file that is not a seed
   json     only the named keys of a JSON file are the org's
   targets  a Makefile that is the repository's own, checked only for the
            org's standard target names (swarm-routing/.github#11)
 
 Output is a summary, never file contents, so an agent reads a few lines per
-run (AntHocNet ADR-0014). Only `conflicts` prints text: the hunks that need a
-person's judgement. Stdlib only; Python 3.11+ (tomllib).
+run (AntHocNet ADR-0014). Only `conflicts` and `reseed` print text: the hunks
+that need a person's judgement, and the change a reseed makes. Stdlib only; Python 3.11+ (tomllib).
 """
 
 import argparse
@@ -387,16 +393,22 @@ def wrap(name, body, path=""):
     return f"{begin.format(name)}\n{body}{end.format(name)}"
 
 
+def render(cfg, repo_dir, item, v=None):
+    """What the template and the config produce for this item today."""
+    kind, path, src, name = item
+    want = badge_lines(cfg, repo_dir) if name == "badges" else (template(src) or "" if src else "")
+    if kind == "seed":
+        want = render_makefile(cfg) if path == "Makefile" else want.format_map(v or values(cfg))
+    return want
+
+
 def evaluate(cfg, repo_dir, item):
     """Return (status, new_text_or_None, detail). status: create, update,
     unchanged, adopt, conflict, missing."""
     kind, path, src, name = item
     full = os.path.join(repo_dir, path)
     cur = read(full)
-    v = values(cfg)
-    want = badge_lines(cfg, repo_dir) if name == "badges" else (template(src) or "" if src else "")
-    if kind == "seed":
-        want = render_makefile(cfg) if path == "Makefile" else want.format_map(v)
+    want = render(cfg, repo_dir, item)
     if kind == "targets":
         if cur is None:
             return "create", None, "with its file"
@@ -466,6 +478,55 @@ def evaluate(cfg, repo_dir, item):
     if old.rstrip("\n") + "\n" == want:
         return "adopt", new, "markers added; text identical"
     return "conflict", new, "existing text differs from the template"
+
+
+# --- seeds ---------------------------------------------------------------------
+# A seed belongs to the repository once written, so `check` never compares it
+# again (#91). `seeds` reports how far each one is from today's render, for
+# information; `reseed` takes today's render on request.
+
+
+def with_sections(cfg, repo_dir, path, text):
+    """`text` with each managed section of `path` set to its template body, so a
+    seed is compared on the repository's own part only (sections are `check`'s)."""
+    for item in items(cfg):
+        if item[0] == "section" and item[1] == path:
+            span = find_section(text, item[3], path)
+            if span:
+                text = text[: span[0]] + render(cfg, repo_dir, item) + text[span[1] :]
+    return text
+
+
+def fresh_seed(cfg, repo_dir, item, cur=None):
+    """The seed as a fresh `init` would write it today, its sections filled in.
+    A dated seed (the first ADR) keeps the date it already carries."""
+    v = values(cfg)
+    m = re.search(r"^- \*\*Date:\*\* (\d{4}-\d\d-\d\d)", cur or "", re.M)
+    if m:
+        v["date"] = m.group(1)
+    return with_sections(cfg, repo_dir, item[1], render(cfg, repo_dir, item, v))
+
+
+def changed_lines(old, new):
+    d = difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=0)
+    return sum(1 for x in d if x[:1] in "+-" and x[:3] not in ("+++", "---"))
+
+
+def seed_report(cfg, repo_dir):
+    """[(path, status, changed lines)], status same / differs / missing."""
+    out = []
+    for item in items(cfg):
+        if item[0] != "seed":
+            continue
+        cur = read(os.path.join(repo_dir, item[1]))
+        if cur is None:
+            out.append((item[1], "missing", 0))
+            continue
+        n = changed_lines(
+            with_sections(cfg, repo_dir, item[1], cur), fresh_seed(cfg, repo_dir, item, cur)
+        )
+        out.append((item[1], "differs" if n else "same", n))
+    return out
 
 
 def plan(cfg, repo_dir):
@@ -634,6 +695,58 @@ def cmd_check(a):
     return 0
 
 
+def cmd_seeds(a):
+    cfg = load_config(a.repo)
+    rows = seed_report(cfg, a.repo)
+    if a.json:
+        print(
+            json.dumps(
+                [{"file": f, "status": st, "lines": n} for f, st, n in rows],
+                separators=(",", ":"),
+            )
+        )
+        return 0
+    for f, st, n in rows:
+        print(f"{st:9} {f}" + (f" ({n} lines)" if st == "differs" else ""))
+    if any(st != "same" for _, st, _ in rows):
+        print(
+            "org-sync: seeds are the repository's own; `org_sync.py reseed FILE` takes today's render"
+        )
+    return 0
+
+
+def cmd_reseed(a):
+    cfg = load_config(a.repo)
+    path = os.path.normpath(a.file).replace(os.sep, "/")
+    kinds = sorted({i[0] for i in items(cfg) if i[1] == path})
+    if "seed" not in kinds:
+        what = f"managed as {'/'.join(kinds)}" if kinds else "not an org-sync item"
+        print(f"org-sync: {path} is not a seed ({what}); reseed only re-renders seeds")
+        return 2
+    # the seed path is the org's, but a symlink in the repo (the file or a parent
+    # directory) could still point it outside: never read or write through one
+    root = os.path.realpath(a.repo)
+    target = os.path.realpath(os.path.join(a.repo, path))
+    if os.path.commonpath([root, target]) != root:
+        print(f"org-sync: {path} resolves outside the repository ({target}); not reseeded")
+        return 2
+    item = next(i for i in items(cfg) if i[0] == "seed" and i[1] == path)
+    cur = read(os.path.join(a.repo, path))
+    new = fresh_seed(cfg, a.repo, item, cur)
+    if cur == new:
+        print(f"org-sync: {path} already matches the template")
+        return 0
+    sys.stdout.writelines(
+        line + "\n"
+        for line in difflib.unified_diff(
+            (cur or "").splitlines(), new.splitlines(), "repo", "org-sync", lineterm="", n=3
+        )
+    )
+    write(a.repo, path, new)
+    print(f"{'reseeded' if cur is not None else 'created':9} {path}")
+    return 0
+
+
 def cmd_settings(a):
     cfg = load_config(a.repo)
     repo = cfg["repo"]
@@ -672,8 +785,10 @@ def cmd_settings(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="org_sync.py", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "plan", "apply", "conflicts", "check", "settings"):
+    for name in ("init", "plan", "apply", "conflicts", "check", "seeds", "reseed", "settings"):
         s = sub.add_parser(name)
+        if name == "reseed":
+            s.add_argument("file", help="the seed to re-render, as `seeds` prints it")
         s.add_argument("repo", nargs="?", default=".")
         if name == "init":
             s.add_argument("--kind", required=True, choices=KINDS)
@@ -693,7 +808,7 @@ def main(argv=None):
                 nargs="*",
                 help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)",
             )
-        if name in ("plan", "settings"):
+        if name in ("plan", "seeds", "settings"):
             s.add_argument("--json", action="store_true")
         if name == "plan":
             s.add_argument("-v", "--verbose", action="store_true")
