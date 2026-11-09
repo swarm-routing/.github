@@ -229,12 +229,17 @@ def render_makefile(cfg):
         recipe = "\n".join(f"\t{line.strip()}" for line in lines)
         text = text.replace(f"@{key.upper()}@", recipe)
     module = cfg.get("module", cfg["title"].lower())
+    # the template is the org's tooling (dual); the Makefile it seeds belongs to
+    # the repo, dual only when the whole repo is
+    if cfg["dual"] != [""]:
+        text = text.replace(
+            "SPDX-License-Identifier: MIT OR GPL-2.0-only",
+            "SPDX-License-Identifier: GPL-2.0-only",
+            1,
+        )
     return (
         text.replace("@TITLE@", cfg["title"])
         .replace("@MODULE@", module)
-        .replace(
-            "@MAKEFILE_LICENSE@", "MIT OR GPL-2.0-only" if cfg["dual"] == [""] else "GPL-2.0-only"
-        )
         .replace("@DOCKERFILE@", cfg.get("dockerfile", "Dockerfile"))
         .replace("@HEADER_ARGS@", header_args(cfg))
         .replace("@SHELL_IMAGE@", kind.get("shell_image", "$(NS3_IMAGE)"))
@@ -257,7 +262,9 @@ def dual_root(d):
     d = d.strip().replace("\\", "/")
     while d.startswith("./"):
         d = d[2:]
-    is_dir = d.endswith("/") or "." not in d.rsplit("/", 1)[-1]
+    # a trailing slash, or no extension in the last part (a leading dot is not
+    # one: `.github` is a directory), marks a directory
+    is_dir = d.endswith("/") or "." not in d.rstrip("/").rsplit("/", 1)[-1].lstrip(".")
     d = d.strip("/")
     if not d:
         return ""
@@ -502,6 +509,8 @@ def cmd_init(a):
         lines.append(f'title = "{a.title}"')
     if a.dual is not None:
         lines.append("dual = [" + ", ".join(f'"{d}"' for d in a.dual) + "]")
+    if a.dockerfile:
+        lines.append(f'dockerfile = "{a.dockerfile}"')
     write(
         a.repo,
         CONFIG,
@@ -636,6 +645,11 @@ def main(argv=None):
         if name == "init":
             s.add_argument("--kind", required=True, choices=KINDS)
             s.add_argument("--title")
+            s.add_argument(
+                "--dockerfile",
+                help="container kind: the Dockerfile the seeded Makefile builds (default Dockerfile); "
+                "the Makefile is seeded once, so set it here or edit DOCKERFILE in the Makefile later",
+            )
             s.add_argument(
                 "--dual",
                 nargs="*",
