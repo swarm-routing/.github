@@ -22,7 +22,8 @@ The sheet has four required sections, each a Markdown table:
 
 and may add `## Differences from <arm>` (| Paper | Arm | Difference |) and any
 prose. A Source cell is one or more references `[KEY] §3.1`, `[KEY] Table 4.1`,
-`[KEY] Fig. 2`, `[KEY] eq. 4.3` (joined by `;`), or `repo choice: <reason>`, or
+`[KEY] Fig. 2`, `[KEY] Listing 13.17`, `[KEY] eq. 4.3`,
+`[KEY] p. 84` (joined by `;`), or `repo choice: <reason>`, or
 `unknown`. KEY must be a row of Sources. A parameter whose source is `unknown`
 may have the value `—`; any other value needs a source. Stdlib only.
 """
@@ -41,7 +42,7 @@ REQUIRED = {
 }
 OPTIONAL_PREFIX = "Differences from"
 ACCESS = {"open", "browser", "institution", "author", "in hand"}
-LOCATOR = r"(§\s?\d+(\.\d+)*[a-z]?|Table\s\d+(\.\d+)*|Fig\.\s\d+(\.\d+)*[a-z]?|eq\.\s\d+(\.\d+)*|p\.\s\d+|ch\.\s\d+|App\.\s[A-Z])"
+LOCATOR = r"(§\s?\d+(\.\d+)*[a-z]?|Table\s\d+(\.\d+)*|Fig\.\s\d+(\.\d+)*[a-z]?|Listing\s\d+(\.\d+)*|Alg\.\s\d+(\.\d+)*|eq\.\s\d+(\.\d+)*|pp?\.\s\d+(–\d+)?|ch\.\s\d+|App\.\s[A-Z])"
 REF = re.compile(r"^\[([A-Za-z0-9_-]+)\]\s+" + LOCATOR + r"(\s*,\s*" + LOCATOR + r")*$")
 EMPTY = {"", "—", "-", "–"}
 
@@ -294,6 +295,9 @@ def self_test():
     bad("## Parameters", "## Params", "missing section `## Parameters`")
     bad("| Parameter | Value | Source | Notes |", "| Parameter | Source | Notes |", "columns are")
     bad("[G02] Fig. 4 |", "maybe |", "Anchor candidate row 1")
+    for loc in ("Listing 13.17", "Alg. 2", "p. 84", "pp. 72–74", "ch. 13", "§4.2.5, p. 74"):
+        probs, _ = check_text(good.replace("[G02] Table 1, Fig. 2", f"[G02] {loc}"))
+        expect(f"accepts locator {loc}", probs == [])
     expect("skeleton is the org shape", all(f"## {s}" in skeleton("X") for s in REQUIRED))
     probs, _ = check_text(skeleton("X"))
     expect("skeleton passes check (TODO rows are unknown)", probs == [])

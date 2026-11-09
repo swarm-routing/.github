@@ -177,7 +177,7 @@ Org-wide (1–9), then this repo's own.
 | Change the org landing page | `profile/README.md` |
 | Keep every repo's epic list and org-managed files current without hand PRs | `tools/org-bot/org_bot.py` (`run --task` `epics`, `org-sync` or `all`; `--self-test`), `org-bot.yml` (daily, on template pushes; secret `ORG_BOT_TOKEN`); CONTRIBUTING "Automation" |
 | Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py` (`repos`, `status`, `sync`; `--self-test`), the daily `zenodo.yml` (secret `ZENODO_TOKEN`); CONTRIBUTING "Releases and DOIs" |
-| Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (`protocol-dev` plugin) |
+| Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
 | The reference implementation and its history | [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |
