@@ -89,7 +89,9 @@ agent working with them, can pick one up and follow that repository's
 `AGENTS.md`.
 
 **Labels** ([`labels.json`](labels.json), applied by
-[`sync-labels.yml`](.github/workflows/sync-labels.yml)):
+[`sync-labels.yml`](.github/workflows/sync-labels.yml) in each public
+repository; private repositories such as `papers` run no pipelines, so a new
+label is added there by hand):
 
 | Kind | Rule | Labels |
 |---|---|---|
