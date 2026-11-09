@@ -78,17 +78,22 @@ def config(repo):
 def diff(repo, base):
     """(changed files, {file: [added lines]}, new files)."""
     mb = git(repo, "merge-base", base, "HEAD", check=False).strip() or base
-    changed = set(git(repo, "diff", "--name-only", mb).split())
-    new = set(git(repo, "diff", "--name-only", "--diff-filter=A", mb).split())
-    untracked = set(git(repo, "ls-files", "--others", "--exclude-standard").split())
+
+    def names(*args):
+        # NUL-separated: a path with spaces or non-ASCII characters stays whole
+        return {n for n in git(repo, *args, "-z").split("\0") if n}
+
+    changed = names("diff", "--name-only", mb)
+    new = names("diff", "--name-only", "--diff-filter=A", mb)
+    untracked = names("ls-files", "--others", "--exclude-standard")
     changed |= untracked
     new |= untracked
-    added, cur = {}, None
-    for line in git(repo, "diff", "-U0", mb).splitlines():
-        if line.startswith("+++ "):
-            cur = line[6:] if line.startswith("+++ b/") else None
-        elif cur and line.startswith("+") and not line.startswith("+++"):
-            added.setdefault(cur, []).append(line[1:])
+    added = {}
+    for f in sorted(changed - untracked):
+        # one diff per file, so the file name never has to be parsed back out
+        for line in git(repo, "diff", "-U0", mb, "--", f).splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                added.setdefault(f, []).append(line[1:])
     for f in untracked:
         p = os.path.join(repo, f)
         if os.path.isfile(p):
@@ -261,7 +266,8 @@ def check(repo, base="origin/main"):
             if (
                 m
                 and not m.group(1).startswith(("./", "docker://"))
-                and "/.github/workflows/" not in m.group(1)
+                # only the org's own reusable workflows may follow @main (rule 10)
+                and not m.group(1).startswith("swarm-routing/.github/.github/workflows/")
             ):
                 if not SHA_PIN.match(line):
                     unpinned.append(f"{f}: {line.strip()}")
@@ -448,6 +454,26 @@ def self_test():
     r = repo({}, {"docs/how.md": "run .claude/skills/x/y.sh\n"})
     expect("rule 9: a doc may mention one", not has(r, "FAIL", "rule 9"))
 
+    r = repo(
+        {},
+        {".github/workflows/ci.yml": "      - uses: other-org/repo/.github/workflows/x.yml@main\n"},
+    )
+    expect("rule 8: a non-org reusable workflow at @main fails", has(r, "FAIL", "rule 8"))
+    r = repo({}, {"core/a b.cc": "int f();\n", "core/tests/t.cc": test})
+    expect(
+        "a path with a space is checked, not dropped",
+        has(r, "FAIL", "rule 1") and "core/a b.cc" in "\n".join(r.lines),
+    )
+    r = repo({}, {"core/ação.cc": "int f();\n", "core/tests/t.cc": test})
+    expect(
+        "a non-ASCII path is checked",
+        has(r, "FAIL", "rule 1") and "core/ação.cc" in "\n".join(r.lines),
+    )
+    r = repo(
+        {"core/x y.cc": hdr.format(DUAL) + "int x();\n"},
+        {"core/x y.cc": hdr.format(DUAL) + "int r() { return rand(); }\n", "core/tests/t.cc": test},
+    )
+    expect("added lines of a tracked path with a space are read", has(r, "FAIL", "rule 5"))
     r = repo({}, {"README.md": "text\n"})
     expect("a docs-only diff has nothing to check", has(r, "PASS", "nothing in the diff"))
 

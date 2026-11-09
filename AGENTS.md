@@ -28,7 +28,7 @@ tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), the review row (row)
-tools/protocol-review/check_invariants.py   the org golden rules (1-9) checked on a repo's diff: PASS/WARN/FAIL per rule, exit 1 on a FAIL
+tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
@@ -55,7 +55,7 @@ python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture dat
 python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo
 python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub
 python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker, on fixture sheets
-python3 -I tools/protocol-review/check_invariants.py --self-test   # the golden-rule checks, a passing and a failing fixture repo per rule
+python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule (not 6 or 7)
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
