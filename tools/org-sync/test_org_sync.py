@@ -95,6 +95,25 @@ check(
     "a fully dual repo's Makefile is dual",
 )
 
+# the site badge names the project's page; the image badge only where it builds
+da = fresh()
+run("init", da, "--kind", "protocol", "--title", "ARA", "--dual", "core/")
+rd = read(os.path.join(da, "README.md"))
+check(
+    "https://swarm-routing.github.io/arena/ARA/" in rd,
+    "a protocol repo's badge row links its page on the site",
+)
+check(
+    "packages/container/package/ns3-dev" in rd,
+    "a protocol repo's badge row links the ns3-dev image",
+)
+da = fresh()
+run("init", da, "--kind", "skills", "--dual", "")
+rd = read(os.path.join(da, "README.md"))
+check(
+    "arena/" not in rd and "ns3-dev" not in rd, "the skills repo gets neither (no page, no image)"
+)
+
 # 2. An edit inside a managed section is drift; apply restores it.
 edit(d, "AGENTS.md", "9. **Nothing shipped", "9. **Something shipped")
 rc, out = run("check", d)
