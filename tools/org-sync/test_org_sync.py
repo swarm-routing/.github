@@ -70,8 +70,30 @@ for kind in org_sync.KINDS:
         assert f"\n{t}:" in mk, (kind, t)
     check(not re.search(r"@[A-Z_]+@", mk), f"no unrendered @PLACEHOLDER@ in the {kind} Makefile")
 
+    lic = re.search(r"SPDX-License-Identifier: (.*)", mk).group(1)
+    check(lic == "GPL-2.0-only", f"a partly dual repo's Makefile is GPL-2.0-only ({kind})")
+    if kind == "protocol":
+        for target in ("build", "test"):
+            recipe = mk.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+            check("if [ -d ns3 ]" in recipe, f"a protocol repo's {target} waits for ns3/")
+
+# single dual-licensed files keep no trailing slash; directories get one
+check(org_sync.dual_root("test/run.sh") == "test/run.sh", "a dual file root stays a file")
+for root in ("./tools", ".github", ".github/", "tools"):
+    check(org_sync.dual_root(root).endswith("/"), f"a dual directory root ends in / ({root})")
+d = fresh()
+run("init", d, "--kind", "container", "--dual", "tools/", "--dockerfile", "docker/Dockerfile")
+check(
+    "DOCKERFILE ?= docker/Dockerfile" in read(os.path.join(d, "Makefile")),
+    "init --dockerfile reaches the seeded Makefile",
+)
+
 d = fresh()
 run("init", d, "--kind", "python", "--dual", "")
+check(
+    "SPDX-License-Identifier: MIT OR GPL-2.0-only" in read(os.path.join(d, "Makefile")),
+    "a fully dual repo's Makefile is dual",
+)
 
 # 2. An edit inside a managed section is drift; apply restores it.
 edit(d, "AGENTS.md", "9. **Nothing shipped", "9. **Something shipped")

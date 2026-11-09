@@ -4,8 +4,9 @@
 # a repo overrides any command with `[make]` there (e.g. make.build).
 
 [protocol]
-build  = 'docker run --rm -v "$(CURDIR):/src:ro" $(NS3_IMAGE) ns3-build-contrib @MODULE@=/src/ns3'
-test   = 'docker run --rm -v "$(CURDIR):/src:ro" $(NS3_IMAGE) ns3-build-contrib --test @MODULE@=/src/ns3'
+# until the module exists (a repo before its first ns3/ PR) both say so and succeed
+build  = 'if [ -d ns3 ]; then docker run --rm -v "$(CURDIR):/src:ro" $(NS3_IMAGE) ns3-build-contrib @MODULE@=/src/ns3; else echo "make build: no ns3/ module yet"; fi'
+test   = 'if [ -d ns3 ]; then docker run --rm -v "$(CURDIR):/src:ro" $(NS3_IMAGE) ns3-build-contrib --test @MODULE@=/src/ns3; else echo "make test: no ns3/ module yet"; fi'
 lint   = 'git ls-files "*.h" "*.cc" "*.cpp" "*.hpp" | xargs -r clang-format --dry-run --Werror'
 format = 'git ls-files "*.h" "*.cc" "*.cpp" "*.hpp" | xargs -r clang-format -i'
 clean  = 'rm -rf build'

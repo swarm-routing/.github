@@ -9,7 +9,7 @@
 NS3_IMAGE ?= ghcr.io/swarm-routing/ns3-dev:latest-debug
 PLATFORM  ?=
 # container kind: the image's Dockerfile and its build arguments
-DOCKERFILE ?= Dockerfile
+DOCKERFILE ?= @DOCKERFILE@
 BUILD_ARGS ?=
 # The org tooling (check-headers.py, org-sync): a shallow clone, refreshed to ORG_REF.
 ORG_DIR   ?= $(HOME)/.cache/swarm-routing/dotgithub
