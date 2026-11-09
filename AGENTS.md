@@ -27,8 +27,9 @@ tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (+
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
+tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against the org standard (AntHocNet's): badges, explanation, site page, ns-3 image, layout, sections, links
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
-tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's
+tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's, with HINT lines at the likely spots
 tools/pr-status/pr_status.py    open PRs across repos, read-only: a line per PR (head, CI verdict and counts, mergeable state) and per unresolved review thread (severity · title · path:line · id)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
@@ -55,8 +56,9 @@ python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
 python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo
 python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub
+python3 -I tools/docs-review/check_docs.py --self-test   # the docs standard, a passing and a failing fixture repo per check
 python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker, on fixture sheets
-python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule (not 6 or 7)
+python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule; a hinted and an unhinted one for 6 and 7
 python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, threads, a CodeRabbit body reduced to its heading, wait)
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
@@ -183,7 +185,8 @@ Org-wide (1–9), then this repo's own.
 | Change the org landing page | `profile/README.md` |
 | Keep every repo's epic list and org-managed files current without hand PRs | `tools/org-bot/org_bot.py` (`run --task` `epics`, `org-sync` or `all`; `--self-test`), `org-bot.yml` (daily, on template pushes; secret `ORG_BOT_TOKEN`); CONTRIBUTING "Automation" |
 | Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py` (`repos`, `status`, `sync`; `--self-test`), the daily `zenodo.yml` (secret `ZENODO_TOKEN`); CONTRIBUTING "Releases and DOIs" |
-| Check a diff against the org golden rules before review | `tools/protocol-review/check_invariants.py [REPO] --base origin/main` (per-repo `[review]` table in its `.github/org-sync.toml`; `--self-test`); the `protocol-review` skill in `swarm-routing/skills` |
+| Hold a repo's README, AGENTS/CLAUDE/CONTEXT and docs/ to the org standard | `tools/docs-review/check_docs.py [REPO]` (`[docs]` table in its `.github/org-sync.toml`: `arena_id`, `uses_image`; `--self-test`); the `docs-review` skill in `swarm-routing/skills` |
+| Check a diff against the org golden rules before review | `tools/protocol-review/check_invariants.py [REPO] --base origin/main [--pr-body FILE] [--json]` (per-repo `[review]` table in its `.github/org-sync.toml`; `--self-test`); the `protocol-review` skill in `swarm-routing/skills` |
 | See every open PR's CI, mergeable state and unresolved review threads, or wait for CI | `tools/pr-status/pr_status.py` (`list [--repos A,B] [--author L]`, `threads REPO#N [--all]`, `wait REPO#N…`; `--json` on each; `--self-test`); the `pr-shepherd` skill in `swarm-routing/skills` |
 | Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `verify --text KEY=<pdfx text>`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |

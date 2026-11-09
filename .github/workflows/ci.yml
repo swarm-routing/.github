@@ -36,6 +36,8 @@ jobs:
         run: python3 -I tools/org-bot/org_bot.py --self-test
       - name: fidelity self-test (tools/fidelity)
         run: python3 -I tools/fidelity/fidelity.py --self-test
+      - name: docs-review self-test (tools/docs-review)
+        run: python3 -I tools/docs-review/check_docs.py --self-test
       - name: protocol-review self-test (tools/protocol-review)
         run: python3 -I tools/protocol-review/check_invariants.py --self-test
       - name: pr-status self-test (tools/pr-status)
