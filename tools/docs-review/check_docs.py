@@ -34,7 +34,11 @@ import tempfile
 import tomllib
 
 SITE = "https://swarm-routing.github.io/"
-IMAGE = ("ghcr.io/swarm-routing/ns3-dev", "swarm-routing/ns3-containers")
+IMAGE = (
+    "ghcr.io/swarm-routing/ns3-dev",
+    "packages/container/package/ns3-dev",
+    "swarm-routing/ns3-containers",
+)
 AGENTS_HEADINGS = (
     "What this repo is",
     "Build & verify",
@@ -64,9 +68,12 @@ def config(repo):
     d = cfg.get("docs", {})
     name = os.path.basename(os.path.abspath(repo))
     # the site's ids (site/hub/projects.json) where they differ from the title
+    # (as org-sync's arena badge: the skills repo has no page; the site is the site)
     default_id = {".github": "org-commons", "swarm-routing.github.io": ""}.get(
         cfg.get("title", name), cfg.get("title", name)
     )
+    if cfg.get("kind") == "skills":
+        default_id = None
     return {
         "kind": cfg.get("kind", ""),
         "arena_id": d.get("arena_id", default_id),
@@ -161,7 +168,9 @@ def check(repo):
             r.add("WARN", "README", "no explanation (a paragraph of 2+ sentences) near the top")
         arena = f"{SITE}arena/{cfg['arena_id']}/" if cfg["arena_id"] else SITE
         game = f"{SITE}{cfg['arena_id']}/"
-        if arena in readme or (cfg["arena_id"] and game in readme):
+        if cfg["arena_id"] is None:
+            pass  # no project page on the site (the skills repo)
+        elif arena in readme or (cfg["arena_id"] and game in readme):
             r.add("PASS", "README", "links its page on the site")
         else:
             r.add("WARN", "README", f"no link to its page on the site: {arena}")
