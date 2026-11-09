@@ -38,7 +38,7 @@ flowchart LR
 |---|---|---|---|
 | 1 Foundations | `.github`, `ns3-containers` | org defaults, labels, reusable CI, licence gate; `ns3-dev` images; issue migration | done |
 | 1+ Org templates | [.github#6](https://github.com/swarm-routing/.github/issues/6) | `tools/org-sync` + `templates/`: AGENTS/CLAUDE org sections, badges, SECURITY.md, licence files, ADR template, per-repo Makefiles with the same target names; the `org-repo` skill ([skills](https://github.com/swarm-routing/skills)) | tool and skill merged; 3 of 12 repos adopted (Termite, HOPNET, skills), the rest have adoption issues ([.github#9](https://github.com/swarm-routing/.github/issues/9)) |
-| 1+ Hardening | [.github#14](https://github.com/swarm-routing/.github/issues/14) | Scorecard, rulesets, merge policy, CI hygiene in every repo (from AntHocNet#328 and its children) | open; the order and the admin decisions are on [.github#35](https://github.com/swarm-routing/.github/issues/35) |
+| 1+ Hardening | [.github#14](https://github.com/swarm-routing/.github/issues/14) | Scorecard, rulesets, merge policy, CI hygiene in every repo (from AntHocNet#328 and its children) | open; the order is on [.github#35](https://github.com/swarm-routing/.github/issues/35); the admin decisions were made 2026-11-09 ([.github#81](https://github.com/swarm-routing/.github/issues/81)) and wait on the settings |
 | 2 swarm-core | [ns3-swarm-core#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) | the shared `swarm-core` contrib module | skeleton merged with every phase-1 gate on (#7); the primitives (#8) are the org's critical path |
 | 3 ARA | [ARA#3](https://github.com/swarm-routing/ARA/issues/3) | first protocol on swarm-core, through the three gates | fidelity sheet can start (ARA#4); code blocked on 2 |
 | 4 BeeAdHoc | [BeeAdHoc#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) | second protocol; fidelity work can start now | fidelity open (BeeAdHoc#13, #4, #5); code blocked on 2 |
@@ -62,13 +62,46 @@ Each workstream has a **handoff issue** written for a session with no chat histo
 | BeeAdHoc fidelity | [BeeAdHoc#14](https://github.com/swarm-routing/BeeAdHoc/issues/14) | BeeAdHoc#13, #8, #4, #5 | yes (#4 and #5 need the papers) |
 | Termite before code | [Termite#7](https://github.com/swarm-routing/Termite/issues/7) | Termite#5 (anchor-miss pre-registration), #4 (fidelity sheet) | yes |
 | Data: dataset format and validator | [benchmarks#9](https://github.com/swarm-routing/benchmarks/issues/9) | benchmarks#5, #3, then #7 | yes |
-| Tools: one harness, AntHocNet's switch-over | [ns3-tools#41](https://github.com/swarm-routing/ns3-tools/issues/41) | ns3-tools#14, #31, #28, #6, #39, then #29 | yes (#29 needs the maintainer's go-ahead) |
-| Images: trust `latest` | [ns3-containers#62](https://github.com/swarm-routing/ns3-containers/issues/62) | ns3-containers#55, #44, #43, #17, #13 | yes (#27 waits on a scope decision) |
+| Tools: one harness, AntHocNet's switch-over | [ns3-tools#41](https://github.com/swarm-routing/ns3-tools/issues/41) | ns3-tools#14, #31, #28, #6, #39, then #29 | yes (#29 opens after `ns3-tools v0.1.0` is tagged, decision 2026-11-09) |
+| Images: trust `latest` | [ns3-containers#62](https://github.com/swarm-routing/ns3-containers/issues/62) | ns3-containers#55, #44, #43, #17, #13 | yes (#27 scoped to the supported release, 2026-11-09) |
 | Site: self-verifying deploys, polish | [swarm-routing.github.io#39](https://github.com/swarm-routing/swarm-routing.github.io/issues/39) | site#28, #30, #31, #29, #17, #18 | yes |
 | Org: templates and gates everywhere | [.github#64](https://github.com/swarm-routing/.github/issues/64) | .github#63, #55, #29, #26 | yes |
 | AntHocNet after the move | [AntHocNet#856](https://github.com/swarm-routing/AntHocNet/issues/856) | AntHocNet#460, #855, the hardening P2s; .github#2's Zenodo and DOI | with the maintainer's go-ahead per PR |
 
 The order that matters across them: swarm-core's primitives (ns3-swarm-core#8) come before any protocol code (ARA#5, then BeeAdHoc's port, Termite#6, HOPNET#5). The dataset format (benchmarks#3) comes before the first anchor result. The site's leaderboard (site#12) and second protocol (site#13) follow those two. HOPNET has no handoff: it is not scheduled, and only its fidelity sheet (HOPNET#4) may start.
+
+The 2026-11-09 review of every open ticket against this plan, with the answers to "did the migration finish, can protocol code start, are the images, tools, skills and pipelines ready", and the decisions taken that day, is [.github#81](https://github.com/swarm-routing/.github/issues/81).
+
+## Releases
+
+The org has no version ladder of its own: AntHocNet keeps its ladder in its
+`docs/roadmap.md` (Non-goals). Instead each phase has a **release target**:
+the first tagged release of the repository that owns it, cut when the phase's
+exit criteria hold. Two rules (decided 2026-11-09, [.github#81](https://github.com/swarm-routing/.github/issues/81)):
+
+- **No org repository releases before the reusable release workflow exists**
+  ([.github#20](https://github.com/swarm-routing/.github/issues/20): Commitizen
+  bump from Conventional-Commit history, `SHA256SUMS`, SLSA provenance as
+  `*.intoto.jsonl`, a CycloneDX SBOM, the verify commands in the release
+  notes). Its first caller is the harness package,
+  [ns3-tools#26](https://github.com/swarm-routing/ns3-tools/issues/26), which is
+  the org's first release. A copy of AntHocNet's `release.yml` in a protocol
+  repo is not a substitute: the copies would drift.
+- **A first release is `v0.1.0`**, bumped from there by Commitizen. A release
+  of a citable repository is archived on Zenodo under that repository's
+  concept DOI ([.github#45](https://github.com/swarm-routing/.github/issues/45), the daily `zenodo` workflow).
+
+| Phase | Release target | Cut when |
+|---|---|---|
+| 4 Tools | `ns3-tools v0.1.0` (the first org release) | ns3-tools#14, #31, #28, #6 merged; then AntHocNet's switch-over (ns3-tools#29) pins this tag |
+| 2 swarm-core | `ns3-swarm-core v0.1.0` | the three exit criteria hold; the third (a downstream build against `@main`) is proven by ARA#5's first green build |
+| 3 ARA | `ARA v0.1.0` | module green, determinism gate, anchor verdict recorded in `benchmarks` (PASS, or a written infeasibility verdict) |
+| 4 BeeAdHoc | `BeeAdHoc v0.1.0` | fidelity settled (BeeAdHoc#4, #5), module green, `v270a` anchor re-recorded or re-registered |
+| 4 Data | none (data is immutable runs, not versions) | the manifest schema and validator (benchmarks#3) carry their own schema version |
+| 5 Termite | `Termite v0.1.0` | the anchor-miss analysis (Termite#5) is recorded before code; module green; three gates or a written verdict |
+| Site | none (deploys from `main`) | the live smoke verifies each deploy by its build marker (site#28) |
+| Images | none (tags per ns-3 release and profile) | each image is tested by digest before its tag moves (ns3-containers golden rule 17) |
+| AntHocNet | its own ladder: next **v2.7.0** | after AntHocNet#460's two PRs, the ns3-tools#29 switch-over (its "harness packaged" exit, superseding AntHocNet#770) and the hardening P2s #786, #787, #789, #840; fixes before then ship as v2.6.x (decision 2026-11-09 on AntHocNet#856) |
 
 ## Epics
 
@@ -379,7 +412,7 @@ qualitative: they confirm an ns-3 ranking, they do not replace its numbers.
 - **No `optimized` image in CI**, and no ns-3 `optimized` profile anywhere (`-march=native`).
 - **No copying from ns-3's `src/aodv` or `src/olsr`**, and no GPL code in a dual `core/`.
 - **No paywalled papers in public repositories**; they live in the private `papers` repository.
-- **AntHocNet's own ladder stays in AntHocNet.** Issues not migrated (95 audited, 31 moved in three waves) keep their `release:` labels there; moved issues drop them, since the org has no release ladder of its own yet. The undecided ones (danieljoppi/AntHocNet#319, #112, #405) stay until the maintainer moves them.
+- **AntHocNet's own ladder stays in AntHocNet.** Issues not migrated (95 audited, 31 moved in three waves) keep their `release:` labels there; moved issues drop them, since the org has release targets per phase ([Releases](#releases)), not a version ladder of its own. The undecided ones (danieljoppi/AntHocNet#319, #112, #405) stay until the maintainer moves them.
 - **No learned arm without its gates.** The DRL comparator (ns3-tools#20) needs disjoint training and test seeds, one held-out family and a reported training budget, plus frozen, versioned weights; nothing about it is scheduled before those exist.
 - **DTN only where the oracle says so.** The store-carry-forward arm (ns3-tools#21) exists because danieljoppi/AntHocNet#580's trigger fired (the oracle delivers about 81 % on the disaster scene: the rest is partition-bound); it is scoped to the disaster family, not a general comparator.
 - **No second simulator for now.** ns-3 is the focus; OMNeT++/INET, Veins and CORE/EMANE are planned as their own container and tooling repositories, deferred until the trigger in [Later: other simulators](#later-other-simulators-deferred) fires (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"; org decision 2026-11-03, .github#48). Cross-simulator results would be qualitative only.
