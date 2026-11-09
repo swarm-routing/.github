@@ -377,8 +377,18 @@ def evaluate(cfg, repo_dir, item):
             except json.JSONDecodeError as e:
                 return "conflict", None, f"not valid JSON: {e}"
         new = json.loads(json.dumps(doc))
-        for top, sub in json.loads(want).items():
+        tmpl = json.loads(want)
+        for top, sub in tmpl.items():
             new.setdefault(top, {}).update(sub)
+        # A plugin the org's own marketplace no longer ships is dropped (a
+        # rename, e.g. org-repo -> swarm-routing); other marketplaces' plugins
+        # and the repo's own keys are left alone.
+        ours = tuple(f"@{m}" for m in tmpl.get("extraKnownMarketplaces", {}))
+        plugins = new.get("enabledPlugins")
+        if ours and isinstance(plugins, dict):
+            for key in [k for k in plugins if k.endswith(ours)]:
+                if key not in tmpl.get("enabledPlugins", {}):
+                    del plugins[key]
         if new == doc and cur is not None:
             return "unchanged", None, ""
         return ("create" if cur is None else "update"), json.dumps(new, indent=2) + "\n", ""

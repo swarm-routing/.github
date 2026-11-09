@@ -8,6 +8,6 @@
     }
   },
   "enabledPlugins": {
-    "org-repo@swarm-routing": true
+    "swarm-routing@swarm-routing": true
   }
 }
