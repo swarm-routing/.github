@@ -46,7 +46,20 @@ REQUIRED = {
 }
 OPTIONAL_PREFIX = "Differences from"
 ACCESS = {"open", "browser", "institution", "author", "in hand"}
-LOCATOR = r"(§\s?\d+(\.\d+)*[a-z]?|Table\s\d+(\.\d+)*|Fig\.\s\d+(\.\d+)*[a-z]?|Listing\s\d+(\.\d+)*|Alg\.\s\d+(\.\d+)*|eq\.\s\d+(\.\d+)*|pp?\.\s\d+(–\d+)?|ch\.\s\d+|App\.\s[A-Z])"
+# (pattern, how the error message shows it): one list, so the two cannot drift
+LOCATORS = (
+    (r"§\s?\d+(\.\d+)*[a-z]?", "§x"),
+    (r"Table\s\d+(\.\d+)*", "Table N"),
+    (r"Fig\.\s\d+(\.\d+)*[a-z]?", "Fig. N"),
+    (r"Listing\s\d+(\.\d+)*", "Listing N"),
+    (r"Alg\.\s\d+(\.\d+)*", "Alg. N"),
+    (r"eq\.\s\d+(\.\d+)*", "eq. N"),
+    (r"pp?\.\s\d+(–\d+)?", "p. N / pp. N–M"),
+    (r"ch\.\s\d+", "ch. N"),
+    (r"App\.\s[A-Z]", "App. X"),
+)
+LOCATOR = "(" + "|".join(pat for pat, _ in LOCATORS) + ")"
+SHOWN = ", ".join(f"`[KEY] {shown}`" for _, shown in LOCATORS)
 REF = re.compile(r"^\[([A-Za-z0-9_-]+)\]\s+" + LOCATOR + r"(\s*,\s*" + LOCATOR + r")*$")
 EMPTY = {"", "—", "-", "–"}
 
@@ -106,7 +119,7 @@ def source_kind(cell, keys):
         if not m:
             return (
                 "ref",
-                f"`{p}` is not `[KEY] §x`, `[KEY] Table N`, `[KEY] Fig. N`, `[KEY] eq. N`, `repo choice: …` or `unknown`",
+                f"`{p}` is not {SHOWN}, `repo choice: …` or `unknown`",
             )
         if m.group(1) not in keys:
             return "ref", f"`[{m.group(1)}]` is not a key in ## Sources"
@@ -140,7 +153,7 @@ def check_text(text):
     if not keys:
         problems.append("## Sources: no source; a sheet cites at least the paper")
     counts = {"Mechanisms": {}, "Parameters": {}}
-    unknowns, choices = [], []
+    unknowns, choices, open_rows = [], [], []
     for name, src_col in (("Mechanisms", 1), ("Parameters", 2)):
         rows = sections[name][1]
         if not rows:
@@ -165,6 +178,14 @@ def check_text(text):
                 problems.append(
                     f"## Parameters `{label}`: no value, but its source is not `unknown`"
                 )
+            status = row[3].strip().lower()
+            if (
+                name == "Mechanisms"
+                and kind != "unknown"
+                and (status == "unknown" or status.startswith("unknown:"))
+            ):
+                # a cited section, or a repo choice, that does not settle the mechanism
+                open_rows.append(label)
             if name == "Mechanisms" and row[3] in EMPTY:
                 problems.append(
                     f"## Mechanisms `{label}`: empty status (as written, deviation: …, not implemented: …, or unknown)"
@@ -193,6 +214,7 @@ def check_text(text):
         "counts": counts,
         "unknowns": unknowns,
         "choices": choices,
+        "open": open_rows,
         "anchor": anchors[0] if anchors else None,
     }
     return problems, summary
@@ -247,6 +269,8 @@ def row_line(summary, protocol):
         f"{sum(p.values())} parameters ({p.get('ref', 0)} sourced, {p.get('repo', 0)} repo choice, {p.get('unknown', 0)} unknown)"
     )
     missing = ", ".join(summary["unknowns"]) or "none"
+    if summary["open"]:
+        missing += f"; open: {', '.join(summary['open'])}"
     a = summary["anchor"]
     anchor = f"{a[0]} ({a[1]}; {a[2]}; vs {a[3]}; {a[4]})" if a else "none"
     cells = [protocol, srcs, access, fid, missing, anchor]
@@ -308,6 +332,22 @@ def self_test():
     for loc in ("Listing 13.17", "Alg. 2", "p. 84", "pp. 72–74", "ch. 13", "§4.2.5, p. 74"):
         probs, _ = check_text(good.replace("[G02] Table 1, Fig. 2", f"[G02] {loc}"))
         expect(f"accepts locator {loc}", probs == [])
+    probs, summ = check_text(good.replace("| as written |", "| unknown: unicast or flooded? |"))
+    expect("a sourced row with status unknown passes", probs == [])
+    expect(
+        "…and is listed as open", summ and summ["open"] == ["FANT flooded, duplicates destroyed"]
+    )
+    expect("…and the row carries it", "open: FANT flooded" in row_line(summ, "ARA"))
+    expect("no open rows by default", summ and check_text(good)[1]["open"] == [])
+    for st, want in (
+        ("unknown", True),
+        ("Unknown: which acknowledgement?", True),
+        ("unknownness", False),
+    ):
+        _, s = check_text(good.replace("| as written |", f"| {st} |"))
+        expect(f"status `{st}` open={want}", bool(s and s["open"]) == want)
+    probs, _ = check_text(good.replace("[G02] §3.1", "[G02] the paper"))
+    expect("the error names every locator form", probs and all(s in probs[0] for _, s in LOCATORS))
     expect("skeleton is the org shape", all(f"## {s}" in skeleton("X") for s in REQUIRED))
     probs, _ = check_text(skeleton("X"))
     expect("skeleton passes check (TODO rows are unknown)", probs == [])
@@ -364,7 +404,8 @@ def main(argv=None):
                 print(
                     f"{args.file}: {sum(m.values())} mechanisms, {sum(q.values())} parameters; "
                     f"unknown: {', '.join(summary['unknowns']) or 'none'}; "
-                    f"repo choice: {', '.join(summary['choices']) or 'none'}"
+                    f"repo choice: {', '.join(summary['choices']) or 'none'}; "
+                    f"open (sourced, status unknown): {', '.join(summary['open']) or 'none'}"
                 )
             print(f"fidelity check: {'ok' if not problems else f'{len(problems)} problem(s)'}")
             return 1 if problems else 0
