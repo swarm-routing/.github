@@ -27,6 +27,7 @@ tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (+
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
+tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), the review row (row)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections, README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
@@ -52,6 +53,7 @@ python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
 python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo
 python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub
+python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker, on fixture sheets
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
@@ -175,6 +177,7 @@ Org-wide (1–9), then this repo's own.
 | Change the org landing page | `profile/README.md` |
 | Keep every repo's epic list and org-managed files current without hand PRs | `tools/org-bot/org_bot.py` (`run --task` `epics`, `org-sync` or `all`; `--self-test`), `org-bot.yml` (daily, on template pushes; secret `ORG_BOT_TOKEN`); CONTRIBUTING "Automation" |
 | Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py` (`repos`, `status`, `sync`; `--self-test`), the daily `zenodo.yml` (secret `ZENODO_TOKEN`); CONTRIBUTING "Releases and DOIs" |
+| Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
 | The reference implementation and its history | [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |
