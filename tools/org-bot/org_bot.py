@@ -272,14 +272,20 @@ def run(args, gh=None, clone_url=None):
         )
     work = tempfile.mkdtemp(prefix="org-bot-")
     data = os.path.join(work, "epics.json")
-    fetch = [sys.executable, "-I", EPICS, "fetch", "--out", data]
-    if args.repos:
-        fetch += ["--repos", args.repos]
+    # Always every public repository's epics: .github's ROADMAP and profile list
+    # them all, so a run limited by --repos must not regenerate them from part
+    # of the data (it would delete the other repositories' sections).
     if args.data:
         shutil.copy(args.data, data)
     else:
-        sh(fetch, env=gh.env)
+        sh([sys.executable, "-I", EPICS, "fetch", "--out", data], env=gh.env)
     repos = [r["name"] for r in json.load(open(data))["repos"]]  # public, not archived, not forks
+    if args.repos:
+        wanted = [n.strip() for n in args.repos.split(",") if n.strip()]
+        unknown = sorted(set(wanted) - set(repos))
+        if unknown:
+            raise Failure(f"org-bot: not a public org repository: {', '.join(unknown)}")
+        repos = [r for r in repos if r in wanted]
     env = git_env(None if dry_run else token)
     results, failed = [], []
     for repo in repos:
@@ -404,8 +410,8 @@ def self_test():
 
     clone_url = "file://" + remotes + "/{org}/{repo}.git"
 
-    def go(gh, dry=False, token="tok", task="epics"):
-        ns = argparse.Namespace(task=task, repos="", data=data, dry_run=dry)
+    def go(gh, dry=False, token="tok", task="epics", repos="", data=data):
+        ns = argparse.Namespace(task=task, repos=repos, data=data, dry_run=dry)
         old = os.environ.get("ORG_BOT_TOKEN")
         if token:
             os.environ["ORG_BOT_TOKEN"] = token
@@ -571,6 +577,39 @@ def self_test():
         ["git", "--git-dir", git_dir, "diff", "--name-only", "main", branches["epics"]]
     ).stdout.split()
     check("tasks kept apart", sync_files == ["SYNCED.md"] and epics_files == ["README.md"])
+
+    # --repos limits the repositories proposed to, never the epic data the
+    # generators read: .github's ROADMAP lists every repository (2026-11-09,
+    # a --repos run opened a ROADMAP PR deleting every other section)
+    make_repo("beta", stale)
+    wide = os.path.join(work, "wide.json")
+    with open(data) as fh:
+        both = json.load(fh)
+    both["repos"].append(
+        {"name": "beta", "url": "https://github.com/swarm-routing/beta", "epics": [epic]}
+    )
+    with open(wide, "w") as fh:
+        json.dump(both, fh)
+    seen = []
+
+    def spy_generate(task, repo, clone, data_, out):
+        with open(data_) as fh:
+            seen.append((repo, sorted(r["name"] for r in json.load(fh)["repos"])))
+        return None
+
+    globals()["generate"] = spy_generate
+    try:
+        res, out = go(FakeGitHub(), repos="beta", data=wide)
+        unknown = False
+        try:
+            go(FakeGitHub(), repos="gamma", data=wide)
+        except Failure as e:
+            unknown = "gamma" in str(e)
+    finally:
+        globals()["generate"] = real_generate
+    check("--repos picks the repositories", [r for r, _ in seen] == ["beta"])
+    check("--repos keeps every repository's data", seen and seen[0][1] == ["alpha", "beta"])
+    check("--repos rejects an unknown name", unknown)
     # a stale bot branch of that name (its PR closed by hand, unrelated history) is overwritten
     git_dir = os.path.join(remotes, ORG, "alpha.git")
     empty_tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # git's well-known empty tree
