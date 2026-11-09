@@ -131,9 +131,24 @@ write(p, '{"permissions": {"allow": ["Bash(ls)"]}}\n')
 run("apply", d)
 text = read(p)
 check(
-    '"Bash(ls)"' in text and "org-repo@swarm-routing" in text,
+    '"Bash(ls)"' in text and "swarm-routing@swarm-routing" in text,
     "settings.json keeps the repo's keys and gains the org's",
 )
+write(
+    p,
+    '{"enabledPlugins": {"org-repo@swarm-routing": true, "tool@elsewhere": true},'
+    ' "permissions": {"allow": ["Bash(ls)"]}}\n',
+)
+run("apply", d)
+text = read(p)
+check(
+    "org-repo@swarm-routing" not in text
+    and "swarm-routing@swarm-routing" in text
+    and "tool@elsewhere" in text
+    and '"Bash(ls)"' in text,
+    "a plugin the org marketplace no longer ships is dropped; others are kept",
+)
+check(run("check", d)[0] == 0, "settings.json in sync after the rename")
 
 
 # 7. Header-check flags: dual roots normalized, the core include check whenever core/ is dual.
