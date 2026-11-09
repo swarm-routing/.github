@@ -28,7 +28,7 @@ tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), the review row (row)
-templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections, README badges,
+templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37)
@@ -170,6 +170,7 @@ Org-wide (1–9), then this repo's own.
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` + CONTRIBUTING's type list |
 | Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
+| List an org skill in every repo's AGENTS.md (when it ships in the `swarm-routing` plugin) | `templates/agents/skills.md` (task, script, skill); a skill one repo uses stays in that repo's `.claude/skills/` |
 | Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red until it runs `org_sync.py apply`: open those PRs with the change (the `org-repo` skill of the `swarm-routing` plugin in `swarm-routing/skills` does it; org-bot opens them on its own after the push) |
 | Bring a repo onto the templates | `python3 tools/org-sync/org_sync.py init <dir> --kind <kind>` (new repo) or write its `.github/org-sync.toml` and run `plan` → `apply` → `conflicts` → `check` (existing repo); CI: `reusable-org-sync-check.yml` |
 | Change the org security policy | `SECURITY.md` (served to every repo without its own) and `templates/SECURITY.md.in` (a repo's own); write no claim a repo cannot back |

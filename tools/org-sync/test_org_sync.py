@@ -124,6 +124,30 @@ rc, out = run("conflicts", d)
 check("-7. **Keep bounded things bounded**" in out, "conflicts prints the hunk")
 run("apply", d, "--force", "AGENTS.md#org-rules")
 check(run("check", d)[0] == 0, "apply --force resolves it")
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "<!-- org-sync:begin skills -->\n## Agent skills" in agents
+    and agents.index("## Agent skills") < agents.index("## Where to look"),
+    "the skills section is inserted before the repository's own Where-to-look table",
+)
+edit(
+    d,
+    "AGENTS.md",
+    agents[agents.index("<!-- org-sync:begin skills -->") :].split("## Where to look")[0],
+    "",
+)
+edit(
+    d, "AGENTS.md", "<!-- org-sync:end git-workflow -->\n\n", "<!-- org-sync:end git-workflow -->\n"
+)
+check(
+    "<!-- org-sync:end git-workflow -->\n## Where to look" in read(os.path.join(d, "AGENTS.md")),
+    "fixture: no blank line",
+)
+run("apply", d)
+check(
+    "## Agent skills" in read(os.path.join(d, "AGENTS.md")) and run("check", d)[0] == 0,
+    "the skills section is inserted when the heading has no blank line before it",
+)
 
 # 6. The JSON item merges only the org's keys.
 p = os.path.join(d, ".claude/settings.json")
