@@ -40,7 +40,7 @@ flowchart LR
 | 1+ Org templates | [.github#6](https://github.com/swarm-routing/.github/issues/6) | `tools/org-sync` + `templates/`: AGENTS/CLAUDE org sections, badges, SECURITY.md, licence files, ADR template, per-repo Makefiles with the same target names; the `org-repo` skill ([skills](https://github.com/swarm-routing/skills)) | tool and skill merged; 3 of 12 repos adopted (Termite, HOPNET, skills), the rest have adoption issues ([.github#9](https://github.com/swarm-routing/.github/issues/9)) |
 | 1+ Hardening | [.github#14](https://github.com/swarm-routing/.github/issues/14) | Scorecard, rulesets, merge policy, CI hygiene in every repo (from AntHocNet#328 and its children) | open; the order is on [.github#35](https://github.com/swarm-routing/.github/issues/35); the admin decisions were made 2026-11-09 ([.github#81](https://github.com/swarm-routing/.github/issues/81)) and wait on the settings |
 | 2 swarm-core | [ns3-swarm-core#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) | the shared `swarm-core` contrib module | skeleton merged with every phase-1 gate on (#7); the primitives (#8) are the org's critical path |
-| 3 ARA | [ARA#3](https://github.com/swarm-routing/ARA/issues/3) | first protocol on swarm-core, through the three gates | fidelity sheet can start (ARA#4); code blocked on 2 |
+| 3 ARA | [ARA#3](https://github.com/swarm-routing/ARA/issues/3) | first protocol on swarm-core, through the three gates | fidelity sheet can start (ARA#4); code (ARA#5) blocked on ns3-swarm-core#8 and #9, and is what closes phase 2 |
 | 4 BeeAdHoc | [BeeAdHoc#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) | second protocol; fidelity work can start now | fidelity open (BeeAdHoc#13, #4, #5); code blocked on 2 |
 | 4 Tools | [ns3-tools#2](https://github.com/swarm-routing/ns3-tools/issues/2), [ns3-tools#7](https://github.com/swarm-routing/ns3-tools/issues/7) | the comparison harness, probes, arenas, `ns3-tool` CLI | harness + readers moved (ns3-tools#13); reader fixes, strict warnings, the `ns3-tool` CLI (ns3-tools#39), probes (#40) and AntHocNet's switch-over (#29) open |
 | 4 Comparators | [ns3-tools#15](https://github.com/swarm-routing/ns3-tools/issues/15) | non-swarm comparator arms (secure, learned, DTN), each its own module under `ns3-tools/ns3/arms/`; swarm-based variants with their protocol (BeeAdHoc#9, ARA#9, ARA#10) | migrated; gates pending (each arm needs its three before a number counts) |
@@ -76,8 +76,10 @@ The 2026-11-09 review of every open ticket against this plan, with the answers t
 
 The org has no version ladder of its own: AntHocNet keeps its ladder in its
 `docs/roadmap.md` (Non-goals). Instead each phase has a **release target**:
-the first tagged release of the repository that owns it, cut when the phase's
-exit criteria hold. Two rules (decided 2026-11-09, [.github#81](https://github.com/swarm-routing/.github/issues/81)):
+the first tagged release of the repository that owns it, cut when that
+repository's own criteria in the table below hold. They are the repository's
+slice of the phase's exit criteria, not the whole phase: `ns3-tools v0.1.0`
+waits on the tools items only, not on BeeAdHoc or the data format. Two rules (decided 2026-11-09, [.github#81](https://github.com/swarm-routing/.github/issues/81)):
 
 - **No org repository releases before the reusable release workflow exists**
   ([.github#20](https://github.com/swarm-routing/.github/issues/20): Commitizen
@@ -94,9 +96,9 @@ exit criteria hold. Two rules (decided 2026-11-09, [.github#81](https://github.c
 | Phase | Release target | Cut when |
 |---|---|---|
 | 4 Tools | `ns3-tools v0.1.0` (the first org release) | ns3-tools#14, #31, #28, #6 merged; then AntHocNet's switch-over (ns3-tools#29) pins this tag |
-| 2 swarm-core | `ns3-swarm-core v0.1.0` | the three exit criteria hold; the third (a downstream build against `@main`) is proven by ARA#5's first green build |
+| 2 swarm-core | `ns3-swarm-core v0.1.0` | the three exit criteria hold. ARA#5 starts once the primitives and the glue are merged (ns3-swarm-core#8, #9), before the phase exits; its first green build against `@main` is what proves the third criterion |
 | 3 ARA | `ARA v0.1.0` | module green, determinism gate, anchor verdict recorded in `benchmarks` (PASS, or a written infeasibility verdict) |
-| 4 BeeAdHoc | `BeeAdHoc v0.1.0` | fidelity settled (BeeAdHoc#4, #5), module green, `v270a` anchor re-recorded or re-registered |
+| 4 BeeAdHoc | `BeeAdHoc v0.1.0` | fidelity settled (BeeAdHoc#4, #5), module green, standalone anchor verdict re-recorded using the `v270a` pre-registration or a new pre-registration (decision on BeeAdHoc#4) |
 | 4 Data | none (data is immutable runs, not versions) | the manifest schema and validator (benchmarks#3) carry their own schema version |
 | 5 Termite | `Termite v0.1.0` | the anchor-miss analysis (Termite#5) is recorded before code; module green; three gates or a written verdict |
 | Site | none (deploys from `main`) | the live smoke verifies each deploy by its build marker (site#28) |
