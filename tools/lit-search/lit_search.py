@@ -244,10 +244,8 @@ def get_json(url, max_age, body=None):
 
 
 def norm_doi(doi):
-    d = (doi or "").strip()
-    for p in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"):
-        if d.lower().startswith(p):
-            d = d[len(p) :]
+    # strips a resolver prefix only; nothing is fetched over plain http
+    d = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)", "", (doi or "").strip(), flags=re.I)
     return d.lower()
 
 
@@ -1282,7 +1280,6 @@ def _self_test():
             code == 0 and "OpenCitations unavailable" in out and "1 in Semantic Scholar" in out,
         )
         down.clear()
-        STATE["cache"] = os.path.join(tmp, "cache")
 
         # confirm DOI: Crossref, the reference, rate-limited: exit 3 (try later), not 2
         STATE["cache"] = None
@@ -1290,6 +1287,7 @@ def _self_test():
         msg, code = go("confirm", "10.1000/seed.1")
         expect("confirm: Crossref rate-limited is exit 3", code == 3 and "Crossref" in msg)
         down.clear()
+        STATE["cache"] = os.path.join(tmp, "cache")
 
         # --abstract reaches citing's batch call and its lines
         before = len(calls)
