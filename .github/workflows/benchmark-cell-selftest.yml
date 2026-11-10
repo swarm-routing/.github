@@ -1,0 +1,52 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: benchmark cell self-test
+
+# Proves reusable-benchmark-cell.yml from this checkout (so a PR that changes
+# it is tested with its own version), in build mode: ns3-dev:latest-debug
+# resolved to its digest, ns3-tools' routing-bench at a pinned commit built in
+# the job, one tiny routing-compare cell (OLSR, the stock arm that delivers on
+# `latest`, 2 seeds). On a PR, source_sha is the PR's head commit, which is
+# not the merge ref the run is dispatched at, so the pinned checkout and the
+# HEAD == source_sha check are exercised. The prebuilt mode (a campaign image
+# of the caller's repo) is proven by a protocol repo's caller (AntHocNet#905).
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reusable-benchmark-cell.yml', '.github/workflows/benchmark-cell-selftest.yml']
+  pull_request:
+    paths: ['.github/workflows/reusable-benchmark-cell.yml', '.github/workflows/benchmark-cell-selftest.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      image: ${{ steps.r.outputs.image }}
+    steps:
+      - id: r
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect ghcr.io/swarm-routing/ns3-dev:latest-debug --format '{{json .Manifest}}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for ns3-dev:latest-debug"; exit 1; }
+          echo "image=ghcr.io/swarm-routing/ns3-dev@$digest" >> "$GITHUB_OUTPUT"
+
+  cell:
+    needs: resolve
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/reusable-benchmark-cell.yml
+    with:
+      image: ${{ needs.resolve.outputs.image }}
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      dependencies: routing-bench=swarm-routing/ns3-tools@a13d4775d11316721bf7cd532378f7a23e726067:ns3/routing-bench
+      harness: routing-compare
+      args: --scenario=paper --nNodes=20 --time=30 --protocols=olsr
+      seeds: 1-2
+      cell: selftest
