@@ -124,12 +124,19 @@ starts from the newest open `handoff` issue and closes it when done.
   Commit: `type(scope)!: subject`, scope and `!` optional, subject starting
   lowercase. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
   `build`, `ci`, `chore`, `revert` (the list `reusable-pr-title.yml` enforces).
-- Merge when CI is green.
+- Merge when CI is green. A repository that merges through a merge queue
+  (`merge_queue = true` in its `[settings]`, #130) is not updated by hand: add
+  the PR to the queue (the merge button, or auto-merge), and the queue tests
+  it on top of `main` and the PRs ahead of it, then merges it. Every workflow
+  that produces a required check runs `on: merge_group` there; the reusable
+  PR-title check skips itself on a merge group (a skipped check passes) and
+  the org-sync check judges the group's own change against its base.
 - **`main` takes no direct push** in any repo: the `main` ruleset requires a
   PR, an up-to-date branch and the required checks. Bots push `bot/<name>`
   branches and open PRs; releases go through the bump PR (Cutting a release).
-- When a PR falls behind `main`, update it and merge PRs one at a time, each
-  after its CI on the updated branch. `tools/pr-status/pr_status.py merge
+- Where there is no queue yet: when a PR falls behind `main`, update it and
+  merge PRs one at a time, each after its CI on the updated branch.
+  `tools/pr-status/pr_status.py merge
   REPO#N [REPO#N …]` does exactly that: in the order given (repositories
   independently), it updates a PR GitHub reports `behind`
   (`PUT pulls/<n>/update-branch`), waits for every check on the new head,
