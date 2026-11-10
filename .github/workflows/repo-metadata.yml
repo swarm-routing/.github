@@ -31,7 +31,9 @@ jobs:
           apply() {
             local r=$1 d=$2 h=$3; shift 3
             local live
-            live=$(gh api "repos/swarm-routing/$r" --jq '[.description // "", .homepage // ""] | @tsv')
+            if ! live=$(gh api "repos/swarm-routing/$r" --jq '[.description // "", .homepage // ""] | @tsv'); then
+              echo "::error::$r: could not read the repository"; fail=1; return
+            fi
             echo "::group::$r"
             echo "live:     $live"
             echo "proposed: $d	$h"
