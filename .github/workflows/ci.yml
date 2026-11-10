@@ -52,7 +52,7 @@ jobs:
           python3 -m json.tool labels.json > /dev/null
       - name: actionlint
         run: |
-          pip install --quiet actionlint-py==1.7.7.23 shellcheck-py==0.10.0.1
+          pip install --quiet actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1
           actionlint .github/workflows/*.yml
 
   # The reusable workflows run here from this checkout, so a PR that changes
