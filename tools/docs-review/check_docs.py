@@ -374,12 +374,23 @@ PLANNED_MARK = re.compile(r"\(planned|planned\)|\bplanned:", re.I)
 NEGATED = re.compile(r"\b(?:no|never|not|cannot|can't|nothing)\b", re.I)
 PLANNED = re.compile(r"planned|not yet|not tracked|will be|once \S+ exists|\(future", re.I)
 # an issue reference written as open or blocking: right after one of these words
-# (a list of references may sit between), or followed by "(open)" / "is open"
-OPEN_BEFORE = re.compile(
+# (a list of references may sit between), or followed by "(open)" / "is open".
+# The list is stripped token by token (opened_before), not by one regex: a
+# repeated group over references backtracks exponentially (CodeQL).
+OPEN_WORD = re.compile(
     r"(?:\bblocked (?:by|on)|\buntil|\bwaits? (?:on|for)|\bwaiting (?:on|for)|\bdepends on:?"
-    r"|\bopen:?|\bgated (?:by|on)|\bexception \(|\bwhen)\s*(?:[\w./-]*\s?#\d+|\band\b|\bor\b|[,/\s*(])*$",
+    r"|\bopen:?|\bgated (?:by|on)|\bexception|\bwhen)$",
     re.I,
 )
+LIST_SEP = re.compile(r"([\s,/*(]+)")
+LIST_TOKEN = re.compile(
+    r"#\d+|[\w.-]+#\d+|and|or|"
+    + "|".join(re.escape(r) for r in ORG_REPOS if not r.startswith(".")),
+    re.I,
+)
+# issue states are read only from the org's public repositories
+PRIVATE_REPOS = {"papers"}
+SLUG = re.compile(r"^swarm-routing/[A-Za-z0-9_][\w-]*(?:\.[\w-]+)*$")
 OPEN_AFTER = re.compile(
     r"^[\s)*]*(?:\(open\)|(?:is|stays|remains|still) open\b|(?:closes|is closed|is fixed|lands)\b)",
     re.I,
@@ -438,7 +449,7 @@ def hand_written(text, tlines):
 def repo_slug(repo):
     try:
         url = subprocess.run(
-            ["git", "-C", repo, "remote", "get-url", "origin"],
+            ["git", "-C", os.path.abspath(repo), "remote", "get-url", "origin"],
             capture_output=True,
             text=True,
             check=False,
@@ -449,6 +460,17 @@ def repo_slug(repo):
     if m and m.group(1) in ("swarm-routing", "danieljoppi"):
         return f"swarm-routing/{m.group(2)}"
     return f"swarm-routing/{os.path.basename(os.path.abspath(repo))}"
+
+
+def opened_before(prefix):
+    """Whether `prefix` (a clause up to an issue reference) ends in an OPEN_WORD,
+    with only other references, `and`/`or` and separators after it."""
+    words = LIST_SEP.split(prefix)
+    while words and (
+        not words[-1] or LIST_SEP.fullmatch(words[-1]) or LIST_TOKEN.fullmatch(words[-1])
+    ):
+        words.pop()
+    return OPEN_WORD.search("".join(words)) is not None
 
 
 def segments(line):
@@ -486,7 +508,9 @@ def job_names(repo):
     for f in os.listdir(wf):
         text = read(repo, os.path.join(".github", "workflows", f)) or ""
         names.update(re.findall(r"^  ([\w-]+):\s*$", text, re.M))
-        names.update(n.strip().strip("'\"") for n in re.findall(r"^\s+name:\s*(.+)$", text, re.M))
+        names.update(
+            n.strip().strip("'\"") for n in re.findall(r"^[ \t]+name:[ \t]*(\S.*)$", text, re.M)
+        )
     return names
 
 
@@ -591,7 +615,9 @@ def check_ai_facts(repo, r, online=False, fetch=None):
                     elif m.group("name"):
                         qual = f"swarm-routing/{m.group('name')}"
                     qual = qual.replace("danieljoppi/", "swarm-routing/")
-                    if OPEN_BEFORE.search(seg[: m.start()]) or OPEN_AFTER.match(seg[m.end() :]):
+                    if not SLUG.match(qual) or qual.split("/")[1] in PRIVATE_REPOS:
+                        continue  # never read, or report, another owner's or a private issue
+                    if opened_before(seg[: m.start()]) or OPEN_AFTER.match(seg[m.end() :]):
                         refs.append((f, no, qual, int(m.group("n")), seg.strip()))
                 # (e): checks called required, named in the same clause
                 if re.search(r"\brequired (?:status )?checks?\b|\bis (?:a )?required\b", seg, re.I):
@@ -873,6 +899,32 @@ def self_test():
     r = ai("The idea came from #5, now history.", online=True, fetch=fake("closed"))
     expect("(c) a reference not written as open is not fetched", not calls)
 
+    calls.clear()
+    r = ai("Blocked by papers #12 and other/repo#3.", online=True, fetch=fake("closed"))
+    expect("(c) a private or another owner's issue is never read", not calls)
+    calls.clear()
+    r = ai(
+        "Temporary exception (AntHocNet #843, option A); revert it when #9 closes.",
+        online=True,
+        fetch=fake("open"),
+    )
+    expect(
+        "(c) an exception and a when-closes reference are read",
+        sorted(n for _, n in calls) == [9, 843] and ("swarm-routing/AntHocNet", 843) in calls,
+    )
+    import time
+
+    t0 = time.monotonic()
+    ai(
+        "Depends on "
+        + " ".join(f"{i}#{i}#" for i in range(40))
+        + "x "
+        + "#1, " * 40
+        + "for details."
+    )
+    ai("until " + "\t#9" * 60 + " x #13 and " + "90#" * 60)
+    expect("(c) a long reference list ends in plain text quickly", time.monotonic() - t0 < 2)
+
     r = ai("- Do not open a pull request unless explicitly asked.")
     expect("(d) a rule the org replaced warns", has(r, "WARN", "contradicts an org rule"))
     r = ai("The release bot pushes the bump to `main`.")
@@ -882,7 +934,10 @@ def self_test():
     r = ai("- **Always open a PR to `main`** once the branch is pushed — every change is")
     expect("(d) the org's own wording does not warn", not has(r, "WARN", "contradicts"))
 
-    wf = {".github/workflows/ci.yml": "name: ci\njobs:\n  gate:\n    name: CI gate\n"}
+    wf = {
+        ".github/workflows/ci.yml": "name: ci\njobs:\n  gate:\n    name: CI gate\n"
+        "  other:\n    name:\n      Not a name\n"
+    }
     cfg = 'kind = "protocol"\ntitle = "ARA"\n[settings]\nrequired_checks = ["lint"]\n'
     r = ai(
         "The one required check is `CI gate`.",
@@ -894,6 +949,8 @@ def self_test():
         files={**wf, ".github/org-sync.toml": cfg},
     )
     expect("(e) a required check that does not exist warns", has(r, "WARN", "called required"))
+    r = ai("The one required check is `Not a name`.", files={**wf, ".github/org-sync.toml": cfg})
+    expect("(e) a `name:` value on the next line is not a job name", has(r, "WARN", "required"))
     r = ai("The required check is `lint`.", files={".github/org-sync.toml": cfg})
     expect("(e) a check in required_checks does not warn", not has(r, "WARN", "called required"))
 
