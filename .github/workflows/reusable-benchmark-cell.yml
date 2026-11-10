@@ -69,6 +69,7 @@ name: Reusable benchmark cell
 #   permissions: { contents: read, packages: read }
 #   jobs:
 #     cell:
+#       cache-mode: none
 #       uses: swarm-routing/.github/.github/workflows/reusable-benchmark-cell.yml@main
 #       with:
 #         image: ${{ inputs.image }}
@@ -91,10 +92,14 @@ name: Reusable benchmark cell
 # poisoning query looks at it. This workflow keeps it safe, and a caller keeps
 # it so:
 #
-#   - no Actions cache: this workflow writes none and restores none (no
-#     actions/cache, no setup-* `cache:`, no buildx `type=gha`), so code at a
-#     caller-chosen commit can never seed a cache a trusted run later reads.
-#     The caller adds no cache step or other job to its cell workflow;
+#   - no Actions cache: the cell job sets `cache-mode: none`, so the cache
+#     service refuses every restore and save in it (a called workflow never
+#     gets more cache access than this), and no step asks for one (no
+#     actions/cache, no setup-* `cache:`, no buildx `type=gha`). Without it,
+#     code at a caller-chosen commit (`stage`, the harness) could alter a
+#     later action step, which holds the runtime token, and seed a cache a
+#     trusted run restores. The caller adds no cache step or other job to its
+#     cell workflow, and may set `cache-mode: none` on its calling job too;
 #   - least permissions: the caller's workflow grants `contents: read,
 #     packages: read` and nothing more, and passes no secrets (no `secrets:
 #     inherit`); the job asks for exactly those two;
@@ -151,6 +156,10 @@ jobs:
     name: ${{ inputs.harness }} ${{ inputs.cell }}
     runs-on: ubuntu-24.04
     timeout-minutes: 360   # the hosted-runner ceiling
+    # No Actions cache restore or save in a job that runs code at a given
+    # commit (#160; enforced by the cache service). actionlint does not know
+    # the key yet: .github/actionlint.yaml ignores that one message.
+    cache-mode: none
     permissions:
       contents: read
       packages: read

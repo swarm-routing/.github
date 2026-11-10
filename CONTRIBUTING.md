@@ -194,10 +194,17 @@ trusted run (a release, `main`'s CI) later restores, which is the cache
 poisoning CodeQL flags (it did on `benchmark-cell-selftest.yml`, #158). The
 rule, which `reusable-benchmark-cell.yml` follows so its callers inherit it:
 
-- **No Actions cache.** The cell writes no Actions cache and restores none (no
-  `actions/cache`, no `setup-*` `cache:`, no buildx `type=gha`), least of all
-  one keyed by a caller input such as `source_sha`. The caller adds no cache
-  step and no other job to its cell workflow.
+- **No Actions cache.** The cell job sets `cache-mode: none`, so the cache
+  service refuses every restore and save in it (a called workflow never gets
+  more cache access than that), and no step asks for one (no `actions/cache`,
+  no `setup-*` `cache:`, no buildx `type=gha`), least of all keyed by a caller
+  input such as `source_sha`. The mode matters even with no cache step: code
+  run by `stage` or the harness could alter a later action step, which holds
+  the runtime token, and save a cache from there. The caller adds no cache
+  step and no other job to its cell workflow, and sets `cache-mode: none` on
+  its calling job too (the caller in the workflow's header does). actionlint
+  does not know the key yet; ignore that one message in `.github/actionlint.yaml`
+  as this repository does.
 - **Least permissions.** The caller grants `contents: read` and
   `packages: read` only, and passes no secrets (no `secrets: inherit`), so the
   code at `source_sha` holds a read-only token and nothing else.
