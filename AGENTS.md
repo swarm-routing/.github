@@ -24,14 +24,14 @@ labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style
 ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
 tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags)
-tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift; `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
+tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: a PR's own); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
 tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against the org standard (AntHocNet's): badges, explanation, site page, ns-3 image, layout, sections, links; the AI files' facts (paths, planned paths, open issues with --online, org-rule contradictions, required checks)
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
 tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's, with HINT lines at the likely spots
-tools/pr-status/pr_status.py    open PRs across repos, read-only: a line per PR (head, CI verdict and counts, mergeable state) and per unresolved review thread (severity · title · path:line · id)
+tools/pr-status/pr_status.py    open PRs across repos: `list`, `threads` and `wait` (read-only) print a line per PR (head, CI verdict and counts, mergeable state) and per unresolved review thread (severity · title · path:line · id); `merge` writes: it updates a behind PR, waits for green and squash-merges, one PR at a time per repo
 tools/release/fixture/         the release self-test's caller: the minimal Commitizen config (.cz.toml) and a `make dist`
 tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
 tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy and `release` environment as code: `plan`/`check` (read-only diff), `apply` (only the differences)
@@ -69,12 +69,13 @@ python3 -I tools/docs-review/check_docs.py --self-test   # the docs standard and
 python3 -I tools/docs-review/check_docs.py ../AntHocNet --online   # read-only, a real repo's docs and AI files (issue states through gh)
 python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker, on fixture sheets
 python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule; a hinted and an unhinted one for 6 and 7
-python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, threads, a CodeRabbit body reduced to its heading, wait)
+python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, threads, a CodeRabbit body reduced to its heading, wait), and merge against a simulated one (behind -> update -> merged, sequence, failing check, open thread, conflict, draft, refused, unreported required check, already merged)
 python3 -I tools/lit-search/lit_search.py --self-test   # confirm, citing, refs, search, related on recorded responses of each source, a source down or rate-limited, keys never leaked
 python3 -I tools/repo-settings/repo_settings.py --self-test   # plan, check, apply against a fake GitHub (each field's drift, ruleset create/update, unmanaged ruleset left alone, private masked, 403 refused, dry run; security on in order, own CodeQL kept, private unsupported, Actions policy and an uncovered action refused, 409 org policy, release environment, idempotent)
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 python3 -I tools/pr-status/pr_status.py list --repos .github,skills   # read-only, the open PRs and their unresolved threads
+python3 -I tools/pr-status/pr_status.py merge --dry-run .github#N   # read-only, what merge would do now (would update / would merge / would wait)
 python3 -I tools/lit-search/lit_search.py confirm 10.1613/jair.530   # read-only, free: Crossref, Semantic Scholar, OpenAlex agree
 python3 -I tools/repo-settings/repo_settings.py plan .github skills   # read-only, live settings vs each repo's [settings]
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
@@ -114,8 +115,9 @@ Org-wide (1–9), then this repo's own.
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`
    of a dependency pinned by commit and declared in the repo's `licence.yml`
-   `core-deps` (a protocol's `core/` on swarm-core's; CI checks it,
-   `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
+   `core-deps`, with `core-roots` naming the repo's own `core/` (without it
+   the check skips core includes; a protocol's `core/` on swarm-core's; CI
+   checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
    licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its
    `ns3/` modules and `web/` (GPL-2.0-only) only in GPL paths. Third-party code
    (AntHocNet's vendored `aomdv`/`gpsr`, IITP RAS) lands only in GPL paths with
@@ -140,7 +142,8 @@ Org-wide (1–9), then this repo's own.
    carry a configured cap).
 8. **CI hygiene.** Actions pinned by full commit SHA with a `# vX.Y.Z` comment;
    buildx caches scoped per profile; transient artifacts `retention-days` <= 7.
-   Every job has a `timeout-minutes` cap, and every apt, npm or installer step
+   Every job that runs steps has a `timeout-minutes` cap (a job that only
+   calls a reusable workflow cannot take one: the called workflow's jobs carry it), and every apt, npm or installer step
    its own, sized from recent green runs; `apt-get update` runs with
    `--error-on=any` inside a shell retry. Ubuntu mirror outages are the usual
    cause of a red run.
@@ -234,7 +237,7 @@ Org-wide (1–9), then this repo's own.
 | Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
 | List an org skill in every repo's AGENTS.md (when it ships in the `swarm-routing` plugin) | `templates/agents/skills.md` (task, script, skill); a skill one repo uses stays in that repo's `.claude/skills/` |
-| Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red until it runs `org_sync.py apply`: open those PRs with the change (the `org-repo` skill of the `swarm-routing` plugin in `swarm-routing/skills` does it; org-bot opens them on its own after the push). Seeds (SECURITY.md, Makefile, LICENSING.md, …) are the repo's once written, so a template or config change never reaches them: `org_sync.py seeds [REPO]` says which differ from today's render (information, exit 0; org-bot lists them in its PR body), `org_sync.py reseed FILE [REPO]` shows the diff and writes the fresh render of that one seed |
+| Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red on its next push to `main` until it runs `org_sync.py apply` (on a PR the check judges only the managed files and sections the PR touches, `check --changed-only BASE`, #159): open those PRs with the change (the `org-repo` skill of the `swarm-routing` plugin in `swarm-routing/skills` does it; org-bot opens them on its own after the push). Seeds (SECURITY.md, Makefile, LICENSING.md, …) are the repo's once written, so a template or config change never reaches them: `org_sync.py seeds [REPO]` says which differ from today's render (information, exit 0; org-bot lists them in its PR body), `org_sync.py reseed FILE [REPO]` shows the diff and writes the fresh render of that one seed |
 | Bring a repo onto the templates | `python3 tools/org-sync/org_sync.py init <dir> --kind <kind>` (new repo) or write its `.github/org-sync.toml` and run `plan` → `apply` → `conflicts` → `check` (existing repo); CI: `reusable-org-sync-check.yml` |
 | Change the org security policy | `SECURITY.md` (served to every repo without its own) and `templates/SECURITY.md.in` (a repo's own); write no claim a repo cannot back |
 | Change the C++ style | `.clang-format` (repos without their own use it in CI) |
@@ -244,7 +247,7 @@ Org-wide (1–9), then this repo's own.
 | Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py` (`repos`, `status`, `sync`; `--self-test`), the daily `zenodo.yml` (secret `ZENODO_TOKEN`); CONTRIBUTING "Releases and DOIs" |
 | Hold a repo's README, AGENTS/CLAUDE/CONTEXT and docs/ to the org standard, and keep the AI files' facts true | `tools/docs-review/check_docs.py [REPO] [--online]` (`[docs]` table in its `.github/org-sync.toml`: `arena_id`, `uses_image`; `--self-test`). The AI-files pass (#142) warns on missing or still-planned paths, closed issues written as open (`--online`), text an org rule replaced (its `CONTRADICTIONS` table, each with its source) and unknown required checks, outside the org-sync sections; the `docs-review` skill in `swarm-routing/skills` |
 | Check a diff against the org golden rules before review | `tools/protocol-review/check_invariants.py [REPO] --base origin/main [--pr-body FILE] [--json]` (per-repo `[review]` table in its `.github/org-sync.toml`; `--self-test`); the `protocol-review` skill in `swarm-routing/skills` |
-| See every open PR's CI, mergeable state and unresolved review threads, or wait for CI | `tools/pr-status/pr_status.py` (`list [--repos A,B] [--author L]`, `threads REPO#N [--all]`, `wait REPO#N…`; `--json` on each; `--self-test`); the `pr-shepherd` skill in `swarm-routing/skills` |
+| See every open PR's CI, mergeable state and unresolved review threads, wait for CI, or merge PRs that keep falling behind | `tools/pr-status/pr_status.py` (`list [--repos A,B] [--author L]`, `threads REPO#N [--all]`, `wait REPO#N…`, `merge REPO#N… [--dry-run] [--timeout S]`; `--json` on each; `--self-test`); the `pr-shepherd` skill in `swarm-routing/skills` |
 | Confirm a reference, or find newer, citing, cited or related papers | `tools/lit-search/lit_search.py` (`confirm DOI` / `confirm --title`, `citing`, `refs`, `search [--crossref] [--preprints]`, `related`; `--library FILE…` marks known DOIs; `--self-test`): free sources only (Crossref, Semantic Scholar, OpenCitations, arXiv, OpenAlex single records), OpenAlex search only with a free `OPENALEX_API_KEY`; the `lit-search` skill in `swarm-routing/skills` |
 | Change a repository's description, homepage, topics, merge settings, features, rulesets, required checks, security features, Actions policy or release environment | its `.github/org-sync.toml` `[settings]` table (a settings-only file, without `kind`, where org-sync manages nothing), the profiles in `templates/rulesets/` and their shared `defaults.json` (a new third-party action goes into its `selected_actions.patterns_allowed` in the same PR as the workflow that uses it); `tools/repo-settings/repo_settings.py` (`plan`, `check`, `apply [--dry-run]`; `--self-test`), applied by `repo-settings.yml` on push and checked daily (the org GitHub App's token, else secret `ORG_BOT_TOKEN`: CONTRIBUTING "Automation" lists the permissions either needs) |
 | Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `verify --text KEY=<pdfx text>`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |

@@ -39,8 +39,9 @@ is the long form.
    paired per-seed deltas over ≥ 20 seeds, emitting `##CONFIG##`, `##RUN##`,
    `##BENCH##`, `##DIAG##` lines.
 5. **CI hygiene.** Actions pinned by full SHA; buildx caches scoped per profile;
-   transient artifacts `retention-days` ≤ 7. Every job has a `timeout-minutes`
-   cap, and every apt, npm or installer step its own, sized from recent green
+   transient artifacts `retention-days` ≤ 7. Every job that runs steps has a
+   `timeout-minutes` cap (a job that only calls a reusable workflow cannot take
+   one: the called workflow's jobs carry it), and every apt, npm or installer step its own, sized from recent green
    runs; `apt-get update` runs with `--error-on=any` inside a shell retry.
    Ubuntu mirror outages are the usual cause of a red run.
 6. **Comparator arms** (protocols we did not design) clear three gates before
@@ -127,10 +128,16 @@ starts from the newest open `handoff` issue and closes it when done.
 - **`main` takes no direct push** in any repo: the `main` ruleset requires a
   PR, an up-to-date branch and the required checks. Bots push `bot/<name>`
   branches and open PRs; releases go through the bump PR (Cutting a release).
-- When a PR falls behind `main`, update it
-  (`gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`) and merge PRs
-  one at a time, each after its CI on the updated branch. Never force-push a
-  branch someone else pushed. A behind `bot/release` PR is the exception:
+- When a PR falls behind `main`, update it and merge PRs one at a time, each
+  after its CI on the updated branch. `tools/pr-status/pr_status.py merge
+  REPO#N [REPO#N …]` does exactly that: in the order given (repositories
+  independently), it updates a PR GitHub reports `behind`
+  (`PUT pulls/<n>/update-branch`), waits for every check on the new head,
+  squash-merges with the title `<PR title> (#n)`, and only then moves on to
+  that repository's next PR. It stops and reports on a failing check, an
+  unresolved review thread, a conflict, a draft or a refusal, and never
+  reruns a check or resolves a thread itself (`--dry-run` says what it would
+  do). Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch `bump` again (Cutting a release).
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
@@ -145,6 +152,16 @@ runs until their secret is set, and the secrets belong to the maintainer:
 | `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted. The same change is never proposed twice; an older bot PR is closed as superseded. It never merges | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs); and, where enabled, a `release` environment with the maintainer as required reviewer. The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
+
+Each adopting repository's `org-sync` check (`reusable-org-sync-check.yml`)
+judges a PR by its own change only (#159): on `pull_request` it runs
+`org_sync.py check --changed-only` against the PR's base, so it fails only when
+the PR changes a managed file (or deletes a seed) or touches a line inside a
+managed section. A template change here therefore never turns red the open PRs
+that touch no managed file; they merge as they are, and org-bot's refresh PR
+brings the templates in. A push to `main` keeps the full check, so drift there
+stays visible until the refresh PR merges. A caller that wants the full check on
+PRs too passes `full-check-on-pr: true`.
 
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it (a profile change applies on push here; a `[settings]` change in another repository applies when `repo-settings` is dispatched with mode `apply` after its merge); a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
