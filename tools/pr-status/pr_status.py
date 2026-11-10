@@ -7,6 +7,7 @@ Usage:
   pr_status.py list [--repos A,B] [--author LOGIN] [--json]
   pr_status.py threads REPO#N [--all] [--json]
   pr_status.py wait REPO#N [REPO#N ...] [--interval S] [--timeout S] [--json]
+  pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--dry-run] [--json]
   pr_status.py --self-test
 
 `list` prints one line per open PR, then one line per unresolved review
@@ -31,13 +32,46 @@ thread under it:
 ones, marked). `wait` polls the PRs until no check is pending, then prints
 their `list` lines; it exits 2 if `--timeout` passes first.
 
+`merge` squash-merges PRs one at a time per repository, in the order given;
+repositories run independently of each other. For each PR it polls every
+`--interval` seconds, for up to `--timeout` seconds per PR:
+
+- a merged or closed PR is skipped, and the next one in its repository starts;
+- a draft, a conflict (`dirty`), a failing check (the latest run of each
+  check name, and the commit statuses) or an unresolved review thread stops
+  that PR, and the PRs after it in the same repository are not run;
+- when GitHub reports the PR `behind`, it calls `PUT pulls/{n}/update-branch`
+  with `expected_head_sha`, then waits for the new head and that head's checks;
+- it waits while a check is pending, or while a check the base branch's rules
+  require (`rules/branches/{base}`) has not reported on the head;
+- once every check on the head passed and no thread is open, it merges with
+  `merge_method=squash`, `sha=<head>` and the org's squash title
+  `"<PR title> (#n)"`, and only then goes on to that repository's next PR,
+  which the merge has just put behind.
+
+A merge or update refused by GitHub (403, 405, 422, ...) is reported as
+`refused: <message>` and the PR is handed back; a refusal because the head
+moved or the branch fell behind (409, "not up to date", "modified") is polled
+again, and so is a failed GitHub read (a 502, a rate limit, a network
+drop), within the PR's timeout. It never reruns a check and never resolves a
+thread. Output is one
+line per PR per change of state (`updated`, `waiting: ...`, `merged <sha7>`,
+`failing: <checks>`, `open threads: N` with the thread lines, `conflict`,
+`draft`, `refused: ...`, `timeout`, `not run`); with `--json` those lines go
+to stderr and the results to stdout. `--dry-run` reads each PR once and says
+what it would do (`would update`, `would merge`, `would wait: ...`) without
+writing. Exit status: 0 when every PR merged (or was already merged or
+closed), 1 when one stopped, 2 when one timed out.
+
 A REPO is a name in the swarm-routing org or `owner/name`. The org-wide API is
 not available to agent sessions, so `--repos` names the repositories (default:
 the org's public ones, DEFAULT_REPOS). Review threads come from
 `pulls/{n}/ccr/review_threads` (resolved, path, line, comment_ids); where that
-endpoint is missing the count prints as `threads=?`. Read-only: every call is
-a GET through `gh api`, which authenticates with GH_TOKEN or the gh CLI's own
-login (`gh auth token`), so no token is in an argument list. Findings are
+endpoint is missing the count prints as `threads=?` (and `merge` leaves the
+check to the ruleset's thread rule). `list`, `threads` and `wait` are read-only
+(GET only); `merge` writes only the two PUTs above. Every call goes through
+`gh api`, which authenticates with GH_TOKEN or the gh CLI's own login
+(`gh auth token`), so no token is in an argument list. Findings are
 printed as data; nothing here acts on their text. Stdlib only.
 """
 
@@ -74,7 +108,7 @@ class Failure(SystemExit):
 
 
 class GitHub:
-    """GitHub REST through `gh api`, GET only; None for a 404."""
+    """GitHub REST through `gh api`: GET (None for a 404), and PUT for `merge`."""
 
     def get(self, path):
         r = subprocess.run(
@@ -87,6 +121,22 @@ class GitHub:
                 return None
             raise Failure(f"gh api {path}: {r.stderr.strip()}")
         return json.loads(r.stdout or "null")
+
+    def put(self, path, fields):
+        """(True, response) or (False, "HTTP <code>: <message>"); never raises on a refusal."""
+        cmd = ["gh", "api", "-X", "PUT", "-H", "Accept: application/vnd.github+json", path]
+        for k, v in fields.items():
+            cmd += ["-f", f"{k}={v}"]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0:
+            return True, json.loads(r.stdout or "null")
+        code = re.search(r"HTTP (\d+)", r.stderr)
+        try:
+            msg = json.loads(r.stdout).get("message")
+        except (ValueError, AttributeError):
+            msg = None
+        msg = msg or r.stderr.strip() or "gh api failed"
+        return False, (f"HTTP {code.group(1)}: " if code else "") + msg
 
     def paged(self, path, required=False):
         sep = "&" if "?" in path else "?"
@@ -315,7 +365,194 @@ def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic):
     return 2 if pending else 0
 
 
-def main(argv=None, gh=None):
+# --- merge: update when behind, wait for green, squash-merge one at a time -----
+
+RETRY = re.compile(r"up to date|modified|behind", re.I)
+
+
+def required_checks(gh, repo, base, cache):
+    """The check names the base branch's rules require (cached per repo and branch)."""
+    key = (repo, base)
+    if key not in cache:
+        names = set()
+        for rule in gh.get(f"repos/{repo}/rules/branches/{base}") or []:
+            if rule.get("type") == "required_status_checks":
+                params = rule.get("parameters") or {}
+                names |= {c.get("context") for c in params.get("required_status_checks") or []}
+        cache[key] = names - {None}
+    return cache[key]
+
+
+def head_checks(gh, repo, sha, required):
+    """{failed, pending} names on the head: the latest run per check name, the
+    commit statuses, and a required check that has not reported counts as pending."""
+    latest = {}
+    for run in gh.paged(f"repos/{repo}/commits/{sha}/check-runs"):
+        name = run.get("name") or f"#{run.get('id')}"
+        key = (run.get("started_at") or "", run.get("id") or 0)
+        if name not in latest or key >= latest[name][0]:
+            latest[name] = (key, run)
+    seen, failed, pending = set(), [], []
+    for name, (_, run) in latest.items():
+        seen.add(name)
+        if run.get("status") != "completed":
+            pending.append(name)
+        elif run.get("conclusion") in FAILED:
+            failed.append(name)
+    for st in (gh.get(f"repos/{repo}/commits/{sha}/status") or {}).get("statuses", []):
+        name = st.get("context") or "?"
+        seen.add(name)
+        if st.get("state") in FAILED:
+            failed.append(name)
+        elif st.get("state") == "pending":
+            pending.append(name)
+    pending += [f"{name} (not reported)" for name in sorted(required - seen)]
+    return {"failed": sorted(failed), "pending": sorted(pending)}
+
+
+class Job:
+    """One PR's progress through `merge`."""
+
+    def __init__(self, repo, number):
+        self.repo, self.number = repo, number
+        self.sha, self.title, self.start, self.updated_from = "", "", None, None
+        self.last, self.events, self.result, self.detail = None, [], None, ""
+
+    def ref(self):
+        return f"{short_repo(self.repo)}#{self.number}"
+
+    def say(self, key, text, out):
+        if key != self.last:
+            self.last = key
+            self.events.append(text)
+            out(f"{self.ref()} {self.sha[:7] or '-'} {text}")
+
+
+def merge_step(gh, job, dry_run, cache, out):
+    """One poll of one PR: (result, text) once it is done with, None to poll again."""
+    repo, n = job.repo, job.number
+    pr = gh.get(f"repos/{repo}/pulls/{n}")
+    if pr is None:
+        return ("stopped", "not found")
+    job.sha, job.title = pr["head"]["sha"], pr.get("title", "")
+    if pr.get("merged"):
+        return ("skipped", "already merged")
+    if pr.get("state") != "open":
+        return ("skipped", "closed")
+    if pr.get("draft"):
+        return ("stopped", "draft")
+    if job.updated_from == job.sha:
+        job.say("head", "waiting: the new head after the update", out)
+        return None
+    state = pr.get("mergeable_state") or "unknown"
+    if state == "dirty":
+        return ("stopped", "conflict")
+    base = (pr.get("base") or {}).get("ref") or "main"
+    ci = head_checks(gh, repo, job.sha, required_checks(gh, repo, base, cache))
+    if ci["failed"]:
+        return ("stopped", "failing: " + ", ".join(ci["failed"]))
+    if state == "behind":
+        if dry_run:
+            return ("dry", "would update")
+        ok, got = gh.put(f"repos/{repo}/pulls/{n}/update-branch", {"expected_head_sha": job.sha})
+        if not ok:
+            return ("stopped", f"refused: {plain(got)}")
+        job.updated_from = job.sha
+        job.say(f"updated {job.sha}", "updated", out)
+        return None
+    if ci["pending"]:
+        names = ", ".join(ci["pending"][:3]) + (", ..." if len(ci["pending"]) > 3 else "")
+        text = f"{len(ci['pending'])} pending ({names})"
+        if dry_run:
+            return ("dry", f"would wait: {text}")
+        text = f"waiting: {text}"
+        job.say("ci", text, out)
+        return None
+    ts = threads(gh, repo, n)
+    if ts:
+        return ("stopped", "\n".join([f"open threads: {len(ts)}"] + [thread_line(t) for t in ts]))
+    if state == "unknown":
+        if dry_run:
+            return ("dry", "would wait: mergeable state unknown")
+        job.say("unknown", "waiting: mergeable state unknown", out)
+        return None
+    if dry_run:
+        return ("dry", "would merge")
+    fields = {"merge_method": "squash", "sha": job.sha, "commit_title": f"{job.title} (#{n})"}
+    ok, got = gh.put(f"repos/{repo}/pulls/{n}/merge", fields)
+    if ok:
+        return ("merged", f"merged {((got or {}).get('sha') or '')[:7]}".rstrip())
+    if got.startswith("HTTP 409") or RETRY.search(got):
+        job.say(f"retry {job.sha}", f"waiting: merge not accepted yet ({plain(got)})", out)
+        return None
+    return ("stopped", f"refused: {plain(got)}")
+
+
+def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic):
+    def out(line):
+        print(line, file=sys.stderr if args.json else sys.stdout, flush=True)
+
+    queues = {}
+    for ref in args.refs:
+        repo, n = parse_ref(ref)
+        queues.setdefault(repo, []).append(Job(repo, n))
+    jobs = [j for q in queues.values() for j in q]
+    cache = {}
+    while True:
+        for q in queues.values():
+            while q:
+                job = q[0]
+                if job.start is None:
+                    job.start = clock()
+                try:
+                    res = merge_step(gh, job, args.dry_run, cache, out)
+                except Failure as e:
+                    if args.dry_run:  # a dry run reads each PR once
+                        raise
+                    # a transient API error (502, rate limit, network): poll again,
+                    # bounded by the PR's --timeout, rather than end every repository's run
+                    job.say("error", f"waiting: {plain(e.code)}", out)
+                    res = None
+                if res is None and clock() - job.start >= args.timeout:
+                    res = ("timeout", f"timeout after {args.timeout:g}s")
+                if res is None:
+                    break
+                job.result, job.detail = res
+                job.last = None
+                job.say("done", job.detail, out)
+                q.pop(0)
+                if job.result in ("stopped", "timeout") and not args.dry_run:
+                    for rest in q:
+                        rest.result, rest.detail = "not run", f"not run: {job.ref()} {job.result}"
+                        out(f"{rest.ref()} - {rest.detail}")
+                    q.clear()
+        if not any(queues.values()):
+            break
+        sleep(args.interval)
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "repo": short_repo(j.repo),
+                        "number": j.number,
+                        "head": j.sha,
+                        "result": j.result,
+                        "detail": j.detail,
+                        "events": j.events,
+                    }
+                    for j in jobs
+                ],
+                indent=1,
+            )
+        )
+    results = {j.result for j in jobs}
+    if results & {"stopped", "not run"}:
+        return 1
+    return 2 if "timeout" in results else 0
+
+
+def parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true")
     sub = p.add_subparsers(dest="cmd")
@@ -332,13 +569,25 @@ def main(argv=None, gh=None):
     w.add_argument("--interval", type=float, default=30)
     w.add_argument("--timeout", type=float, default=1800)
     w.add_argument("--json", action="store_true")
+    m = sub.add_parser("merge", help="update when behind, wait for green, squash-merge in order")
+    m.add_argument("refs", nargs="+", metavar="REPO#N")
+    m.add_argument("--interval", type=float, default=60)
+    m.add_argument("--timeout", type=float, default=7200, help="seconds per PR")
+    m.add_argument("--dry-run", action="store_true", help="read once, say what it would do")
+    m.add_argument("--json", action="store_true")
+    return p
+
+
+def main(argv=None, gh=None):
+    p = parser()
     args = p.parse_args(argv)
     if args.self_test:
         return self_test()
     if not args.cmd:
         p.error("a command is required")
     gh = gh or GitHub()
-    return {"list": cmd_list, "threads": cmd_threads, "wait": cmd_wait}[args.cmd](args, gh)
+    cmds = {"list": cmd_list, "threads": cmd_threads, "wait": cmd_wait, "merge": cmd_merge}
+    return cmds[args.cmd](args, gh)
 
 
 # --- self-test: a fake GitHub serving recorded API shapes ---------------------
@@ -453,6 +702,74 @@ class FakeGitHub(GitHub):
         self.calls.append(path)
         got = self.data.get(path)
         return got() if callable(got) else got
+
+
+OK_RUN = {"name": "ci", "status": "completed", "conclusion": "success"}
+
+
+class SimGitHub(GitHub):
+    """A fake GitHub that changes state: update-branch moves the head, a merge
+    closes the PR and puts the repository's other open PRs behind."""
+
+    def __init__(self, prs, checks=None, threads=None, required=None, refuse=None):
+        self.prs = {}
+        for (repo, n), fields in prs.items():
+            pr = {"number": n, "title": f"feat: pr {n}", "state": "open", "merged": False}
+            pr.update(draft=False, mergeable_state="clean", base={"ref": "main"})
+            pr.update(fields)
+            pr["head"] = {"sha": fields.get("sha", f"{n:x}" * 40)[:40]}
+            self.prs[(repo, n)] = pr
+        self.checks = checks or {}  # sha -> list of runs, or a callable returning one
+        self.thr = threads or {}
+        self.required = required or {}
+        self.refuse = refuse or {}  # (repo, n) -> "HTTP 405: ..."
+        self.calls, self.puts, self.updates = [], [], 0
+
+    def get(self, path):
+        self.calls.append(path)
+        m = re.fullmatch(r"repos/swarm-routing/([\w.-]+)/(.*)", path)
+        repo, rest = m.groups()
+        if m := re.fullmatch(r"pulls/(\d+)", rest):
+            pr = self.prs.get((repo, int(m.group(1))))
+            return json.loads(json.dumps(pr)) if pr else None
+        if m := re.fullmatch(r"commits/(\w+)/check-runs\?.*", rest):
+            runs = self.checks.get(m.group(1), [OK_RUN])
+            return {"check_runs": runs() if callable(runs) else runs}
+        if re.fullmatch(r"commits/\w+/status", rest):
+            return {"state": "success", "statuses": []}
+        if m := re.fullmatch(r"pulls/(\d+)/ccr/review_threads", rest):
+            return self.thr.get((repo, int(m.group(1))), [])
+        if re.fullmatch(r"pulls/comments/\d+", rest):
+            return {"user": {"login": "coderabbitai[bot]"}, "body": CR_OLD}
+        if rest == "rules/branches/main":
+            names = self.required.get(repo, [])
+            params = {"required_status_checks": [{"context": c} for c in names]}
+            return [{"type": "deletion"}, {"type": "required_status_checks", "parameters": params}]
+        return None
+
+    def put(self, path, fields):
+        self.puts.append((path, dict(fields)))
+        repo, n, what = re.fullmatch(
+            r"repos/swarm-routing/([\w.-]+)/pulls/(\d+)/(.*)", path
+        ).groups()
+        pr = self.prs[(repo, int(n))]
+        if (repo, int(n)) in self.refuse:
+            return False, self.refuse[(repo, int(n))]
+        if what == "update-branch":
+            assert fields["expected_head_sha"] == pr["head"]["sha"]
+            self.updates += 1
+            pr["head"]["sha"] = f"{9 - self.updates}{n}" * 20
+            pr["mergeable_state"] = "clean"
+            return True, {"message": "Updating pull request branch."}
+        if fields["sha"] != pr["head"]["sha"]:
+            return False, "HTTP 409: Head branch was modified."
+        if pr["mergeable_state"] == "behind":
+            return False, "HTTP 405: Head branch is not up to date with the base branch."
+        pr.update(state="closed", merged=True)
+        for (r, _), other in self.prs.items():
+            if r == repo and other["state"] == "open":
+                other["mergeable_state"] = "behind"
+        return True, {"sha": "e" * 40, "merged": True}
 
 
 def self_test():
@@ -620,6 +937,225 @@ def self_test():
     )
     check(
         "wait timeout", rc == 2 and "timeout: 1 still pending after 3s" in out and len(slept) == 3
+    )
+
+    # merge: a simulated GitHub whose state moves with each update and merge
+    def merge(refs, gh, *flags, timeout=600):
+        now = [0.0]
+
+        def tick(s):
+            now[0] += s
+
+        argv = ["merge", *refs, "--interval", "60", "--timeout", str(timeout), *flags]
+        ns = parser().parse_args(argv)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cmd_merge(ns, gh, sleep=tick, clock=lambda: now[0])
+        return rc, out.getvalue(), err.getvalue()
+
+    def pending_then(sha, polls):
+        seen = []
+
+        def runs():
+            seen.append(1)
+            return [OK_RUN] if len(seen) > polls else [{"name": "ci", "status": "in_progress"}]
+
+        return {sha: runs}
+
+    # behind -> update -> wait for the new head's checks -> merged
+    gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}})
+    gh.checks = pending_then("81" * 20, 2)
+    rc, out, _ = merge(["alpha#1"], gh)
+    check(
+        "merge: behind, update, merged",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#1 1111111 updated",
+            "alpha#1 8181818 waiting: 1 pending (ci)",
+            "alpha#1 8181818 merged eeeeeee",
+        ],
+    )
+    check(
+        "merge: update then squash with sha and title",
+        gh.puts
+        == [
+            ("repos/swarm-routing/alpha/pulls/1/update-branch", {"expected_head_sha": "1" * 40}),
+            (
+                "repos/swarm-routing/alpha/pulls/1/merge",
+                {"merge_method": "squash", "sha": "81" * 20, "commit_title": "feat: pr 1 (#1)"},
+            ),
+        ],
+    )
+
+    # two PRs in sequence: the second falls behind after the first merges
+    gh = SimGitHub({("alpha", 2): {}, ("alpha", 3): {}})
+    rc, out, _ = merge(["alpha#2", "alpha#3"], gh)
+    merges = [p for p, f in gh.puts if p.endswith("/merge")]
+    check(
+        "merge: sequential order",
+        rc == 0
+        and merges
+        == ["repos/swarm-routing/alpha/pulls/2/merge", "repos/swarm-routing/alpha/pulls/3/merge"]
+        and out.splitlines()
+        == [
+            "alpha#2 2222222 merged eeeeeee",
+            "alpha#3 3333333 updated",
+            "alpha#3 8383838 merged eeeeeee",
+        ],
+    )
+
+    # stops: failing check, open thread, conflict, draft, refused merge
+    gh = SimGitHub({("alpha", 4): {}, ("alpha", 5): {}})
+    gh.checks = {
+        "4" * 40: [
+            {"name": "lint", "status": "completed", "conclusion": "failure"},
+            dict(OK_RUN, name="test"),
+        ]
+    }
+    rc, out, _ = merge(["alpha#4", "alpha#5"], gh)
+    check(
+        "merge: failing check stops the repository",
+        rc == 1
+        and not gh.puts
+        and out.splitlines()
+        == ["alpha#4 4444444 failing: lint", "alpha#5 - not run: alpha#4 stopped"],
+    )
+    gh = SimGitHub({("alpha", 6): {}})
+    gh.thr = {("alpha", 6): [{"resolved": False, "path": "x.py", "line": 3, "comment_ids": [7]}]}
+    rc, out, _ = merge(["alpha#6"], gh)
+    check(
+        "merge: open thread",
+        rc == 1
+        and not gh.puts
+        and out.splitlines()
+        == ["alpha#6 6666666 open threads: 1", "  Major · Guard the empty list. · x.py:3 · 7"],
+    )
+    gh = SimGitHub({("alpha", 7): {"mergeable_state": "dirty"}, ("alpha", 8): {"draft": True}})
+    rc, out, _ = merge(["alpha#7"], gh)
+    check("merge: conflict", rc == 1 and out == "alpha#7 7777777 conflict\n" and not gh.puts)
+    rc, out, _ = merge(["alpha#8"], gh)
+    check("merge: draft", rc == 1 and out == "alpha#8 8888888 draft\n" and not gh.puts)
+    gh = SimGitHub(
+        {("alpha", 9): {}}, refuse={("alpha", 9): "HTTP 405: Repository rule violations"}
+    )
+    rc, out, _ = merge(["alpha#9"], gh)
+    check(
+        "merge: refused is handed back",
+        rc == 1 and out == "alpha#9 9999999 refused: HTTP 405: Repository rule violations\n",
+    )
+
+    # skipped: already merged, closed; a required check that never reports times out
+    gh = SimGitHub(
+        {("alpha", 10): {"merged": True, "state": "closed"}, ("alpha", 11): {"state": "closed"}}
+    )
+    rc, out, _ = merge(["alpha#10", "alpha#11"], gh)
+    check(
+        "merge: already merged and closed are skipped",
+        rc == 0
+        and not gh.puts
+        and out.splitlines() == ["alpha#10 aaaaaaa already merged", "alpha#11 bbbbbbb closed"],
+    )
+    gh = SimGitHub({("alpha", 12): {}}, required={"alpha": ["ci", "gate"]})
+    rc, out, _ = merge(["alpha#12"], gh, timeout=180)
+    check(
+        "merge: an unreported required check is pending until the timeout",
+        rc == 2
+        and not gh.puts
+        and out.splitlines()
+        == [
+            "alpha#12 ccccccc waiting: 1 pending (gate (not reported))",
+            "alpha#12 ccccccc timeout after 180s",
+        ],
+    )
+
+    # a failed read (a 502) is polled again, not the end of the run
+    gh = SimGitHub({("alpha", 16): {}})
+    flaky = [1]
+    real_get = gh.get
+
+    def get_once_502(path):
+        if flaky and path.endswith("/pulls/16"):
+            flaky.pop()
+            raise Failure("gh api repos/swarm-routing/alpha/pulls/16: HTTP 502")
+        return real_get(path)
+
+    gh.get = get_once_502
+    rc, out, _ = merge(["alpha#16"], gh)
+    check(
+        "merge: a transient read error is polled again",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#16 - waiting: gh api repos/swarm-routing/alpha/pulls/16: HTTP 502",
+            "alpha#16 1010101 merged eeeeeee",
+        ],
+    )
+
+    # the latest run of a name counts, so a re-run that passed is green
+    gh = SimGitHub({("alpha", 13): {}})
+    gh.checks = {
+        "d" * 40: [
+            {
+                "id": 1,
+                "name": "ci",
+                "status": "completed",
+                "conclusion": "failure",
+                "started_at": "1",
+            },
+            {
+                "id": 2,
+                "name": "ci",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2",
+            },
+        ]
+    }
+    rc, out, _ = merge(["alpha#13"], gh)
+    check("merge: latest run per name", rc == 0 and out == "alpha#13 ddddddd merged eeeeeee\n")
+
+    # repositories are independent: a stop in one does not hold the other back
+    gh = SimGitHub({("alpha", 14): {"mergeable_state": "dirty"}, ("beta", 15): {}})
+    rc, out, _ = merge(["alpha#14", "beta#15"], gh)
+    check(
+        "merge: repositories independent",
+        rc == 1 and "beta#15 fffffff merged eeeeeee" in out and "alpha#14 eeeeeee conflict" in out,
+    )
+
+    # --dry-run writes nothing; --json puts the events on stderr and results on stdout
+    gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}, ("alpha", 2): {}})
+    rc, out, _ = merge(["alpha#1", "alpha#2"], gh, "--dry-run")
+    check(
+        "merge: dry run",
+        rc == 0
+        and not gh.puts
+        and out.splitlines() == ["alpha#1 1111111 would update", "alpha#2 2222222 would merge"],
+    )
+    gh = SimGitHub({("alpha", 3): {}}, required={"alpha": ["gate"]})
+    rc, out, _ = merge(["alpha#3"], gh, "--dry-run")
+    check(
+        "merge: dry run while pending",
+        rc == 0 and out == "alpha#3 3333333 would wait: 1 pending (gate (not reported))\n",
+    )
+    gh = SimGitHub({("alpha", 2): {}})
+    rc, out, err = merge(["alpha#2"], gh, "--json")
+    js = json.loads(out)
+    check(
+        "merge: json",
+        rc == 0
+        and err == "alpha#2 2222222 merged eeeeeee\n"
+        and js
+        == [
+            {
+                "repo": "alpha",
+                "number": 2,
+                "head": "2" * 40,
+                "result": "merged",
+                "detail": "merged eeeeeee",
+                "events": ["merged eeeeeee"],
+            }
+        ],
     )
 
     for f in failures:
