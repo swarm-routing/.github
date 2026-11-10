@@ -382,7 +382,7 @@ OPEN_WORD = re.compile(
     r"|\bopen:?|\bgated (?:by|on)|\bexception|\bwhen)$",
     re.I,
 )
-LIST_SEP = re.compile(r"([\s,/*(]+)")
+LIST_SEP = re.compile(r"([\s,/*(])")  # one character: runs pop one at a time
 LIST_TOKEN = re.compile(
     r"#\d+|[\w.-]+#\d+|and|or|"
     + "|".join(re.escape(r) for r in ORG_REPOS if not r.startswith(".")),
@@ -446,16 +446,31 @@ def hand_written(text, tlines):
     return "\n".join("" if line.strip() in tlines else line for line in text.splitlines())
 
 
+def git_config(repo):
+    """The repository's git config text, read from disk (no git subprocess), also
+    for a linked worktree (`.git` is a file naming its gitdir and commondir)."""
+    dotgit = os.path.join(os.path.abspath(repo), ".git")
+    gitdir = dotgit
+    if os.path.isfile(dotgit):
+        m = re.match(r"gitdir:[ \t]*(\S.*)", read(os.path.dirname(dotgit), ".git") or "")
+        if not m:
+            return ""
+        gitdir = os.path.join(os.path.dirname(dotgit), m.group(1).strip())
+        common = (read(gitdir, "commondir") or "").strip()
+        if common:
+            gitdir = os.path.join(gitdir, common)
+    return read(gitdir, "config") or ""
+
+
 def repo_slug(repo):
-    try:
-        url = subprocess.run(
-            ["git", "-C", os.path.abspath(repo), "remote", "get-url", "origin"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip()
-    except OSError:
-        url = ""
+    """`swarm-routing/<name>` from the origin remote, else from the directory name."""
+    url, section = "", ""
+    for line in git_config(repo).splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            section = line
+        elif section == '[remote "origin"]' and line.partition("=")[0].strip() == "url":
+            url = line.partition("=")[2].strip()
     m = re.search(r"[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?$", url)
     if m and m.group(1) in ("swarm-routing", "danieljoppi"):
         return f"swarm-routing/{m.group(2)}"
