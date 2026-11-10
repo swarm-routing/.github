@@ -460,9 +460,10 @@ def merge_step(gh, job, dry_run, cache, out):
         return None
     if ci["pending"]:
         names = ", ".join(ci["pending"][:3]) + (", ..." if len(ci["pending"]) > 3 else "")
-        text = f"waiting: {len(ci['pending'])} pending ({names})"
+        text = f"{len(ci['pending'])} pending ({names})"
         if dry_run:
-            return ("dry", "would " + text)
+            return ("dry", f"would wait: {text}")
+        text = f"waiting: {text}"
         job.say("ci", text, out)
         return None
     ts = threads(gh, repo, n)
@@ -1097,6 +1098,12 @@ def self_test():
         rc == 0
         and not gh.puts
         and out.splitlines() == ["alpha#1 1111111 would update", "alpha#2 2222222 would merge"],
+    )
+    gh = SimGitHub({("alpha", 3): {}}, required={"alpha": ["gate"]})
+    rc, out, _ = merge(["alpha#3"], gh, "--dry-run")
+    check(
+        "merge: dry run while pending",
+        rc == 0 and out == "alpha#3 3333333 would wait: 1 pending (gate (not reported))\n",
     )
     gh = SimGitHub({("alpha", 2): {}})
     rc, out, err = merge(["alpha#2"], gh, "--json")
