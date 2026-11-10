@@ -29,9 +29,12 @@ The bot never merges: CI runs on the PR because it is opened with a personal
 or app token, not the workflow's own GITHUB_TOKEN. A person or an agent
 merges it when CI is green.
 
-The token comes from ORG_BOT_TOKEN, never from the command line. It is a
+The token comes from ORG_BOT_TOKEN, never from the command line: the org
+GitHub App's installation token when the workflow can make one (#21), else a
 fine-grained token on the swarm-routing org with Contents, Pull requests and
-Workflows read and write (org-sync renders a workflow file). Without it every
+Workflows read and write (org-sync renders a workflow file). Commits are made
+as ORG_BOT_GIT_NAME <ORG_BOT_GIT_EMAIL> when both are set (the App's
+`<slug>[bot]` identity), else as github-actions[bot]. Without a token every
 run is a dry run: it clones read-only and prints each change it would propose.
 GitHub is read and written through `gh api`, and git authenticates through the
 GIT_CONFIG_* environment, so the token is in no argument list. Output is one
@@ -105,14 +108,21 @@ class GitHub:
         return json.loads(r.stdout) if r.stdout.strip() else {}
 
 
+def identity():
+    """(name, email) to commit as: the App's bot when both are given, else BOT."""
+    name, email = os.environ.get("ORG_BOT_GIT_NAME"), os.environ.get("ORG_BOT_GIT_EMAIL")
+    return (name, email) if name and email else BOT
+
+
 def git_env(token):
+    name, email = identity()
     env = dict(
         os.environ,
         GIT_TERMINAL_PROMPT="0",
-        GIT_AUTHOR_NAME=BOT[0],
-        GIT_AUTHOR_EMAIL=BOT[1],
-        GIT_COMMITTER_NAME=BOT[0],
-        GIT_COMMITTER_EMAIL=BOT[1],
+        GIT_AUTHOR_NAME=name,
+        GIT_AUTHOR_EMAIL=email,
+        GIT_COMMITTER_NAME=name,
+        GIT_COMMITTER_EMAIL=email,
     )
     if token:
         cred = base64.b64encode(f"x-access-token:{token}".encode()).decode()
@@ -493,6 +503,24 @@ def self_test():
         ]
     ).stdout.strip()
     check("bot identity", author == f"{BOT[0]} <{BOT[1]}>")
+    # the App's identity when the workflow passes both halves, never just one
+    app = ("swarm-routing-bot[bot]", "1+swarm-routing-bot[bot]@users.noreply.github.com")
+    saved = {k: os.environ.pop(k, None) for k in ("ORG_BOT_GIT_NAME", "ORG_BOT_GIT_EMAIL")}
+    try:
+        os.environ["ORG_BOT_GIT_NAME"] = app[0]
+        half = git_env(None)
+        os.environ["ORG_BOT_GIT_EMAIL"] = app[1]
+        full_id = git_env(None)
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+    check(
+        "app identity",
+        (half["GIT_AUTHOR_NAME"], half["GIT_AUTHOR_EMAIL"]) == BOT
+        and (full_id["GIT_AUTHOR_NAME"], full_id["GIT_COMMITTER_EMAIL"]) == app,
+    )
     post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
     check(
         "one PR",

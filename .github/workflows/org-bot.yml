@@ -14,12 +14,16 @@ name: org-bot
 # proposed twice, and an older bot PR is closed as superseded. The bot never
 # merges.
 #
-# It needs the ORG_BOT_TOKEN secret: a fine-grained personal access token (or
-# a GitHub App token, #21) on the swarm-routing org, all repositories, with
-# Contents, Pull requests and Workflows read and write. PRs opened with it run
-# CI; PRs opened with the workflow's GITHUB_TOKEN would not. Without the
-# secret every run is a dry run. This workflow has no pull_request trigger, so
-# the token never runs on code from a pull request.
+# Token (#21): the org GitHub App's installation token, made by
+# .github/actions/bot-token when the BOT_APP_ID and BOT_APP_PRIVATE_KEY org
+# secrets are set (commits then come from the App's `<slug>[bot]`); else the
+# ORG_BOT_TOKEN secret, a fine-grained personal access token on the
+# swarm-routing org, all repositories, with Contents, Pull requests and
+# Workflows read and write. The App has its own rate limit; the personal token
+# shares its owner's 5,000 requests an hour. PRs opened with either run CI;
+# PRs opened with the workflow's GITHUB_TOKEN would not. With neither, every
+# run is a dry run. This workflow has no pull_request trigger, so the token
+# never runs on code from a pull request.
 on:
   schedule:
     - cron: '17 4 * * *'
@@ -58,7 +62,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      ORG_BOT_TOKEN: ${{ secrets.ORG_BOT_TOKEN }}
       GH_TOKEN: ${{ github.token }}
       TASK: ${{ inputs.task || 'all' }}
       REPOS: ${{ inputs.repos }}
@@ -69,13 +72,24 @@ jobs:
           persist-credentials: false
       - name: Self-test
         run: python3 -I tools/org-bot/org_bot.py --self-test
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Refresh
+        env:
+          ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
+          ORG_BOT_GIT_NAME: ${{ steps.bot.outputs.git-name }}
+          ORG_BOT_GIT_EMAIL: ${{ steps.bot.outputs.git-email }}
         run: |
           set -o pipefail
           args=(run --task "$TASK")
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
-          [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::ORG_BOT_TOKEN is not set: dry run only"
+          [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): dry run only"
           python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
         if: ${{ always() }}
