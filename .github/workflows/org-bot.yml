@@ -11,8 +11,10 @@ name: org-bot
 #   repository the same day instead of turning its check red.
 # Daily, on every push to main that changes the templates or the generators,
 # and on demand. One PR per repository and task; the same change is never
-# proposed twice, and an older bot PR is closed as superseded. The bot never
-# merges.
+# proposed twice, and an older bot PR is closed as superseded. Where the
+# repository's main has a merge queue, the bot enables auto-merge on its own
+# PR, which then lands through the queue once green (#178); elsewhere a person
+# or an agent merges it.
 #
 # Token (#21): the org GitHub App's installation token, made by
 # .github/actions/bot-token when the BOT_APP_ID and BOT_APP_PRIVATE_KEY org
