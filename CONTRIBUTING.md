@@ -19,14 +19,17 @@ is the long form.
    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
    // SPDX-License-Identifier: MIT OR GPL-2.0-only   (or GPL-2.0-only)
    ```
-   (`#` comments for Python and shell). The dependency goes one way: GPL code
+   (`#` comments for Python and shell). An outside contributor may add their
+   own `Copyright (c) <year> <Name>` line beneath the org line, never in its
+   place, and signs off every commit ([Outside contributions](#outside-contributions)).
+   The dependency goes one way: GPL code
    may use the dual parts, never the reverse — a `core/` file includes only the
    C++ standard library, other `core/` files and the dual-licensed core of a
    declared dependency (a protocol's `core/` on swarm-core's `core/`, the
    licence workflow's `core-deps` input). CI
    (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
    of it. Contributions are accepted under the licence of the directory they
-   land in. Write clean implementations against public ns-3 interfaces rather
+   land in (inbound = outbound, below). Write clean implementations against public ns-3 interfaces rather
    than copying from ns-3's `src/aodv`, `src/olsr` & co.; third-party code keeps
    its own licence and lands only with its provenance recorded.
 2. **POD wire messages.** Control headers are simulator-independent POD structs
@@ -142,6 +145,62 @@ starts from the newest open `handoff` issue and closes it when done.
   dispatch `bump` again (Cutting a release).
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
+
+## Outside contributions
+
+Contributions from outside the org are welcome in every public repository:
+open an issue first for anything larger than a fix, fork, branch, and open a
+PR to `main` (the [Pull requests](#pull-requests) rules apply; CI runs on a
+fork's PR once a maintainer approves a first-time contributor's workflows).
+
+**Inbound = outbound.** A contribution is licensed exactly as the directory it
+lands in, by that repository's `LICENSING.md` row: in `core/` and the
+standalone tooling (`tools/`, Python CLIs, CI and image scripts) under
+`MIT OR GPL-2.0-only`, recipient's choice; everywhere else (ns-3 modules, the
+site, docs, data) under `GPL-2.0-only`. A contribution that cannot be offered
+under its directory's licence belongs elsewhere or is declined; code from
+another project keeps its own licence and lands only where that licence fits,
+with its provenance recorded (invariant 1).
+
+**Developer Certificate of Origin.** Every commit certifies the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/), whose
+full text is in [`DCO`](https://github.com/swarm-routing/.github/blob/main/DCO) at the root of `swarm-routing/.github`, by carrying a
+`Signed-off-by` trailer with the commit author's own name and email:
+
+```text
+Signed-off-by: Ada Lovelace <ada@example.org>
+```
+
+`git commit -s` adds it (the email must be the commit's author email). Missed
+one? `git commit --amend -s --no-edit` for the last commit, `git rebase
+--signoff HEAD~N` for the last N, then `git push --force-with-lease` to your
+fork's branch. The `dco` check (`reusable-dco.yml`, placed in every repository
+by org-sync as `.github/workflows/dco.yml`) lists any commit without a
+matching sign-off and prints these commands. Commits by the org's members and
+collaborators, the org App (`swarm-routing-bot[bot]`) and Dependabot are
+exempt: maintainer and agent commits are made from the maintainer's own
+account, under the licence grant already recorded in AntHocNet ADR-0028.
+
+The sign-off is the recorded grant AntHocNet
+[ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)
+requires before outside code enters a dual-licensed `core/` ("Provenance is a
+gate, not a courtesy"; "A new external contributor to `core/` must agree to
+both licences"): DCO clause (a) or (b) states the contributor has the right to
+submit the work under the licence indicated in the file, which is its SPDX
+line, and clause (d) makes the record public and permanent. No separate
+agreement is needed.
+
+**Copyright lines.** Keep the org's copyright line and the SPDX line as they
+are; to be named, add your own line beneath the org line:
+
+```cpp
+// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+// Copyright (c) 2026 Ada Lovelace
+// SPDX-License-Identifier: MIT OR GPL-2.0-only
+```
+
+`tools/checks/check-headers.py` accepts any number of such lines as long as
+the org line comes first and the SPDX expression is exactly the directory's.
 
 ## Automation
 

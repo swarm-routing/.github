@@ -23,7 +23,9 @@ pull_request_template.md   default PR template
 labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style
 ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
-tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags)
+tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags; contributor copyright lines beneath the org line)
+tools/checks/check-dco.py       the DCO gate of reusable-dco.yml: every PR commit's Signed-off-by matches its author email (members, the org App and Dependabot exempt)
+DCO                             the Developer Certificate of Origin 1.1, verbatim (CONTRIBUTING "Outside contributions")
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: a PR's own); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
@@ -38,14 +40,14 @@ tools/repo-settings/repo_settings.py   each repo's description, homepage, topics
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
-                                the org-sync workflow, the marketplace keys of .claude/settings.json,
+                                the org-sync and dco workflows, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
                                 quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
 SECURITY.md                     the org default security policy (repos without their own get it)
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/actions/bot-token/      the bots' token: the org GitHub App's installation token, else ORG_BOT_TOKEN (#21; CONTRIBUTING "The bot's GitHub App")
 .github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-benchmark-cell.yml, reusable-python-ci.yml,
-                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, sync-labels.yml,
+                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-dco.yml, reusable-org-sync-check.yml, reusable-codecov.yml, sync-labels.yml,
                            epics.yml, zenodo.yml, org-bot.yml, repo-settings.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
                            benchmark-cell-selftest.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
@@ -61,6 +63,7 @@ actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
+python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsigned, mismatched, exempt (member, write access, bots, merges), a real git history
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
 python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo
@@ -108,9 +111,11 @@ Org-wide (1–9), then this repo's own.
    `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
    `// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)` +
    `// SPDX-License-Identifier: <MIT OR GPL-2.0-only | GPL-2.0-only>` (`#`
-   comments where needed), matching its directory in `LICENSING.md`. CI
-   (`reusable-licence-check.yml`) checks it. A new directory gets its row in
-   `LICENSING.md` in the same PR.
+   comments where needed), matching its directory in `LICENSING.md`; an
+   outside contributor may add their own `Copyright (c) <year> <Name>` line
+   beneath the org line, never replace it, and signs off every commit (DCO,
+   CONTRIBUTING "Outside contributions"). CI (`reusable-licence-check.yml`)
+   checks it. A new directory gets its row in `LICENSING.md` in the same PR.
 2. **The licence boundary only goes one way.** GPL code may use the dual
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`
@@ -235,6 +240,7 @@ Org-wide (1–9), then this repo's own.
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar` (+ `SONAR_TOKEN`; `sonar-python-coverage` to import the Python job's coverage into the same analysis), a job calling `reusable-codecov.yml`; seeds `templates/quality/`; badges `sonar`/`codecov` in its `org-sync.toml`; CONTRIBUTING § Quality gates |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` + CONTRIBUTING's type list |
 | Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
+| Change how outside contributions are accepted (DCO sign-off, inbound = outbound, contributor copyright lines) | `CONTRIBUTING.md` "Outside contributions", `DCO`, `tools/checks/check-dco.py` (+ its self-test), `reusable-dco.yml`, its caller `templates/workflows/dco.yml` (org-sync places it in every repo; not a required check yet, #179) |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
 | List an org skill in every repo's AGENTS.md (when it ships in the `swarm-routing` plugin) | `templates/agents/skills.md` (task, script, skill); a skill one repo uses stays in that repo's `.claude/skills/` |
 | Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red on its next push to `main` until it runs `org_sync.py apply` (on a PR the check judges only the managed files and sections the PR touches, `check --changed-only BASE`, #159): open those PRs with the change (the `org-repo` skill of the `swarm-routing` plugin in `swarm-routing/skills` does it; org-bot opens them on its own after the push). Seeds (SECURITY.md, Makefile, LICENSING.md, …) are the repo's once written, so a template or config change never reaches them: `org_sync.py seeds [REPO]` says which differ from today's render (information, exit 0; org-bot lists them in its PR body), `org_sync.py reseed FILE [REPO]` shows the diff and writes the fresh render of that one seed |

@@ -14,6 +14,7 @@
 | `labels.json` | the label taxonomy | `MIT OR GPL-2.0-only` |
 | `ISSUE_TEMPLATE/`, `pull_request_template.md` | the default issue and PR forms | `MIT OR GPL-2.0-only` |
 | `profile/`, `CONTRIBUTING.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md` | docs | `GPL-2.0-only` |
+| `DCO` | the Developer Certificate of Origin 1.1, verbatim | its own notice: The Linux Foundation, verbatim copies only |
 | everything else | | `GPL-2.0-only` |
 
 Texts: [`LICENSE`](LICENSE) (GPL-2.0) and [`LICENSE-MIT`](LICENSE-MIT) (the

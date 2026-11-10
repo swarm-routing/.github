@@ -462,6 +462,7 @@ def items(cfg):
         ("seed", "Makefile", "make/Makefile.in", None),
         ("targets", "Makefile", None, "targets"),
         ("file", ".github/workflows/org-sync.yml", "workflows/org-sync.yml", None),
+        ("file", ".github/workflows/dco.yml", "workflows/dco.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),
