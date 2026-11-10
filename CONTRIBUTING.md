@@ -134,8 +134,9 @@ starts from the newest open `handoff` issue and closes it when done.
   independently), it updates a PR GitHub reports `behind`
   (`PUT pulls/<n>/update-branch`), waits for every check on the new head,
   squash-merges with the title `<PR title> (#n)`, and only then moves on to
-  that repository's next PR. It stops and reports on a failing check, an
-  unresolved review thread, a conflict, a draft or a refusal, and never
+  that repository's next PR. It never merges while a required check is
+  missing on the head, and stops and reports on a failing check (a workflow
+  that ended in `startup_failure` counts as one), an unresolved review thread, a conflict, a draft or a refusal, and never
   reruns a check or resolves a thread itself (`--dry-run` says what it would
   do). Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch `bump` again (Cutting a release).
