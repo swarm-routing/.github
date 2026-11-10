@@ -1,6 +1,8 @@
 # Contributing to swarm-routing
 
 Org-wide defaults. A repository's own `CONTRIBUTING.md` overrides this file.
+Participation follows the [Code of Conduct](CODE_OF_CONDUCT.md); where to
+ask what is in [SUPPORT.md](SUPPORT.md).
 These conventions come from [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet),
 the source repository the org was split out of; its
 [ADR-0013](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)

@@ -13,7 +13,8 @@
 | `.clang-format` | the org C++ style | `MIT OR GPL-2.0-only` |
 | `labels.json` | the label taxonomy | `MIT OR GPL-2.0-only` |
 | `ISSUE_TEMPLATE/`, `pull_request_template.md` | the default issue and PR forms | `MIT OR GPL-2.0-only` |
-| `profile/`, `CONTRIBUTING.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md` | docs | `GPL-2.0-only` |
+| `profile/`, `CONTRIBUTING.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md`, `SUPPORT.md` | docs | `GPL-2.0-only` |
+| `CODE_OF_CONDUCT.md` | the Contributor Covenant 2.1, adapted only by its contact | `CC-BY-4.0` (its own licence) |
 | everything else | | `GPL-2.0-only` |
 
 Texts: [`LICENSE`](LICENSE) (GPL-2.0) and [`LICENSE-MIT`](LICENSE-MIT) (the
