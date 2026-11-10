@@ -1,0 +1,31 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: ns-3 image self-test
+
+# Proves reusable-ns3-image.yml from this checkout (so a PR that changes it is
+# tested with its own version): resolve ns3-dev:latest-debug to its digest,
+# build FROM that digest with ns3-containers' swarm-hello fixture module, run
+# its test suite on the built image. push: false, so the caller grants read
+# only, as any PR caller would; publishing is proven by a push: true caller.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reusable-ns3-image.yml', '.github/workflows/ns3-image-selftest.yml']
+  pull_request:
+    paths: ['.github/workflows/reusable-ns3-image.yml', '.github/workflows/ns3-image-selftest.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-ns3-image.yml
+    with:
+      dependencies: swarm-hello=swarm-routing/ns3-containers@main:test/fixtures/swarm-hello
+      profiles: '["debug"]'
+      tag: selftest-{base7}
+      test-suites: swarm-hello
+      push: false

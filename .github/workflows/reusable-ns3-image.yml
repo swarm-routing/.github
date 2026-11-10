@@ -1,0 +1,539 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable ns-3 image
+
+# One way to build a protocol image for every swarm-routing ns-3 repo, for
+# releases and for benchmark campaigns (#107, #108). No repo builds its own
+# ns-3: each image is
+#
+#   FROM ghcr.io/swarm-routing/ns3-dev@sha256:...   (resolved once, per profile)
+#   COPY the caller's modules and their dependencies to /src/<name>
+#   RUN  ns3-build-contrib <name>=/src/<name> ...   (the warm tree, incremental)
+#
+# and is published as ghcr.io/swarm-routing/<image>:<tag>-<profile>.
+#
+# Per profile (one matrix leg each):
+#   resolve  ns3-dev:<ns3-version>-<profile> -> its digest, read once; the
+#            build is FROM that digest, recorded in label
+#            io.github.swarm-routing.ns3-dev.digest
+#   build    once, with the default (docker) builder, into the local store
+#   test     test.py suites on that built image (`docker run`), never a rebuild
+#   push     only an image whose suites passed, and only when `push: true`;
+#            the pushed manifest is checked to be the tested image
+#   sign     cosign keyless signature, build provenance and a CycloneDX SBOM
+#            (Trivy pinned by digest, + ns-3 and the modules as components),
+#            all by digest; then `cosign verify` of the result
+#
+# Tags never move. A release tag (`tag: v1.2.0` -> v1.2.0-optimized,
+# v1.2.0-debug) that already exists fails the leg. A campaign tag
+# (`<commit7>-{base7}`) is immutable too: with `skip-existing: true` an existing
+# one is reused and nothing is built or pushed, so a second call with the same
+# (commit, base digest) pushes nothing new. `{base7}` in `tag` is replaced with
+# the first 7 hex digits of the profile's resolved base digest.
+# Retention: release images are kept; a campaign image is kept while any
+# swarm-routing/benchmarks manifest names it (benchmarks rule 11), and may be
+# deleted only after no manifest does.
+#
+# Labels: the inherited org.opencontainers.image.* are overridden (source =
+# the caller repo, revision = its commit, version = the full tag, title,
+# description), plus io.github.swarm-routing.ns3-dev.digest / .ns3-dev.tag,
+# io.github.swarm-routing.dependencies (`name=owner/repo@<40-char commit>,...`)
+# io.github.swarm-routing.modules (every module built in, in build order) and
+# io.github.swarm-routing.build-run (this run, not the base's).
+#
+# Permissions. This file declares none, so its job runs with exactly the
+# token the caller's job grants: a called workflow can only keep or reduce the
+# caller's GITHUB_TOKEN permissions, never raise them ("The GITHUB_TOKEN
+# permissions passed from the caller workflow can be only downgraded (not
+# elevated) by the called workflow", docs.github.com, Reusing workflow
+# configurations), and a job here that declared `packages: write` would make
+# every caller grant it, even one passing `push: false`. So:
+#   push: false   { contents: read } (ns3-dev is public)
+#   push: true    { contents: read, packages: write, id-token: write,
+#                   attestations: write }   (push, keyless sign, attest)
+#
+# Release caller (a protocol repo's release workflow, after its tag):
+#
+#   jobs:
+#     image:
+#       permissions: { contents: read, packages: write, id-token: write, attestations: write }
+#       uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@main
+#       with:
+#         modules: ara=ns3
+#         dependencies: swarm-core=swarm-routing/ns3-swarm-core@v0.3.0
+#         tag: ${{ github.ref_name }}            # -> ara-ns3:v1.2.0-{optimized,debug}
+#
+# Campaign caller (one image per (commit, base digest); cells pull it by digest):
+#
+#   jobs:
+#     image:
+#       permissions: { contents: read, packages: write, id-token: write, attestations: write }
+#       uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@main
+#       with:
+#         modules: ara=ns3
+#         dependencies: |
+#           swarm-core=swarm-routing/ns3-swarm-core@<40-char commit>
+#           routing-bench=swarm-routing/ns3-tools@<40-char commit>:ns3/routing-bench
+#         image: ara-ns3-campaign
+#         profiles: '["optimized"]'
+#         tag: ${{ inputs.commit7 }}-{base7}     # -> ara-ns3-campaign:1a2b3c4-9c24572-optimized
+#         skip-existing: true
+#     cells:
+#       needs: image   # needs.image.outputs.image = ghcr.io/...@sha256:... (one profile)
+#
+# A campaign with an AODV-family arm passes `ns3-version: '3.48'` until
+# ns-3.49's AODV livelock is fixed (ns3-containers#35, AntHocNet#843).
+#
+# `stage` (optional): a command run with bash in the caller's checkout
+# (`$GITHUB_WORKSPACE/src`) after its dependencies are cloned and before the
+# build, for a repo whose install copies files. It must leave each module
+# directory at the path its `modules` spec names, relative to the checkout.
+# AntHocNet:
+#
+#       stage: mkdir -p .stage/contrib && touch .stage/CMakeLists.txt && make -s install-ns3 NS3DIR="$PWD/.stage"
+#       modules: >-
+#         routing-bench=.stage/contrib/routing-bench oracle=.stage/contrib/oracle
+#         aomdv=.stage/contrib/aomdv gpsr=.stage/contrib/gpsr
+#         adaptive=.stage/contrib/adaptive anthocnet=.stage/contrib/anthocnet
+#
+# Module specs are those of reusable-ns3-ci.yml: `name=path` or a bare path
+# whose basename is the name (= its build_lib LIBNAME). `dependencies` are
+# `name=owner/repo@ref[:subdir]`, built first, in order; `ref` is a branch, a
+# tag or a 40-char commit (a campaign pins commits).
+#
+# Verify a pushed image (as ns3-containers' SECURITY.md does for ns3-dev):
+#
+#   cosign verify \
+#     --certificate-identity-regexp '^https://github\.com/swarm-routing/\.github/\.github/workflows/reusable-ns3-image\.yml@refs/heads/main$' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     --certificate-github-workflow-repository swarm-routing/<repo> \
+#     ghcr.io/swarm-routing/<image>:<tag>-<profile>
+#   gh attestation verify oci://ghcr.io/swarm-routing/<image>:<tag>-<profile> --owner swarm-routing \
+#     --signer-workflow swarm-routing/.github/.github/workflows/reusable-ns3-image.yml
+#   # the SBOM: add --predicate-type https://cyclonedx.org/bom
+#   docker buildx imagetools inspect ghcr.io/swarm-routing/<image>:<tag>-<profile> \
+#     --format '{{ index .Image.Config.Labels "io.github.swarm-routing.ns3-dev.digest" }}'
+#
+# The signing identity is this reusable workflow (Fulcio's SAN is the called
+# workflow's ref); the caller repository is in the certificate's
+# workflow-repository extension.
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: "Space-separated module specs from this repo: `name=path` or `path` (may be empty when every module is a dependency)"
+        type: string
+        default: ''
+      dependencies:
+        description: "Newline-separated `name=owner/repo@ref[:subdir]` modules to build first; ref = branch, tag or 40-char commit"
+        type: string
+        default: ''
+      stage:
+        description: "Optional bash command run in the caller's checkout before the build; it must leave the module dirs at the `modules` paths"
+        type: string
+        default: ''
+      ns3-version:
+        description: "ns3-dev version (image tag stem); `latest` = the release ns-3 supports"
+        type: string
+        default: 'latest'
+      profiles:
+        description: "JSON list of ns3-dev profiles: optimized, debug, sanitized, default"
+        type: string
+        default: '["optimized", "debug"]'
+      image:
+        description: "Package name under ghcr.io/<owner>/; default `<repo>-ns3` (lowercase)"
+        type: string
+        default: ''
+      tag:
+        description: "A release version, or `<commit7>-{base7}` for a campaign; `-<profile>` is appended. Never `latest`"
+        type: string
+        required: true
+      test-suites:
+        description: "Space-separated test.py suites; default: one per module of this repo, else one per dependency"
+        type: string
+        default: ''
+      push:
+        description: "Push, sign and attest; false = build and test only (PRs, self-test)"
+        type: boolean
+        default: true
+      skip-existing:
+        description: "If <image>:<tag>-<profile> already exists, reuse it and build nothing (campaigns); false = an existing tag fails the leg"
+        type: boolean
+        default: false
+    outputs:
+      image:
+        description: "The pushed (or reused) image as <image>@sha256:...; with several profiles, one leg's value: read the job summary"
+        value: ${{ jobs.image.outputs.image }}
+      tag:
+        description: "The full tag, `{base7}` resolved; with several profiles, one leg's value"
+        value: ${{ jobs.image.outputs.tag }}
+
+jobs:
+  image:
+    name: image ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # No `permissions:` here on purpose: see the header (the caller's grant).
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(inputs.profiles) }}
+    outputs:
+      image: ${{ steps.result.outputs.image }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    env:
+      # Same pin as ns3-containers' publish-images.yml and test/run.sh.
+      TRIVY: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+      BASE_REPO: ghcr.io/swarm-routing/ns3-dev
+      PROFILE: ${{ matrix.profile }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+          persist-credentials: false
+      - name: Resolve the base digest and the tag
+        id: resolve
+        env:
+          NS3_VERSION_IN: ${{ inputs.ns3-version }}
+          IMAGE_IN: ${{ inputs.image }}
+          TAG_IN: ${{ inputs.tag }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          case "$PROFILE" in optimized|debug|sanitized|default) ;; *)
+            echo "::error::unknown profile '$PROFILE' (optimized, debug, sanitized, default)"; exit 1 ;; esac
+          base_tag="${NS3_VERSION_IN}-${PROFILE}"
+          # Read the digest once; everything after this uses it, never the tag.
+          digest=$(docker buildx imagetools inspect "${BASE_REPO}:${base_tag}" --format '{{json .Manifest}}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+          case "$digest" in sha256:*) ;; *) echo "::error::no digest for ${BASE_REPO}:${base_tag}"; exit 1 ;; esac
+          docker buildx imagetools inspect "${BASE_REPO}@${digest}" --format '{{json .Image}}' > "$RUNNER_TEMP/base.json"
+          ns3=$(python3 - "$RUNNER_TEMP/base.json" <<'PY'
+          import json, sys
+          img = json.load(open(sys.argv[1]))
+          if "config" not in img:  # an index: one config per platform
+              img = img.get("linux/amd64") or next(iter(img.values()))
+          env = dict(e.split("=", 1) for e in img["config"].get("Env", []))
+          print(env.get("NS3_VERSION", ""))
+          PY
+          )
+          [ -n "$ns3" ] || { echo "::error::${BASE_REPO}@${digest} sets no NS3_VERSION: not an ns3-dev image?"; exit 1; }
+          image=${IMAGE_IN:-${GITHUB_REPOSITORY#*/}-ns3}
+          image=${image,,}
+          image=${image##[._-]}   # swarm-routing/.github -> github-ns3
+          [[ "$image" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || { echo "::error::invalid image name '$image'"; exit 1; }
+          tag="${TAG_IN//\{base7\}/${digest:7:7}}-${PROFILE}"
+          [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::invalid tag '$tag'"; exit 1; }
+          case "$tag" in latest*) echo "::error::'$tag': a rolling tag is not allowed, tags never move"; exit 1 ;; esac
+          {
+            echo "base_tag=${base_tag}"
+            echo "digest=${digest}"
+            echo "ns3=${ns3}"
+            echo "repo=ghcr.io/${OWNER,,}/${image}"
+            echo "image=${image}"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
+          echo "base \`${BASE_REPO}:${base_tag}\` = \`${digest}\` (ns-${ns3}); image \`ghcr.io/${OWNER,,}/${image}:${tag}\`"
+      - name: Log in to GHCR
+        if: inputs.push
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags never move (reuse with skip-existing, else stop)
+        id: existing
+        if: inputs.push
+        env:
+          REPO: ${{ steps.resolve.outputs.repo }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          SKIP_EXISTING: ${{ inputs.skip-existing }}
+        run: |
+          set -euo pipefail
+          # Fail closed: only a tag the registry reports absent is new. A package
+          # that does not exist yet, or that this token cannot read, reads as
+          # absent; the push below would then fail, so no tag can move.
+          if out=$(docker buildx imagetools inspect "${REPO}:${TAG}" --format '{{json .Manifest}}' 2>&1); then
+            cur=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])' <<<"$out")
+            if [ "$SKIP_EXISTING" = true ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "digest=$cur" >> "$GITHUB_OUTPUT"
+              echo "::notice::${REPO}:${TAG} exists (${cur}): reused, nothing built or pushed"
+            else
+              echo "::error::${REPO}:${TAG} already exists (${cur}); tags never move. Use a new tag, or skip-existing for a campaign"
+              exit 1
+            fi
+          elif grep -qiE 'not found|manifest unknown|name unknown|denied|unauthorized|forbidden' <<<"$out"; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$out" >&2
+            echo "::error::cannot tell whether ${REPO}:${TAG} exists; not building"; exit 1
+          fi
+      - name: Check out dependencies
+        if: steps.existing.outputs.skip != 'true' && inputs.dependencies != ''
+        env:
+          DEPS: ${{ inputs.dependencies }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/deps"
+          while read -r line; do
+            [ -n "$line" ] || continue
+            name=${line%%=*}; rest=${line#*=}
+            repo=${rest%%@*}; ref=${rest#*@}
+            sub=""; case "$ref" in *:*) sub=${ref#*:}; ref=${ref%%:*} ;; esac
+            [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || { echo "::error::invalid module name '$name' in: $line"; exit 1; }
+            dest="$GITHUB_WORKSPACE/deps/$name"
+            url="https://x-access-token:${TOKEN}@github.com/${repo}.git"
+            if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+              git init --quiet "$dest"
+              git -C "$dest" fetch --quiet --depth 1 "$url" "$ref"
+              git -C "$dest" checkout --quiet FETCH_HEAD
+            else
+              git clone --quiet --depth 1 --branch "$ref" "$url" "$dest"
+            fi
+            commit=$(git -C "$dest" rev-parse HEAD)
+            [ -d "$dest${sub:+/$sub}" ] || { echo "::error::$repo@$ref has no directory '$sub'"; exit 1; }
+            echo "$name $dest${sub:+/$sub} $repo $commit" >> "$RUNNER_TEMP/deps"
+            echo "dependency $name: $repo@$ref ($commit)"
+          done <<< "$DEPS"
+      - name: Stage
+        if: steps.existing.outputs.skip != 'true' && inputs.stage != ''
+        working-directory: src
+        env:
+          STAGE: ${{ inputs.stage }}
+        run: bash -euo pipefail -c "$STAGE"
+      - name: Build once (FROM the base digest)
+        id: build
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          MODULES: ${{ inputs.modules }}
+          SUITES_IN: ${{ inputs.test-suites }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+          BASE_TAG: ${{ steps.resolve.outputs.base_tag }}
+          NS3: ${{ steps.resolve.outputs.ns3 }}
+          IMAGE: ${{ steps.resolve.outputs.image }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ctx="$RUNNER_TEMP/context"
+          rm -rf "$ctx"; mkdir -p "$ctx/src"
+          printf '**/.git\n' > "$ctx/.dockerignore"
+          names=(); own=(); deps=()
+          add() {  # add <name> <dir>: copy a module into the build context
+            [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || { echo "::error::invalid module name '$1'"; exit 1; }
+            [ -f "$2/CMakeLists.txt" ] || { echo "::error::module $1: $2 has no CMakeLists.txt"; exit 1; }
+            [ ! -e "$ctx/src/$1" ] || { echo "::error::module $1 given twice"; exit 1; }
+            cp -a "$2" "$ctx/src/$1"
+            names+=("$1")
+          }
+          if [ -f "$RUNNER_TEMP/deps" ]; then
+            while read -r name dir repo commit; do
+              add "$name" "$dir"
+              deps+=("$name=$repo@$commit")
+            done < "$RUNNER_TEMP/deps"
+          fi
+          for m in $MODULES; do
+            case "$m" in
+              *=*) name=${m%%=*}; path=${m#*=} ;;
+              *)   name=$(basename "$m"); path=$m ;;
+            esac
+            add "$name" "$GITHUB_WORKSPACE/src/$path"
+            own+=("$name")
+          done
+          [ ${#names[@]} -gt 0 ] || { echo "::error::no module to build: give modules and/or dependencies"; exit 1; }
+          args=()
+          for n in "${names[@]}"; do args+=("$n=/src/$n"); done
+          {
+            echo "FROM ${BASE_REPO}@${DIGEST}"
+            echo "COPY src/ /src/"
+            echo "RUN ns3-build-contrib ${args[*]}"
+          } > "$ctx/Dockerfile"
+          cat "$ctx/Dockerfile"
+          revision=$(git -C "$GITHUB_WORKSPACE/src" rev-parse HEAD)
+          depl=$(IFS=,; echo "${deps[*]}")
+          built="ns3-image-local:${TAG}"
+          start=$(date +%s)
+          # The default builder (docker driver): the image lands in the local
+          # store, where it is tested and from where the tested bytes are pushed.
+          docker buildx build --load --provenance=false --sbom=false -t "$built" \
+            --label "org.opencontainers.image.source=${SOURCE}" \
+            --label "org.opencontainers.image.revision=${revision}" \
+            --label "org.opencontainers.image.version=${TAG}" \
+            --label "org.opencontainers.image.title=${IMAGE}" \
+            --label "org.opencontainers.image.description=ns-3 ${NS3} (${PROFILE}) with ${names[*]} built and tested, FROM ${BASE_REPO}@${DIGEST}" \
+            --label "io.github.swarm-routing.ns3-dev.digest=${DIGEST}" \
+            --label "io.github.swarm-routing.ns3-dev.tag=${BASE_REPO}:${BASE_TAG}" \
+            --label "io.github.swarm-routing.dependencies=${depl}" \
+            --label "io.github.swarm-routing.modules=${names[*]}" \
+            --label "io.github.swarm-routing.build-run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "$ctx"
+          echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
+          suites=${SUITES_IN:-${own[*]:-${names[*]}}}
+          {
+            echo "local=$built"
+            echo "id=$(docker image inspect --format '{{.Id}}' "$built")"
+            echo "revision=$revision"
+            echo "deps=$depl"
+            echo "modules=${names[*]}"
+            echo "suites=$suites"
+          } >> "$GITHUB_OUTPUT"
+      - name: Test the built image (test.py, no rebuild)
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          LOCAL: ${{ steps.build.outputs.local }}
+          SUITES: ${{ steps.build.outputs.suites }}
+          # Sanitized profile: fail on the first report (as reusable-ns3-ci.yml).
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          set -euo pipefail
+          [ -n "$SUITES" ] || { echo "::error::no test suite to run"; exit 1; }
+          # WORKDIR is /opt/ns-3 (inherited from ns3-dev).
+          # shellcheck disable=SC2016  # expanded inside the container
+          docker run --rm -e ASAN_OPTIONS -e UBSAN_OPTIONS -e SUITES "$LOCAL" bash -euo pipefail -c \
+            'for s in $SUITES; do ./test.py --no-build --verbose-failed -s "$s"; done'
+      - name: Push the tested image
+        id: push
+        if: inputs.push && steps.existing.outputs.skip != 'true'
+        env:
+          LOCAL: ${{ steps.build.outputs.local }}
+          ID: ${{ steps.build.outputs.id }}
+          REPO: ${{ steps.resolve.outputs.repo }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          docker tag "$LOCAL" "${REPO}:${TAG}"
+          docker push "${REPO}:${TAG}" | tee "$RUNNER_TEMP/push.log"
+          digest=$(grep -oE 'digest: sha256:[0-9a-f]{64}' "$RUNNER_TEMP/push.log" | tail -1 | cut -d' ' -f2)
+          case "$digest" in sha256:*) ;; *) echo "::error::no digest from the push"; exit 1 ;; esac
+          # What is pushed is what was tested: the local image id is the pushed
+          # manifest's config (classic store) or the manifest itself (containerd store).
+          docker buildx imagetools inspect --raw "${REPO}@${digest}" > "$RUNNER_TEMP/manifest.json"
+          python3 - "$RUNNER_TEMP/manifest.json" "$digest" "$ID" <<'PY'
+          import json, sys
+          m, digest, local = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+          ok = {digest} | ({m["config"]["digest"]} if "config" in m else set())
+          if local not in ok:
+              sys.exit(f"pushed {digest} is not the tested image {local} (config/manifest {sorted(ok)})")
+          print(f"pushed {digest} = tested {local}")
+          PY
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: SBOM (CycloneDX, Trivy pinned by digest)
+        if: steps.push.outcome == 'success'
+        env:
+          REF: ${{ steps.resolve.outputs.repo }}@${{ steps.push.outputs.digest }}
+          NS3: ${{ steps.resolve.outputs.ns3 }}
+          DEPS: ${{ steps.build.outputs.deps }}
+          MODULES: ${{ inputs.modules }}
+          REVISION: ${{ steps.build.outputs.revision }}
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Trivy runs as root: write through stdout so the runner owns the file.
+          docker run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD "$TRIVY" image --quiet \
+            --image-src remote --format cyclonedx "$REF" > sbom.cdx.json
+          # ns-3 and the contrib modules are built from source (no package
+          # record for Trivy to find): each is added as its own component.
+          python3 - <<'PY'
+          import json, os
+          bom = json.load(open("sbom.cdx.json"))
+          comps = bom.setdefault("components", [])
+          ver = os.environ["NS3"]
+          purl = f"pkg:git/gitlab.com/nsnam/ns-3-dev@ns-{ver}"
+          comps.append({
+              "type": "framework", "bom-ref": purl, "name": "ns-3", "version": ver, "purl": purl,
+              "licenses": [{"license": {"id": "GPL-2.0-only"}}],
+              "externalReferences": [{"type": "vcs", "url": "https://gitlab.com/nsnam/ns-3-dev"}],
+              "properties": [{"name": "swarm-routing:path", "value": "/opt/ns-3"}],
+          })
+          mods = [d for d in os.environ["DEPS"].split(",") if d]
+          for m in os.environ["MODULES"].split():
+              name = m.split("=", 1)[0] if "=" in m else os.path.basename(m.rstrip("/"))
+              mods.append(f"{name}={os.environ['GITHUB_REPOSITORY']}@{os.environ['REVISION']}")
+          for m in mods:
+              name, rest = m.split("=", 1)
+              repo, commit = rest.rsplit("@", 1)
+              purl = f"pkg:github/{repo}@{commit}#{name}"
+              comps.append({
+                  "type": "library", "bom-ref": purl, "name": name, "version": commit, "purl": purl,
+                  "externalReferences": [{"type": "vcs", "url": f"https://github.com/{repo}"}],
+                  "properties": [{"name": "swarm-routing:path", "value": f"/src/{name}"}],
+              })
+          json.dump(bom, open("sbom.cdx.json", "w"), indent=1)
+          print(f"SBOM: {len(comps)} components (ns-3 {ver} and {len(mods)} modules included)")
+          PY
+      - name: Install cosign
+        if: steps.push.outcome == 'success'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign (keyless, by digest)
+        if: steps.push.outcome == 'success'
+        env:
+          REF: ${{ steps.resolve.outputs.repo }}@${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$REF"
+      - name: Attest provenance
+        if: steps.push.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.resolve.outputs.repo }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        if: steps.push.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.resolve.outputs.repo }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+      # The signature must verify against this workflow's identity and the
+      # caller's repository.
+      - name: Verify the signature
+        if: steps.push.outcome == 'success'
+        env:
+          REF: ${{ steps.resolve.outputs.repo }}@${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign verify \
+            --certificate-identity-regexp '^https://github\.com/swarm-routing/\.github/\.github/workflows/reusable-ns3-image\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+            "$REF" > /dev/null
+          echo "signature verified for \`$REF\`"
+      - name: Summary
+        id: result
+        if: always() && steps.resolve.outcome == 'success'
+        env:
+          REPO: ${{ steps.resolve.outputs.repo }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          BASE_TAG: ${{ steps.resolve.outputs.base_tag }}
+          BASE_DIGEST: ${{ steps.resolve.outputs.digest }}
+          NS3: ${{ steps.resolve.outputs.ns3 }}
+          REUSED: ${{ steps.existing.outputs.digest }}
+          PUSHED: ${{ steps.push.outputs.digest }}
+          LOCAL_ID: ${{ steps.build.outputs.id }}
+          SECONDS_: ${{ steps.build.outputs.seconds }}
+          MODULES_BUILT: ${{ steps.build.outputs.modules }}
+          SUITES: ${{ steps.build.outputs.suites }}
+          DEPS: ${{ steps.build.outputs.deps }}
+          REVISION: ${{ steps.build.outputs.revision }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          digest=${PUSHED:-$REUSED}
+          [ -z "$digest" ] || echo "image=${REPO}@${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### \`${REPO}:${TAG}\` (${JOB_STATUS})"
+            echo "- base: \`ghcr.io/swarm-routing/ns3-dev:${BASE_TAG}\` = \`${BASE_DIGEST}\` (ns-${NS3})"
+            if [ -n "$REUSED" ]; then
+              echo "- reused, nothing built or pushed: \`${REPO}@${REUSED}\`"
+            else
+              echo "- revision: \`${GITHUB_REPOSITORY}@${REVISION}\`"
+              echo "- modules: ${MODULES_BUILT:-none}; suites: ${SUITES:-none}; build ${SECONDS_:-?} s"
+              echo "- dependencies: ${DEPS:-none}" | sed 's/,/, /g'
+              echo "- tested image: \`${LOCAL_ID:-not built}\`"
+              if [ -n "$PUSHED" ]; then echo "- pushed: \`${REPO}@${PUSHED}\`"; else echo "- not pushed"; fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
