@@ -10,13 +10,14 @@ name: benchmark cell self-test
 # not the merge ref the run is dispatched at, so the pinned checkout and the
 # HEAD == source_sha check are exercised. The prebuilt mode (a campaign image
 # of the caller's repo) is proven by a protocol repo's caller (AntHocNet#905).
+#
+# Pull requests only: the cell runs the code at a commit it is given, and a
+# push or workflow_dispatch run would do that in the default branch's context
+# (its cache scope), which CodeQL rightly flags as cache poisoning. A protocol
+# repository's caller is dispatched by its maintainers, on their own commits.
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/reusable-benchmark-cell.yml', '.github/workflows/benchmark-cell-selftest.yml']
   pull_request:
     paths: ['.github/workflows/reusable-benchmark-cell.yml', '.github/workflows/benchmark-cell-selftest.yml']
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -44,7 +45,7 @@ jobs:
     uses: ./.github/workflows/reusable-benchmark-cell.yml
     with:
       image: ${{ needs.resolve.outputs.image }}
-      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      source_sha: ${{ github.event.pull_request.head.sha }}
       dependencies: routing-bench=swarm-routing/ns3-tools@a13d4775d11316721bf7cd532378f7a23e726067:ns3/routing-bench
       harness: routing-compare
       args: --scenario=paper --nNodes=20 --time=30 --protocols=olsr
