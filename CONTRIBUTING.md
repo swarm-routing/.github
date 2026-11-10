@@ -21,7 +21,9 @@ is the long form.
    ```
    (`#` comments for Python and shell). The dependency goes one way: GPL code
    may use the dual parts, never the reverse — a `core/` file includes only the
-   C++ standard library and other `core/` files. CI
+   C++ standard library, other `core/` files and the dual-licensed core of a
+   declared dependency (a protocol's `core/` on swarm-core's `core/`, the
+   licence workflow's `core-deps` input). CI
    (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
    of it. Contributions are accepted under the licence of the directory they
    land in. Write clean implementations against public ns-3 interfaces rather
