@@ -368,6 +368,9 @@ jobs:
           echo "run=true" >> "$GITHUB_OUTPUT"
       - name: SonarQube Cloud analysis
         if: steps.sonar.outputs.run == 'true'
+        # Report-only, like the coverage it imports: a scanner or SonarQube
+        # Cloud failure must not fail the caller's CI.
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         with:
           projectBaseDir: src
