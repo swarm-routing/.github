@@ -154,6 +154,38 @@ The bot's PRs are generated content only; merge them when CI is green. You
 still refresh the epic lists in your own PR when you change an epic: the bot
 catches what was missed, it is not the process.
 
+### Benchmark cells
+
+Each protocol repository benchmarks its own changes; `swarm-routing/benchmarks`
+records released versions (#156). One cell workflow serves every repository:
+`reusable-benchmark-cell.yml` (#157), called by a thin `workflow_dispatch`
+caller in the protocol repository (its header has the caller), and dispatched
+cell by cell by `ns3-campaign` (`swarm-routing/ns3-tools`). A cell is one
+harness invocation in one image, on one commit:
+
+| Input | Meaning |
+|---|---|
+| `image` (required) | The image by digest, `ghcr.io/<owner>/<name>@sha256:<64 hex>`, never a tag |
+| `source_sha` (required) | The caller repository's 40-char commit. Every cell checks it out whatever ref it was dispatched at, and fails unless `HEAD` is exactly that commit, so a campaign dispatched over hours from a moving branch still tests one commit (AntHocNet#867) |
+| `harness`, `args` | The `./ns3 run` program and its flags, verbatim (a literal `$GITHUB_WORKSPACE` is expanded to the checkout) |
+| `seeds` | `<first>-<last>`, appended as `--firstRun=<first> --runs=<count>`; empty when the args carry their own |
+| `cell` | The cell's name, for the job and the log |
+| `modules`, `dependencies`, `stage` | Build mode only: the caller's modules, and dependencies pinned as `name=owner/repo@<40-char commit>[:subdir]`, built in the job by `ns3-build-contrib` on an ns3-dev `image` |
+
+Without `modules`, `dependencies` or `stage` the cell is **prebuilt**: `image`
+is a campaign or release image from `reusable-ns3-image.yml` whose labels say
+it was built from the caller's repository at `source_sha`, and the harness runs
+with `./ns3 run --no-build`, so every cell of a campaign runs one binary.
+Published numbers use this mode. Every cell ends its `results.txt` with
+`##ARGS##` and one `##PROV## commit=… ref=… run_id=… attempt=… image=… profile=…
+harness=… base=… base_tag=… build_profile=… modules=…` line (AntHocNet's
+fields): `ns3-campaign collect` rejects a cell whose commit or image digest is
+not its plan's. The `benchmark-cell` artifact is kept 7 days; a released run is
+collected into `swarm-routing/benchmarks`, which keeps it.
+`benchmark-cell-selftest.yml` runs one build-mode cell (ns3-tools'
+`routing-bench` at a pinned commit, OLSR, 2 seeds) on every PR that changes
+the workflow.
+
 ### The bot's GitHub App
 
 `org-bot`, `repo-settings` and `repo-metadata` get their token from

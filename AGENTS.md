@@ -10,7 +10,7 @@ before changing anything. Org-wide conventions:
 Org-wide defaults for every `swarm-routing` repository: the profile page,
 default issue forms and PR template, the label taxonomy, the C++ style, and the
 reusable workflows other repos call (`reusable-ns3-ci.yml`, `reusable-ns3-image.yml`,
-`reusable-release.yml`, `sync-labels.yml`).
+`reusable-release.yml`, `reusable-benchmark-cell.yml`, `sync-labels.yml`).
 Files here only take effect from `main` (GitHub reads community defaults and
 `@main` workflow references from the default branch).
 
@@ -45,9 +45,10 @@ templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org s
 SECURITY.md                     the org default security policy (repos without their own get it)
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/actions/bot-token/      the bots' token: the org GitHub App's installation token, else ORG_BOT_TOKEN (#21; CONTRIBUTING "The bot's GitHub App")
-.github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-python-ci.yml, reusable-pr-title.yml,
-                           reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, sync-labels.yml,
-                           epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml
+.github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-benchmark-cell.yml, reusable-python-ci.yml,
+                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, sync-labels.yml,
+                           epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
+                           benchmark-cell-selftest.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
 ```
 
@@ -86,6 +87,8 @@ clang-format-18 --style=file:.clang-format --dump-config >/dev/null
 A change to `reusable-ns3-ci.yml` is validated by running its step scripts in
 an `ns3-dev` image against `swarm-routing/ns3-containers`' `test/fixtures/`
 module (see that repo's AGENTS.md), then by a caller repo's PR. A change to
+`reusable-benchmark-cell.yml` runs `benchmark-cell-selftest.yml` on its PR (one
+build-mode cell); its prebuilt mode is proven by a protocol repo's caller. A change to
 `reusable-ns3-image.yml` runs `ns3-image-selftest.yml` on its PR (build and
 test only); its push, sign and attest steps are proven by a `push: true`
 caller after merge. A change to `reusable-release.yml` runs `release-selftest.yml`
@@ -227,6 +230,7 @@ Org-wide (1–9), then this repo's own.
 |--------------|-------|
 | Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` (quality inputs `strict-warnings`, `coverage`, `determinism`: CONTRIBUTING § Quality gates) |
 | Build a protocol's release or campaign image | `.github/workflows/reusable-ns3-image.yml` (`FROM` a resolved ns3-dev digest, `ns3-build-contrib`, `test.py`, then push, cosign, provenance, SBOM; caller examples and verify commands in its header), self-tested by `ns3-image-selftest.yml` (`push: false`, ns3-containers' `swarm-hello`); CONTRIBUTING § Images |
+| Run one benchmark cell of any protocol repository (a change test, or a cell of a released run) | `.github/workflows/reusable-benchmark-cell.yml` (an image by digest, `source_sha` checked out and verified whatever the dispatch ref, prebuilt mode `--no-build` or build mode with pinned dependencies, the `##PROV##` line; caller in its header), dispatched by `ns3-campaign` (`swarm-routing/ns3-tools`), self-tested by `benchmark-cell-selftest.yml`; CONTRIBUTING § Benchmark cells, epic #156 |
 | Cut a release of any org repository (or change how releases are made) | `.github/workflows/reusable-release.yml` (Commitizen bump from Conventional Commits, first release v0.1.0, the caller's `make dist`, `SHA256SUMS`, CycloneDX SBOM, SLSA provenance as `*.intoto.jsonl`, the verify commands in the notes; mode `bump` opens the `chore(release): bump version A to B` PR from `bot/release` with the org App's token, its merge releases: tag on the merged commit, GitHub release; mode `dry-run`; caller example, permissions and verify commands in its header), self-tested by `release-selftest.yml` (dry run on `tools/release/fixture/`); CONTRIBUTING § Releases and DOIs, ROADMAP § Releases |
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar` (+ `SONAR_TOKEN`; `sonar-python-coverage` to import the Python job's coverage into the same analysis), a job calling `reusable-codecov.yml`; seeds `templates/quality/`; badges `sonar`/`codecov` in its `org-sync.toml`; CONTRIBUTING § Quality gates |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` + CONTRIBUTING's type list |
