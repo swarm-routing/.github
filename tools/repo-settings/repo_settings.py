@@ -94,6 +94,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROFILES = os.path.join(ROOT, "templates", "rulesets")
@@ -132,6 +133,7 @@ PRIVATE_UNSUPPORTED = (
 )
 WORKFLOW_FILE = re.compile(r"^\.github/(workflows/[^/]+|actions/.+/action)\.ya?ml$")
 USES = re.compile(r"^\s*(?:-\s+)?uses:\s*['\"]?([^'\"\s#]+)", re.M)
+API_PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._~/?&=%-]*")  # never a flag, never a space
 CODEQL = re.compile(r"github/codeql-action/(init|analyze)@", re.I)
 
 
@@ -149,6 +151,8 @@ class GitHub:
             self.env["GH_TOKEN"] = os.environ["ORG_BOT_TOKEN"]
 
     def api(self, method, path, body=None):
+        if method not in ("GET", "POST", "PUT", "PATCH") or not API_PATH.fullmatch(path):
+            raise GhError(method, path, "refused: not a plain API path")
         cmd = ["gh", "api", "-X", method, path]
         if body is not None:
             cmd += ["--input", "-"]
@@ -206,15 +210,20 @@ def read_settings(gh, repo, local=None):
 def read_workflows(gh, repo, branch, local=None):
     """{path: text} of the repository's workflows and composite actions."""
     if local:
-        base = os.path.join(os.path.realpath(local), repo)
+        root = os.path.realpath(local)
+        base = os.path.realpath(os.path.join(root, repo))
+        if os.path.commonpath([root, base]) != root:
+            raise ValueError(f"{repo}: resolves outside {local}")
         out = {}
         for pattern in (".github/workflows/*.y*ml", ".github/actions/**/action.y*ml"):
             for p in glob.glob(os.path.join(base, pattern), recursive=True):
+                p = os.path.realpath(p)
                 rel = os.path.relpath(p, base).replace(os.sep, "/")
-                if WORKFLOW_FILE.match(rel):
+                if os.path.commonpath([base, p]) == base and WORKFLOW_FILE.match(rel):
                     with open(p, encoding="utf-8") as f:
                         out[rel] = f.read()
         return out
+    branch = urllib.parse.quote(branch, safe="")
     try:
         tree = gh.api("GET", f"repos/{ORG}/{repo}/git/trees/{branch}?recursive=1")
     except GhError as e:
@@ -224,7 +233,8 @@ def read_workflows(gh, repo, branch, local=None):
     out = {}
     for t in tree.get("tree", []):
         if t.get("type") == "blob" and WORKFLOW_FILE.match(t["path"]):
-            got = gh.api("GET", f"repos/{ORG}/{repo}/contents/{t['path']}?ref={branch}")
+            path = urllib.parse.quote(t["path"], safe="/")
+            got = gh.api("GET", f"repos/{ORG}/{repo}/contents/{path}?ref={branch}")
             out[t["path"]] = base64.b64decode(got.get("content", "")).decode()
     return out
 
@@ -1380,6 +1390,14 @@ def self_test():
         and "ARA: refused actions allowed_actions (HTTP 409)" in out
         and "ARA: applied topics" in out,
     )
+
+    # the real client never hands gh a path that could read as a flag or carry a space
+    for bad in ("-X", "repos/a b", "--input=/etc/passwd"):
+        try:
+            GitHub().api("GET", bad)
+            check(f"api path {bad!r} refused", False)
+        except GhError as e:
+            check(f"api path {bad!r} refused", "not a plain API path" in str(e))
 
     # covers(): GitHub's added defaults are ignored, a list must match exactly
     check("covers ignores added keys", covers({"a": 1}, {"a": 1, "b": 2}))
