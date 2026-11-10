@@ -12,7 +12,8 @@ on:
   # the first score, without waiting for Monday
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: read
 
 # a superseded run is not cancelled: a cancelled publish is worse than a duplicate
 concurrency:
