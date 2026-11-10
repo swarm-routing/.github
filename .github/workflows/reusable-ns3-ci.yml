@@ -304,9 +304,23 @@ jobs:
           SONAR: ${{ inputs.sonar }}
         run: |
           set -euo pipefail
-          if ! command -v gcovr > /dev/null; then
-            timeout 600 apt-get update -qq
+          # The debug and sanitized ns3-dev images carry a pinned gcovr
+          # (swarm-routing/ns3-containers#83); apt is only the fallback for an
+          # older image. That fallback fails fast on a broken index
+          # (--error-on=any: a failed fetch is otherwise only a warning and the
+          # install fails later) and retries the update 3 times, 10 s then 20 s
+          # apart, as the image's own Dockerfile does.
+          if command -v gcovr > /dev/null; then
+            echo "gcovr from the image: $(gcovr --version | head -1)"
+          else
+            echo "::notice::the image has no gcovr; installing the distribution's from apt"
+            for delay in 10 20 0; do
+              timeout 300 apt-get update -qq --error-on=any && break
+              [ "$delay" -gt 0 ] || exit 1
+              echo "apt-get update failed; retrying in $delay s" >&2; sleep "$delay"
+            done
             timeout 600 apt-get install -y -qq --no-install-recommends gcovr > /dev/null
+            echo "gcovr from apt: $(gcovr --version | head -1)"
           fi
           src="$GITHUB_WORKSPACE/src"
           mkdir -p "$GITHUB_WORKSPACE/coverage"
