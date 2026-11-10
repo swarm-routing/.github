@@ -316,6 +316,15 @@ def validate(s, private=False):
     if mq is not False:
         if not s.get("ruleset") or not s.get("required_checks"):
             errors.append("merge_queue without a ruleset profile and required_checks")
+        else:
+            try:
+                no_main = load_profile(s["ruleset"])["ruleset"] is None
+            except ValueError:
+                no_main = False  # an unknown profile fails on its own in desired()
+            if no_main:
+                errors.append(
+                    f"merge_queue with the {s['ruleset']} profile, which has no main ruleset"
+                )
         if private:
             errors.append("merge_queue on a private repository (public organization repos only)")
     for table, allowed in (("features", FEATURES), ("security", SECURITY)):
@@ -1565,6 +1574,7 @@ def self_test():
             "ALLGREEN",
         ),
         ("min above max", {**ok_s, "merge_queue": {"min_entries_to_merge": 9}}, False, "above"),
+        ("no main ruleset", {**ok_s, "ruleset": "merge-only"}, False, "has no main ruleset"),
         ("no checks", {"ruleset": "protocol", "merge_queue": True}, False, "required_checks"),
         ("private", ok_s, True, "merge_queue on a private repository"),
     ):
