@@ -39,8 +39,9 @@ is the long form.
    paired per-seed deltas over ≥ 20 seeds, emitting `##CONFIG##`, `##RUN##`,
    `##BENCH##`, `##DIAG##` lines.
 5. **CI hygiene.** Actions pinned by full SHA; buildx caches scoped per profile;
-   transient artifacts `retention-days` ≤ 7. Every job has a `timeout-minutes`
-   cap, and every apt, npm or installer step its own, sized from recent green
+   transient artifacts `retention-days` ≤ 7. Every job that runs steps has a
+   `timeout-minutes` cap (a job that only calls a reusable workflow cannot take
+   one: the called workflow's jobs carry it), and every apt, npm or installer step its own, sized from recent green
    runs; `apt-get update` runs with `--error-on=any` inside a shell retry.
    Ubuntu mirror outages are the usual cause of a red run.
 6. **Comparator arms** (protocols we did not design) clear three gates before
