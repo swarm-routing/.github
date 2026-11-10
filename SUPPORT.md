@@ -1,7 +1,7 @@
 # Support
 
 This is the default support policy for every `swarm-routing` repository that
-does not have its own `SUPPORT.md`. The org is a research project maintained
+does not have its own `SUPPORT.md`; a repository's own takes precedence. The org is a research project maintained
 on a best-effort basis, in public.
 
 ## Where to ask

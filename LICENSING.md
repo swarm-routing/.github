@@ -13,8 +13,9 @@
 | `.clang-format` | the org C++ style | `MIT OR GPL-2.0-only` |
 | `labels.json` | the label taxonomy | `MIT OR GPL-2.0-only` |
 | `ISSUE_TEMPLATE/`, `pull_request_template.md` | the default issue and PR forms | `MIT OR GPL-2.0-only` |
-| `profile/`, `CONTRIBUTING.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md`, `SUPPORT.md` | docs | `GPL-2.0-only` |
+| `SUPPORT.md` | docs: the default support policy | `GPL-2.0-only` |
 | `CODE_OF_CONDUCT.md` | the Contributor Covenant 2.1, adapted only by its contact | `CC-BY-4.0` (its own licence) |
+| `profile/`, `CONTRIBUTING.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md` | docs | `GPL-2.0-only` |
 | everything else | | `GPL-2.0-only` |
 
 Texts: [`LICENSE`](LICENSE) (GPL-2.0) and [`LICENSE-MIT`](LICENSE-MIT) (the
@@ -30,7 +31,9 @@ MIT option). Each source file states its licence in its
   MIT text, or under GPL-2.0-only.
 - **The ns-3 modules, the site, docs and data are GPL-2.0-only.** An ns-3
   module builds only inside a GPL-2.0 ns-3 tree, so an MIT option would change
-  nothing for it.
+  nothing for it. `CODE_OF_CONDUCT.md` is the exception: it is the Contributor
+  Covenant and keeps its CC-BY-4.0, so a change to it is offered under
+  CC-BY-4.0.
 - **The dependency only goes one way.** GPL code may use the dual-licensed
   parts; they never pull GPL-only code in. A `core/` file includes only the C++
   standard library and other `core/` files. CI enforces it.
