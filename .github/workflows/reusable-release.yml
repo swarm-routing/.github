@@ -1,0 +1,467 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable release
+
+# One release pipeline for every swarm-routing repository (#20), so no repo
+# copies AntHocNet's release.yml and the copies never drift (ROADMAP
+# "Releases": no org repository releases before this exists).
+#
+#   build    Commitizen bumps the version from the Conventional-Commit history
+#            since the last tag (the first release is v0.1.0), rewrites the
+#            caller's version files, writes CHANGELOG.md, commits and tags,
+#            all on the runner only. Then the caller's `build` command (default
+#            `make dist`, #11) writes the release assets into `dist-dir`; a
+#            CycloneDX SBOM of `sbom-path` and SHA256SUMS are added. Read-only
+#            token: the caller's build never runs with write access.
+#   attest   signed SLSA build provenance for every asset (actions/attest,
+#            keyless Sigstore with this workflow's identity), attached as
+#            `<name>-<version>.intoto.jsonl` (the name Scorecard's
+#            Signed-Releases recognises, AntHocNet#788) and as the Sigstore
+#            bundle `<name>-<version>.sigstore.json`; the SBOM attested against
+#            the assets; then the verify commands of the release notes run
+#            here, and a release that does not verify never goes out.
+#   publish  (skipped with `dry-run: true`; environment `release`, so where a
+#            repository protects it the maintainer approves the run) pushes the bump commit and the tag
+#            to the branch the run started from (atomically: a branch that
+#            moved since makes the push fail and nothing is published), then
+#            creates the GitHub release with every asset and the notes.
+#
+# `dry-run: true` does everything but push, tag and publish: the bump, the
+# build, the checksums, the SBOM, the attestations (real ones, in the caller's
+# attestation store, on the dry-run's assets) and their verification. The
+# whole release (assets, notes, the bump commit as a git bundle) is the
+# `artifact` output, kept 1 day.
+#
+# The caller needs a Commitizen config (`[tool.commitizen]` in pyproject.toml,
+# or .cz.toml) in `working-directory`, with `tag_format = "v$version"` and
+# `major_version_zero = true` while 0.x (CONTRIBUTING "Releases and DOIs" has
+# the minimal one). Commitizen is pinned here with hashes, so its version is
+# this workflow's, not the caller's.
+#
+# Environment of the `build` command (bash, in `working-directory`):
+#   RELEASE_VERSION  e.g. 0.1.0     RELEASE_TAG  e.g. v0.1.0
+#   RELEASE_DIST     dist-dir, as given
+# It may also test what it built (e.g. unpack a module tarball into an
+# ns3-dev tree and run its suite); a non-zero exit stops the release before
+# anything is signed or pushed. Assets are the regular files at the top of
+# `dist-dir` (subdirectories are ignored); names this workflow writes
+# (SHA256SUMS, *.intoto.jsonl, *.sigstore.json, *.cdx.json) are refused.
+#
+# Permissions. Each job declares its own; a called workflow can only keep or
+# reduce the caller's grant, so the caller's job grants their union, dry run
+# included (the attestations are real):
+#
+#   jobs:
+#     release:
+#       permissions: { contents: write, id-token: write, attestations: write }
+#       uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
+#       with:
+#         dry-run: ${{ inputs.dry-run }}     # a workflow_dispatch boolean input
+#
+# An ns-3 repository also publishes its images at the same version (#107):
+#
+#     image:
+#       needs: release
+#       if: ${{ !inputs.dry-run }}
+#       permissions: { contents: read, packages: write, id-token: write, attestations: write }
+#       uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@main
+#       with:
+#         modules: ara=ns3
+#         tag: ${{ needs.release.outputs.tag }}
+#
+# Verify a release (the notes carry these with the real names):
+#
+#   sha256sum -c SHA256SUMS --ignore-missing
+#   gh attestation verify <asset> --repo swarm-routing/<repo> \
+#     --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
+#   gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom
+#   gh attestation verify <asset> --repo swarm-routing/<repo> --bundle <name>-<version>.sigstore.json   # offline
+#
+# The signing identity is this reusable workflow (Fulcio's SAN is the called
+# workflow's ref); the caller repository is in the certificate's
+# workflow-repository extension.
+on:
+  workflow_call:
+    inputs:
+      build:
+        description: "Bash command, run in working-directory after the bump, that writes the release assets into dist-dir"
+        type: string
+        default: 'make dist'
+      dist-dir:
+        description: "Directory (relative to working-directory) whose top-level files are the release assets"
+        type: string
+        default: 'dist'
+      working-directory:
+        description: "Directory holding the Commitizen config; the build runs here"
+        type: string
+        default: '.'
+      sbom-path:
+        description: "What the CycloneDX SBOM describes, relative to working-directory (default: the checkout at the release commit)"
+        type: string
+        default: '.'
+      dry-run:
+        description: "Bump, build, checksum, SBOM, attest and verify, but push, tag and publish nothing"
+        type: boolean
+        default: false
+    outputs:
+      version:
+        description: "The released version, e.g. 0.1.0"
+        value: ${{ jobs.build.outputs.version }}
+      tag:
+        description: "The release tag, e.g. v0.1.0"
+        value: ${{ jobs.build.outputs.tag }}
+      artifact:
+        description: "Artifact holding release/ (every asset), meta/notes.md and meta/release.bundle (the bump commit and tag)"
+        value: ${{ jobs.build.outputs.artifact }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      name: ${{ steps.bump.outputs.name }}
+      artifact: ${{ steps.bump.outputs.artifact }}
+      commit: ${{ steps.bump.outputs.commit }}
+      tag-object: ${{ steps.bump.outputs.tag-object }}
+    env:
+      WD: ${{ inputs.working-directory }}
+      DIST_IN: ${{ inputs.dist-dir }}
+    steps:
+      - name: A real release starts from a branch
+        if: ${{ !inputs.dry-run && github.ref_type != 'branch' }}
+        run: |
+          echo "::error::a release pushes its bump commit to the branch it ran from; this run is on $GITHUB_REF_TYPE $GITHUB_REF_NAME"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # the whole history and its tags, for Commitizen
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'   # the wheels hashed below are cp312 x86_64
+
+      - name: Install Commitizen (pinned with hashes)
+        # The set AntHocNet's requirements/commitizen.txt resolves (uv pip
+        # compile --generate-hashes), reduced to the wheel each package
+        # installs on this runner; every hash below is one of that file's.
+        timeout-minutes: 10
+        run: |
+          req="$RUNNER_TEMP/commitizen.txt"
+          cat > "$req" <<'EOF'
+          argcomplete==3.7.2 --hash=sha256:6029205678bdd9c1c728a155f5f9ecf5812393f969eef58807641a2bc2aa5b19
+          charset-normalizer==3.5.2 --hash=sha256:3d31298449090ab8d47b7b1b2a555ff73cac7ed438a08b7ac160980c7ebed649
+          colorama==0.4.6 --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
+          commitizen==4.19.3 --hash=sha256:d625e038cce66d92da20d24c2c366d410caca43966eba8ec036debf48fda2a68
+          decli==0.6.3 --hash=sha256:5152347c7bb8e3114ad65db719e5709b28d7f7f45bdb709f70167925e55640f3
+          deprecated==1.3.1 --hash=sha256:597bfef186b6f60181535a29fbe44865ce137a5079f295b479886c82729d5f3f
+          jinja2==3.1.6 --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
+          markupsafe==3.0.4 --hash=sha256:8e124f974786f831d6043728e38296969d3579db8896fe004682f5758e613581
+          packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+          prompt-toolkit==3.0.53 --hash=sha256:01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2
+          pyyaml==6.0.3 --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc
+          questionary==2.1.1 --hash=sha256:a51af13f345f1cdea62347589fbb6df3b290306ab8930713bfae4d475a7d4a59
+          termcolor==3.3.0 --hash=sha256:cf642efadaf0a8ebbbf4bc7a31cec2f9b5f21a9f726f4ccbb08192c9c26f43a5
+          tomlkit==0.15.2 --hash=sha256:05562412163a3037b94497385fb7f9204c637bc605af7a48199e41cf2272f437
+          wcwidth==0.9.4 --hash=sha256:b185c8b927b23af2721be1783499d1cfa5c028b098b0858951b4ae224477f1c2
+          wrapt==2.5.2 --hash=sha256:092472b7b1494deef40dac5e9f6295013a9d51b112b5fbc4350f64dc2574e46a
+          EOF
+          python -m pip install --quiet --only-binary=:all: --require-hashes -r "$req"
+          cz version
+
+      - name: Bump, changelog and tag (on the runner only)
+        id: bump
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          OUT="$RUNNER_TEMP/rel"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+          cd "$WD"
+          if ! cz version --project > /dev/null 2>&1; then
+            echo "::error::no Commitizen config in '$WD' (CONTRIBUTING.md, Releases and DOIs)"
+            exit 1
+          fi
+          mkdir -p "$OUT/release" "$OUT/meta"
+          # The first release is v0.1.0 (ROADMAP "Releases", .github#81); after
+          # that Commitizen computes the next version from the commits.
+          manual=()
+          if [ -z "$(git tag --list 'v[0-9]*')" ]; then manual=(0.1.0); fi
+          rc=0
+          cz bump --yes --changelog --changelog-to-stdout --git-output-to-stderr "${manual[@]}" \
+            > "$OUT/meta/changes.md" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            # 3 = no commits since the last tag, 21 = none that bumps (docs, ci, ...)
+            echo "::error::cz bump exited $rc: nothing to release since the last tag, or the bump failed (log above)"
+            exit "$rc"
+          fi
+          ver="$(cz version --project)"
+          tag="v${ver}"
+          if [ "$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::Commitizen did not tag HEAD as ${tag}: set tag_format = \"v\$version\""
+            exit 1
+          fi
+          test "$(git rev-parse HEAD^)" = "$GITHUB_SHA"
+          # Asset stem: the repository name, lowercase, leading dots dropped.
+          name="${GITHUB_REPOSITORY#*/}"; name="${name#.}"; name="${name,,}"
+          git bundle create "$OUT/meta/release.bundle" "refs/tags/${tag}" "^${GITHUB_SHA}"
+          {
+            echo "version=${ver}"
+            echo "tag=${tag}"
+            echo "name=${name}"
+            echo "artifact=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            # Fixed before the caller's build runs: publish pushes only these
+            # objects, whatever a later step does to the bundle on disk.
+            echo "commit=$(git rev-parse HEAD)"
+            echo "tag-object=$(git rev-parse "refs/tags/${tag}")"
+          } >> "$GITHUB_OUTPUT"
+          { echo "RELEASE_VERSION=${ver}"; echo "RELEASE_TAG=${tag}"; echo "NAME=${name}"; } >> "$GITHUB_ENV"
+          git log --oneline -1
+          cat "$OUT/meta/changes.md"
+
+      - name: Build the assets (the caller's command)
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          BUILD: ${{ inputs.build }}
+          RELEASE_DIST: ${{ inputs.dist-dir }}
+        run: |
+          bash -eo pipefail -c "$BUILD"
+
+      - name: Collect the assets
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ ! -d "$DIST_IN" ]; then
+            echo "::error::the build wrote no '$DIST_IN' directory"
+            exit 1
+          fi
+          n=0
+          for f in "$DIST_IN"/* "$DIST_IN"/.[!.]*; do
+            [ -e "$f" ] || continue
+            b="$(basename "$f")"
+            if [ ! -f "$f" ] || [ -L "$f" ]; then echo "::notice::not an asset (not a regular file): $b"; continue; fi
+            case "$b" in
+              SHA256SUMS|*.intoto.jsonl|*.sigstore.json|*.cdx.json)
+                echo "::error::'$b' is a name this workflow writes; rename it"; exit 1 ;;
+            esac
+            cp -p "$f" "$OUT/release/$b"
+            n=$((n + 1))
+          done
+          if [ "$n" -eq 0 ]; then echo "::error::'$DIST_IN' holds no files"; exit 1; fi
+          ls -l "$OUT/release"
+
+      - name: CycloneDX SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: ${{ inputs.working-directory }}/${{ inputs.sbom-path }}
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/rel/release/${{ steps.bump.outputs.name }}-${{ steps.bump.outputs.version }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: SHA256SUMS
+        run: |
+          sbom="$OUT/release/${NAME}-${RELEASE_VERSION}.cdx.json"
+          test "$(jq -r .bomFormat "$sbom")" = CycloneDX
+          cd "$OUT/release"
+          # Bare names, so `sha256sum -c` works in the directory of the download.
+          find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs -d '\n' sha256sum -- > "$OUT/SHA256SUMS"
+          mv "$OUT/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.bump.outputs.artifact }}
+          path: |
+            ${{ runner.temp }}/rel/release
+            ${{ runner.temp }}/rel/meta
+          retention-days: 1
+          if-no-files-found: error
+
+  attest:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write       # keyless Sigstore signing
+      attestations: write   # store the provenance and SBOM attestations
+    env:
+      VER: ${{ needs.build.outputs.version }}
+      TAG: ${{ needs.build.outputs.tag }}
+      NAME: ${{ needs.build.outputs.name }}
+      SIGNER: swarm-routing/.github/.github/workflows/reusable-release.yml
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/rel
+
+      - name: Subjects
+        id: subjects
+        run: |
+          REL="$RUNNER_TEMP/rel/release"
+          { echo "REL=$REL"; echo "META=$RUNNER_TEMP/rel/meta"; } >> "$GITHUB_ENV"
+          cd "$REL"
+          sha256sum -c SHA256SUMS
+          sbom="${NAME}-${VER}.cdx.json"
+          # Provenance covers every file in SHA256SUMS and SHA256SUMS itself;
+          # the SBOM is attested against the caller's assets.
+          {
+            echo "all<<EOF"
+            echo "$REL/SHA256SUMS"
+            cut -d' ' -f3- SHA256SUMS | sed "s|^|$REL/|"
+            echo "EOF"
+            echo "assets<<EOF"
+            cut -d' ' -f3- SHA256SUMS | grep -vxF "$sbom" | sed "s|^|$REL/|"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: SLSA build provenance
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.subjects.outputs.all }}
+
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.subjects.outputs.assets }}
+          sbom-path: ${{ runner.temp }}/rel/release/${{ needs.build.outputs.name }}-${{ needs.build.outputs.version }}.cdx.json
+
+      - name: Provenance files
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "$REL/${NAME}-${VER}.sigstore.json"
+          # The bundle's signed DSSE envelope on one line, the format
+          # slsa-github-generator publishes, under the name Scorecard's
+          # Signed-Releases looks for (AntHocNet#788).
+          jq -c '.dsseEnvelope' "$BUNDLE" > "$REL/${NAME}-${VER}.intoto.jsonl"
+          test "$(jq -r '.payloadType' "$REL/${NAME}-${VER}.intoto.jsonl")" = "application/vnd.in-toto+json"
+          test "$(wc -l < "$REL/${NAME}-${VER}.intoto.jsonl")" -eq 1
+          jq -r '.payload | @base64d | fromjson | .predicateType' "$REL/${NAME}-${VER}.intoto.jsonl"
+
+      - name: Release notes, with the verify commands
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          first="$(cut -d' ' -f3- "$REL/SHA256SUMS" | grep -vxF "${NAME}-${VER}.cdx.json" | head -n1)"
+          {
+            cat "$META/changes.md"
+            echo
+            echo "## Verify your download"
+            echo
+            echo "Checksums (also the \`SHA256SUMS\` asset):"
+            echo
+            echo '```'
+            cat "$REL/SHA256SUMS"
+            echo '```'
+            echo
+            echo '```'
+            echo "sha256sum -c SHA256SUMS --ignore-missing   # in the directory you downloaded to"
+            echo '```'
+            echo
+            echo "Every asset carries signed SLSA build provenance (\`${NAME}-${VER}.intoto.jsonl\`, and the Sigstore bundle \`${NAME}-${VER}.sigstore.json\`) and is described by a CycloneDX SBOM (\`${NAME}-${VER}.cdx.json\`). With the GitHub CLI, for any asset, e.g. \`${first}\`:"
+            echo
+            echo '```'
+            echo "gh attestation verify ${first} --repo ${REPO} --signer-workflow ${SIGNER}"
+            echo "gh attestation verify ${first} --repo ${REPO} --predicate-type https://cyclonedx.org/bom"
+            echo "gh attestation verify ${first} --repo ${REPO} --bundle ${NAME}-${VER}.sigstore.json   # offline"
+            echo '```'
+            echo
+            echo "Built and signed by [\`reusable-release.yml\`](https://github.com/swarm-routing/.github/blob/main/.github/workflows/reusable-release.yml), run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID})."
+          } > "$META/notes.md"
+          cat "$META/notes.md"
+
+      - name: Verify, with the commands of the notes
+        # A release whose checksums or attestations do not verify never goes out.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          cd "$REL"
+          sha256sum -c SHA256SUMS --ignore-missing
+          # gh prints nothing when not on a terminal: --format json, and a line
+          # per check, so the log shows what was verified.
+          ok() { jq -e -r --arg f "$1" --arg w "$2" 'if length > 0 then "verified \($w): \($f)" else empty end'; }
+          mapfile -t files < <(cut -d' ' -f3- SHA256SUMS)
+          for f in "${files[@]}" SHA256SUMS; do
+            gh attestation verify "$f" --repo "$REPO" --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" provenance
+            gh attestation verify "$f" --repo "$REPO" --bundle "${NAME}-${VER}.sigstore.json" --format json < /dev/null | ok "$f" "provenance (offline bundle)"
+          done
+          for f in "${files[@]}"; do
+            [ "$f" = "${NAME}-${VER}.cdx.json" ] && continue
+            gh attestation verify "$f" --repo "$REPO" --predicate-type https://cyclonedx.org/bom --format json < /dev/null | ok "$f" sbom
+          done
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: |
+            ${{ runner.temp }}/rel/release
+            ${{ runner.temp }}/rel/meta
+          retention-days: 1
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Summary
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          {
+            echo "### ${TAG}$( [ "$DRY_RUN" = true ] && echo ' (dry run: nothing pushed or published)')"
+            echo
+            echo '```'
+            find "$REL" -maxdepth 1 -type f -printf '%s\t%f\n' | LC_ALL=C sort -k2
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: [build, attest]
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The `release` environment: where the repository enables it
+    # (`[settings] release_environment = true`, tools/repo-settings), the
+    # maintainer approves this job before anything is pushed or published.
+    environment: release
+    permissions:
+      contents: write   # push the bump commit and the tag, create the release
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      COMMIT: ${{ needs.build.outputs.commit }}
+      TAG_OBJECT: ${{ needs.build.outputs.tag-object }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/rel
+
+      - name: Push the bump commit and the tag
+        # Atomic: if the branch moved since this run started, neither lands.
+        # The bundle travelled through an artifact the caller's build could
+        # reach, so the tag and its commit must be the ones the bump step
+        # recorded before the build ran (job outputs, which no later step can
+        # change); a commit id covers its tree.
+        run: |
+          R="$RUNNER_TEMP/rel"
+          git fetch --quiet "$R/meta/release.bundle" "refs/tags/${TAG}:refs/tags/${TAG}"
+          test "$(git rev-parse "refs/tags/${TAG}")" = "$TAG_OBJECT"
+          test "$(git rev-parse "refs/tags/${TAG}^{commit}")" = "$COMMIT"
+          test "$(git rev-parse "${COMMIT}^")" = "$GITHUB_SHA"
+          git push --atomic origin "${COMMIT}:refs/heads/${GITHUB_REF_NAME}" "refs/tags/${TAG}"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          R="$RUNNER_TEMP/rel"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
+            --notes-file "$R/meta/notes.md" "$R"/release/*
+          echo "Published ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"

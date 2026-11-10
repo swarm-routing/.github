@@ -81,11 +81,14 @@ repository's own criteria in the table below hold. They are the repository's
 slice of the phase's exit criteria, not the whole phase: `ns3-tools v0.1.0`
 waits on the tools items only, not on BeeAdHoc or the data format. Two rules (decided 2026-11-09, [.github#81](https://github.com/swarm-routing/.github/issues/81)):
 
-- **No org repository releases before the reusable release workflow exists**
+- **Every org repository releases through the reusable release workflow**,
+  `reusable-release.yml`
   ([.github#20](https://github.com/swarm-routing/.github/issues/20): Commitizen
   bump from Conventional-Commit history, `SHA256SUMS`, SLSA provenance as
   `*.intoto.jsonl`, a CycloneDX SBOM, the verify commands in the release
-  notes). Its first caller is the harness package,
+  notes, and a dry run; how a repository adopts it is in
+  [CONTRIBUTING](CONTRIBUTING.md#cutting-a-release)). Its first caller is the
+  harness package,
   [ns3-tools#26](https://github.com/swarm-routing/ns3-tools/issues/26), which is
   the org's first release. A copy of AntHocNet's `release.yml` in a protocol
   repo is not a substitute: the copies would drift.
@@ -101,6 +104,7 @@ waits on the tools items only, not on BeeAdHoc or the data format. Two rules (de
 | 4 BeeAdHoc | `BeeAdHoc v0.1.0` | fidelity settled (BeeAdHoc#4, #5), module green, standalone anchor verdict re-recorded using the `v270a` pre-registration or a new pre-registration (decision on BeeAdHoc#4) |
 | 4 Data | none (data is immutable runs, not versions) | the manifest schema and validator (benchmarks#3) carry their own schema version |
 | 5 Termite | `Termite v0.1.0` | the anchor-miss analysis (Termite#5) is recorded before code; module green; three gates or a written verdict |
+| none (HOPNET is not scheduled) | `HOPNET v0.1.0` | fidelity sheet and the #5 pre-registration settled (done 2026-11-10, HOPNET#4, #5), module green, the anchor against AntHocNet (HOPNET golden rule 12) passes or ships as a written infeasibility verdict |
 | Site | none (deploys from `main`) | the live smoke verifies each deploy by its build marker (site#28) |
 | Images | none (tags per ns-3 release and profile) | each image is tested by digest before its tag moves (ns3-containers golden rule 17) |
 | AntHocNet | its own ladder: next **v2.7.0** | after AntHocNet#460's two PRs, the ns3-tools#29 switch-over (its "harness packaged" exit, superseding AntHocNet#770) and the hardening P2s #786, #787, #789, #840; fixes before then ship as v2.6.x (decision 2026-11-09 on AntHocNet#856) |

@@ -200,6 +200,92 @@ Its Zenodo token (`ZENODO_TOKEN`, scopes `deposit:write` and `deposit:actions`)
 belongs to the maintainer. Without it every run is a dry run. Never type a DOI:
 read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
 
+### Cutting a release
+
+Every org repository releases through `reusable-release.yml` (#20); none
+copies AntHocNet's `release.yml`. One run, dispatched by hand:
+
+1. **Bump** (on the runner only). Commitizen computes the next version from
+   the Conventional-Commit history since the last tag (`feat` → minor, `fix` →
+   patch; a breaking change → minor while 0.x), rewrites the version files,
+   writes `CHANGELOG.md`, commits and tags. A repository with no `v*` tag yet
+   gets **v0.1.0** (ROADMAP "Releases"). A run with nothing that bumps (only
+   `docs:`, `ci:`, …) fails, and nothing happens.
+2. **Build.** The caller's `build` command (default `make dist`) writes the
+   assets into `dist/`, with `RELEASE_VERSION` and `RELEASE_TAG` set. It may
+   test what it built; a failure stops the release. This job's token is
+   read-only.
+3. **Sign.** `SHA256SUMS`, a CycloneDX SBOM (`<repo>-<ver>.cdx.json`), signed
+   SLSA build provenance for every asset as `<repo>-<ver>.intoto.jsonl`
+   (Scorecard's Signed-Releases name) and as the Sigstore bundle
+   `<repo>-<ver>.sigstore.json`, and an SBOM attestation. The verify commands
+   of the notes then run on the runner: a release that does not verify never
+   goes out.
+4. **Publish** (not in a dry run). The bump commit and the tag are pushed
+   atomically to the branch the run started from (if it moved, neither
+   lands), and the GitHub release is created with every asset and notes
+   holding the changelog, the checksums and the verify commands. Zenodo then
+   archives it (above).
+
+To adopt it, a repository adds a Commitizen config (in `pyproject.toml`, or
+`.cz.toml` as in `tools/release/fixture/`):
+
+```toml
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.0"
+version_scheme = "semver"
+tag_format = "v$version"
+major_version_zero = true
+update_changelog_on_bump = true
+version_files = ["VERSION"]   # every file that carries the version, e.g. "CITATION.cff:^version:"
+```
+
+a `make dist` target that writes its assets into `dist/`, and a workflow:
+
+```yaml
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run: { type: boolean, default: true }
+permissions:
+  contents: read
+jobs:
+  release:
+    permissions: { contents: write, id-token: write, attestations: write }
+    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
+    with:
+      dry-run: ${{ inputs.dry-run }}
+```
+
+Run the dry run first: it does everything but push, tag and publish, and its
+artifact holds the release it would have published. The publish job runs in
+the `release` environment: set `release_environment = true` in the
+repository's `[settings]` (Automation, above) so the maintainer approves it. The bump commit is
+pushed to `main` with `GITHUB_TOKEN`. The org's `main` rulesets
+(`templates/rulesets/`, #118) require a pull request, and `GITHUB_TOKEN` cannot
+be a ruleset bypass actor, so today the publish job's push is refused, before
+anything is published: until the first real release settles it
+(ns3-tools#26: push only the tag and open a bump PR, or push with the org
+GitHub App's token as a bypass actor), the dry run is all a repository can run. A repository that ships an ns-3 module adds an `image` job after
+`release` that calls `reusable-ns3-image.yml` with
+`tag: ${{ needs.release.outputs.tag }}` (Images, below; the workflow's header
+has the snippet), so each release has both the module tarball and the image.
+Users verify a download with:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify <asset> --repo swarm-routing/<repo> \
+  --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
+gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom
+```
+
+Inputs (a public contract, golden rule 10: they are only added, with
+backward-compatible defaults): `build` (`make dist`), `dist-dir` (`dist`),
+`working-directory` (`.`), `sbom-path` (`.`, the checkout at the release
+commit), `dry-run` (`false`). Outputs: `version`, `tag`, `artifact`.
+
 ### Images
 
 No repository builds its own ns-3 (#107). Every protocol image is built by
