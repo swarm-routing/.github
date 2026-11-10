@@ -1,7 +1,8 @@
 # Applies each repository's description, homepage and topics (swarm-routing/.github#117).
 # One-off and on demand until tools/repo-settings (#117) takes over; then this file goes.
-# Token: secret REPO_SETTINGS_TOKEN (fine-grained, swarm-routing repos, Administration: write +
-# Metadata: read), else ORG_BOT_TOKEN once the org-bot App has Administration: write.
+# Token: the org GitHub App's (BOT_APP_ID + BOT_APP_PRIVATE_KEY, Administration: write; #21) through
+# .github/actions/bot-token, else secret REPO_SETTINGS_TOKEN (fine-grained, swarm-routing repos,
+# Administration: write + Metadata: read), else ORG_BOT_TOKEN.
 name: repo metadata
 
 on:
@@ -12,20 +13,31 @@ on:
         type: boolean
         default: true
 
-permissions: {}
+permissions:
+  contents: read # the checkout, for the bot-token action
 
 jobs:
   apply:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.REPO_SETTINGS_TOKEN || secrets.ORG_BOT_TOKEN }}
       - name: Apply descriptions, homepages and topics
         env:
-          GH_TOKEN: ${{ secrets.REPO_SETTINGS_TOKEN || secrets.ORG_BOT_TOKEN }}
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
           set -euo pipefail
-          if [ -z "$GH_TOKEN" ]; then echo "::error::no REPO_SETTINGS_TOKEN or ORG_BOT_TOKEN secret"; exit 1; fi
+          if [ -z "$GH_TOKEN" ]; then echo "::error::no bot token: neither the App secrets nor REPO_SETTINGS_TOKEN or ORG_BOT_TOKEN"; exit 1; fi
           S=https://swarm-routing.github.io
           fail=0
           apply() {
