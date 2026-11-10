@@ -66,8 +66,9 @@ only always-running jobs. `merge_queue = true` adds the `merge_queue` rule
 (MERGE_QUEUE: squash, every PR of a group green, groups of up to 5, a
 120-minute check timeout for ns-3 CI; a table overrides any of them). It
 needs a ruleset profile and `required_checks`, and the workflow producing each
-required check (the workflow with a job named, or with the id, the check's
-first ` / ` segment) must also run on `merge_group`, or the queue waits for a
+required check (a workflow that runs on `pull_request`, with a job named, or
+with the id, the check's first ` / ` segment; `${{ }}` in a name matches any
+text) must also run on `merge_group`, or the queue waits for a
 check that never comes: a repository where one does not is refused before
 anything is written, as for the Actions allowed list. GitHub offers merge
 queues on public organization repositories (and private ones on Enterprise
@@ -339,15 +340,41 @@ def validate(s, private=False):
     return errors
 
 
+PR_TRIGGER = re.compile(
+    r"^\s*pull_request\s*:|^on:\s*(?:\[[^\]]*\bpull_request\b|pull_request\s*$)", re.M
+)
+NAME_LINE = re.compile(r"^\s+name:\s*(['\"]?)(.+?)\1\s*(?:#.*)?$", re.M)
+
+
+def names_job(text, job):
+    """Whether a workflow has a job with the id `job`, or a `name:` that gives
+    `job` (an expression such as `${{ matrix.python }}` inside a name matches
+    any text; a name that is only an expression is skipped)."""
+    if re.search(rf"^\s+{re.escape(job)}:\s*(?:#.*)?$", text, re.M):
+        return True
+    for m in NAME_LINE.finditer(text):
+        parts = re.split(r"\$\{\{.*?\}\}", m.group(2))
+        if not "".join(parts).strip():
+            continue  # a name that is only an expression (an artifact's, a step's) names nothing
+        if re.fullmatch(".+".join(re.escape(x) for x in parts), job):
+            return True
+    return False
+
+
 def without_merge_group(checks, workflows):
     """The required checks a merge group would never get: no workflow found
     with a job named (or with the id) the check's first ` / ` segment, or one
-    found whose triggers have no merge_group."""
+    found whose triggers have no merge_group. Only workflows that run on
+    pull_request can report a required check, so a reusable (workflow_call)
+    workflow whose job carries the same name is not one of them."""
     out = []
     for c in checks:
-        job = re.escape(c.split(" / ")[0])
-        job_line = re.compile(rf"^\s+(?:name:\s*(['\"]?){job}\1|{job}:)\s*(?:#.*)?$", re.M)
-        found = [t for p, t in workflows.items() if "/workflows/" in p and job_line.search(t)]
+        job = c.split(" / ")[0]
+        found = [
+            t
+            for p, t in workflows.items()
+            if "/workflows/" in p and PR_TRIGGER.search(t) and names_job(t, job)
+        ]
         if not found or not all(MERGE_GROUP.search(t) for t in found):
             out.append(c)
     return out
@@ -1541,6 +1568,40 @@ def self_test():
     check(
         "merge_group found in a flow list, job id matched, reusable prefix used",
         without_merge_group(["title / title", "lint"], one_line) == ["lint"],
+    )
+    reusable = {
+        ".github/workflows/ci.yml": "on:\n  pull_request:\n  merge_group:\njobs:\n  python:\n"
+        "    uses: ./.github/workflows/reusable-python-ci.yml\n",
+        ".github/workflows/reusable-python-ci.yml": "on:\n  workflow_call:\njobs:\n  python:\n",
+    }
+    check(
+        "a reusable workflow's own job is not the check's workflow",
+        without_merge_group(["python / python"], reusable) == [],
+    )
+    matrix = {
+        ".github/workflows/python.yml": "on:\n  pull_request:\n  merge_group:\njobs:\n  tests:\n"
+        "    name: ns3-tool tests (Python ${{ matrix.python }})\n"
+    }
+    check(
+        "a matrix job name matches its expanded check names",
+        without_merge_group(["ns3-tool tests (Python 3.11)", "ns3-tool lint"], matrix)
+        == ["ns3-tool lint"],
+    )
+    matrix[".github/workflows/python.yml"] = matrix[".github/workflows/python.yml"].replace(
+        "  merge_group:\n", ""
+    )
+    only_expr = {
+        ".github/workflows/r.yml": "on:\n  pull_request:\njobs:\n  r:\n    steps:\n"
+        "      - uses: x\n        with:\n          name: ${{ needs.r.outputs.artifact }}\n"
+    }
+    check(
+        "a name that is only an expression names no check",
+        without_merge_group(["python / python"], {**reusable, **only_expr}) == [],
+    )
+    check(
+        "a matrix job without merge_group is refused",
+        without_merge_group(["ns3-tool tests (Python 3.13)"], matrix)
+        == ["ns3-tool tests (Python 3.13)"],
     )
     prof_rs = load_profile("protocol")["ruleset"]
     off = main_ruleset(prof_rs, {"required_checks": ["CI gate"]})
