@@ -106,7 +106,7 @@ waits on the tools items only, not on BeeAdHoc or the data format. Two rules (de
 | 3 ARA | `ARA v0.1.0` | module green, determinism gate, anchor verdict recorded (PASS, or a written infeasibility verdict): the anchor is a change test in ARA's own benchmark pipeline (ARA#36), and the released version's run is then recorded in `benchmarks` (benchmarks ADR-0002) |
 | 4 BeeAdHoc | `BeeAdHoc v0.1.0` | fidelity settled (BeeAdHoc#4, #5), module green, standalone anchor verdict re-recorded using the `v270a` pre-registration or a new pre-registration (decision on BeeAdHoc#4), as a change test in BeeAdHoc's pipeline (BeeAdHoc#41; benchmarks ADR-0002) |
 | 4 Data | none (data is immutable runs, not versions) | runs are triggered by releases: a protocol release, a new supported ns-3 release or an `ns3-tools` release that changes what is measured starts a recorded run (benchmarks ADR-0002; benchmarks#24); the manifest schema and validator (benchmarks#3, done) carry their own schema version |
-| 5 Termite | `Termite v0.1.0` | the anchor-miss analysis (Termite#5) is recorded before code; module green; three gates (the anchor a change test in Termite's pipeline, Termite#31; benchmarks ADR-0002) or a written verdict |
+| 5 Termite | `Termite v0.1.0` | the anchor-miss pre-registration (Termite#5) is recorded before `core/` (Termite golden rule 12); module green; three gates (the anchor a change test in Termite's pipeline, Termite#31; benchmarks ADR-0002) or a written verdict |
 | none (HOPNET is not scheduled) | `HOPNET v0.1.0` | fidelity sheet and the #5 pre-registration settled (done 2026-11-10, HOPNET#4, #5), module green, the anchor against AntHocNet (HOPNET golden rule 12; a change test in HOPNET's pipeline, HOPNET#28) passes or ships as a written infeasibility verdict |
 | Site | none (deploys from `main`) | the live smoke verifies each deploy by its build marker (site#28) |
 | Images | none (tags per ns-3 release and profile) | each image is tested by digest before its tag moves (ns3-containers golden rule 17) |
@@ -388,7 +388,7 @@ not for `ns3-tools`.
 
 - [x] `swarm-routing/Termite` created and bootstrapped (Termite#1); its epic is Termite#3.
 - [x] Fidelity sheet with every parameter sourced or marked (Termite#21, `fidelity.py check` ok; Termite#4 stays open on its last criterion).
-- [ ] The anchor miss explained in an issue before code (arm, scenario or power). The pre-registration was accepted on 2026-11-10 ([Termite#5](https://github.com/swarm-routing/Termite/issues/5)); its runs are to come.
+- [x] Why the anchor missed (arm, scenario or power) pre-registered in an issue before `core/` (Termite golden rule 12): accepted on 2026-11-10 ([Termite#5](https://github.com/swarm-routing/Termite/issues/5)), before Termite#28 merged; its runs are to come.
 - [ ] Module green in CI; three gates recorded, or a written infeasibility verdict.
 
 HOPNET (ants + zone routing, Wang 2007) follows later, thesis fidelity sheet
