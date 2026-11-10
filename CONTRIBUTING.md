@@ -37,7 +37,10 @@ is the long form.
    paired per-seed deltas over ≥ 20 seeds, emitting `##CONFIG##`, `##RUN##`,
    `##BENCH##`, `##DIAG##` lines.
 5. **CI hygiene.** Actions pinned by full SHA; buildx caches scoped per profile;
-   transient artifacts `retention-days` ≤ 7.
+   transient artifacts `retention-days` ≤ 7. Every job has a `timeout-minutes`
+   cap, and every apt, npm or installer step its own, sized from recent green
+   runs; `apt-get update` runs with `--error-on=any` inside a shell retry.
+   Ubuntu mirror outages are the usual cause of a red run.
 6. **Comparator arms** (protocols we did not design) clear three gates before
    their numbers count: a fidelity sheet from the paper, the per-PR delivery
    smoke, and an anchor reproducing the paper's own trend.
@@ -119,6 +122,15 @@ starts from the newest open `handoff` issue and closes it when done.
   lowercase. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
   `build`, `ci`, `chore`, `revert` (the list `reusable-pr-title.yml` enforces).
 - Merge when CI is green.
+- **`main` takes no direct push** in any repo: the `main` ruleset requires a
+  PR, an up-to-date branch and the required checks. Bots push `bot/<name>`
+  branches and open PRs; releases go through the bump PR (Cutting a release).
+- When a PR falls behind `main`, update it
+  (`gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`) and merge PRs
+  one at a time, each after its CI on the updated branch. Never force-push a
+  branch someone else pushed.
+- `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
+  acceptance criteria remain open.
 
 ## Automation
 
@@ -131,7 +143,7 @@ runs until their secret is set, and the secrets belong to the maintainer:
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs); and, where enabled, a `release` environment with the maintainer as required reviewer. The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
-Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it; a hand edit shows up as drift the next day. A required check must run on every PR (no `paths:` filter), or the PRs it skips can never merge. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
+Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it; a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
 A repository's `[settings]` can override what its profile gives it: `features = { has_wiki = true }` (any of `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`), `security = { codeql_default_setup = false }` (false leaves that feature alone; it is never turned off), and `release_environment = true`. The Actions policy allows only the actions listed in `templates/rulesets/defaults.json` (`selected_actions.patterns_allowed`, besides GitHub's own and local ones): a workflow that starts using a new third-party action needs its `owner/repo@*` added there in the same change, or `repo-settings` refuses that repository (the check names the action) rather than switching it to a policy that would break its CI. The `release` environment (required reviewer: the maintainer) is created only where `release_environment = true`; no repository enables it yet: turn it on in a repository when it adopts the reusable release workflow (#116) and that workflow's job names `environment: release`. The `release-tags` ruleset does not restrict who creates a v* tag: the release workflows push tags with `GITHUB_TOKEN`, which cannot be a ruleset bypass actor, so a creation rule would block every release.
 
