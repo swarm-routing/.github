@@ -172,6 +172,33 @@ check(
     and "metric=bugs" not in rq,
     "a container repo's scanner badges are live: workflow, Hadolint and Trivy jobs, Sonar gate + security",
 )
+# OpenSSF Scorecard (#23): the caller workflow on every repo, its badge only with it
+sc = os.path.join(dq, ".github/workflows/scorecard.yml")
+check(
+    "uses: swarm-routing/.github/.github/workflows/reusable-scorecard.yml@main" in read(sc)
+    and "id-token: write" in read(sc)
+    and "security-events: write" in read(sc),
+    "init writes the Scorecard caller, granting what publish_results and SARIF need",
+)
+check(
+    "api.securityscorecards.dev/projects/github.com/swarm-routing/demo/badge" in rq
+    and "scorecard.dev/viewer/?uri=github.com/swarm-routing/demo" in rq,
+    "the Scorecard badge links the repo's report on scorecard.dev",
+)
+dp = fresh()
+run("init", dp, "--kind", "data", "--dual", "")
+edit(
+    dp, ".github/org-sync.toml", "\n[docs]", 'skip = [".github/workflows/scorecard.yml"]\n\n[docs]'
+)
+os.remove(os.path.join(dp, ".github/workflows/scorecard.yml"))
+run("apply", dp)
+check(
+    not os.path.exists(os.path.join(dp, ".github/workflows/scorecard.yml"))
+    and "securityscorecards" not in read(os.path.join(dp, "README.md"))
+    and run("check", dp)[0] == 0,
+    "a repo that skips the Scorecard workflow (a private one) gets no badge and stays clean",
+)
+
 da = fresh()
 run("init", da, "--kind", "skills", "--dual", "")
 rd = read(os.path.join(da, "README.md"))
