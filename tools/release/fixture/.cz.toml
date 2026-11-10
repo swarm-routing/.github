@@ -1,0 +1,13 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+# The release self-test's caller (.github/workflows/release-selftest.yml): the
+# minimal Commitizen config a repository adopting reusable-release.yml needs
+# (CONTRIBUTING.md, Releases and DOIs). Never released: the self-test is a dry run.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.0"
+version_scheme = "semver"
+tag_format = "v$version"
+major_version_zero = true
+update_changelog_on_bump = true
+version_files = ["VERSION"]

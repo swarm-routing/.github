@@ -10,7 +10,7 @@ before changing anything. Org-wide conventions:
 Org-wide defaults for every `swarm-routing` repository: the profile page,
 default issue forms and PR template, the label taxonomy, the C++ style, and the
 reusable workflows other repos call (`reusable-ns3-ci.yml`, `reusable-ns3-image.yml`,
-`sync-labels.yml`).
+`reusable-release.yml`, `sync-labels.yml`).
 Files here only take effect from `main` (GitHub reads community defaults and
 `@main` workflow references from the default branch).
 
@@ -32,6 +32,7 @@ tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against th
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
 tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's, with HINT lines at the likely spots
 tools/pr-status/pr_status.py    open PRs across repos, read-only: a line per PR (head, CI verdict and counts, mergeable state) and per unresolved review thread (severity · title · path:line · id)
+tools/release/fixture/         the release self-test's caller: the minimal Commitizen config (.cz.toml) and a `make dist`
 tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
@@ -40,9 +41,9 @@ templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org s
                                 quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
 SECURITY.md                     the org default security policy (repos without their own get it)
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
-.github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-python-ci.yml, reusable-pr-title.yml,
+.github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-python-ci.yml, reusable-pr-title.yml,
                            reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, sync-labels.yml,
-                           epics.yml, zenodo.yml, org-bot.yml, ci.yml, ns3-image-selftest.yml
+                           epics.yml, zenodo.yml, org-bot.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
 ```
 
@@ -78,7 +79,11 @@ an `ns3-dev` image against `swarm-routing/ns3-containers`' `test/fixtures/`
 module (see that repo's AGENTS.md), then by a caller repo's PR. A change to
 `reusable-ns3-image.yml` runs `ns3-image-selftest.yml` on its PR (build and
 test only); its push, sign and attest steps are proven by a `push: true`
-caller after merge.
+caller after merge. A change to `reusable-release.yml` runs `release-selftest.yml`
+on its PR: a dry run on `tools/release/fixture/` (bump to v0.1.0, `make dist`,
+checksums, SBOM, real attestations and their verification, nothing pushed),
+then a check of every file it would have published; its push and publish job
+is proven by the first caller's release (ns3-tools#26).
 
 ## Golden rules (invariants — do not break)
 
@@ -184,6 +189,7 @@ Org-wide (1–9), then this repo's own.
 |--------------|-------|
 | Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` (quality inputs `strict-warnings`, `coverage`, `determinism`: CONTRIBUTING § Quality gates) |
 | Build a protocol's release or campaign image | `.github/workflows/reusable-ns3-image.yml` (`FROM` a resolved ns3-dev digest, `ns3-build-contrib`, `test.py`, then push, cosign, provenance, SBOM; caller examples and verify commands in its header), self-tested by `ns3-image-selftest.yml` (`push: false`, ns3-containers' `swarm-hello`); CONTRIBUTING § Images |
+| Cut a release of any org repository (or change how releases are made) | `.github/workflows/reusable-release.yml` (Commitizen bump from Conventional Commits, first release v0.1.0, the caller's `make dist`, `SHA256SUMS`, CycloneDX SBOM, SLSA provenance as `*.intoto.jsonl`, the verify commands in the notes; `dry-run`; caller example, permissions and verify commands in its header), self-tested by `release-selftest.yml` (dry run on `tools/release/fixture/`); CONTRIBUTING § Releases and DOIs, ROADMAP § Releases |
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar` (+ `SONAR_TOKEN`; `sonar-python-coverage` to import the Python job's coverage into the same analysis), a job calling `reusable-codecov.yml`; seeds `templates/quality/`; badges `sonar`/`codecov` in its `org-sync.toml`; CONTRIBUTING § Quality gates |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` + CONTRIBUTING's type list |
 | Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
