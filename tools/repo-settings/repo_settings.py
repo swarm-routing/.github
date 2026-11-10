@@ -22,6 +22,7 @@ DIR/<repo>/.github/):
                                         # data, site, merge-only (no ruleset); "" for neither
     required_checks = ["CI gate"]       # check-run names that run on every PR
     code_scanning = false               # true only where CodeQL uploads results
+    merge_queue = false                 # true: PRs merge through a merge queue (public repos only)
     features = { has_wiki = true }      # overrides the profile's repository features
     security = { codeql_default_setup = false }   # false: leave that feature alone
     release_environment = true          # create the `release` environment here
@@ -59,7 +60,13 @@ with `code_scanning = true` (a repository that never uploads CodeQL results
 would hold every PR waiting for them), and `required_status_checks` takes
 `required_checks` (GitHub Actions checks), dropped when there are none: a
 required check that a `paths:` filter skips blocks a PR forever, so list
-only always-running jobs.
+only always-running jobs. `merge_queue = true` adds the `merge_queue` rule
+(MERGE_QUEUE: squash, every PR of a group green, groups of up to 5, timeouts
+sized for ns-3 CI). It needs a ruleset profile and `required_checks`, and the
+workflows producing those checks must also run on `merge_group`, or the queue
+waits for a check that never comes. GitHub offers merge queues on public
+organization repositories (and private ones on Enterprise Cloud only), so a
+private repository asking for one is refused.
 
 `plan` lists the differences between the live repository and its
 declaration, `check` does the same and exits 1 on drift (or on a setting it
@@ -107,6 +114,16 @@ REPO_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]{0,99}")  # GitHub's, never 
 TOPIC = re.compile(r"^[a-z0-9][a-z0-9-]{0,49}$")
 RULESET_KEYS = ("name", "target", "enforcement", "conditions", "bypass_actors", "rules")
 SCANNING_RULES = ("code_scanning", "code_quality")
+# the `merge_queue` rule's parameters (REST rulesets API), sized for CI that takes 10-30 minutes
+MERGE_QUEUE = {
+    "merge_method": "SQUASH",  # as every PR: the squash title is the commit on main
+    "grouping_strategy": "ALLGREEN",  # every PR of a group must pass, not only its head
+    "check_response_timeout_minutes": 120,  # a required check slower than this fails the group
+    "max_entries_to_build": 5,  # groups built at once, so the queue does not starve PR CI
+    "min_entries_to_merge": 1,  # a lone PR still merges...
+    "min_entries_to_merge_wait_minutes": 5,  # ...after waiting this long for company
+    "max_entries_to_merge": 5,  # PRs merged together in one group at most
+}
 SHARED = ("features", "security", "actions", "tag_ruleset", "release_environment")
 FEATURES = (
     "has_issues",
@@ -259,6 +276,13 @@ def validate(s, private=False):
     ]
     if s.get("required_checks") and not s.get("ruleset"):
         errors.append("required_checks without a ruleset profile")
+    if "merge_queue" in s and type(s["merge_queue"]) is not bool:
+        errors.append("merge_queue is not true or false")
+    elif s.get("merge_queue"):
+        if not s.get("ruleset") or not s.get("required_checks"):
+            errors.append("merge_queue without a ruleset profile and required_checks")
+        if private:
+            errors.append("merge_queue on a private repository (public organization repos only)")
     for table, allowed in (("features", FEATURES), ("security", SECURITY)):
         t = s.get(table, {})
         if not isinstance(t, dict):
@@ -285,6 +309,8 @@ def main_ruleset(prof_rs, s):
                 {"context": c, "integration_id": ACTIONS_APP} for c in checks
             ]
         rules.append(r)
+    if s.get("merge_queue"):
+        rules.append({"type": "merge_queue", "parameters": dict(MERGE_QUEUE)})
     rs["rules"] = rules
     return rs
 
@@ -1410,6 +1436,44 @@ def self_test():
             check(f"api path {bad!r} refused", False)
         except GhError as e:
             check(f"api path {bad!r} refused", "not a plain API path" in str(e))
+
+    # merge_queue: the rule joins the main ruleset only when asked; a live queue is then in sync
+    gh = FakeGitHub()
+    plain_toml = toml["AntHocNet"]
+    toml["AntHocNet"] = plain_toml + "merge_queue = true\n"
+    rc, out = go("check", ["AntHocNet"], gh)
+    check("merge_queue drift", rc == 1 and "AntHocNet ruleset main: update (+merge_queue)" in out)
+    rc, out = go("apply", ["AntHocNet"], gh)
+    put = [c for c in writes(gh) if c[0] == "PUT" and "rulesets/18147133" in c[1]]
+    mq = [r for c in put for r in c[2]["rules"] if r["type"] == "merge_queue"]
+    check(
+        "merge_queue applied with its parameters",
+        rc == 0 and len(mq) == 1 and mq[0]["parameters"] == MERGE_QUEUE,
+    )
+    check("merge_queue in sync after apply", go("check", ["AntHocNet"], gh)[0] == 0)
+    toml["AntHocNet"] = plain_toml
+    prof_rs = load_profile("protocol")["ruleset"]
+    off = main_ruleset(prof_rs, {"required_checks": ["CI gate"]})
+    on = main_ruleset(prof_rs, {"required_checks": ["CI gate"], "merge_queue": True})
+    check("no merge_queue rule by default", "merge_queue" not in [r["type"] for r in off["rules"]])
+    check(
+        "merge_queue parameters in GitHub's ranges",
+        on["rules"][-1]["type"] == "merge_queue"
+        and MERGE_QUEUE["merge_method"] == "SQUASH"
+        and MERGE_QUEUE["grouping_strategy"] in ("ALLGREEN", "HEADGREEN")
+        and 1 <= MERGE_QUEUE["check_response_timeout_minutes"] <= 360
+        and 0 <= MERGE_QUEUE["min_entries_to_merge_wait_minutes"] <= 360
+        and MERGE_QUEUE["min_entries_to_merge"] <= MERGE_QUEUE["max_entries_to_merge"] <= 100
+        and 0 <= MERGE_QUEUE["max_entries_to_build"] <= 100,
+    )
+    ok_s = {"ruleset": "protocol", "required_checks": ["CI gate"], "merge_queue": True}
+    check("merge_queue valid", validate(ok_s) == [])
+    for name, s, private, want in (
+        ("not a bool", {**ok_s, "merge_queue": "yes"}, False, "merge_queue is not true or false"),
+        ("no checks", {"ruleset": "protocol", "merge_queue": True}, False, "required_checks"),
+        ("private", ok_s, True, "merge_queue on a private repository"),
+    ):
+        check(f"merge_queue refused: {name}", any(want in e for e in validate(s, private)))
 
     # covers(): GitHub's added defaults are ignored, a list must match exactly
     check("covers ignores added keys", covers({"a": 1}, {"a": 1, "b": 2}))
