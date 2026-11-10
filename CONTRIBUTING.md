@@ -129,6 +129,9 @@ runs until their secret is set, and the secrets belong to the maintainer:
 |---|---|---|
 | `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted. The same change is never proposed twice; an older bot PR is closed as superseded. It never merges | `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write. A GitHub App token can replace it (#21) |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
+| `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's description, homepage, topics, merge settings (squash only, PR title and body as the commit, delete the branch) and `main` ruleset equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset and only manages the one named in its profiles | `ORG_BOT_TOKEN`, which then also needs **Administration: write** on every repository; until it has it, apply reports `refused` and only the check runs |
+
+Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it; a hand edit shows up as drift the next day. A required check must run on every PR (no `paths:` filter), or the PRs it skips can never merge. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
 The bot's PRs are generated content only; merge them when CI is green. You
 still refresh the epic lists in your own PR when you change an epic: the bot

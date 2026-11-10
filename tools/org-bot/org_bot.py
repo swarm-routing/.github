@@ -666,6 +666,18 @@ def self_test():
     check(
         "stale branch overwritten", "opened #42" in out and "FAILED" not in out and pushed != orphan
     )
+    # a settings-only org-sync.toml (no kind, tools/repo-settings): org_sync.py changes
+    # nothing there, so the repository reads up to date and gets no PR
+    settings_only = os.path.join(work, "settings-only")
+    os.makedirs(os.path.join(settings_only, ".github"))
+    with open(os.path.join(settings_only, ".github", "org-sync.toml"), "w") as fh:
+        fh.write('[settings]\ndescription = "x"\n')
+    notes = generate("org-sync", "settings-only", settings_only, data, [])
+    check(
+        "org-sync leaves a settings-only config alone",
+        sorted(os.listdir(settings_only)) == [".github"]
+        and any("settings only" in n for n in notes),
+    )
     # org-sync notes list the seeds that differ, for information, and leave them alone
     adopted = os.path.join(work, "adopted")
     os.makedirs(adopted)
