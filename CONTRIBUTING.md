@@ -153,6 +153,28 @@ Its Zenodo token (`ZENODO_TOKEN`, scopes `deposit:write` and `deposit:actions`)
 belongs to the maintainer. Without it every run is a dry run. Never type a DOI:
 read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
 
+### Images
+
+No repository builds its own ns-3 (#107). Every protocol image is built by
+`reusable-ns3-image.yml` `FROM ghcr.io/swarm-routing/ns3-dev@sha256:…`: the
+`ns3-dev:<version>-<profile>` tag is resolved to its digest once, the
+repository's modules and their dependencies are built on that warm tree by
+`ns3-build-contrib`, and their `test.py` suites run on the built image before
+anything is pushed. Each image records its base in the label
+`io.github.swarm-routing.ns3-dev.digest`, and its commit and every
+dependency's commit in its other labels; it is signed (cosign keyless), with
+build provenance and a CycloneDX SBOM. The workflow's header has the caller
+examples and the verify commands (`cosign verify`, `gh attestation verify`).
+
+- **Releases** publish `ghcr.io/swarm-routing/<repo>-ns3:<version>-<profile>`,
+  `optimized` and `debug` by default.
+- **Campaigns** build one image per (commit, base digest),
+  `<repo>-ns3-campaign:<commit7>-<base7>`, with `skip-existing: true`, so a
+  second call with the same pair pushes nothing; every cell pulls it by
+  digest. A campaign on a released version uses the release image.
+- **Tags never move.** A release tag that exists fails the build. A campaign
+  image is kept while any `swarm-routing/benchmarks` manifest names it.
+
 ## Quality gates
 
 The org's reusable workflows carry the checks; a repo turns them on in its
