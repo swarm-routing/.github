@@ -48,7 +48,11 @@ set to null there or in the profile: that part is not managed):
   workflow runs `github/codeql-action/init` or `analyze` (advanced setup,
   which default setup would conflict with) keeps it;
 - `actions`: the Actions policy (enabled, allowed_actions `selected`, the
-  allowed patterns, default `GITHUB_TOKEN` permissions read, no PR approval).
+  allowed patterns, default `GITHUB_TOKEN` permissions read, no PR approval,
+  and the fork-PR approval policy: workflows of a fork's PR wait for a
+  maintainer's approval when its author is an outside contributor,
+  `actions/permissions/fork-pr-contributor-approval`; public repositories
+  only, a private one is a note).
   Every `uses:` in the repository's `.github/workflows` and `.github/actions`
   must be covered by the allowed list, or the repository is refused before
   anything is written (switching it to `selected` would break its CI);
@@ -141,6 +145,12 @@ MERGE_QUEUE_RANGES = {  # the REST API's bounds
     "max_entries_to_merge": (0, 100),
 }
 MERGE_GROUP = re.compile(r"^\s*merge_group\s*:|^on:\s*\[[^\]]*\bmerge_group\b", re.M)
+# GitHub's values for the fork-PR approval policy, loosest first
+FORK_PR_POLICIES = (
+    "first_time_contributors_new_to_github",
+    "first_time_contributors",
+    "all_external_contributors",
+)
 SHARED = ("features", "security", "actions", "tag_ruleset", "release_environment")
 FEATURES = (
     "has_issues",
@@ -598,8 +608,8 @@ def plan_actions(gh, res, full, want, workflows):
         have = gh.api("GET", f"repos/{full}/actions/permissions/workflow")
     except GhError as e:
         res["unreadable"].append(f"actions workflow permissions (HTTP {e.status or '?'})")
-        return
-    if not covers(ww, have):
+        have = None
+    if have is not None and not covers(ww, have):
 
         def show(p):
             approve = "+approve" if p.get("can_approve_pull_request_reviews") else ""
@@ -612,6 +622,28 @@ def plan_actions(gh, res, full, want, workflows):
             show(ww),
             ("PUT", f"repos/{full}/actions/permissions/workflow", ww),
         )
+    if want.get("fork_pr_contributor_approval"):
+        plan_fork_approval(gh, res, full, want["fork_pr_contributor_approval"])
+
+
+def plan_fork_approval(gh, res, full, fa):
+    """Which fork PRs wait for a maintainer before their workflows run (public only:
+    a private repository's fork-PR workflows are a separate, unmanaged setting)."""
+    what = "actions fork_pr_contributor_approval"
+    if res["private"]:
+        res["notes"].append(f"unsupported here: {what} (private repository)")
+        return
+    path = f"repos/{full}/actions/permissions/fork-pr-contributor-approval"
+    try:
+        have = gh.api("GET", path)
+    except GhError as e:
+        if e.status in (404, 422):
+            res["notes"].append(f"unsupported here: {what} (HTTP {e.status})")
+        else:
+            res["unreadable"].append(f"{what} (HTTP {e.status or '?'})")
+        return
+    if have.get("approval_policy") != fa["approval_policy"]:
+        item(res, what, have.get("approval_policy"), fa["approval_policy"], ("PUT", path, fa))
 
 
 def plan_environment(gh, res, full, env):
@@ -1125,6 +1157,10 @@ def self_test():
             self.perms["ARA"] = {"enabled": True, "allowed_actions": "all"}
             self.selected = {r: copy.deepcopy(sel) for r in self.perms if r != "ARA"}
             self.wfperms = {r: dict(shared["actions"]["workflow"]) for r in self.perms}
+            self.forkpr = {
+                r: dict(shared["actions"]["fork_pr_contributor_approval"]) for r in self.perms
+            }
+            self.forkpr["ARA"] = {"approval_policy": "first_time_contributors"}
             self.wfperms["ARA"] = {
                 "default_workflow_permissions": "write",
                 "can_approve_pull_request_reviews": True,
@@ -1230,6 +1266,14 @@ def self_test():
                     if method == "PUT":
                         self.wfperms[repo] = dict(body)
                     return dict(self.wfperms[repo])
+                if sub == "/fork-pr-contributor-approval":
+                    if self.repos[repo].get("private"):
+                        raise GhError(method, path, "public repositories only (HTTP 422)")
+                    if method == "PUT":
+                        if body.get("approval_policy") not in FORK_PR_POLICIES:
+                            raise GhError(method, path, "invalid approval_policy (HTTP 422)")
+                        self.forkpr[repo] = dict(body)
+                    return dict(self.forkpr[repo])
             m2 = re.match(r"/environments/([^/]+)$", rest)
             if m2:
                 if method == "PUT":
@@ -1318,6 +1362,8 @@ def self_test():
         "ARA security codeql_default_setup: differs",
         'ARA actions allowed_actions: differs: "all" -> "selected"',
         'ARA actions workflow: differs: "write+approve" -> "read"',
+        'ARA actions fork_pr_contributor_approval: differs: "first_time_contributors" -> '
+        '"all_external_contributors"',
         'ARA environment release: differs: "missing" -> "danieljoppi"',
         "ARA ruleset main: update (conditions, +copilot_code_review, +pull_request, +required_status_checks)",
         "ARA ruleset release-tags: create (missing)",
@@ -1365,6 +1411,16 @@ def self_test():
         "policy `selected` before its patterns",
         paths.index(f"repos/{ORG}/ARA/actions/permissions")
         < paths.index(f"repos/{ORG}/ARA/actions/permissions/selected-actions"),
+    )
+    check(
+        "fork PRs of every outside contributor wait for approval",
+        (
+            "PUT",
+            f"repos/{ORG}/ARA/actions/permissions/fork-pr-contributor-approval",
+            {"approval_policy": "all_external_contributors"},
+        )
+        in w
+        and gh.forkpr["ARA"] == {"approval_policy": "all_external_contributors"},
     )
     check(
         "release environment with the maintainer as reviewer",
@@ -1423,6 +1479,11 @@ def self_test():
         in out
         and "security secret_scanning" not in out
         and not any("default-setup" in c[1] for c in gh.calls),
+    )
+    check(
+        "private: fork-PR approval is a note, never read",
+        "unsupported here: actions fork_pr_contributor_approval (private repository)" in out
+        and not any("fork-pr-contributor-approval" in c[1] for c in gh.calls),
     )
     rc, out = go("apply", ["papers"], gh)
     check("private apply masked", "Secret" not in out and "papers (private): applied" in out)
