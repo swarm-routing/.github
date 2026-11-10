@@ -416,6 +416,66 @@ check(
 run("reseed", "CONTEXT.md", d)
 check(os.path.exists(os.path.join(d, "CONTEXT.md")), "reseed creates a missing seed")
 
+
+# check --changed-only BASE (#159): on a PR, only the PR's own drift is red.
+def commit(d, msg):
+    git = ["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", msg], check=True)
+    return subprocess.run(
+        ["git", "-C", d, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+d = fresh()
+run("init", d, "--kind", "python")
+commit(d, "init")
+# the templates moved on after the PR branched: main's managed text is now stale
+edit(d, "AGENTS.md", "1. **Licensing per directory", "1. **Licensing (an older template)")
+edit(d, "LICENSE", "GNU GENERAL PUBLIC LICENSE", "GNU GENERAL PUBLIC LICENCE (older)")
+base = commit(d, "main before the template change")
+check(run("check", d)[0] == 1, "plain check is red on a template change (push to main)")
+os.makedirs(os.path.join(d, "src"))
+write(os.path.join(d, "src/x.py"), "print(1)\n")
+commit(d, "a PR that touches no managed file")
+rc, out = run("check", "--changed-only", base, d)
+check(
+    rc == 0 and "ignored   AGENTS.md#org-rules" in out and "ignored   LICENSE" in out,
+    "--changed-only: a PR that touches no managed file passes despite template drift",
+)
+edit(d, "AGENTS.md", "## Where to look", "## Where to look (the repo's own heading)")
+commit(d, "the PR edits AGENTS.md outside every managed section")
+rc, out = run("check", "--changed-only", base, d)
+check(rc == 0, "--changed-only: an edit in a managed file but outside its sections passes")
+edit(d, "AGENTS.md", "CI hygiene.", "CI hygiene, edited by hand.")
+commit(d, "the PR edits a managed section by hand")
+rc, out = run("check", "--changed-only", base, d)
+check(
+    rc == 1 and "drift     AGENTS.md#org-rules" in out and "ignored   LICENSE" in out,
+    "--changed-only: a PR that edits a managed section by hand is red (that section only)",
+)
+d2 = fresh()
+run("init", d2, "--kind", "python")
+base = commit(d2, "init")
+text = read(os.path.join(d2, "CLAUDE.md"))
+write(os.path.join(d2, "CLAUDE.md"), re.sub(r"(<!-- org-sync:begin org -->\n)(.*\n)", r"\1", text))
+commit(d2, "the PR deletes a line inside a managed section")
+check(
+    run("check", "--changed-only", base, d2)[0] == 1,
+    "--changed-only: a deletion inside a section is red",
+)
+d3 = fresh()
+run("init", d3, "--kind", "python")
+base = commit(d3, "init")
+edit(d3, "LICENSE", "GNU GENERAL PUBLIC LICENSE", "GNU GENERAL PUBLIC LICENCE")
+os.remove(os.path.join(d3, "SECURITY.md"))
+commit(d3, "the PR edits a managed file and deletes a seed")
+rc, out = run("check", "--changed-only", base, d3)
+check(
+    rc == 1 and "drift     LICENSE" in out and "drift     SECURITY.md" in out,
+    "--changed-only: a PR that edits a managed file or deletes a seed is red",
+)
+
 # a settings-only org-sync.toml (no kind, tools/repo-settings) manages nothing and is not an error
 d = fresh()
 os.makedirs(os.path.join(d, ".github"))
