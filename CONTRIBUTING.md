@@ -214,7 +214,10 @@ rule, which `reusable-benchmark-cell.yml` follows so its callers inherit it:
 - **`workflow_dispatch` only.** No `push`, `pull_request_target`,
   `workflow_run` or `issue_comment` trigger: only someone with write access
   dispatches a cell, on a commit of their choosing. The self-test here runs on
-  `pull_request` only, whose cache scope is the PR's own.
+  `pull_request` only: a cache a PR run saves is scoped to the PR's merge ref,
+  so it cannot poison `main`'s (a PR run can still restore `main`'s caches, so
+  a cache is never a place for secrets; the cell job's `cache-mode: none`
+  turns both off anyway).
 
 ### The bot's GitHub App
 
