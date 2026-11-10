@@ -1,0 +1,9 @@
+# org-sync configuration (swarm-routing/.github tools/org-sync): settings only, no kind, so
+# org-sync and org-bot manage no templates here; tools/repo-settings reads [settings].
+[settings]
+# GitHub settings as code: swarm-routing/.github tools/repo-settings (#117).
+description = "Org-wide defaults for every swarm-routing repository: contributing rules and label taxonomy, issue forms, reusable CI workflows (ns-3, Python, licence, PR title), org-sync templates and the bots that keep each repository's epics, templates, settings and Zenodo records current."
+homepage = "https://swarm-routing.github.io/arena/org-commons/"
+topics = ["github-actions", "reusable-workflows", "ci", "org-templates", "licensing", "automation", "swarm-intelligence", "ns-3"]
+ruleset = "tooling"
+required_checks = ["lint", "python / python", "title / title"]
