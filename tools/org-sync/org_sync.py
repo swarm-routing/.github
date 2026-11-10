@@ -68,7 +68,7 @@ YAML_END = "# org-sync:end {}"
 
 def markers(path):
     """The (begin, end) marker formats for a managed section in this file."""
-    if path.endswith((".yaml", ".yml")):
+    if path.endswith((".yaml", ".yml")) or os.path.basename(path) == "CODEOWNERS":
         return YAML_BEGIN, YAML_END
     return BEGIN, END
 
@@ -466,6 +466,10 @@ def items(cfg):
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),
         ("section", ".coderabbit.yaml", "coderabbit/tail.yaml", "coderabbit-tail"),
+        # The invariant paths' owner (#31), per kind; the org section is last,
+        # so it wins over the repository's own lines above it.
+        ("seed", ".github/CODEOWNERS", "codeowners/CODEOWNERS.in", None),
+        ("section", ".github/CODEOWNERS", f"codeowners/{cfg['kind']}", "codeowners"),
     ]
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))

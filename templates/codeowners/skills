@@ -1,0 +1,12 @@
+# Managed by swarm-routing/.github tools/org-sync (templates/codeowners/):
+# the paths that encode an org invariant (AGENTS.md golden rules).
+# Licence boundary (rules 1-2): the licence texts and the per-directory table.
+/LICENSE @danieljoppi
+/LICENSE-MIT @danieljoppi
+/LICENSING.md @danieljoppi
+# The plugin and its skills: the trust boundary (rule 10).
+/.claude-plugin/ @danieljoppi
+/skills/ @danieljoppi
+# CI (rule 8), the licence gate among the workflows, and this file.
+/.github/workflows/ @danieljoppi
+/.github/CODEOWNERS @danieljoppi
