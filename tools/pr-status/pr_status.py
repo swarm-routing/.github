@@ -52,7 +52,9 @@ repositories run independently of each other. For each PR it polls every
 A merge or update refused by GitHub (403, 405, 422, ...) is reported as
 `refused: <message>` and the PR is handed back; a refusal because the head
 moved or the branch fell behind (409, "not up to date", "modified") is polled
-again. It never reruns a check and never resolves a thread. Output is one
+again, and so is a failed GitHub read (a 502, a rate limit, a network
+drop), within the PR's timeout. It never reruns a check and never resolves a
+thread. Output is one
 line per PR per change of state (`updated`, `waiting: ...`, `merged <sha7>`,
 `failing: <checks>`, `open threads: N` with the thread lines, `conflict`,
 `draft`, `refused: ...`, `timeout`, `not run`); with `--json` those lines go
@@ -502,7 +504,15 @@ def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic):
                 job = q[0]
                 if job.start is None:
                     job.start = clock()
-                res = merge_step(gh, job, args.dry_run, cache, out)
+                try:
+                    res = merge_step(gh, job, args.dry_run, cache, out)
+                except Failure as e:
+                    if args.dry_run:  # a dry run reads each PR once
+                        raise
+                    # a transient API error (502, rate limit, network): poll again,
+                    # bounded by the PR's --timeout, rather than end every repository's run
+                    job.say("error", f"waiting: {plain(e.code)}", out)
+                    res = None
                 if res is None and clock() - job.start >= args.timeout:
                     res = ("timeout", f"timeout after {args.timeout:g}s")
                 if res is None:
@@ -1056,6 +1066,29 @@ def self_test():
         == [
             "alpha#12 ccccccc waiting: 1 pending (gate (not reported))",
             "alpha#12 ccccccc timeout after 180s",
+        ],
+    )
+
+    # a failed read (a 502) is polled again, not the end of the run
+    gh = SimGitHub({("alpha", 16): {}})
+    flaky = [1]
+    real_get = gh.get
+
+    def get_once_502(path):
+        if flaky and path.endswith("/pulls/16"):
+            flaky.pop()
+            raise Failure("gh api repos/swarm-routing/alpha/pulls/16: HTTP 502")
+        return real_get(path)
+
+    gh.get = get_once_502
+    rc, out, _ = merge(["alpha#16"], gh)
+    check(
+        "merge: a transient read error is polled again",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#16 - waiting: gh api repos/swarm-routing/alpha/pulls/16: HTTP 502",
+            "alpha#16 1010101 merged eeeeeee",
         ],
     )
 
