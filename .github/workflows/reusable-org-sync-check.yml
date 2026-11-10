@@ -7,6 +7,11 @@ name: org-sync check (reusable)
 # and CLAUDE.md sections, the README badge row, SECURITY.md's reporting
 # section, LICENSE, the ADR template, the org-sync workflow, the marketplace
 # keys of .claude/settings.json, and the standard Makefile target names.
+# On pull_request only the PR's own drift fails (swarm-routing/.github#159):
+# `org_sync.py check --changed-only` against the PR's base, so a newer
+# template never turns red a PR that touches no managed file, and a PR that
+# edits a managed file or a managed section by hand still does. Pushes and
+# every other event keep the full check, so drift on main stays visible.
 # A public contract (AGENTS.md rule 10): inputs are only ever added.
 on:
   workflow_call:
@@ -15,6 +20,10 @@ on:
         description: 'swarm-routing/.github ref whose templates and tools/org-sync to check against'
         type: string
         default: main
+      full-check-on-pr:
+        description: 'On pull_request, check every managed item, not only those the PR touches (the behaviour before #159)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,6 +37,8 @@ jobs:
         with:
           path: repo
           persist-credentials: false
+          # a PR's merge commit and its first parent (the base), for --changed-only
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swarm-routing/.github
@@ -35,8 +46,12 @@ jobs:
           path: org
           persist-credentials: false
       - name: org-sync check
+        env:
+          CHANGED_ONLY: ${{ github.event_name == 'pull_request' && !inputs.full-check-on-pr }}
         run: |
-          python3 -I org/tools/org-sync/org_sync.py check repo || {
+          scope=()
+          if [ "$CHANGED_ONLY" = true ]; then scope=(--changed-only HEAD^1); fi
+          python3 -I org/tools/org-sync/org_sync.py check "${scope[@]}" repo || {
             echo "::error::org-managed files drifted from swarm-routing/.github templates. Run locally: python3 org_sync.py conflicts . && python3 org_sync.py apply ."
             exit 1
           }
