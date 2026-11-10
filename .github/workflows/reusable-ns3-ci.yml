@@ -402,24 +402,28 @@ jobs:
           fi
           # coverage.py writes absolute <source> directories of the job that ran
           # it (another runner path); point each at the same directory in this
-          # checkout: the longest trailing part of the path that exists here, at
-          # worst the checkout root (coverage.py run from the repository root
-          # writes the root, with filenames relative to it). A report that does
-          # not parse is a warning, like a missing one: coverage stays report-only.
+          # checkout: the longest trailing part of the path under which the
+          # report's filenames exist here, at worst the checkout root (coverage.py
+          # run from the repository root writes the root, with filenames relative
+          # to it). Checking the filenames keeps a repo named like one of its
+          # directories (`tools` with tools/) mapped to its root. A report that
+          # does not parse is a warning, like a missing one: report-only.
           if ! python3 -I - "$src" "$REPORT" "$src/coverage-python.xml" <<'PY'
           import os, sys
           import xml.etree.ElementTree as ET
           src, report, out = sys.argv[1:]
           tree = ET.parse(report)
+          names = {c.get("filename") for c in tree.iter("class") if c.get("filename")}
           moved = 0
           for el in tree.iter("source"):
               parts = [p for p in (el.text or "").strip().split("/") if p]
+              el.text = src
               for i in range(len(parts) + 1):
                   cand = os.path.join(src, *parts[i:])
-                  if os.path.isdir(cand):
+                  if any(os.path.isfile(os.path.join(cand, n)) for n in names):
                       el.text = cand
-                      moved += 1
                       break
+              moved += 1
           if not moved:
               sys.exit("sonar: " + report + " has no <source> element")
           tree.write(out, encoding="utf-8", xml_declaration=True)
