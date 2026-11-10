@@ -55,6 +55,15 @@ name: Reusable ns-3 CI
 #                    Pass `secrets: { SONAR_TOKEN: ... }`. Skipped with a notice when
 #                    the token is absent (fork PRs) and with a warning while the
 #                    project still has Automatic Analysis on in SonarQube Cloud
+#   sonar-python-coverage  name of an artifact of the same run holding coverage.py's
+#                    Cobertura report `coverage.xml` (reusable-python-ci.yml keeps
+#                    `python-coverage`): downloaded before the scan, its <source>
+#                    paths moved onto this job's checkout, and imported with
+#                    sonar.python.coverage.reportPaths, so one analysis carries
+#                    both languages' coverage (SonarQube Cloud keeps one analysis
+#                    per branch: a second scan would replace this one). The
+#                    caller's CI job `needs:` the Python job; no artifact is a
+#                    warning, and the scan goes on with the C++ coverage only
 # Codecov: a caller adds a job `needs: <this job>` that calls
 # reusable-codecov.yml with `permissions: { contents: read, id-token: write }`;
 # it uploads the `coverage` artifact this workflow keeps (coverage.xml).
@@ -116,6 +125,10 @@ on:
         description: "SonarQube Cloud CI analysis on the coverage leg (implies coverage); needs secret SONAR_TOKEN and the repo's sonar-project.properties"
         type: boolean
         default: false
+      sonar-python-coverage:
+        description: "With `sonar`: artifact of this run holding coverage.py's Cobertura `coverage.xml` (e.g. `python-coverage` from reusable-python-ci.yml), imported into the same analysis; empty: none"
+        type: string
+        default: ''
       determinism:
         description: "Newline-separated `./ns3 run` programs with a `{seed}` placeholder that print their results (marker lines) on stdout; stdout of seed 1 twice must match byte for byte, seed 2 must differ"
         type: string
@@ -366,6 +379,61 @@ jobs:
               break; }
           done
           echo "run=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        id: pycov-download
+        if: steps.sonar.outputs.run == 'true' && inputs.sonar-python-coverage != ''
+        continue-on-error: true
+        with:
+          name: ${{ inputs.sonar-python-coverage }}
+          path: ${{ runner.temp }}/python-coverage
+      - name: SonarQube Cloud — Python coverage onto this checkout
+        id: pycov
+        if: steps.sonar.outputs.run == 'true' && inputs.sonar-python-coverage != ''
+        env:
+          DOWNLOADED: ${{ steps.pycov-download.outcome }}
+          ARTIFACT: ${{ inputs.sonar-python-coverage }}
+          REPORT: ${{ runner.temp }}/python-coverage/coverage.xml
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/src"
+          if [ "$DOWNLOADED" != success ] || [ ! -f "$REPORT" ]; then
+            echo "::warning::SonarQube Cloud: no Python coverage (artifact '$ARTIFACT' with coverage.xml missing from this run; does this job need the Python job?); analysing with C++ coverage only"
+            echo "args=" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # coverage.py writes absolute <source> directories of the job that ran
+          # it (another runner path); point each at the same directory in this
+          # checkout: the longest trailing part of the path under which the
+          # report's filenames exist here, at worst the checkout root (coverage.py
+          # run from the repository root writes the root, with filenames relative
+          # to it). Checking the filenames keeps a repo named like one of its
+          # directories (`tools` with tools/) mapped to its root. A report that
+          # does not parse is a warning, like a missing one: report-only.
+          if ! python3 -I - "$src" "$REPORT" "$src/coverage-python.xml" <<'PY'
+          import os, sys
+          import xml.etree.ElementTree as ET
+          src, report, out = sys.argv[1:]
+          tree = ET.parse(report)
+          names = {c.get("filename") for c in tree.iter("class") if c.get("filename")}
+          moved = 0
+          for el in tree.iter("source"):
+              parts = [p for p in (el.text or "").strip().split("/") if p]
+              el.text = src
+              for i in range(len(parts) + 1):
+                  cand = os.path.join(src, *parts[i:])
+                  if any(os.path.isfile(os.path.join(cand, n)) for n in names):
+                      el.text = cand
+                      break
+              moved += 1
+          if not moved:
+              sys.exit("sonar: " + report + " has no <source> element")
+          tree.write(out, encoding="utf-8", xml_declaration=True)
+          print(f"sonar: Python coverage with {moved} source dir(s) -> {out}")
+          PY
+          then
+            echo "::warning::SonarQube Cloud: the Python coverage report could not be read; analysing with C++ coverage only"
+            echo "args=" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "args=-Dsonar.python.coverage.reportPaths=coverage-python.xml" >> "$GITHUB_OUTPUT"
       - name: SonarQube Cloud analysis
         if: steps.sonar.outputs.run == 'true'
         # Report-only, like the coverage it imports: a scanner or SonarQube
@@ -374,6 +442,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         with:
           projectBaseDir: src
+          args: ${{ steps.pycov.outputs.args }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
