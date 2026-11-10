@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """A repository's README, AI files and docs/ against the org standard.
 
-    check_docs.py [REPO_DIR] [--json]    PASS/WARN/FAIL per check; exit 1 on a FAIL
+    check_docs.py [REPO_DIR] [--json] [--online]   PASS/WARN/FAIL per check; exit 1 on a FAIL
     check_docs.py --self-test
 
 The standard is AntHocNet's README and docs map (#94): a title and the
@@ -15,6 +15,21 @@ sections; CLAUDE.md importing it; CONTEXT.md past its seed; a docs/ map
 when docs/ holds more than ADRs; no broken relative link. The checks are what
 a script can decide; whether the explanation is good is the reviewer's
 (the docs-review skill).
+
+The AI-files pass (#142) also checks the facts that AGENTS.md, CLAUDE.md and
+CONTEXT.md state, outside the org-sync managed sections; each finding is a
+WARN, so a stale fact never blocks CI:
+
+    (a) a repo-relative path in backticks (or a CLAUDE.md link) exists, unless
+        its line says planned or it names another repository's file;
+    (b) a path marked planned that exists is stale;
+    (c) --online: an issue written as open or blocking ("open #N", "blocked by",
+        "until #N", "waits on", "Depends on", "exception (#N", "when #N closes",
+        "#N (open)") is still open (`gh api`);
+    (d) no hand-written rule contradicts an org rule (CONTRADICTIONS, each
+        with its source);
+    (e) a check called required is in `[settings] required_checks` or is a
+        workflow job.
 
 A repository tunes it in `.github/org-sync.toml`, all keys optional:
 
@@ -29,6 +44,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -136,7 +152,7 @@ def status(text):
     return m.group(1).lower() if m else None
 
 
-def check(repo):
+def check(repo, online=False, fetch=None):
     cfg = config(repo)
     r = Report()
     readme = read(repo, "README.md")
@@ -308,7 +324,339 @@ def check(repo):
         r.add("FAIL", "links", "relative links to missing files", broken)
     else:
         r.add("PASS", "links", "every relative link resolves")
+    check_ai_facts(repo, r, online, fetch)
     return r
+
+
+# --- AI files: their facts against the repository (#142) ------------------------
+
+AI_FILES = ("AGENTS.md", "CLAUDE.md", "CONTEXT.md")
+MANAGED = re.compile(r"<!-- org-sync:begin (\S+) -->.*?<!-- org-sync:end \1 -->", re.S)
+TEMPLATES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "templates")
+# the org's repositories: a path next to another one's name is that repository's
+ORG_REPOS = (
+    "AntHocNet",
+    "ARA",
+    "BeeAdHoc",
+    "HOPNET",
+    "Termite",
+    "benchmarks",
+    "ns3-containers",
+    "ns3-swarm-core",
+    "ns3-tools",
+    "papers",
+    "skills",
+    "swarm-routing.github.io",
+    ".github",
+)
+FOREIGN = re.compile(
+    r"\b(?:swarm-routing|danieljoppi)/|\bns-3(?:'s|-dev)?\b|"
+    r"\b(?:that|each|every|a|the|its|another) (?:site |protocol |other )?(?:repo|repository|protocol)'s"
+    r"|\bthe site's\b|\b(?:"
+    + "|".join(re.escape(r) for r in ORG_REPOS if not r.startswith("."))
+    + r")\b"
+)
+# top-level directories a repo path may start with even when the directory is gone
+KNOWN_TOP = {
+    ".github",
+    ".claude",
+    "core",
+    "ns3",
+    "tools",
+    "docs",
+    "site",
+    "python",
+    "docker",
+    "skills",
+    "templates",
+}
+PLANNED_MARK = re.compile(r"\(planned|planned\)|\bplanned:", re.I)
+NEGATED = re.compile(r"\b(?:no|never|not|cannot|can't|nothing)\b", re.I)
+PLANNED = re.compile(r"planned|not yet|not tracked|will be|once \S+ exists|\(future", re.I)
+# an issue reference written as open or blocking: right after one of these words
+# (a list of references may sit between), or followed by "(open)" / "is open"
+OPEN_BEFORE = re.compile(
+    r"(?:\bblocked (?:by|on)|\buntil|\bwaits? (?:on|for)|\bwaiting (?:on|for)|\bdepends on:?"
+    r"|\bopen:?|\bgated (?:by|on)|\bexception \(|\bwhen)\s*(?:[\w./-]*\s?#\d+|\band\b|\bor\b|[,/\s*(])*$",
+    re.I,
+)
+OPEN_AFTER = re.compile(
+    r"^[\s)*]*(?:\(open\)|(?:is|stays|remains|still) open\b|(?:closes|is closed|is fixed|lands)\b)",
+    re.I,
+)
+ISSUE_REF = re.compile(
+    r"(?:\b(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)#|\b(?P<name>"
+    + "|".join(re.escape(r) for r in ORG_REPOS if not r.startswith("."))
+    + r")\s?#|(?<![\w/&])#)(?P<n>\d+)\b"
+)
+# hand-written text that an org rule has replaced: (pattern, what the org says, its source)
+CONTRADICTIONS = (
+    (
+        re.compile(r"do not open a pull request unless", re.I),
+        "every change goes through a PR to main, opened as soon as the branch is pushed",
+        "CONTRIBUTING.md § Pull requests; templates/agents/git-workflow.md",
+    ),
+    (
+        re.compile(
+            r"\b(?:bot|org-bot|release|commitizen|workflow)s?\b[^.|;\n]{0,80}\bpush(?:es|ed|ing)?"
+            r"(?: [\w`-]+){0,3}? (?:to|on) `?main`?|\bpush(?:es|ed|ing)?(?: [\w`-]+){0,3}? (?:to|on)"
+            r" `?main`?[^.|;\n]{0,80}\b(?:bot|org-bot|release|commitizen)s?\b",
+            re.I,
+        ),
+        "main takes no direct push, from a bot or a release either: the bump is a PR, the tag follows the merge",
+        "CONTRIBUTING.md § Cutting a release; templates/rulesets/",
+    ),
+    (
+        re.compile(
+            r"\b(?:merge commit|rebase[- ]and[- ]merge|rebase[- ]merge)s? (?:is|are) (?:used|allowed|enabled)",
+            re.I,
+        ),
+        "PRs are squash-merged, the only merge method enabled",
+        "CONTRIBUTING.md § Pull requests",
+    ),
+)
+
+
+def template_lines():
+    """Every non-blank line of the org-sync templates: text copied from one is managed,
+    even in a repository whose copy lost its markers."""
+    out = set()
+    for root, _, files in os.walk(TEMPLATES):
+        for f in files:
+            if f.endswith((".md", ".in")):
+                with open(os.path.join(root, f), encoding="utf-8") as fh:
+                    out.update(x.strip() for x in fh if len(x.strip()) > 20)
+    return out
+
+
+def hand_written(text, tlines):
+    """`text` without the org-sync managed sections and template lines, line numbers kept."""
+    text = MANAGED.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    return "\n".join("" if line.strip() in tlines else line for line in text.splitlines())
+
+
+def repo_slug(repo):
+    try:
+        url = subprocess.run(
+            ["git", "-C", repo, "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+    except OSError:
+        url = ""
+    m = re.search(r"[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?$", url)
+    if m and m.group(1) in ("swarm-routing", "danieljoppi"):
+        return f"swarm-routing/{m.group(2)}"
+    return f"swarm-routing/{os.path.basename(os.path.abspath(repo))}"
+
+
+def segments(line):
+    """A line split into clauses (table cells, sentences, semicolons)."""
+    return [s for s in re.split(r"\s\|\s|\|\s|\s\||(?<=[.;])\s+", line) if s.strip()]
+
+
+def path_like(token):
+    if not token or any(c in token for c in " <>{}*$…,:@=|\\\"'()") or "..." in token:
+        return False
+    if token.startswith(("/", "~", "-", "#", "http")) or "/" not in token:
+        return False
+    return bool(re.match(r"^\.?[A-Za-z0-9_][\w.-]*(/[\w.@+-]+)*/?$", token))
+
+
+def stem_exists(repo, path):
+    """`core/ant_message_codec`: a file with that stem somewhere under its top directory."""
+    if "." in os.path.basename(path):
+        return False
+    stem, top = os.path.basename(path), os.path.join(repo, path.split("/")[0])
+    if not os.path.isdir(top) or "/" not in path:
+        return False
+    for _, _, files in os.walk(top):
+        if any(os.path.splitext(x)[0] == stem for x in files):
+            return True
+    return False
+
+
+def job_names(repo):
+    """Workflow job ids and `name:` values, read without a YAML parser."""
+    names = set()
+    wf = os.path.join(repo, ".github", "workflows")
+    if not os.path.isdir(wf):
+        return names
+    for f in os.listdir(wf):
+        text = read(repo, os.path.join(".github", "workflows", f)) or ""
+        names.update(re.findall(r"^  ([\w-]+):\s*$", text, re.M))
+        names.update(n.strip().strip("'\"") for n in re.findall(r"^\s+name:\s*(.+)$", text, re.M))
+    return names
+
+
+def gh_issue(slug, n):
+    """(state, closed_at) of an issue or PR, or None if it cannot be read."""
+    try:
+        out = subprocess.run(
+            ["gh", "api", f"repos/{slug}/issues/{n}", "--jq", "[.state, .closed_at]"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode:
+        return None
+    try:
+        state, closed = json.loads(out.stdout)
+    except ValueError:
+        return None
+    return state, closed
+
+
+def check_ai_facts(repo, r, online=False, fetch=None):
+    fetch = fetch or gh_issue
+    tlines = template_lines()
+    name = os.path.basename(os.path.abspath(repo))
+    slug = repo_slug(repo)
+    texts = {f: read(repo, f) for f in AI_FILES}
+    whole_plan = any(
+        re.search(r"layout below is the plan|is the plan;", t or "") for t in texts.values()
+    )
+    missing, stale, refs, contra, checks = [], [], [], [], []
+    cfg_text = read(repo, ".github/org-sync.toml")
+    required = set()
+    if cfg_text:
+        required = set(tomllib.loads(cfg_text).get("settings", {}).get("required_checks", []))
+    jobs = job_names(repo)
+
+    # directories a layout block marks planned or untracked: paths under them are exempt
+    exempt, layout_all = [], []
+    for t in texts.values():
+        for d, planned in layout_dirs(t or ""):
+            layout_all.append(d)
+            if planned:
+                exempt.append(d)
+
+    for f, text in texts.items():
+        if not text:
+            continue
+        body = hand_written(text, tlines)
+        para, fenced = "", False
+        for no, line in enumerate(body.splitlines(), 1):
+            if line.startswith("```"):
+                fenced, para = not fenced, ""
+                continue
+            if not line.strip() or line.lstrip().startswith(("|", "#", "- ", "* ")) or fenced:
+                para = ""  # a new paragraph, table row, heading or list item
+            planned_line = PLANNED.search(line) is not None
+            # (a)/(b): paths in backticks, a CLAUDE.md link, a layout line
+            cands = [(m.start(), m.group(1).strip()) for m in re.finditer(r"`([^`\n]+)`", line)]
+            if f == "CLAUDE.md":
+                for m in LINK.finditer(line):
+                    t = m.group(1).split("#")[0]
+                    if t and not re.match(r"^[a-z]+:", t):
+                        cands.append((m.start(), t))
+            lay = LAYOUT.match(line) if fenced else None
+            if lay:
+                cands.append((0, lay.group(1)))
+            for pos, tok in cands:
+                if not (lay and tok == lay.group(1)) and not path_like(tok):
+                    continue
+                window = re.split(r"\s\|\s|\|\s|(?<=[.!?])\s+", para + " " + line[:pos])[-1]
+                if any(m.group(0) != name for m in FOREIGN.finditer(window)):
+                    continue  # another repository's (or ns-3's) file
+                path = tok.rstrip("/")
+                top = path.split("/")[0]
+                exists = os.path.exists(os.path.join(repo, path)) or stem_exists(repo, path)
+                if planned_line:
+                    sub = any(x != tok and x.startswith(tok) for x in layout_all)
+                    if exists and (lay or PLANNED_MARK.search(line)) and not sub:
+                        stale.append(f"{f}:{no}: `{tok}` is marked planned but exists")
+                    continue
+                if exists or any(path.startswith(e.rstrip("/")) for e in exempt):
+                    continue
+                top_exists = os.path.exists(os.path.join(repo, top))
+                if not (top_exists or top in KNOWN_TOP):
+                    continue
+                if whole_plan and not top_exists:
+                    continue  # the status says the layout is the plan
+                missing.append(f"{f}:{no}: `{tok}`")
+            for seg in segments(line):
+                # (c): issues written as open or blocking
+                qual = slug
+                for m in ISSUE_REF.finditer(seg):
+                    if m.group("owner"):
+                        qual = f"{m.group('owner')}/{m.group('repo')}"
+                    elif m.group("name"):
+                        qual = f"swarm-routing/{m.group('name')}"
+                    qual = qual.replace("danieljoppi/", "swarm-routing/")
+                    if OPEN_BEFORE.search(seg[: m.start()]) or OPEN_AFTER.match(seg[m.end() :]):
+                        refs.append((f, no, qual, int(m.group("n")), seg.strip()))
+                # (e): checks called required, named in the same clause
+                if re.search(r"\brequired (?:status )?checks?\b|\bis (?:a )?required\b", seg, re.I):
+                    for m in re.finditer(r"`([^`\n]+)`", seg):
+                        c = m.group(1)
+                        if (
+                            path_like(c)
+                            or not re.match(r"^[A-Za-z][\w .:/()-]*$", c)
+                            or len(c) > 60
+                        ):
+                            continue
+                        known = (
+                            c in required
+                            or c in jobs
+                            or any(x.strip() in jobs for x in c.split("/"))
+                        )
+                        if not known and (required or jobs):
+                            checks.append(f"{f}:{no}: `{c}`")
+            # (d): contradictions with org rules
+            for pat, says, source in CONTRADICTIONS:
+                m = pat.search(line)
+                if m and not (
+                    pat is not CONTRADICTIONS[0][0]
+                    and NEGATED.search(line[max(0, m.start() - 12) : m.end()])
+                ):
+                    contra.append(f"{f}:{no}: {line.strip()[:100]} — the org: {says} ({source})")
+            para = (para + " " + line).strip()
+
+    if missing:
+        r.add(
+            "WARN", "AI files", "paths that do not exist (fix them, or mark them planned)", missing
+        )
+    if stale:
+        r.add("WARN", "AI files", "planned paths that exist (drop the planned marker)", stale)
+    if contra:
+        r.add("WARN", "AI files", "text that contradicts an org rule", contra)
+    if checks:
+        r.add(
+            "WARN",
+            "AI files",
+            "checks called required that are neither in required_checks nor a workflow job",
+            checks,
+        )
+    if not online:
+        if refs:
+            r.add(
+                "INFO",
+                "AI files",
+                f"{len(refs)} issue reference(s) written as open not checked (offline; pass --online)",
+            )
+    else:
+        closed, unread, seen = [], [], {}
+        for f, no, qual, n, seg in refs:
+            key = (qual, n)
+            if key not in seen:
+                seen[key] = fetch(qual, n)
+            got = seen[key]
+            ref = f"#{n}" if qual == slug else f"{qual}#{n}"
+            if got is None:
+                unread.append(f"{f}:{no}: {ref}")
+            elif got[0] == "closed":
+                closed.append(f"{f}:{no}: {ref} closed {(got[1] or '')[:10]} — {seg[:90]}")
+        if closed:
+            r.add("WARN", "AI files", "issues written as open or blocking that are closed", closed)
+        if unread:
+            r.add("INFO", "AI files", "issue references that could not be read", unread)
+    if not (missing or stale or contra or checks):
+        r.add("PASS", "AI files", "every path, planned marker, rule and check name holds")
 
 
 # --- self-test -------------------------------------------------------------------------
@@ -348,7 +696,7 @@ def self_test():
         "docs/adr/0001-x.md": "# x\n",
     }
 
-    def repo(changes=None, drop=()):
+    def repo(changes=None, drop=(), **kw):
         d = tempfile.mkdtemp()
         files = {**base, **(changes or {})}
         for p, t in files.items():
@@ -357,7 +705,7 @@ def self_test():
             os.makedirs(os.path.dirname(os.path.join(d, p)) or d, exist_ok=True)
             with open(os.path.join(d, p), "w") as f:
                 f.write(t)
-        return check(d)
+        return check(d, **kw)
 
     def has(rep, level, needle):
         return any(x["level"] == level and needle in x["msg"] for x in rep.rows)
@@ -467,6 +815,80 @@ def self_test():
     r = repo({"docs/adr/0000-template.md": "Name it [NNNN-title.md](NNNN-title.md)\n"})
     expect("the ADR template's placeholder link is ignored", not has(r, "FAIL", "relative links"))
 
+    # --- AI files: facts (#142) ---
+    def ai(extra, **kw):
+        return repo({"AGENTS.md": agents_ok + "\n" + extra + "\n", **kw.pop("files", {})}, **kw)
+
+    expect("the AI-files pass reports PASS on the base", has(ok, "PASS", "every path"))
+    r = ai("Run `tools/gone.py` first.")
+    expect("(a) a missing path warns", has(r, "WARN", "paths that do not exist"))
+    r = ai("Read `core/a.cc` first.")
+    expect("(a) an existing path does not warn", not has(r, "WARN", "paths that do not exist"))
+    r = ai("Then `ns3/model/x.cc` (planned) will hold it.")
+    expect("(a) a planned path does not warn", not has(r, "WARN", "paths that do not exist"))
+    r = ai("The source is AntHocNet `tools/bench/x.py`.")
+    expect("(a) another repository's path does not warn", not has(r, "WARN", "do not exist"))
+    r = ai("<!-- org-sync:begin rules -->\nRun `tools/gone.py`.\n<!-- org-sync:end rules -->")
+    expect("(a) a managed section is not checked", not has(r, "WARN", "do not exist"))
+    r = repo({"CLAUDE.md": "@AGENTS.md\n\nSee [the ADR](docs/adr/0009-gone.md).\n"})
+    expect("(a) a CLAUDE.md link to a missing file warns", has(r, "WARN", "do not exist"))
+    r = ai("`core/` (planned) holds the algorithm.")
+    expect("(b) a planned path that exists warns", has(r, "WARN", "planned paths that exist"))
+    r = ai("`ns3/` (planned) holds the module.")
+    expect("(b) a planned path that is missing does not warn", not has(r, "WARN", "planned paths"))
+
+    calls = []
+
+    def fake(state):
+        def fetch(slug, n):
+            calls.append((slug, n))
+            return (state, "2026-10-01T00:00:00Z" if state == "closed" else None)
+
+        return fetch
+
+    extra = "The image move is blocked by #5 and swarm-routing/ns3-tools#7."
+    r = ai(extra, online=True, fetch=fake("closed"))
+    expect("(c) a closed blocker warns", has(r, "WARN", "closed"))
+    expect(
+        "(c) each reference is fetched once, cross-repo ones in their repo",
+        len(calls) == 2 and calls[1] == ("swarm-routing/ns3-tools", 7),
+    )
+    r = ai(extra, online=True, fetch=fake("open"))
+    expect("(c) an open blocker does not warn", not has(r, "WARN", "closed"))
+    calls.clear()
+    r = ai(extra)
+    expect(
+        "(c) offline: not checked, with a note",
+        not calls and has(r, "INFO", "pass --online"),
+    )
+    calls.clear()
+    r = ai("The idea came from #5, now history.", online=True, fetch=fake("closed"))
+    expect("(c) a reference not written as open is not fetched", not calls)
+
+    r = ai("- Do not open a pull request unless explicitly asked.")
+    expect("(d) a rule the org replaced warns", has(r, "WARN", "contradicts an org rule"))
+    r = ai("The release bot pushes the bump to `main`.")
+    expect("(d) a bot pushing to main warns", has(r, "WARN", "contradicts an org rule"))
+    r = ai("The release bot opens a PR; no workflow pushes to `main`.")
+    expect("(d) a negated push does not warn", not has(r, "WARN", "contradicts"))
+    r = ai("- **Always open a PR to `main`** once the branch is pushed — every change is")
+    expect("(d) the org's own wording does not warn", not has(r, "WARN", "contradicts"))
+
+    wf = {".github/workflows/ci.yml": "name: ci\njobs:\n  gate:\n    name: CI gate\n"}
+    cfg = 'kind = "protocol"\ntitle = "ARA"\n[settings]\nrequired_checks = ["lint"]\n'
+    r = ai(
+        "The one required check is `CI gate`.",
+        files={**wf, ".github/org-sync.toml": cfg},
+    )
+    expect("(e) a required check that is a job does not warn", not has(r, "WARN", "required"))
+    r = ai(
+        "The one required check is `CI gaet`.",
+        files={**wf, ".github/org-sync.toml": cfg},
+    )
+    expect("(e) a required check that does not exist warns", has(r, "WARN", "called required"))
+    r = ai("The required check is `lint`.", files={".github/org-sync.toml": cfg})
+    expect("(e) a check in required_checks does not warn", not has(r, "WARN", "called required"))
+
     for f in failures:
         print(f"FAIL: {f}")
     print(f"check_docs self-test: {'ok' if not failures else f'{len(failures)} failed'}")
@@ -477,11 +899,14 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("repo", nargs="?", default=".")
     p.add_argument("--json", action="store_true")
+    p.add_argument(
+        "--online", action="store_true", help="check issue references with gh api (GH_TOKEN)"
+    )
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
     if a.self_test:
         return self_test()
-    rep = check(a.repo)
+    rep = check(a.repo, online=a.online)
     print(json.dumps(rep.rows, indent=1) if a.json else rep.text())
     return 1 if rep.fail else 0
 
