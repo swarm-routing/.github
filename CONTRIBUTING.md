@@ -169,9 +169,9 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
 - **Releases** publish `ghcr.io/swarm-routing/<repo>-ns3:<version>-<profile>`,
   `optimized` and `debug` by default.
 - **Campaigns** build one image per (commit, base digest),
-  `<repo>-ns3-campaign:<commit7>-<base7>`, with `skip-existing: true`, so a
-  second call with the same pair pushes nothing; every cell pulls it by
-  digest. A campaign on a released version uses the release image.
+  `<repo>-ns3-campaign:<commit7>-<base7>-<profile>` (the caller passes
+  `tag: <commit7>-{base7}`), with `skip-existing: true`, so a second call with
+  the same pair pushes nothing; every cell pulls it by digest. A campaign on a released version uses the release image.
 - **Tags never move.** A release tag that exists fails the build. A campaign
   image is kept while any `swarm-routing/benchmarks` manifest names it.
 
