@@ -20,10 +20,15 @@ The MIT option is only real while three things hold, so this gate checks them:
 3. a C++ file under a core root includes nothing from outside it: angle
    includes are C++ standard-library headers, quote includes resolve to a
    file under the same core root. A ``core/`` file that pulled in an ns-3
-   header would bind the whole core to GPL.
+   header would bind the whole core to GPL. A core built on another
+   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)
+   names that checkout with ``--core-dep DIR``: a quote include may then also
+   resolve to a file inside DIR, and only when that file itself carries
+   ``MIT OR GPL-2.0-only``.
 
 Usage (repo root as cwd):
     check-headers.py --dual core/ --dual tools/ --core core/ [.]
+    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]
     check-headers.py --self-test
 """
 
@@ -59,7 +64,13 @@ def head_has(text: str, needle: str) -> bool:
 
 
 def check_file(
-    rel: str, text: str, dual: tuple, core: tuple, gpl_only: set, exists=lambda p: False
+    rel: str,
+    text: str,
+    dual: tuple,
+    core: tuple,
+    gpl_only: set,
+    exists=lambda p: False,
+    dep_ok=lambda name: False,
 ) -> list[str]:
     out = []
     if not head_has(text, SPDX):
@@ -81,11 +92,13 @@ def check_file(
         )
     root = next((c for c in core if rel.startswith(c)), None)
     if root and rel.endswith(CXX):
-        out += include_findings(rel, text, root, exists)
+        out += include_findings(rel, text, root, exists, dep_ok)
     return out
 
 
-def include_findings(rel: str, text: str, root: str, exists) -> list[str]:
+def include_findings(
+    rel: str, text: str, root: str, exists, dep_ok=lambda name: False
+) -> list[str]:
     out = []
     here = str(pathlib.PurePosixPath(rel).parent)
     for n, line in enumerate(text.split("\n"), 1):
@@ -105,9 +118,10 @@ def include_findings(rel: str, text: str, root: str, exists) -> list[str]:
             cands = [norm(f"{here}/{name}")] + [
                 norm(f"{d}/{name}") for d in (f"{root}include", root.rstrip("/"))
             ]
-            if not any(c.startswith(root) and exists(c) for c in cands):
+            if not any(c.startswith(root) and exists(c) for c in cands) and not dep_ok(name):
                 out.append(
                     f'{rel}:{n}: "{name}" does not resolve to a file under {root} '
+                    f"or to a dual-licensed file of a --core-dep "
                     f"— {root} includes nothing from outside it"
                 )
     return out
@@ -124,17 +138,36 @@ def norm(rel: str) -> str:
     return "/".join(parts)
 
 
-def scan(root: pathlib.Path, dual, core, gpl_only, exclude) -> int:
+def dep_resolver(deps):
+    """dep_ok(name) for check_file: `name` is a file inside one of the --core-dep
+    directories (never above it) whose first lines carry the dual SPDX."""
+    dirs = [pathlib.Path(d).resolve() for d in deps]
+
+    def dep_ok(name: str) -> bool:
+        for d in dirs:
+            p = (d / name).resolve()
+            if p.is_relative_to(d) and p.is_file():
+                if head_has(p.read_text(encoding="utf-8", errors="replace"), DUAL_SPDX):
+                    return True
+        return False
+
+    return dep_ok
+
+
+def scan(root: pathlib.Path, dual, core, gpl_only, exclude, deps=()) -> int:
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True
     ).stdout.split()
     files = sorted(
         f for f in tracked if f.endswith(EXTS) and not (exclude and re.search(exclude, f))
     )
+    dep_ok = dep_resolver(deps)
     problems = []
     for rel in files:
         text = (root / rel).read_text(encoding="utf-8", errors="replace")
-        problems += check_file(rel, text, dual, core, gpl_only, lambda p: (root / p).is_file())
+        problems += check_file(
+            rel, text, dual, core, gpl_only, lambda p: (root / p).is_file(), dep_ok
+        )
     for p in problems:
         print(f"FAIL: {p}")
     print(f"checked {len(files)} tracked source file(s); {len(problems)} problem(s)")
@@ -213,8 +246,40 @@ def self_test() -> int:
             print(
                 f"SELF-TEST FAIL ({label}): expected {'a finding' if fire else 'silence'}, got {got}"
             )
+    fails += self_test_core_dep()
     print("self-test:", "PASS" if not fails else f"{fails} FAILURE(S)")
     return 1 if fails else 0
+
+
+def self_test_core_dep() -> int:
+    """--core-dep: a dual-licensed header of the dependency resolves; a GPL one,
+    a missing one and an escape above the directory do not."""
+    import tempfile
+
+    fails = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        dep = pathlib.Path(tmp, "dep", "core")
+        dep.mkdir(parents=True)
+        dep.joinpath("dual.h").write_text("// x\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n")
+        dep.joinpath("gpl.h").write_text("// x\n// SPDX-License-Identifier: GPL-2.0-only\n")
+        pathlib.Path(tmp, "dep", "above.h").write_text(
+            "// SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+        )
+        dep_ok = dep_resolver([str(dep)])
+        head = "// x\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+        for name, fire in (
+            ("dual.h", False),
+            ("gpl.h", True),
+            ("nope.h", True),
+            ("../above.h", True),
+        ):
+            text = head + f'#include "{name}"\n'
+            got = check_file("core/a.cc", text, ("core/",), ("core/",), set(), dep_ok=dep_ok)
+            without = check_file("core/a.cc", text, ("core/",), ("core/",), set())
+            if bool(got) != fire or not without:
+                fails += 1
+                print(f"SELF-TEST FAIL (--core-dep {name}): got {got}")
+    return fails
 
 
 def main() -> int:
@@ -229,12 +294,25 @@ def main() -> int:
     ap.add_argument(
         "--gpl-only", action="append", default=[], help="file under a dual root that stays GPL"
     )
+    ap.add_argument(
+        "--core-dep",
+        action="append",
+        default=[],
+        help="a dependency's dual-licensed core directory a core may include from (repeatable)",
+    )
     ap.add_argument("--exclude", default="", help="regex of tracked paths to skip (vendored code)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args()
     if a.self_test:
         return self_test()
-    return scan(pathlib.Path(a.root), tuple(a.dual), tuple(a.core), set(a.gpl_only), a.exclude)
+    return scan(
+        pathlib.Path(a.root),
+        tuple(a.dual),
+        tuple(a.core),
+        set(a.gpl_only),
+        a.exclude,
+        tuple(a.core_dep),
+    )
 
 
 if __name__ == "__main__":
