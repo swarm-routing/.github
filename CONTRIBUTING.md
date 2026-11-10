@@ -127,10 +127,16 @@ starts from the newest open `handoff` issue and closes it when done.
 - **`main` takes no direct push** in any repo: the `main` ruleset requires a
   PR, an up-to-date branch and the required checks. Bots push `bot/<name>`
   branches and open PRs; releases go through the bump PR (Cutting a release).
-- When a PR falls behind `main`, update it
-  (`gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`) and merge PRs
-  one at a time, each after its CI on the updated branch. Never force-push a
-  branch someone else pushed. A behind `bot/release` PR is the exception:
+- When a PR falls behind `main`, update it and merge PRs one at a time, each
+  after its CI on the updated branch. `tools/pr-status/pr_status.py merge
+  REPO#N [REPO#N …]` does exactly that: in the order given (repositories
+  independently), it updates a PR GitHub reports `behind`
+  (`PUT pulls/<n>/update-branch`), waits for every check on the new head,
+  squash-merges with the title `<PR title> (#n)`, and only then moves on to
+  that repository's next PR. It stops and reports on a failing check, an
+  unresolved review thread, a conflict, a draft or a refusal, and never
+  reruns a check or resolves a thread itself (`--dry-run` says what it would
+  do). Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch `bump` again (Cutting a release).
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
