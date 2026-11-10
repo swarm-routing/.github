@@ -341,9 +341,10 @@ def validate(s, private=False):
 
 
 PR_TRIGGER = re.compile(
-    r"^\s*pull_request\s*:|^on:\s*(?:\[[^\]]*\bpull_request\b|pull_request\s*$)", re.M
+    r"^(?:[ \t]*pull_request[ \t]*:|on:[ \t]*\[[^\]\n]*\bpull_request\b|on:[ \t]*pull_request[ \t]*$)",
+    re.M,
 )
-NAME_LINE = re.compile(r"^\s+name:\s*(['\"]?)(.+?)\1\s*(?:#.*)?$", re.M)
+NAME_LINE = re.compile(r"^[ \t]+name:[ \t]*(\S.*)$", re.M)
 
 
 def names_job(text, job):
@@ -353,7 +354,10 @@ def names_job(text, job):
     if re.search(rf"^\s+{re.escape(job)}:\s*(?:#.*)?$", text, re.M):
         return True
     for m in NAME_LINE.finditer(text):
-        parts = re.split(r"\$\{\{.*?\}\}", m.group(2))
+        name = m.group(1).split(" #")[0].strip()
+        if len(name) > 1 and name[0] == name[-1] and name[0] in "'\"":
+            name = name[1:-1]
+        parts = re.split(r"\$\{\{.*?\}\}", name)
         if not "".join(parts).strip():
             continue  # a name that is only an expression (an artifact's, a step's) names nothing
         if re.fullmatch(".+".join(re.escape(x) for x in parts), job):
