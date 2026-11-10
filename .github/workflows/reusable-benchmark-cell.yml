@@ -1,0 +1,432 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable benchmark cell
+
+# One benchmark cell for every swarm-routing protocol repository (#157, epic
+# #156), generalised from AntHocNet's benchmark-cell.yml. A cell is one
+# harness invocation (any number of seeds) in one image pinned by digest, on
+# one commit pinned by `source_sha`:
+#
+#   - `source_sha` (40 hex) is checked out whatever ref the caller was
+#     dispatched at, and the job fails unless HEAD is exactly that commit. A
+#     campaign dispatched over hours from a moving branch therefore tests one
+#     commit in every cell (AntHocNet#867). `workflow_dispatch` accepts only a
+#     branch or a tag, so the commit travels as an input.
+#   - `image` is an image by digest (ghcr.io/<owner>/<name>@sha256:<64 hex>),
+#     never a tag.
+#
+# Two modes, chosen by whether anything is given to build:
+#
+#   prebuilt (no `modules`, `dependencies` or `stage`): `image` is a campaign
+#     or release image built by reusable-ns3-image.yml. Its labels must say it
+#     was built from the caller's repository at `source_sha`
+#     (org.opencontainers.image.source / .revision), and the harness runs with
+#     `./ns3 run --no-build`: every cell of a campaign runs one binary. This is
+#     the mode for published numbers (swarm-routing/benchmarks reads the base
+#     and the campaign image as two digests).
+#   build: `image` is an ns3-dev image (ghcr.io/swarm-routing/ns3-dev@sha256:
+#     ...). The caller's `modules` (paths in the checkout of `source_sha`,
+#     after `stage`) and its `dependencies` (`name=owner/repo@<40-hex
+#     commit>[:subdir]`, built first, in order) are built in the job by
+#     ns3-build-contrib, then the harness runs. For change tests and this
+#     workflow's self-test; base= and image= in ##PROV## are then one digest.
+#
+# Every cell ends results.txt with
+#
+#   ##ARGS## <harness> <args>
+#   ##PROV## commit=<source_sha> ref=<caller ref> run_id=<id> attempt=<n>
+#            image=<image@digest> profile=<ns-3 profile> harness=<program>
+#            base=<ns3-dev ref>@<digest> base_tag=<ns3-dev tag>
+#            build_profile=<ns3-dev BUILD_PROFILE> modules=<name>@<commit>,...
+#
+# (one line; AntHocNet's field order, so its readers keep working). base= names
+# the ns3-dev base by its immutable <version>-<profile>-<sha7> tag when the
+# registry has one for that digest, else by the image's own base tag. No other
+# 40-hex value appears in the line: swarm-routing/benchmarks' validate_run.py
+# takes every one as a module commit. `ns3-campaign collect`
+# (swarm-routing/ns3-tools) rejects a cell whose commit= or image digest is not
+# its plan's and lists it for re-dispatch.
+#
+# The artifact `benchmark-cell` (results.txt, ns3-stderr.log, time-v.log) is
+# kept 7 days: change tests read it there; a released run is collected into
+# swarm-routing/benchmarks, which keeps it.
+#
+# Caller (a protocol repository's .github/workflows/benchmark-cell.yml; the
+# run-name is the label `ns3-campaign dispatch` finds the run by):
+#
+#   name: Benchmark cell
+#   run-name: ${{ inputs.label || inputs.cell || 'benchmark cell' }}
+#   on:
+#     workflow_dispatch:
+#       inputs:
+#         image:      { description: 'Campaign image by digest', required: true }
+#         source_sha: { description: '40-char commit every cell checks out', required: true }
+#         harness:    { description: 'The harness program', default: routing-compare }
+#         args:       { description: 'The harness flags, verbatim', required: true }
+#         seeds:      { description: 'RngRun range <first>-<last>; empty = in args', default: '' }
+#         cell:       { description: 'Cell name', default: '' }
+#         label:      { description: 'Run name (<arm>/<cell>)', default: '' }
+#   permissions: { contents: read, packages: read }
+#   jobs:
+#     cell:
+#       uses: swarm-routing/.github/.github/workflows/reusable-benchmark-cell.yml@main
+#       with:
+#         image: ${{ inputs.image }}
+#         source_sha: ${{ inputs.source_sha }}
+#         harness: ${{ inputs.harness }}
+#         args: ${{ inputs.args }}
+#         seeds: ${{ inputs.seeds }}
+#         cell: ${{ inputs.cell }}
+#
+# A repository that builds in the job adds, e.g. for ARA:
+#
+#         modules: ara=ns3
+#         dependencies: |
+#           swarm-core=swarm-routing/ns3-swarm-core@<40-char commit>
+#           routing-bench=swarm-routing/ns3-tools@<40-char commit>:ns3/routing-bench
+#
+# Inputs only ever gain backward-compatible defaults (rule 10). The workflow
+# declares `contents: read, packages: read`, which the caller grants.
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: "The image by digest, ghcr.io/<owner>/<name>@sha256:<64 hex>: a campaign or release image (prebuilt mode) or an ns3-dev image (build mode)"
+        type: string
+        required: true
+      source_sha:
+        description: "The 40-char commit of the caller's repository every cell checks out, whatever the dispatch ref; HEAD must equal it"
+        type: string
+        required: true
+      harness:
+        description: "The harness program (`./ns3 run` name), e.g. routing-compare"
+        type: string
+        required: true
+      args:
+        description: "The harness flags, verbatim; a literal $GITHUB_WORKSPACE is expanded to the checkout"
+        type: string
+        default: ''
+      seeds:
+        description: "RngRun range `<first>-<last>`, appended as --firstRun=<first> --runs=<count>; empty = the args carry their own"
+        type: string
+        default: ''
+      cell:
+        description: "The cell name ([a-z0-9][a-z0-9._-]*), for the job name and the log"
+        type: string
+        default: ''
+      modules:
+        description: "Build mode: space-separated module specs from the checkout, `name=path` or `path`"
+        type: string
+        default: ''
+      dependencies:
+        description: "Build mode: newline-separated `name=owner/repo@<40-char commit>[:subdir]`, built first, in order"
+        type: string
+        default: ''
+      stage:
+        description: "Build mode: a bash command run in the checkout before the build; it must leave each module at its `modules` path"
+        type: string
+        default: ''
+
+jobs:
+  cell:
+    name: ${{ inputs.harness }} ${{ inputs.cell }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360   # the hosted-runner ceiling
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: ${{ inputs.image }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      HARNESS: ${{ inputs.harness }}
+      ARGS_IN: ${{ inputs.args }}
+      SEEDS: ${{ inputs.seeds }}
+      CELL: ${{ inputs.cell }}
+      MODULES: ${{ inputs.modules }}
+      DEPS: ${{ inputs.dependencies }}
+      STAGE: ${{ inputs.stage }}
+      BUILD: ${{ inputs.modules != '' || inputs.dependencies != '' || inputs.stage != '' }}
+    steps:
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::image must be ghcr.io/<owner>/<name>@sha256:<64 hex>, by digest (got '$IMAGE')"; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::source_sha must be a 40-char commit (got '$SOURCE_SHA')"; exit 1; }
+          [[ "$HARNESS" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] \
+            || { echo "::error::harness must be a program name (got '$HARNESS')"; exit 1; }
+          [ -z "$CELL" ] || [[ "$CELL" =~ ^[a-z0-9][a-z0-9._-]*$ ]] \
+            || { echo "::error::cell must be [a-z0-9][a-z0-9._-]* (got '$CELL')"; exit 1; }
+          args=$ARGS_IN
+          if [ -n "$SEEDS" ]; then
+            if ! [[ "$SEEDS" =~ ^([0-9]+)-([0-9]+)$ ]] || [ "${BASH_REMATCH[1]}" -lt 1 ] \
+                || [ "${BASH_REMATCH[2]}" -lt "${BASH_REMATCH[1]}" ]; then
+              echo "::error::seeds must be <first>-<last> with 1 <= first <= last (got '$SEEDS')"; exit 1
+            fi
+            for t in $ARGS_IN; do
+              case "$t" in --firstRun=*|--runs=*)
+                echo "::error::seeds sets --firstRun and --runs; the args give $t too"; exit 1 ;;
+              esac
+            done
+            first=${BASH_REMATCH[1]} last=${BASH_REMATCH[2]}
+            args="${args:+$args }--firstRun=$first --runs=$((last - first + 1))"
+          fi
+          [ -n "$args" ] || { echo "::error::no harness flags: give args and/or seeds"; exit 1; }
+          while read -r line; do
+            [ -n "$line" ] || continue
+            [[ "$line" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*=[A-Za-z0-9-]+/[A-Za-z0-9._-]+@[0-9a-f]{40}(:[A-Za-z0-9._/-]+)?$ ]] \
+              || { echo "::error::dependency '$line' is not name=owner/repo@<40-char commit>[:subdir] (a cell pins commits)"; exit 1; }
+          done <<< "$DEPS"
+          # The flags as the harness gets them; ##ARGS## keeps the literal text.
+          printf 'ARGS=%s\n' "$args" >> "$GITHUB_ENV"
+          echo "mode: $([ "$BUILD" = true ] && echo build || echo prebuilt); cell '${CELL:-?}': $HARNESS $args"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pinned commit, not the dispatch ref (#157, AntHocNet#867).
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: HEAD must be source_sha
+        run: |
+          set -euo pipefail
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$SOURCE_SHA" ]; then
+            echo "::error::checked out $head, not source_sha $SOURCE_SHA; refusing to run the cell"
+            exit 1
+          fi
+          echo "checked out ${GITHUB_REPOSITORY}@${head} (dispatched at ${GITHUB_REF_NAME} = ${GITHUB_SHA})"
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read the image (labels, base, profile)
+        env:
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          docker pull --quiet "$IMAGE"
+          docker image inspect "$IMAGE" --format '{{json .Config}}' > "$RUNNER_TEMP/config.json"
+          python3 - "$RUNNER_TEMP/config.json" <<'PY' >> "$GITHUB_ENV"
+          import json, os, re, sys
+          cfg = json.load(open(sys.argv[1]))
+          lab = cfg.get("Labels") or {}
+          env = dict(e.split("=", 1) for e in cfg.get("Env") or [] if "=" in e)
+          image, build = os.environ["IMAGE"], os.environ["BUILD"] == "true"
+          def die(msg):
+              print(f"::error::{msg}", file=sys.stderr)
+              sys.exit(1)
+          ver, prof = env.get("NS3_VERSION", ""), env.get("BUILD_PROFILE", "")
+          if not ver:
+              die(f"{image} sets no NS3_VERSION: not built on ns3-dev?")
+          if build:
+              # The image is the base itself.
+              base_digest, base_tag = image.rsplit("@", 1)[1], ""
+              commit = os.environ["SOURCE_SHA"]
+          else:
+              def need(key, pattern):
+                  v = lab.get(key, "")
+                  if not re.fullmatch(pattern, v):
+                      die(f"label {key}={v!r} is missing or malformed: not a reusable-ns3-image.yml image? "
+                          "(give modules/dependencies to build in the job instead)")
+                  return v
+              src = need("org.opencontainers.image.source", r"\S+")
+              if src != os.environ["SOURCE"]:
+                  die(f"the image was built from {src}, not {os.environ['SOURCE']}")
+              commit = need("org.opencontainers.image.revision", r"[0-9a-f]{40}")
+              if commit != os.environ["SOURCE_SHA"]:
+                  die(f"the image was built from commit {commit}, not source_sha {os.environ['SOURCE_SHA']}")
+              base_digest = need("io.github.swarm-routing.ns3-dev.digest", r"sha256:[0-9a-f]{64}")
+              base_tag = need("io.github.swarm-routing.ns3-dev.tag", r"\S+:\S+")
+              # Every module with its commit, as benchmarks' validate_run.py
+              # reads it: the dependencies at theirs, this repo's at the image's.
+              deps = {}
+              for d in filter(None, (lab.get("io.github.swarm-routing.dependencies") or "").split(",")):
+                  name, rest = d.split("=", 1)
+                  deps[name] = rest.rsplit("@", 1)[1]
+              mods = need("io.github.swarm-routing.modules", r"[\w -]+").split()
+              print("PREBUILT_MODULES=" + " ".join(mods))
+              print("MODULE_COMMITS=" + ",".join(f"{m}@{deps.get(m, commit)}" for m in mods))
+          print(f"NS3_VERSION={ver}")
+          print(f"NS3_BUILD_PROFILE={prof}")
+          print(f"BASE_DIGEST={base_digest}")
+          print(f"BASE_TAG={base_tag}")
+          PY
+          grep -E '^(NS3_|BASE_|PREBUILT_|MODULE_)' "$GITHUB_ENV" || true
+
+      - name: The base's immutable tag
+        run: |
+          set -euo pipefail
+          # The ns3-dev <version>-<profile>-<sha7> tag that points at the base
+          # digest, read from the registry (ns3-tools' campaign-cell.yml does the
+          # same); the rolling tag when there is none (an older on-demand build).
+          if [ "$BUILD" = true ]; then repo=${IMAGE%@*}; else repo=${BASE_TAG%:*}; fi
+          path=${repo#ghcr.io/}
+          twin=$(REPO_PATH="$path" VER="$NS3_VERSION" PROF="$NS3_BUILD_PROFILE" DIGEST="$BASE_DIGEST" python3 - <<'PY' || true
+          import json, os, re, urllib.request
+          path, digest = os.environ["REPO_PATH"], os.environ["DIGEST"]
+          tok = json.load(urllib.request.urlopen(
+              f"https://ghcr.io/token?scope=repository:{path}:pull", timeout=30))["token"]
+          auth = {"Authorization": "Bearer " + tok}
+          accept = ",".join([
+              "application/vnd.oci.image.index.v1+json", "application/vnd.oci.image.manifest.v1+json",
+              "application/vnd.docker.distribution.manifest.list.v2+json",
+              "application/vnd.docker.distribution.manifest.v2+json"])
+          pat = re.escape(os.environ["VER"]) + "-" + re.escape(os.environ["PROF"] or "x") + r"-[0-9a-f]{7}"
+          url = f"https://ghcr.io/v2/{path}/tags/list?n=1000"
+          while url:
+              with urllib.request.urlopen(urllib.request.Request(url, headers=auth), timeout=30) as r:
+                  tags = [t for t in json.load(r).get("tags") or [] if re.fullmatch(pat, t)]
+                  m = re.search(r'<([^>]+)>;\s*rel="next"', r.headers.get("Link", ""))
+              for t in tags:
+                  req = urllib.request.Request(f"https://ghcr.io/v2/{path}/manifests/{t}", method="HEAD",
+                                               headers=dict(auth, Accept=accept))
+                  with urllib.request.urlopen(req, timeout=30) as h:
+                      if h.headers.get("docker-content-digest") == digest:
+                          print(t)
+                          raise SystemExit(0)
+              url = "https://ghcr.io" + m[1] if m else None
+          PY
+          )
+          if [ -n "$twin" ]; then
+            base="ghcr.io/$path:$twin"
+          else
+            base=${BASE_TAG:-ghcr.io/$path:?}
+            echo "::warning::no immutable $path:${NS3_VERSION}-${NS3_BUILD_PROFILE}-<sha7> tag points at $BASE_DIGEST; ##PROV## base= names ${base}"
+          fi
+          echo "BASE_REF=$base" >> "$GITHUB_ENV"
+          echo "base: $base@$BASE_DIGEST"
+
+      - name: Check out dependencies (build mode)
+        if: env.BUILD == 'true' && inputs.dependencies != ''
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/deps.txt"
+          while read -r line; do
+            [ -n "$line" ] || continue
+            name=${line%%=*}; rest=${line#*=}
+            repo=${rest%%@*}; ref=${rest#*@}
+            sub=""; case "$ref" in *:*) sub=${ref#*:}; ref=${ref%%:*} ;; esac
+            dest="$RUNNER_TEMP/deps/$name"
+            git init --quiet "$dest"
+            git -C "$dest" fetch --quiet --depth 1 "https://x-access-token:${TOKEN}@github.com/${repo}.git" "$ref"
+            git -C "$dest" checkout --quiet FETCH_HEAD
+            [ "$(git -C "$dest" rev-parse HEAD)" = "$ref" ] || { echo "::error::$repo: HEAD is not $ref"; exit 1; }
+            [ -d "$dest${sub:+/$sub}" ] || { echo "::error::$repo@$ref has no directory '$sub'"; exit 1; }
+            echo "$name=$dest${sub:+/$sub} $name@$ref" >> "$RUNNER_TEMP/deps.txt"
+            echo "dependency $name: $repo@$ref${sub:+:$sub}"
+          done <<< "$DEPS"
+
+      - name: Stage (build mode)
+        if: env.BUILD == 'true' && inputs.stage != ''
+        run: bash -euo pipefail -c "$STAGE"
+
+      - name: Start the image
+        run: |
+          set -euo pipefail
+          # The checkout and the scratch directory at their host paths, so a
+          # plan's $GITHUB_WORKSPACE/... fixture path works inside.
+          docker run -d --name cell --entrypoint sleep \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP:$RUNNER_TEMP" \
+            -w /opt/ns-3 "$IMAGE" infinity > /dev/null
+          # The ns-3 profile the tree was configured with (ns3-dev records it).
+          # shellcheck disable=SC2016  # expanded inside the container
+          flags=$(docker exec cell bash -c '. /opt/ns-3/.swarm-configure.env 2>/dev/null; printf %s "${NS3_PROFILE_FLAGS:-}"')
+          profile=$(printf '%s\n' "$flags" | sed -n 's/.*-d \([a-z]*\).*/\1/p')
+          echo "NS3_PROFILE=${profile:-default}" >> "$GITHUB_ENV"
+          echo "ns-3 profile: ${profile:-default} (NS3_PROFILE_FLAGS='$flags', BUILD_PROFILE=$NS3_BUILD_PROFILE)"
+          if [ "${profile:-default}" != release ]; then
+            echo "::warning::ns-3 profile '${profile:-default}', not release (optimized): a change test, not a published number"
+          fi
+
+      - name: Build the modules (build mode)
+        if: env.BUILD == 'true'
+        run: |
+          set -euo pipefail
+          specs=() commits=()
+          if [ -f "$RUNNER_TEMP/deps.txt" ]; then
+            while read -r spec commit; do specs+=("$spec"); commits+=("$commit"); done < "$RUNNER_TEMP/deps.txt"
+          fi
+          for m in $MODULES; do
+            case "$m" in
+              *=*) name=${m%%=*}; path=${m#*=} ;;
+              *)   name=$(basename "$m"); path=$m ;;
+            esac
+            [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || { echo "::error::invalid module name '$name'"; exit 1; }
+            [ -f "$GITHUB_WORKSPACE/$path/CMakeLists.txt" ] || { echo "::error::module $name: $path has no CMakeLists.txt"; exit 1; }
+            specs+=("$name=$GITHUB_WORKSPACE/$path"); commits+=("$name@$SOURCE_SHA")
+          done
+          [ ${#specs[@]} -gt 0 ] || { echo "::error::build mode with no module: give modules and/or dependencies"; exit 1; }
+          docker exec cell ns3-build-contrib "${specs[@]}"
+          echo "MODULE_COMMITS=$(IFS=,; echo "${commits[*]}")" >> "$GITHUB_ENV"
+
+      - name: Check the prebuilt tree (no rebuild)
+        if: env.BUILD != 'true'
+        run: |
+          set -euo pipefail
+          for m in $PREBUILT_MODULES; do
+            docker exec cell test -e "contrib/$m" || { echo "::error::contrib/$m is not in the image"; exit 1; }
+          done
+          docker exec cell ./ns3 show profile
+
+      - name: Run the cell
+        # Stop 20 min before the job ceiling, so the always() steps still stamp
+        # and upload a stub that `ns3-campaign collect` reads as a missing run.
+        timeout-minutes: 340
+        run: |
+          set -euo pipefail
+          # A plan names repo fixtures as $GITHUB_WORKSPACE/...; the input is
+          # literal text, so expand that one variable (##ARGS## keeps it).
+          # shellcheck disable=SC2153  # ARGS is set in $GITHUB_ENV by the input check
+          args="${ARGS//\$GITHUB_WORKSPACE/$GITHUB_WORKSPACE}"
+          echo "running: $HARNESS $args (--no-build)"
+          # ulimit -v: an over-large cell dies by bad_alloc and keeps its logs
+          # (AntHocNet#256). /usr/bin/time -v when the image has it.
+          # shellcheck disable=SC2016  # expanded inside the container
+          docker exec -e HARNESS -e RUN_ARGS="$args" -e WS="$GITHUB_WORKSPACE" cell bash -c '
+            ulimit -v 13631488 || true
+            t=(); [ -x /usr/bin/time ] && t=(/usr/bin/time -v -o "$WS/time-v.log")
+            "${t[@]}" ./ns3 run --no-build "$HARNESS $RUN_ARGS"' \
+            2> "$GITHUB_WORKSPACE/ns3-stderr.log" | tee "$GITHUB_WORKSPACE/results.txt" \
+            || { echo "--- ns-3 run FAILED; stderr tail ---"; tail -n 60 "$GITHUB_WORKSPACE/ns3-stderr.log"; exit 1; }
+
+      - name: Stamp the provenance
+        if: always() && env.MODULE_COMMITS != ''
+        run: |
+          set -euo pipefail
+          prov="##PROV## commit=$SOURCE_SHA ref=$GITHUB_REF_NAME run_id=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
+          prov+=" image=$IMAGE profile=${NS3_PROFILE:-?} harness=$HARNESS"
+          prov+=" base=$BASE_REF@$BASE_DIGEST base_tag=${BASE_TAG:-$BASE_REF} build_profile=$NS3_BUILD_PROFILE"
+          prov+=" modules=$MODULE_COMMITS"
+          echo "CELL_PROV=$prov" >> "$GITHUB_ENV"
+          f="$GITHUB_WORKSPACE/results.txt"
+          [ -f "$f" ] || : > "$f"
+          echo "##ARGS## $HARNESS $ARGS" >> "$f"
+          echo "$prov" >> "$f"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-cell
+          path: |
+            results.txt
+            ns3-stderr.log
+            time-v.log
+          if-no-files-found: warn
+          retention-days: 7   # transient (rule 8); released runs are kept in swarm-routing/benchmarks
+
+      - name: Compact result block
+        if: always()
+        run: |
+          f="$GITHUB_WORKSPACE/results.txt"
+          [ -f "$f" ] || { echo "FAIL: no results file"; exit 1; }
+          grep -E '^(##RUN##|##BENCH##)' "$f" | tail -n 40 || true
+          echo "${CELL_PROV:-no ##PROV## line}"
+          grep -qE '^##RUN##' "$f" || { echo "::error::no ##RUN## rows"; exit 1; }
