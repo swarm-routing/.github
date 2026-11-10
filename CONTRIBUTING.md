@@ -39,8 +39,9 @@ is the long form.
    paired per-seed deltas over ≥ 20 seeds, emitting `##CONFIG##`, `##RUN##`,
    `##BENCH##`, `##DIAG##` lines.
 5. **CI hygiene.** Actions pinned by full SHA; buildx caches scoped per profile;
-   transient artifacts `retention-days` ≤ 7. Every job has a `timeout-minutes`
-   cap, and every apt, npm or installer step its own, sized from recent green
+   transient artifacts `retention-days` ≤ 7. Every job that runs steps has a
+   `timeout-minutes` cap (a job that only calls a reusable workflow cannot take
+   one: the called workflow's jobs carry it), and every apt, npm or installer step its own, sized from recent green
    runs; `apt-get update` runs with `--error-on=any` inside a shell retry.
    Ubuntu mirror outages are the usual cause of a red run.
 6. **Comparator arms** (protocols we did not design) clear three gates before
@@ -127,10 +128,16 @@ starts from the newest open `handoff` issue and closes it when done.
 - **`main` takes no direct push** in any repo: the `main` ruleset requires a
   PR, an up-to-date branch and the required checks. Bots push `bot/<name>`
   branches and open PRs; releases go through the bump PR (Cutting a release).
-- When a PR falls behind `main`, update it
-  (`gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`) and merge PRs
-  one at a time, each after its CI on the updated branch. Never force-push a
-  branch someone else pushed. A behind `bot/release` PR is the exception:
+- When a PR falls behind `main`, update it and merge PRs one at a time, each
+  after its CI on the updated branch. `tools/pr-status/pr_status.py merge
+  REPO#N [REPO#N …]` does exactly that: in the order given (repositories
+  independently), it updates a PR GitHub reports `behind`
+  (`PUT pulls/<n>/update-branch`), waits for every check on the new head,
+  squash-merges with the title `<PR title> (#n)`, and only then moves on to
+  that repository's next PR. It stops and reports on a failing check, an
+  unresolved review thread, a conflict, a draft or a refusal, and never
+  reruns a check or resolves a thread itself (`--dry-run` says what it would
+  do). Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch `bump` again (Cutting a release).
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
@@ -146,6 +153,16 @@ runs until their secret is set, and the secrets belong to the maintainer:
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs); and, where enabled, a `release` environment with the maintainer as required reviewer. The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
+Each adopting repository's `org-sync` check (`reusable-org-sync-check.yml`)
+judges a PR by its own change only (#159): on `pull_request` it runs
+`org_sync.py check --changed-only` against the PR's base, so it fails only when
+the PR changes a managed file (or deletes a seed) or touches a line inside a
+managed section. A template change here therefore never turns red the open PRs
+that touch no managed file; they merge as they are, and org-bot's refresh PR
+brings the templates in. A push to `main` keeps the full check, so drift there
+stays visible until the refresh PR merges. A caller that wants the full check on
+PRs too passes `full-check-on-pr: true`.
+
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it (a profile change applies on push here; a `[settings]` change in another repository applies when `repo-settings` is dispatched with mode `apply` after its merge); a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
 A repository's `[settings]` can override what its profile gives it: `features = { has_wiki = true }` (any of `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`), `security = { codeql_default_setup = false }` (false leaves that feature alone; it is never turned off), and `release_environment = true`. The Actions policy allows only the actions listed in `templates/rulesets/defaults.json` (`selected_actions.patterns_allowed`, besides GitHub's own and local ones): a workflow that starts using a new third-party action needs its `owner/repo@*` added there in the same change (in another repository: merged here first), or `repo-settings` refuses that repository (the check names the action) rather than switching it to a policy that would break its CI. The `release` environment (required reviewer: the maintainer) is created only where `release_environment = true`; no repository enables it yet: turn it on in a repository when it adopts the reusable release workflow (#116) and that workflow's job names `environment: release`. The `release-tags` ruleset does not restrict who creates a v* tag: the release workflows push tags with `GITHUB_TOKEN`, which cannot be a ruleset bypass actor, so a creation rule would block every release.
@@ -153,6 +170,38 @@ A repository's `[settings]` can override what its profile gives it: `features = 
 The bot's PRs are generated content only; merge them when CI is green. You
 still refresh the epic lists in your own PR when you change an epic: the bot
 catches what was missed, it is not the process.
+
+### Benchmark cells
+
+Each protocol repository benchmarks its own changes; `swarm-routing/benchmarks`
+records released versions (#156). One cell workflow serves every repository:
+`reusable-benchmark-cell.yml` (#157), called by a thin `workflow_dispatch`
+caller in the protocol repository (its header has the caller), and dispatched
+cell by cell by `ns3-campaign` (`swarm-routing/ns3-tools`). A cell is one
+harness invocation in one image, on one commit:
+
+| Input | Meaning |
+|---|---|
+| `image` (required) | The image by digest, `ghcr.io/<owner>/<name>@sha256:<64 hex>`, never a tag |
+| `source_sha` (required) | The caller repository's 40-char commit. Every cell checks it out whatever ref it was dispatched at, and fails unless `HEAD` is exactly that commit, so a campaign dispatched over hours from a moving branch still tests one commit (AntHocNet#867) |
+| `harness`, `args` | The `./ns3 run` program and its flags, verbatim (a literal `$GITHUB_WORKSPACE` is expanded to the checkout) |
+| `seeds` | `<first>-<last>`, appended as `--firstRun=<first> --runs=<count>`; empty when the args carry their own |
+| `cell` | The cell's name, for the job and the log |
+| `modules`, `dependencies`, `stage` | Build mode only: the caller's modules, and dependencies pinned as `name=owner/repo@<40-char commit>[:subdir]`, built in the job by `ns3-build-contrib` on an ns3-dev `image` |
+
+Without `modules`, `dependencies` or `stage` the cell is **prebuilt**: `image`
+is a campaign or release image from `reusable-ns3-image.yml` whose labels say
+it was built from the caller's repository at `source_sha`, and the harness runs
+with `./ns3 run --no-build`, so every cell of a campaign runs one binary.
+Published numbers use this mode. Every cell ends its `results.txt` with
+`##ARGS##` and one `##PROV## commit=… ref=… run_id=… attempt=… image=… profile=…
+harness=… base=… base_tag=… build_profile=… modules=…` line (AntHocNet's
+fields): `ns3-campaign collect` rejects a cell whose commit or image digest is
+not its plan's. The `benchmark-cell` artifact is kept 7 days; a released run is
+collected into `swarm-routing/benchmarks`, which keeps it.
+`benchmark-cell-selftest.yml` runs one build-mode cell (ns3-tools'
+`routing-bench` at a pinned commit, OLSR, 2 seeds) on every PR that changes
+the workflow.
 
 ### The bot's GitHub App
 
