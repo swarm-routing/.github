@@ -357,15 +357,20 @@ jobs:
           json.dump(keep, open(out, "w"), indent=1)
           print(f"sonar: {len(keep)} compile commands of this repository")
           PY
-          for tool in unzip curl; do
+          # The scan action downloads the scanner and verifies its signature
+          # with gpg; the ns3-dev images carry none of the three tools.
+          for tool in unzip curl gpg; do
             command -v "$tool" > /dev/null || {
               timeout 600 apt-get update -qq
-              timeout 600 apt-get install -y -qq --no-install-recommends unzip curl > /dev/null
+              timeout 600 apt-get install -y -qq --no-install-recommends unzip curl gnupg > /dev/null
               break; }
           done
           echo "run=true" >> "$GITHUB_OUTPUT"
       - name: SonarQube Cloud analysis
         if: steps.sonar.outputs.run == 'true'
+        # Report-only, like the coverage it imports: a scanner or SonarQube
+        # Cloud failure must not fail the caller's CI.
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         with:
           projectBaseDir: src
