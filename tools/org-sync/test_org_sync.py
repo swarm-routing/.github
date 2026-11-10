@@ -540,6 +540,22 @@ check(
     "apply restores the CODEOWNERS org section and keeps the repository's own rule",
 )
 
+with open(os.path.join(d, ".github/CODEOWNERS"), "a", encoding="utf-8") as f:
+    f.write("/LICENSE @someone\n")
+rc, out = run("check", d)
+check(rc == 1 and "override it" in out, "a rule after the CODEOWNERS org section is drift")
+d = fresh()
+os.makedirs(os.path.join(d, ".github"))
+write(os.path.join(d, ".github/CODEOWNERS"), "* @someone\n")
+run("init", d, "--kind", "container")
+co = read(os.path.join(d, ".github/CODEOWNERS"))
+check(
+    co.startswith("* @someone\n")
+    and co.rstrip("\n").endswith("# org-sync:end codeowners")
+    and run("check", d)[0] == 0,
+    "an existing CODEOWNERS keeps its rules and gets the org section appended",
+)
+
 # a settings-only org-sync.toml (no kind, tools/repo-settings) manages nothing and is not an error
 d = fresh()
 os.makedirs(os.path.join(d, ".github"))
