@@ -3,22 +3,23 @@
 name: repo-settings
 
 # Repository settings as code (tools/repo-settings/repo_settings.py, #117):
-# each repository's description, homepage, topics, merge settings and `main`
-# ruleset, declared in the [settings] table of its .github/org-sync.toml and
-# the profiles in templates/rulesets/.
+# each repository's description, homepage, topics, merge settings and
+# features, `main` and `release-tags` rulesets, security features, Actions
+# policy and `release` environment, declared in the [settings] table of its
+# .github/org-sync.toml and the profiles in templates/rulesets/.
 # - push to main changing a profile or the tool: apply;
 # - daily: check, and open, update or close one `[settings]` drift issue here;
 # - on demand: plan (read-only) or apply.
 #
 # Token as org-bot.yml (#21): the org GitHub App's token when BOT_APP_ID and
-# BOT_APP_PRIVATE_KEY are set (the App has Administration: write), else the
-# ORG_BOT_TOKEN secret, which then needs, in addition to org-bot's scopes,
-# Administration: write on every repository (and Contents: read, to read each
-# org-sync.toml, private ones included). Until the token has Administration:
-# write, apply reports each write as `refused` (exit 2) and the run ends with
-# a warning, not a failure; the daily check still reports the drift. With
-# neither, the workflow's own token is used, which only reads this
-# repository's settings: the check then fails clearly.
+# BOT_APP_PRIVATE_KEY are set, else the ORG_BOT_TOKEN secret. Either needs, in
+# addition to org-bot's scopes, on every repository: Administration read and
+# write, Contents read (each org-sync.toml and the workflows, private ones
+# included), Actions read (the release environment). Until the token has
+# Administration: write, apply reports each write as `refused` (exit 2) and
+# the run ends with a warning, not a failure; the daily check still reports
+# the drift. With neither, the workflow's own token is used, which only reads
+# this repository's settings: the check then fails clearly.
 # No pull_request trigger, so the token never runs on code from a PR.
 # A private repository's values never reach the log or the issue: the tool
 # prints only which of its fields differ.
@@ -109,7 +110,7 @@ jobs:
               grep -v ': in sync$' "$RUNNER_TEMP/settings.txt" | sed -n '1,200p'
               printf '%s\n' '```'
               echo
-              echo "Fix the declaration (the repository's \`.github/org-sync.toml\`, or \`templates/rulesets/\`) or run the \`repo-settings\` workflow with \`mode: apply\`. A \`refused\` apply means the bot token (the App, else ORG_BOT_TOKEN) lacks Administration: write (#117)."
+              echo "Fix the declaration (the repository's \`.github/org-sync.toml\`, or \`templates/rulesets/\`) or run the \`repo-settings\` workflow with \`mode: apply\`. A \`refused\` or \`unreadable\` line means the bot token (the App, else ORG_BOT_TOKEN) lacks Administration read and write, Contents read or Actions read (CONTRIBUTING \"Automation\", #117)."
             } > body.md
             if [ -n "$num" ]; then
               gh issue comment "$num" --body-file body.md
