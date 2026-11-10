@@ -18,7 +18,12 @@ thread under it:
 
 - `ci` is the verdict over the head commit's check runs and commit statuses
   (fail > pending > pass; `none` when nothing reported), then the count of
-  each conclusion and the names of the failed checks;
+  each conclusion and the names of the failed checks. A workflow run on the
+  head whose latest attempt ended in `startup_failure` (`actions/runs?head_sha=`)
+  creates no check run, so it is read from the runs and counted as failed,
+  `failed=<workflow> (startup_failure)`. A check the base branch's rules
+  require (`rules/branches/{base}`) that has not reported on the head is
+  printed as `missing=<names>` and keeps the verdict `pending`, never `pass`;
 - `merge` is GitHub's mergeable_state (`unknown` until GitHub has computed it),
   and `draft` is printed for a draft;
 - a thread line is `severity · title · path:line · comment id`. For a
@@ -30,7 +35,8 @@ thread under it:
 
 `threads REPO#N` prints the thread lines of one PR (`--all` adds the resolved
 ones, marked). `wait` polls the PRs until no check is pending, then prints
-their `list` lines; it exits 2 if `--timeout` passes first.
+their `list` lines; it exits 2 if `--timeout` passes first, and a PR still
+missing a required check at the timeout is reported `ci=fail`.
 
 `merge` squash-merges PRs one at a time per repository, in the order given;
 repositories run independently of each other. For each PR it polls every
@@ -38,12 +44,14 @@ repositories run independently of each other. For each PR it polls every
 
 - a merged or closed PR is skipped, and the next one in its repository starts;
 - a draft, a conflict (`dirty`), a failing check (the latest run of each
-  check name, and the commit statuses) or an unresolved review thread stops
+  check name, the commit statuses, and a workflow run whose latest attempt
+  ended in `startup_failure`) or an unresolved review thread stops
   that PR, and the PRs after it in the same repository are not run;
 - when GitHub reports the PR `behind`, it calls `PUT pulls/{n}/update-branch`
   with `expected_head_sha`, then waits for the new head and that head's checks;
 - it waits while a check is pending, or while a check the base branch's rules
-  require (`rules/branches/{base}`) has not reported on the head;
+  require (`rules/branches/{base}`) has not reported on the head, so it never
+  merges while a required check is missing (at the timeout it gives up);
 - once every check on the head passed and no thread is open, it merges with
   `merge_method=squash`, `sha=<head>` and the org's squash title
   `"<PR title> (#n)"`, and only then goes on to that repository's next PR,
@@ -146,7 +154,10 @@ class GitHub:
             if got is None and required:
                 # a mistyped or invisible repository is not "no open PRs"
                 raise Failure(f"pr_status: {path.split('?')[0]} not found (404)")
-            items = got.get("check_runs", []) if isinstance(got, dict) else got or []
+            if isinstance(got, dict):
+                items = got.get("check_runs") or got.get("workflow_runs") or []
+            else:
+                items = got or []
             out += items
             if len(items) < 100:
                 return out
@@ -171,29 +182,59 @@ def parse_ref(ref):
     return full_repo(m.group(1)), int(m.group(2))
 
 
-def ci_summary(gh, repo, sha):
-    """The verdict, the count of each conclusion and the failed checks' names."""
-    counts, failed = Counter(), []
+def startup_failures(gh, repo, sha):
+    """The workflows whose latest run on the head ended in `startup_failure`.
+
+    Such a run creates no check run, so the check-runs list alone reads it as
+    absent (#169)."""
+    latest = {}
+    for run in gh.paged(f"repos/{repo}/actions/runs?head_sha={sha}"):
+        wf = run.get("workflow_id") or run.get("name") or run.get("id")
+        key = (run.get("created_at") or "", run.get("id") or 0)
+        if wf not in latest or key >= latest[wf][0]:
+            latest[wf] = (key, run)
+    return sorted(
+        f"{run.get('name') or run.get('path') or '?'} (startup_failure)"
+        for _, run in latest.values()
+        if run.get("conclusion") == "startup_failure"
+    )
+
+
+def ci_summary(gh, repo, sha, required=frozenset()):
+    """The verdict, the count of each conclusion, the failed checks' names and
+    the required checks that have not reported on the head."""
+    counts, failed, seen = Counter(), [], set()
     for run in gh.paged(f"repos/{repo}/commits/{sha}/check-runs"):
         done = run.get("status") == "completed"
         state = (run.get("conclusion") or "pending") if done else "pending"
         counts[state] += 1
+        seen.add(run.get("name"))
         if state in FAILED:
             failed.append(run.get("name") or "?")
     status = gh.get(f"repos/{repo}/commits/{sha}/status") or {}
     for s in status.get("statuses", []):
         counts[s.get("state") or "pending"] += 1
+        seen.add(s.get("context"))
         if s.get("state") in FAILED:
             failed.append(s.get("context") or "?")
-    if not counts:
-        verdict = "none"
-    elif FAILED & set(counts):
+    for name in startup_failures(gh, repo, sha):
+        counts["startup_failure"] += 1
+        failed.append(name)
+    missing = sorted(set(required) - seen)
+    if FAILED & set(counts):
         verdict = "fail"
-    elif "pending" in counts:
+    elif "pending" in counts or missing:
         verdict = "pending"
+    elif not counts:
+        verdict = "none"
     else:
         verdict = "pass"
-    return {"verdict": verdict, "counts": dict(sorted(counts.items())), "failed": sorted(failed)}
+    return {
+        "verdict": verdict,
+        "counts": dict(sorted(counts.items())),
+        "failed": sorted(failed),
+        "missing": missing,
+    }
 
 
 def strip_html(body):
@@ -268,11 +309,13 @@ def threads(gh, repo, number, include_resolved=False):
     return out
 
 
-def pr_state(gh, repo, number):
+def pr_state(gh, repo, number, cache=None):
     pr = gh.get(f"repos/{repo}/pulls/{number}")
     if pr is None:
         raise Failure(f"pr_status: {short_repo(repo)}#{number} not found")
     sha = pr["head"]["sha"]
+    base = (pr.get("base") or {}).get("ref") or "main"
+    required = required_checks(gh, repo, base, {} if cache is None else cache)
     ts = threads(gh, repo, number)
     return {
         "repo": short_repo(repo),
@@ -284,20 +327,20 @@ def pr_state(gh, repo, number):
         "head": sha,
         "mergeable": pr.get("mergeable"),
         "mergeable_state": pr.get("mergeable_state") or "unknown",
-        "ci": ci_summary(gh, repo, sha),
+        "ci": ci_summary(gh, repo, sha, required),
         "unresolved": None if ts is None else len(ts),
         "threads": ts or [],
     }
 
 
 def open_prs(gh, repos, author=None):
-    out = []
+    out, cache = [], {}
     for name in repos:
         repo = full_repo(name)
         for pr in gh.paged(f"repos/{repo}/pulls?state=open", required=True):
             if author and (pr.get("user") or {}).get("login") != author:
                 continue
-            out.append(pr_state(gh, repo, pr["number"]))
+            out.append(pr_state(gh, repo, pr["number"], cache))
     return out
 
 
@@ -317,6 +360,7 @@ def pr_lines(p):
     counts = ",".join(f"{k}={v}" for k, v in c["counts"].items())
     ci = f"ci={c['verdict']}" + (f"({counts})" if counts else "")
     ci += f" failed={','.join(c['failed'])}" if c["failed"] else ""
+    ci += f" missing={','.join(c['missing'])}" if c.get("missing") else ""
     th = "?" if p["unresolved"] is None else p["unresolved"]
     draft = " draft" if p["draft"] else ""
     title = clean(p["title"])
@@ -351,13 +395,16 @@ def cmd_threads(args, gh):
 
 def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic):
     refs = [parse_ref(r) for r in args.refs]
-    start = clock()
+    start, cache = clock(), {}
     while True:
-        prs = [pr_state(gh, repo, n) for repo, n in refs]
+        prs = [pr_state(gh, repo, n, cache) for repo, n in refs]
         pending = [p for p in prs if p["ci"]["verdict"] == "pending"]
         if not pending or clock() - start >= args.timeout:
             break
         sleep(args.interval)
+    for p in pending:  # a required check that never reported is a failure by now
+        if p["ci"]["missing"]:
+            p["ci"]["verdict"] = "fail"
     lines = [ln for p in prs for ln in pr_lines(p)]
     if pending:
         lines.append(f"timeout: {len(pending)} still pending after {args.timeout:g}s")
@@ -407,6 +454,7 @@ def head_checks(gh, repo, sha, required):
         elif st.get("state") == "pending":
             pending.append(name)
     pending += [f"{name} (not reported)" for name in sorted(required - seen)]
+    failed += startup_failures(gh, repo, sha)
     return {"failed": sorted(failed), "pending": sorted(pending)}
 
 
@@ -711,7 +759,7 @@ class SimGitHub(GitHub):
     """A fake GitHub that changes state: update-branch moves the head, a merge
     closes the PR and puts the repository's other open PRs behind."""
 
-    def __init__(self, prs, checks=None, threads=None, required=None, refuse=None):
+    def __init__(self, prs, checks=None, threads=None, required=None, refuse=None, runs=None):
         self.prs = {}
         for (repo, n), fields in prs.items():
             pr = {"number": n, "title": f"feat: pr {n}", "state": "open", "merged": False}
@@ -723,6 +771,7 @@ class SimGitHub(GitHub):
         self.thr = threads or {}
         self.required = required or {}
         self.refuse = refuse or {}  # (repo, n) -> "HTTP 405: ..."
+        self.runs = runs or {}  # sha -> workflow runs
         self.calls, self.puts, self.updates = [], [], 0
 
     def get(self, path):
@@ -737,6 +786,8 @@ class SimGitHub(GitHub):
             return {"check_runs": runs() if callable(runs) else runs}
         if re.fullmatch(r"commits/\w+/status", rest):
             return {"state": "success", "statuses": []}
+        if m := re.fullmatch(r"actions/runs\?head_sha=(\w+)&.*", rest):
+            return {"workflow_runs": self.runs.get(m.group(1), [])}
         if m := re.fullmatch(r"pulls/(\d+)/ccr/review_threads", rest):
             return self.thr.get((repo, int(m.group(1))), [])
         if re.fullmatch(r"pulls/comments/\d+", rest):
@@ -857,6 +908,7 @@ def self_test():
             "verdict": "fail",
             "counts": {"failure": 1, "skipped": 1, "success": 3},
             "failed": ["lint"],
+            "missing": [],
         }
         and js[0]["unresolved"] == 3
         and js[0]["threads"][0]["replies"] == 1
@@ -882,6 +934,73 @@ def self_test():
     check(
         "ci pass",
         ci_summary(FakeGitHub(data), "swarm-routing/alpha", "a" * 40)["verdict"] == "pass",
+    )
+
+    # #167's state: every workflow ended in startup_failure, so no check run exists
+    # and the three required checks are absent; a re-run that started is not a failure
+    sha = "a" * 40
+    data = fixture()
+    data[f"repos/swarm-routing/alpha/commits/{sha}/check-runs?per_page=100&page=1"] = {
+        "check_runs": []
+    }
+    data[f"repos/swarm-routing/alpha/commits/{sha}/status"] = {"state": "pending", "statuses": []}
+    required = ["lint", "python / python", "title / title"]
+    data["repos/swarm-routing/alpha/rules/branches/main"] = [
+        {"type": "deletion"},
+        {
+            "type": "required_status_checks",
+            "parameters": {"required_status_checks": [{"context": c} for c in required]},
+        },
+    ]
+    sf = {"status": "completed", "conclusion": "startup_failure"}
+    data[f"repos/swarm-routing/alpha/actions/runs?head_sha={sha}&per_page=100&page=1"] = {
+        "total_count": 4,
+        "workflow_runs": [
+            dict(sf, id=1, workflow_id=10, name="CI", created_at="2026-11-01T00:00:00Z"),
+            dict(sf, id=2, workflow_id=20, name="PR title", created_at="2026-11-01T00:00:00Z"),
+            dict(sf, id=3, workflow_id=30, name="Docs", created_at="2026-11-01T00:00:00Z"),
+            {
+                "id": 4,
+                "workflow_id": 30,
+                "name": "Docs",
+                "status": "in_progress",
+                "conclusion": None,
+                "created_at": "2026-11-02T00:00:00Z",
+            },
+        ],
+    }
+    rc, out, _ = run(["list", "--repos", "alpha"], data=data)
+    check(
+        "a startup failure and missing required checks are not a pass",
+        out.splitlines()[0]
+        == "alpha#5 aaaaaaa ci=fail(startup_failure=2) failed=CI (startup_failure),"
+        "PR title (startup_failure) missing=lint,python / python,title / title "
+        "merge=clean threads=3 · feat(x): a change",
+    )
+    data[f"repos/swarm-routing/alpha/actions/runs?head_sha={sha}&per_page=100&page=1"] = {
+        "workflow_runs": []
+    }
+    data[f"repos/swarm-routing/alpha/commits/{sha}/check-runs?per_page=100&page=1"] = {
+        "check_runs": [{"name": "lint", "status": "completed", "conclusion": "success"}]
+    }
+    rc, out, _ = run(["list", "--repos", "alpha"], data=data)
+    check(
+        "a missing required check keeps the verdict pending",
+        out.splitlines()[0].startswith(
+            "alpha#5 aaaaaaa ci=pending(success=1) missing=python / python,title / title "
+        ),
+    )
+    now = [0.0]
+
+    def tick(s):
+        now[0] += s
+
+    rc, out, _ = run(["wait", "alpha#5"], data=data, sleep=tick, clock=lambda: now[0], timeout=3)
+    check(
+        "wait: a required check still missing at the timeout fails",
+        rc == 2
+        and out.splitlines()[0].startswith("alpha#5 aaaaaaa ci=fail(success=1) missing=")
+        and "timeout: 1 still pending after 3s" in out,
     )
 
     # threads: unresolved only, --all marks the resolved one; at most 3 lines per thread
@@ -1067,6 +1186,19 @@ def self_test():
             "alpha#12 ccccccc waiting: 1 pending (gate (not reported))",
             "alpha#12 ccccccc timeout after 180s",
         ],
+    )
+
+    # a workflow that never started: no check run, but the merge refuses it
+    gh = SimGitHub(
+        {("alpha", 17): {}},
+        runs={
+            "11" * 20: [{"id": 1, "workflow_id": 1, "name": "CI", "conclusion": "startup_failure"}]
+        },
+    )
+    rc, out, _ = merge(["alpha#17"], gh)
+    check(
+        "merge: a startup failure stops the PR",
+        rc == 1 and not gh.puts and out == "alpha#17 1111111 failing: CI (startup_failure)\n",
     )
 
     # a failed read (a 502) is polled again, not the end of the run
