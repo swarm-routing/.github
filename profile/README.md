@@ -10,18 +10,22 @@ lives here too: its shared infrastructure, comparator arms and benchmark
 tooling are moving into their own repositories so each protocol can be its
 own citable repository.
 
-| Repository | What it is |
-|---|---|
-| [ns3-containers](https://github.com/swarm-routing/ns3-containers) | `ghcr.io/swarm-routing/ns3-dev` images: ns-3 pre-built (debug / sanitized / optimized), contrib modules compile in seconds |
-| [ns3-swarm-core](https://github.com/swarm-routing/ns3-swarm-core) | The `swarm-core` contrib module: shared primitives (visited path, LE codecs, pheromone table, route decision) and ns-3 cross-layer glue |
-| [ns3-tools](https://github.com/swarm-routing/ns3-tools) | Diagnostic probes, comparison arenas, the `ns3-tool` CLI (sweep, compare, diagnose, scaffold) |
-| [ARA](https://github.com/swarm-routing/ARA) | Ant-Colony-Based Routing Algorithm (Güneş et al., 2002) |
-| [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | Honeybee routing (Wedde & Farooq, 2005) |
-| [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005). No code yet; Phase 5 pre-work open |
-| [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007). No code yet; not scheduled |
-| [benchmarks](https://github.com/swarm-routing/benchmarks) | Immutable 20-seed datasets, paired verdicts, reproducibility manifests |
-| [swarm-routing.github.io](https://swarm-routing.github.io) | Colony Arena: interactive docs, visualizers, leaderboard |
-| [AntHocNet](https://github.com/swarm-routing/AntHocNet) | The reference AntHocNet implementation, the colony the org grew out of |
+The last two columns are live: each repository's SonarQube Cloud quality gate
+and its Codecov line coverage (report-only, uploaded by CI from the repository's
+own code). A dash means not measured yet: no code, or no analysis set up.
+
+| Repository | What it is | Quality gate | Coverage |
+|---|---|---|---|
+| [ns3-containers](https://github.com/swarm-routing/ns3-containers) | `ghcr.io/swarm-routing/ns3-dev` images: ns-3 pre-built (debug / sanitized / optimized), contrib modules compile in seconds | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-containers&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-containers) | — |
+| [ns3-swarm-core](https://github.com/swarm-routing/ns3-swarm-core) | The `swarm-core` contrib module: shared primitives (visited path, LE codecs, pheromone table, route decision) and ns-3 cross-layer glue | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-swarm-core&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-swarm-core) | [![codecov](https://codecov.io/gh/swarm-routing/ns3-swarm-core/graph/badge.svg)](https://codecov.io/gh/swarm-routing/ns3-swarm-core) |
+| [ns3-tools](https://github.com/swarm-routing/ns3-tools) | Diagnostic probes, comparison arenas, the `ns3-tool` CLI (sweep, compare, diagnose, scaffold) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-tools&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-tools) | [![codecov](https://codecov.io/gh/swarm-routing/ns3-tools/graph/badge.svg)](https://codecov.io/gh/swarm-routing/ns3-tools) |
+| [ARA](https://github.com/swarm-routing/ARA) | Ant-Colony-Based Routing Algorithm (Güneş et al., 2002) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ARA&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ARA) | — |
+| [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | Honeybee routing (Wedde & Farooq, 2005) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_BeeAdHoc&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_BeeAdHoc) | — |
+| [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005). No code yet; Phase 5 pre-work open | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_Termite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_Termite) | — |
+| [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007). No code yet; not scheduled | — | — |
+| [benchmarks](https://github.com/swarm-routing/benchmarks) | Immutable 20-seed datasets, paired verdicts, reproducibility manifests | — | — |
+| [swarm-routing.github.io](https://swarm-routing.github.io) | Colony Arena: interactive docs, visualizers, leaderboard | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_swarm-routing.github.io&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_swarm-routing.github.io) | — |
+| [AntHocNet](https://github.com/swarm-routing/AntHocNet) | The reference AntHocNet implementation, the colony the org grew out of | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_AntHocNet&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_AntHocNet) | [![codecov](https://codecov.io/gh/swarm-routing/AntHocNet/graph/badge.svg)](https://codecov.io/gh/swarm-routing/AntHocNet) |
 
 ## Open epics: pick something up
 

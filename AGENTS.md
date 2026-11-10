@@ -34,11 +34,12 @@ tools/pr-status/pr_status.py    open PRs across repos, read-only: a line per PR 
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
-                                the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37)
+                                the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
+                                quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
 SECURITY.md                     the org default security policy (repos without their own get it)
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/workflows/         reusable-ns3-ci.yml, reusable-python-ci.yml, reusable-pr-title.yml, reusable-licence-check.yml,
-                           reusable-org-sync-check.yml, sync-labels.yml, epics.yml, zenodo.yml, org-bot.yml, ci.yml
+                           reusable-org-sync-check.yml, reusable-codecov.yml, sync-labels.yml, epics.yml, zenodo.yml, org-bot.yml, ci.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
 ```
 
@@ -174,6 +175,7 @@ Org-wide (1–9), then this repo's own.
 | You want to… | Go to |
 |--------------|-------|
 | Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` (quality inputs `strict-warnings`, `coverage`, `determinism`: CONTRIBUTING § Quality gates) |
+| Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar` (+ `SONAR_TOKEN`), a job calling `reusable-codecov.yml`; seeds `templates/quality/`; badges `sonar`/`codecov` in its `org-sync.toml`; CONTRIBUTING § Quality gates |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` + CONTRIBUTING's type list |
 | Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |

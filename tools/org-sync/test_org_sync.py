@@ -117,6 +117,61 @@ check(
     "packages/container/package/ns3-dev" in rd,
     "a protocol repo's badge row links the ns3-dev image",
 )
+# quality badges (SonarQube Cloud, Codecov, CodeRabbit) and their seeds
+check(
+    "project_badges/measure?project=swarm-routing_demo&metric=alert_status" in rd
+    and "metric=sqale_rating" in rd
+    and "coderabbit/prs/github/swarm-routing/demo" in rd
+    and "utm_campaign=swarm-routing%2Fdemo" in rd,
+    "a protocol repo gets the four SonarQube Cloud badges and CodeRabbit's",
+)
+check("codecov.io" not in rd, "no Codecov badge until a workflow uploads coverage")
+check(
+    "sonar.projectKey=swarm-routing_demo" in read(os.path.join(da, "sonar-project.properties"))
+    and "target: 80%" in read(os.path.join(da, ".codecov.yml")),
+    "a protocol repo is seeded with sonar-project.properties and .codecov.yml",
+)
+os.makedirs(os.path.join(da, ".github/workflows"), exist_ok=True)
+with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
+    f.write("    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main\n")
+run("apply", da)
+check(
+    "codecov.io/gh/swarm-routing/demo/graph/badge.svg" in read(os.path.join(da, "README.md")),
+    "the Codecov badge appears once a workflow uploads coverage",
+)
+dz = fresh()
+run("init", dz, "--kind", "protocol", "--dual", "core/")
+with open(os.path.join(dz, ".github/org-sync.toml"), "a") as f:
+    f.write("\n[quality]\nsonar = false\n")
+os.remove(os.path.join(dz, "sonar-project.properties"))
+run("apply", dz)
+rz = read(os.path.join(dz, "README.md"))
+check(
+    "sonarcloud.io" not in rz
+    and not os.path.exists(os.path.join(dz, "sonar-project.properties"))
+    and os.path.exists(os.path.join(dz, ".codecov.yml")),
+    "[quality] sonar = false: no SonarQube Cloud badges or properties seed, Codecov kept",
+)
+dq = fresh()
+run("init", dq, "--kind", "container", "--dual", "")
+rq = read(os.path.join(dq, "README.md"))
+check(
+    "hadolint" not in rq.lower() and not os.path.exists(os.path.join(dq, ".codecov.yml")),
+    "a container repo gets no scanner badges before container-security.yml, and no C++ seeds",
+)
+os.makedirs(os.path.join(dq, ".github/workflows"), exist_ok=True)
+with open(os.path.join(dq, ".github/workflows/container-security.yml"), "w") as f:
+    f.write("name: Container Security\n")
+run("apply", dq)
+rq = read(os.path.join(dq, "README.md"))
+check(
+    "actions/workflows/container-security.yml/badge.svg" in rq
+    and "check-runs/swarm-routing/demo/main?nameFilter=hadolint" in rq
+    and "nameFilter=trivy-config" in rq
+    and "metric=security_rating" in rq
+    and "metric=bugs" not in rq,
+    "a container repo's scanner badges are live: workflow, Hadolint and Trivy jobs, Sonar gate + security",
+)
 da = fresh()
 run("init", da, "--kind", "skills", "--dual", "")
 rd = read(os.path.join(da, "README.md"))
