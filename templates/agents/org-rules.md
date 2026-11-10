@@ -11,8 +11,10 @@
    `LICENSING.md` in the same PR.
 2. **The licence boundary only goes one way.** GPL code may use the dual
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
-   the C++ standard library and other `core/` files (CI checks it), and a dual
-   script imports no GPL-only code. Code coming from AntHocNet keeps its
+   the C++ standard library, other `core/` files and the dual-licensed `core/`
+   of a dependency pinned by commit and declared in the repo's `licence.yml`
+   `core-deps` (a protocol's `core/` on swarm-core's; CI checks it,
+   `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
    licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its
    `ns3/` modules and `web/` (GPL-2.0-only) only in GPL paths. Third-party code
    (AntHocNet's vendored `aomdv`/`gpsr`, IITP RAS) lands only in GPL paths with
@@ -37,5 +39,9 @@
    carry a configured cap).
 8. **CI hygiene.** Actions pinned by full commit SHA with a `# vX.Y.Z` comment;
    buildx caches scoped per profile; transient artifacts `retention-days` <= 7.
+   Every job has a `timeout-minutes` cap, and every apt, npm or installer step
+   its own, sized from recent green runs; `apt-get update` runs with
+   `--error-on=any` inside a shell retry. Ubuntu mirror outages are the usual
+   cause of a red run.
 9. **Nothing shipped depends on `.claude/`.** Skills hold procedures; scripts
    that anything shipped needs live in `tools/` (AntHocNet ADR-0014).
