@@ -208,29 +208,31 @@ def run(args, gh=None, clone_url=None):
     work = tempfile.mkdtemp(prefix="ai-files-")
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
     results, failed = [], []
-    for repo in repos:
-        clone = os.path.join(work, repo)
-        r = subprocess.run(
-            ["git", "clone", "-q", "--depth", "1", clone_url.format(org=ORG, repo=repo), clone],
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        try:
-            if r.returncode:
-                raise Failure(f"clone: {r.stderr.strip()}")
-            items = findings(check_docs, clone, online=not args.offline)
-            action = sync(gh, repo, items, dry_run, run_url)
-        except Failure as e:
-            failed.append(repo)
-            print(f"{repo}: FAILED: {e}")
-            continue
-        verb = "would " if dry_run and action.split()[0] in ("open", "update", "close") else ""
-        print(f"{repo}: {len(items)} finding(s); {verb}{action}")
-        for i in items:
-            print(f"    {i}")
-        results.append((repo, len(items), action))
-    shutil.rmtree(work, ignore_errors=True)
+    try:
+        for repo in repos:
+            clone = os.path.join(work, repo)
+            r = subprocess.run(
+                ["git", "clone", "-q", "--depth", "1", clone_url.format(org=ORG, repo=repo), clone],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            try:
+                if r.returncode:
+                    raise Failure(f"clone: {r.stderr.strip()}")
+                items = findings(check_docs, clone, online=not args.offline)
+                action = sync(gh, repo, items, dry_run, run_url)
+            except Exception as e:  # noqa: BLE001 - one broken repository must not stop the rest
+                failed.append(repo)
+                print(f"{repo}: FAILED: {type(e).__name__}: {e}")
+                continue
+            verb = "would " if dry_run and action.split()[0] in ("open", "update", "close") else ""
+            print(f"{repo}: {len(items)} finding(s); {verb}{action}")
+            for i in items:
+                print(f"    {i}")
+            results.append((repo, len(items), action))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     if failed:
         raise Failure(f"ai-files-review: {len(failed)} repositories failed: {', '.join(failed)}")
     return results
@@ -276,10 +278,11 @@ def self_test():
         GIT_COMMITTER_EMAIL="t@example.org",
     )
 
-    def make_repo(name, agents):
+    def make_repo(name, agents, extra=None):
         src = os.path.join(work, "src", name)
         os.makedirs(os.path.join(src, "core"))
-        for rel, text in {"AGENTS.md": agents, "core/a.cc": "x\n"}.items():
+        for rel, text in {"AGENTS.md": agents, "core/a.cc": "x\n", **(extra or {})}.items():
+            os.makedirs(os.path.dirname(os.path.join(src, rel)), exist_ok=True)
             with open(os.path.join(src, rel), "w") as fh:
                 fh.write(text)
         for cmd in (
@@ -293,6 +296,7 @@ def self_test():
     make_repo("stale", "# AGENTS\n\nRun `core/gone.cc` and `tools/x.py`.\n")
     make_repo("clean", "# AGENTS\n\nRead `core/a.cc`.\n")
     make_repo("fixed", "# AGENTS\n\nRead `core/a.cc`.\n")
+    make_repo("broken", "# AGENTS\n\nRead `core/a.cc`.\n", {".github/org-sync.toml": "[settings\n"})
     clone_url = "file://" + remotes + "/{org}/{repo}.git"
 
     class FakeGitHub:
@@ -394,6 +398,12 @@ def self_test():
         check("a private repository cannot be named", False)
     except Failure:
         pass
+
+    try:
+        go(FakeGitHub({}), repos="broken,clean")
+        check("a broken repository fails the run", False)
+    except Failure as e:
+        check("…after reviewing the others", "1 repositories failed: broken" in str(e))
 
     shutil.rmtree(work, ignore_errors=True)
     for f in failures:
