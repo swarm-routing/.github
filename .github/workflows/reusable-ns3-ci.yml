@@ -153,6 +153,10 @@ on:
         description: "Space-separated simulator-free roots whose C++ may include only std headers and their own files"
         type: string
         default: 'core/'
+      core-deps:
+        description: "Space-separated `owner/repo@ref:subdir` dual-licensed cores a core root may include from (reusable-licence-check.yml); empty: none"
+        type: string
+        default: ''
       gpl-only:
         description: "Space-separated files under a dual root that stay GPL-2.0-only"
         type: string
@@ -486,5 +490,6 @@ jobs:
     with:
       dual-roots: ${{ inputs.dual-roots }}
       core-roots: ${{ inputs.core-roots }}
+      core-deps: ${{ inputs.core-deps }}
       gpl-only: ${{ inputs.gpl-only }}
       exclude: ${{ inputs.header-exclude }}
