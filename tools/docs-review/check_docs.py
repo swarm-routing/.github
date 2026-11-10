@@ -568,7 +568,10 @@ def check_ai_facts(repo, r, online=False, fetch=None):
                 exists = os.path.exists(os.path.join(repo, path)) or stem_exists(repo, path)
                 if planned_line:
                     sub = any(x != tok and x.startswith(tok) for x in layout_all)
-                    if exists and (lay or PLANNED_MARK.search(line)) and not sub:
+                    # the marker next to this path, not a sentence about markers
+                    after = line[pos + len(tok) + 2 : pos + len(tok) + 47]
+                    near = line[max(0, pos - 15) : pos] + re.split(r"[.;:](?:\*\*)?\s", after)[0]
+                    if exists and (lay or PLANNED_MARK.search(near)) and not sub:
                         stale.append(f"{f}:{no}: `{tok}` is marked planned but exists")
                     continue
                 if exists or any(path.startswith(e.rstrip("/")) for e in exempt):
@@ -834,6 +837,11 @@ def self_test():
     expect("(a) a CLAUDE.md link to a missing file warns", has(r, "WARN", "do not exist"))
     r = ai("`core/` (planned) holds the algorithm.")
     expect("(b) a planned path that exists warns", has(r, "WARN", "planned paths that exist"))
+    r = ai(
+        "**Status: `core/` in progress.** Directories marked (planned) do not exist yet: "
+        "update this file in the PR that creates each."
+    )
+    expect("(b) a marker far from the path does not warn", not has(r, "WARN", "planned paths"))
     r = ai("`ns3/` (planned) holds the module.")
     expect("(b) a planned path that is missing does not warn", not has(r, "WARN", "planned paths"))
 
