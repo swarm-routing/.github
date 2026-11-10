@@ -25,7 +25,8 @@ Each managed item is one of:
            org's standard target names (swarm-routing/.github#11)
 
 A `[settings]` table holds the repository's GitHub settings (description,
-homepage, topics, ruleset profile, required checks), which
+homepage, topics, ruleset profile, required checks, and overrides of the
+profile's features, security features and release environment), which
 `tools/repo-settings/repo_settings.py` applies; org-sync ignores it. A file
 with `[settings]` and no `kind` is settings only: every command here says so
 and exits 0, so org-bot finds nothing to propose there.
