@@ -384,13 +384,18 @@ jobs:
         run: |
           cd "$REL"
           sha256sum -c SHA256SUMS --ignore-missing
-          while read -r f; do
-            gh attestation verify "$f" --repo "$REPO" --signer-workflow "$SIGNER"
-            gh attestation verify "$f" --repo "$REPO" --bundle "${NAME}-${VER}.sigstore.json"
-          done < <(cut -d' ' -f3- SHA256SUMS; echo SHA256SUMS)
-          while read -r f; do
-            gh attestation verify "$f" --repo "$REPO" --predicate-type https://cyclonedx.org/bom
-          done < <(cut -d' ' -f3- SHA256SUMS | grep -vxF "${NAME}-${VER}.cdx.json")
+          # gh prints nothing when not on a terminal: --format json, and a line
+          # per check, so the log shows what was verified.
+          ok() { jq -e -r --arg f "$1" --arg w "$2" 'if length > 0 then "verified \($w): \($f)" else empty end'; }
+          mapfile -t files < <(cut -d' ' -f3- SHA256SUMS)
+          for f in "${files[@]}" SHA256SUMS; do
+            gh attestation verify "$f" --repo "$REPO" --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" provenance
+            gh attestation verify "$f" --repo "$REPO" --bundle "${NAME}-${VER}.sigstore.json" --format json < /dev/null | ok "$f" "provenance (offline bundle)"
+          done
+          for f in "${files[@]}"; do
+            [ "$f" = "${NAME}-${VER}.cdx.json" ] && continue
+            gh attestation verify "$f" --repo "$REPO" --predicate-type https://cyclonedx.org/bom --format json < /dev/null | ok "$f" sbom
+          done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
