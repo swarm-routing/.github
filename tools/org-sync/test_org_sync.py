@@ -476,6 +476,31 @@ check(
     "--changed-only: a PR that edits a managed file or deletes a seed is red",
 )
 
+# hunk text that looks like a file header (`-- `/`++ ` lines) is content, not a path
+d4 = fresh()
+run("init", d4, "--kind", "python")
+base = commit(d4, "init")
+agents = read(os.path.join(d4, "AGENTS.md"))
+head, rest = agents.split("\n", 1)
+write(os.path.join(d4, "AGENTS.md"), head + "\n++ b/elsewhere.md\n" + rest)
+edit(d4, "AGENTS.md", "CI hygiene.", "CI hygiene, edited by hand.")
+commit(d4, "the PR adds a `++ ` line above a managed section and edits the section")
+rc, out = run("check", "--changed-only", base, d4)
+check(
+    rc == 1 and "drift     AGENTS.md#org-rules" in out,
+    "--changed-only: a `+++ ` line inside a hunk is not taken for a file header",
+)
+# a config change is the PR's own for every item it renders
+d5 = fresh()
+run("init", d5, "--kind", "python")
+edit(d5, "LICENSE", "GNU GENERAL PUBLIC LICENSE", "GNU GENERAL PUBLIC LICENCE")
+base = commit(d5, "init, with drift on main")
+with open(os.path.join(d5, ".github/org-sync.toml"), "a", encoding="utf-8") as f:
+    f.write("# a comment\n")
+commit(d5, "the PR edits .github/org-sync.toml")
+rc, out = run("check", "--changed-only", base, d5)
+check(rc == 1 and "drift     LICENSE" in out, "--changed-only: a config change touches every item")
+
 # a settings-only org-sync.toml (no kind, tools/repo-settings) manages nothing and is not an error
 d = fresh()
 os.makedirs(os.path.join(d, ".github"))

@@ -34,7 +34,8 @@ and exits 0, so org-bot finds nothing to propose there.
 `check --changed-only BASE` judges only the items the change since BASE
 touched (a PR's own drift, swarm-routing/.github#159): a section counts when
 a changed line falls between its markers, any other item when its file
-changed. Drift a newer template causes in an untouched item is listed as
+changed (a change to .github/org-sync.toml touches every item). Drift a
+newer template causes in an untouched item is listed as
 `ignored` and does not fail; plain `check` (pushes to main) still does.
 
 Output is a summary, never file contents, so an agent reads a few lines per
@@ -808,6 +809,8 @@ def pr_changes(repo_dir, base):
             "--no-ext-diff",
             "-U0",
             "--no-renames",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
             f"{base}...HEAD",
         ],
         capture_output=True,
@@ -815,13 +818,13 @@ def pr_changes(repo_dir, base):
     )
     if r.returncode:
         sys.exit(f"org-sync: git diff {base}...HEAD failed: {r.stderr.strip()}")
-    out, path, old = {}, None, None
+    out, path, old, in_hunk = {}, None, None, False
     for line in r.stdout.splitlines():
         if line.startswith("diff --git "):
-            path = None
-        elif line.startswith("--- "):
+            path, in_hunk = None, False
+        elif not in_hunk and line.startswith("--- "):
             old = line[4:]
-        elif line.startswith("+++ "):
+        elif not in_hunk and line.startswith("+++ "):
             new = line[4:]
             if new == "/dev/null":  # deleted: the old path, all of it
                 out[old[2:]] = None
@@ -831,7 +834,10 @@ def pr_changes(repo_dir, base):
                     out[path] = None
                 else:
                     out.setdefault(path, [])
-        elif line.startswith("@@") and path and out.get(path) is not None:
+        elif line.startswith("@@"):
+            in_hunk = True  # a `--- `/`+++ ` line from here on is content
+            if not path or out.get(path) is None:
+                continue
             m = re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", line)
             first, n = int(m.group(1)), int(m.group(2) or 1)
             out[path].append((first, first + n - 1) if n else (first + 1, first))
@@ -842,8 +848,11 @@ def touched(repo_dir, item, changes):
     """Did the change touch this item? A section counts only when a changed
     line (or a deletion) falls between its markers, markers included; a file
     without the markers counts when any of it changed; any other item counts
-    when its file changed."""
+    when its file changed. A change to the config touches every item: it
+    decides how each one renders."""
     kind, path, _, name = item
+    if CONFIG in changes:
+        return True
     if path not in changes:
         return False
     ranges = changes[path]
