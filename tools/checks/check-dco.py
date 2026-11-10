@@ -23,8 +23,9 @@ only the GitHub login of each commit's author comes from the REST API
 (``pulls/{n}/commits``), with ``GH_TOKEN``. Output: one line per commit, and
 on failure the exact commands that fix it.
 
-Usage (in the PR checkout, full history):
-    check-dco.py --repo OWNER/REPO --pr N --base SHA --head SHA \\
+Usage (in the PR checkout, full history; the commit range comes from the
+environment, PR_BASE_SHA and PR_HEAD_SHA, full SHAs, never from arguments):
+    PR_BASE_SHA=... PR_HEAD_SHA=... check-dco.py --repo OWNER/REPO --pr N \\
         --pr-author LOGIN --association ASSOC
     check-dco.py --self-test
 """
@@ -325,17 +326,16 @@ def main() -> int:
     )
     ap.add_argument("--repo")
     ap.add_argument("--pr", type=int)
-    ap.add_argument("--base")
-    ap.add_argument("--head")
     ap.add_argument("--pr-author", default="")
     ap.add_argument("--association", default="NONE")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args()
     if a.self_test:
         return self_test()
-    if not (a.repo and a.pr and a.base and a.head):
-        ap.error("--repo, --pr, --base and --head are required")
-    commits = git_commits(a.base, a.head)
+    base, head = os.environ.get("PR_BASE_SHA", ""), os.environ.get("PR_HEAD_SHA", "")
+    if not (a.repo and a.pr and base and head):
+        ap.error("--repo, --pr and the PR_BASE_SHA and PR_HEAD_SHA variables are required")
+    commits = git_commits(base, head)
     logins = pr_logins(a.repo, a.pr)
     rows = verdicts(commits, logins, a.pr_author, a.association, permission_lookup(a.repo))
     return report(rows)

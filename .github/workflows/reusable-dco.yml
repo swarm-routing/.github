@@ -51,10 +51,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           ASSOCIATION: ${{ github.event.pull_request.author_association }}
         run: |
           python3 -I .org/tools/checks/check-dco.py --repo "$REPO" --pr "$PR" \
-            --base "$BASE" --head "$HEAD" --pr-author "$PR_AUTHOR" --association "$ASSOCIATION"
+            --pr-author "$PR_AUTHOR" --association "$ASSOCIATION"
