@@ -47,7 +47,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EPICS = os.path.join(ROOT, "tools", "epics", "epics.py")
@@ -160,12 +159,8 @@ def generate(task, repo, clone, data, out):
                 ],
             ]
     else:
-        cfg = os.path.join(clone, ".github", "org-sync.toml")
-        if not os.path.exists(cfg):
+        if not os.path.exists(os.path.join(clone, ".github", "org-sync.toml")):
             return None
-        with open(cfg, "rb") as fh:
-            if "kind" not in tomllib.load(fh):  # settings only (tools/repo-settings)
-                return None
         cmds = [[sys.executable, "-I", ORG_SYNC, "apply", clone]]
     for c in cmds:
         # org_sync.py apply exits 1 when sections the repository owns differ (it
@@ -671,14 +666,17 @@ def self_test():
     check(
         "stale branch overwritten", "opened #42" in out and "FAILED" not in out and pushed != orphan
     )
-    # a settings-only org-sync.toml (no kind) is not an adopted repository
+    # a settings-only org-sync.toml (no kind, tools/repo-settings): org_sync.py changes
+    # nothing there, so the repository reads up to date and gets no PR
     settings_only = os.path.join(work, "settings-only")
     os.makedirs(os.path.join(settings_only, ".github"))
     with open(os.path.join(settings_only, ".github", "org-sync.toml"), "w") as fh:
         fh.write('[settings]\ndescription = "x"\n')
+    notes = generate("org-sync", "settings-only", settings_only, data, [])
     check(
-        "org-sync skips a settings-only config",
-        generate("org-sync", "settings-only", settings_only, data, []) is None,
+        "org-sync leaves a settings-only config alone",
+        sorted(os.listdir(settings_only)) == [".github"]
+        and any("settings only" in n for n in notes),
     )
     # org-sync notes list the seeds that differ, for information, and leave them alone
     adopted = os.path.join(work, "adopted")

@@ -66,6 +66,7 @@ ORG = "swarm-routing"
 CONFIG = ".github/org-sync.toml"
 ACTIONS_APP = 15368  # GitHub Actions: the app every required check comes from
 REPO_FIELDS = ("description", "homepage", "topics")
+REPO_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]{0,99}")  # GitHub's, never a leading "-"
 TOPIC = re.compile(r"^[a-z0-9][a-z0-9-]{0,49}$")
 RULESET_KEYS = ("name", "target", "enforcement", "conditions", "bypass_actors", "rules")
 SCANNING_RULES = ("code_scanning", "code_quality")
@@ -114,8 +115,12 @@ def load_profile(name):
 def read_settings(gh, repo, local=None):
     """The repository's `[settings]` table, or None when it declares none."""
     if local:
+        root = os.path.realpath(local)
+        path = os.path.realpath(os.path.join(root, repo, CONFIG))
+        if os.path.commonpath([root, path]) != root:
+            raise ValueError(f"{repo}: {CONFIG} resolves outside {local}")
         try:
-            with open(os.path.join(local, repo, CONFIG), "rb") as f:
+            with open(path, "rb") as f:
                 text = f.read().decode()
         except FileNotFoundError:
             return None
@@ -130,14 +135,21 @@ def read_settings(gh, repo, local=None):
     return tomllib.loads(text).get("settings")
 
 
-def validate(s):
+def validate(s, private=False):
+    """What is wrong with a settings table; a private repository's values stay out of it."""
     errors = []
     if len(s.get("description", "")) > 350:
         errors.append("description is longer than 350 characters")
     topics = s.get("topics", [])
     if len(topics) > 20:
         errors.append("more than 20 topics")
-    errors += [f"topic {t!r} is not lowercase-hyphenated" for t in topics if not TOPIC.match(t)]
+    errors += [
+        "a topic is not lowercase-hyphenated"
+        if private
+        else f"topic {t!r} is not lowercase-hyphenated"
+        for t in topics
+        if not TOPIC.match(t)
+    ]
     if s.get("required_checks") and not s.get("ruleset"):
         errors.append("required_checks without a ruleset profile")
     return errors
@@ -219,6 +231,8 @@ def short(v):
 
 def plan_repo(gh, repo, local=None):
     """What differs in one repository: {repo, private, skip, changes, ruleset, notes, errors}."""
+    if not REPO_NAME.fullmatch(repo) or repo in (".", ".."):
+        raise ValueError(f"not a repository name: {repo!r}")
     res = {
         "repo": repo,
         "private": False,
@@ -231,12 +245,12 @@ def plan_repo(gh, repo, local=None):
     if s is None:
         res["skip"] = f"no [settings] in {CONFIG}"
         return res
-    res["errors"] = validate(s)
+    meta = gh.api("GET", f"repos/{ORG}/{repo}")
+    res["private"] = bool(meta.get("private"))
+    res["errors"] = validate(s, res["private"])
     if res["errors"]:
         return res
     want, want_rs = desired(s)
-    meta = gh.api("GET", f"repos/{ORG}/{repo}")
-    res["private"] = bool(meta.get("private"))
     for k, v in want.items():
         have = meta.get(k)
         if k == "topics":
@@ -514,6 +528,7 @@ def self_test():
         "plain": 'kind = "protocol"\n',
         "papers": '[settings]\ndescription = "Secret workspace."\ntopics = ["papers"]\nruleset = "merge-only"\n',
         "bad": '[settings]\ndescription = "x"\ntopics = ["Bad_Topic"]\n',
+        "secret": '[settings]\ndescription = "x"\ntopics = ["Hidden_Name"]\n',
     }
 
     class FakeGitHub:
@@ -543,6 +558,7 @@ def self_test():
                 "nocfg": dict(private=False, topics=[]),
                 "papers": dict(private=True, description=None, homepage=None, topics=[]),
                 "bad": dict(private=False, topics=[]),
+                "secret": dict(private=True, topics=[]),
             }
             self.rulesets = {
                 "AntHocNet": [copy.deepcopy(anthocnet_live)],
@@ -689,6 +705,18 @@ def self_test():
     gh = FakeGitHub()
     rc, out = go("apply", ["bad"], gh)
     check("invalid topic", rc == 1 and "not lowercase-hyphenated" in out and writes(gh) == [])
+    rc, out = go("check", ["secret"], gh)
+    check(
+        "invalid private topic masked",
+        rc == 1 and "a topic is not lowercase-hyphenated" in out and "Hidden" not in out,
+    )
+    # a name that is not a repository is refused before any API call or file read
+    gh = FakeGitHub()
+    rc, out = go("plan", ["../x", "-X"], gh)
+    check(
+        "bad repository names refused",
+        rc == 1 and out.count("not a repository name") == 2 and gh.calls == [],
+    )
 
     # a token without Administration: write: refused, exit 2, check still reports drift (exit 1)
     gh = FakeGitHub(deny_writes=True)

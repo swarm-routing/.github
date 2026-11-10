@@ -28,7 +28,7 @@ A `[settings]` table holds the repository's GitHub settings (description,
 homepage, topics, ruleset profile, required checks), which
 `tools/repo-settings/repo_settings.py` applies; org-sync ignores it. A file
 with `[settings]` and no `kind` is settings only: every command here says so
-and exits 0, and org-bot skips the repository.
+and exits 0, so org-bot finds nothing to propose there.
 
 Output is a summary, never file contents, so an agent reads a few lines per
 run (AntHocNet ADR-0014). Only `conflicts` and `reseed` print text: the hunks
@@ -154,15 +154,22 @@ def git_slug(repo_dir):
     return m.group(1) if m else None
 
 
+class SettingsOnly(Exception):
+    """The config has `[settings]` and no `kind`: no templates are managed."""
+
+
+# what each --json command prints for a settings-only config
+SETTINGS_ONLY_JSON = {"plan": '{"unchanged":0,"changes":[]}', "seeds": "[]", "settings": "{}"}
+
+
 def load_config(repo_dir):
     text = read(os.path.join(repo_dir, CONFIG))
     if text is None:
         sys.exit(f"org-sync: no {CONFIG} in {repo_dir}; run `org_sync.py init --kind KIND`")
     cfg = tomllib.loads(text)
-    if "kind" not in cfg:
+    if "kind" not in cfg and isinstance(cfg.get("settings"), dict):
         # a settings-only file: tools/repo-settings reads its [settings], org-sync manages nothing
-        print(f"org-sync: {CONFIG} has no kind: settings only, no templates managed")
-        sys.exit(0)
+        raise SettingsOnly()
     if cfg.get("kind") not in KINDS:
         sys.exit(f"org-sync: {CONFIG}: kind must be one of {', '.join(KINDS)}")
     cfg.setdefault(
@@ -924,7 +931,16 @@ def main(argv=None):
                 help="replace these conflicting sections with the template (ITEM as `plan` prints it, or all)",
             )
     a = p.parse_args(argv)
-    return globals()[f"cmd_{a.cmd}"](a)
+    try:
+        return globals()[f"cmd_{a.cmd}"](a)
+    except SettingsOnly:
+        if getattr(a, "json", False):
+            print(SETTINGS_ONLY_JSON[a.cmd])
+        else:
+            print(
+                f"org-sync: {CONFIG} has [settings] and no kind: settings only, no templates managed"
+            )
+        return 0
 
 
 if __name__ == "__main__":

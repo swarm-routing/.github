@@ -420,12 +420,20 @@ check(os.path.exists(os.path.join(d, "CONTEXT.md")), "reseed creates a missing s
 d = fresh()
 os.makedirs(os.path.join(d, ".github"))
 write(os.path.join(d, ".github/org-sync.toml"), '[settings]\ndescription = "x"\n')
-for cmd in ("plan", "apply", "check"):
-    try:
-        rc, out = run(cmd, d)
-    except SystemExit as e:
-        rc = e.code
-    check(rc in (0, None), f"{cmd} on a settings-only config exits 0")
+for cmd in ("plan", "apply", "check", "conflicts", "seeds"):
+    rc, out = run(cmd, d)
+    check(rc == 0 and "settings only" in out, f"{cmd} on a settings-only config exits 0")
 check(sorted(os.listdir(d)) == [".git", ".github"], "a settings-only config writes nothing")
+check(
+    run("plan", "--json", d)[1].strip() == '{"unchanged":0,"changes":[]}', "plan --json stays JSON"
+)
+check(run("seeds", "--json", d)[1].strip() == "[]", "seeds --json stays JSON")
+# no kind and no [settings] is still an error (a typo must not pass as settings only)
+write(os.path.join(d, ".github/org-sync.toml"), 'title = "x"\n')
+try:
+    rc = run("check", d)[0]
+except SystemExit as e:
+    rc = e.code
+check(rc not in (0, None), "a config with neither kind nor [settings] is an error")
 
 print("org-sync self-test: OK")
