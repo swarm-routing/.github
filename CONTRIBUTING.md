@@ -44,6 +44,19 @@ is the long form.
    one: the called workflow's jobs carry it), and every apt, npm or installer step its own, sized from recent green
    runs; `apt-get update` runs with `--error-on=any` inside a shell retry.
    Ubuntu mirror outages are the usual cause of a red run.
+   Every job that runs steps starts with StepSecurity Harden-Runner
+   (`step-security/harden-runner`, pinned by SHA, #164): it records each
+   network call, file write and process of the job on the GitHub-hosted
+   runner, and in `block` mode allows only the listed egress endpoints, the
+   control against a compromised action or dependency sending secrets out.
+   Jobs start in `egress-policy: audit`; after about two weeks of audit data a
+   job that holds secrets or publishes (release, image push, org-bot,
+   repo-settings, pages deploy) moves to `block` with an `allowed-endpoints`
+   list copied from the insights of a green run, never guessed. The insights
+   are on the StepSecurity page linked from each run's Harden-Runner step
+   (and from the job summary). A job that runs entirely in a `container:`
+   cannot take it on a hosted runner (it needs sudo on the VM; StepSecurity's
+   limitations), so it goes without: today `reusable-ns3-ci.yml`'s `build`.
 6. **Comparator arms** (protocols we did not design) clear three gates before
    their numbers count: a fidelity sheet from the paper, the per-PR delivery
    smoke, and an anchor reproducing the paper's own trend.
