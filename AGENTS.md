@@ -32,6 +32,7 @@ tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against th
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
 tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's, with HINT lines at the likely spots
 tools/pr-status/pr_status.py    open PRs across repos, read-only: a line per PR (head, CI verdict and counts, mergeable state) and per unresolved review thread (severity · title · path:line · id)
+tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
@@ -63,9 +64,11 @@ python3 -I tools/docs-review/check_docs.py --self-test   # the docs standard, a 
 python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker, on fixture sheets
 python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule; a hinted and an unhinted one for 6 and 7
 python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, threads, a CodeRabbit body reduced to its heading, wait)
+python3 -I tools/lit-search/lit_search.py --self-test   # confirm, citing, refs, search, related on recorded responses of each source, a source down or rate-limited, keys never leaked
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 python3 -I tools/pr-status/pr_status.py list --repos .github,skills   # read-only, the open PRs and their unresolved threads
+python3 -I tools/lit-search/lit_search.py confirm 10.1613/jair.530   # read-only, free: Crossref, Semantic Scholar, OpenAlex agree
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
 clang-format-18 --style=file:.clang-format --dump-config >/dev/null
 ```
@@ -196,6 +199,7 @@ Org-wide (1–9), then this repo's own.
 | Hold a repo's README, AGENTS/CLAUDE/CONTEXT and docs/ to the org standard | `tools/docs-review/check_docs.py [REPO]` (`[docs]` table in its `.github/org-sync.toml`: `arena_id`, `uses_image`; `--self-test`); the `docs-review` skill in `swarm-routing/skills` |
 | Check a diff against the org golden rules before review | `tools/protocol-review/check_invariants.py [REPO] --base origin/main [--pr-body FILE] [--json]` (per-repo `[review]` table in its `.github/org-sync.toml`; `--self-test`); the `protocol-review` skill in `swarm-routing/skills` |
 | See every open PR's CI, mergeable state and unresolved review threads, or wait for CI | `tools/pr-status/pr_status.py` (`list [--repos A,B] [--author L]`, `threads REPO#N [--all]`, `wait REPO#N…`; `--json` on each; `--self-test`); the `pr-shepherd` skill in `swarm-routing/skills` |
+| Confirm a reference, or find newer, citing, cited or related papers | `tools/lit-search/lit_search.py` (`confirm DOI` / `confirm --title`, `citing`, `refs`, `search [--crossref] [--preprints]`, `related`; `--library FILE…` marks known DOIs; `--self-test`): free sources only (Crossref, Semantic Scholar, OpenCitations, arXiv, OpenAlex single records), OpenAlex search only with a free `OPENALEX_API_KEY`; the `lit-search` skill in `swarm-routing/skills` |
 | Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `verify --text KEY=<pdfx text>`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
