@@ -31,6 +31,13 @@ profile's features, security features and release environment), which
 with `[settings]` and no `kind` is settings only: every command here says so
 and exits 0, so org-bot finds nothing to propose there.
 
+`check --changed-only BASE` judges only the items the change since BASE
+touched (a PR's own drift, swarm-routing/.github#159): a section counts when
+a changed line falls between its markers, any other item when its file
+changed (a change to .github/org-sync.toml touches every item). Drift a
+newer template causes in an untouched item is listed as
+`ignored` and does not fail; plain `check` (pushes to main) still does.
+
 Output is a summary, never file contents, so an agent reads a few lines per
 run (AntHocNet ADR-0014). Only `conflicts` and `reseed` print text: the hunks
 that need a person's judgement, and the change a reseed makes. Stdlib only; Python 3.11+ (tomllib).
@@ -787,6 +794,81 @@ def cmd_conflicts(a):
     return 0
 
 
+def pr_changes(repo_dir, base):
+    """{path: [(first, last) new-side line ranges]} for what the change since
+    `base` touched (`git diff base...HEAD`, no context). A pure deletion is the
+    empty range (n+1, n): it sits after new line n. None means the whole file
+    (created, deleted or renamed away)."""
+    r = subprocess.run(
+        [
+            "git",
+            "-C",
+            repo_dir,
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "-U0",
+            "--no-renames",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            f"{base}...HEAD",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode:
+        sys.exit(f"org-sync: git diff {base}...HEAD failed: {r.stderr.strip()}")
+    out, path, old, in_hunk = {}, None, None, False
+    for line in r.stdout.splitlines():
+        if line.startswith("diff --git "):
+            path, in_hunk = None, False
+        elif not in_hunk and line.startswith("--- "):
+            old = line[4:]
+        elif not in_hunk and line.startswith("+++ "):
+            new = line[4:]
+            if new == "/dev/null":  # deleted: the old path, all of it
+                out[old[2:]] = None
+            else:
+                path = new[2:]
+                if old == "/dev/null":
+                    out[path] = None
+                else:
+                    out.setdefault(path, [])
+        elif line.startswith("@@"):
+            in_hunk = True  # a `--- `/`+++ ` line from here on is content
+            if not path or out.get(path) is None:
+                continue
+            m = re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", line)
+            first, n = int(m.group(1)), int(m.group(2) or 1)
+            out[path].append((first, first + n - 1) if n else (first + 1, first))
+    return out
+
+
+def touched(repo_dir, item, changes):
+    """Did the change touch this item? A section counts only when a changed
+    line (or a deletion) falls between its markers, markers included; a file
+    without the markers counts when any of it changed; any other item counts
+    when its file changed. A change to the config touches every item: it
+    decides how each one renders."""
+    kind, path, _, name = item
+    if CONFIG in changes:
+        return True
+    if path not in changes:
+        return False
+    ranges = changes[path]
+    if ranges is None or kind != "section":
+        return True
+    cur = read(os.path.join(repo_dir, path)) or ""
+    span = find_section(cur, name, path)
+    if not span:
+        return True
+    b = cur.count("\n", 0, span[0])  # 1-based line of the begin marker
+    e = cur.count("\n", 0, span[1]) + 1  # 1-based line of the end marker
+    return any(
+        first <= e and last >= b if first <= last else b < first <= e for first, last in ranges
+    )
+
+
 def cmd_check(a):
     cfg = load_config(a.repo)
     drift = [
@@ -794,6 +876,12 @@ def cmd_check(a):
         for item, status, _, detail in plan(cfg, a.repo)
         if status != "unchanged"
     ]
+    if a.changed_only:
+        changes = pr_changes(a.repo, a.changed_only)
+        for item, status, _ in drift:
+            if not touched(a.repo, item, changes):
+                print(f"ignored   {label(item)}: {status} (not touched since {a.changed_only})")
+        drift = [d for d in drift if touched(a.repo, d[0], changes)]
     for item, status, detail in drift:
         print(f"drift     {label(item)}: {status}" + (f" ({detail})" if detail else ""))
     if drift:
@@ -919,6 +1007,14 @@ def main(argv=None):
                 "--dual",
                 nargs="*",
                 help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)",
+            )
+        if name == "check":
+            s.add_argument(
+                "--changed-only",
+                metavar="BASE",
+                help="judge only the drift in items the change since BASE touched "
+                "(`git diff BASE...HEAD`): a section counts when a changed line falls "
+                "between its markers, any other item when its file changed",
             )
         if name in ("plan", "seeds", "settings"):
             s.add_argument("--json", action="store_true")
