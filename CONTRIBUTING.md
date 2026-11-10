@@ -151,7 +151,8 @@ starts from the newest open `handoff` issue and closes it when done.
 Contributions from outside the org are welcome in every public repository:
 open an issue first for anything larger than a fix, fork, branch, and open a
 PR to `main` (the [Pull requests](#pull-requests) rules apply; CI runs on a
-fork's PR once a maintainer approves a first-time contributor's workflows).
+fork's PR once a maintainer approves its workflows, which every outside
+contributor's fork PR waits for).
 
 **Inbound = outbound.** A contribution is licensed exactly as the directory it
 lands in, by that repository's `LICENSING.md` row: in `core/` and the
