@@ -357,10 +357,12 @@ jobs:
           json.dump(keep, open(out, "w"), indent=1)
           print(f"sonar: {len(keep)} compile commands of this repository")
           PY
-          for tool in unzip curl; do
+          # The scan action downloads the scanner and verifies its signature
+          # with gpg; the ns3-dev images carry none of the three tools.
+          for tool in unzip curl gpg; do
             command -v "$tool" > /dev/null || {
               timeout 600 apt-get update -qq
-              timeout 600 apt-get install -y -qq --no-install-recommends unzip curl > /dev/null
+              timeout 600 apt-get install -y -qq --no-install-recommends unzip curl gnupg > /dev/null
               break; }
           done
           echo "run=true" >> "$GITHUB_OUTPUT"
