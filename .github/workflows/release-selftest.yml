@@ -10,7 +10,9 @@ name: Release self-test
 # CycloneDX SBOM, the provenance as *.intoto.jsonl and its Sigstore bundle,
 # the notes' verify commands, the bump commit in the bundle, and no tag
 # pushed. The dry run's attestations are real, in this repo's attestation
-# store, on the fixture's assets.
+# store, on the fixture's assets, so the dry run needs a write token: a pull
+# request from a fork (read-only token) skips it, and the same self-test runs
+# on main once the change is merged.
 on:
   push:
     branches: [main]
@@ -24,6 +26,7 @@ permissions:
 
 jobs:
   release:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     # The union of what the called jobs declare: its publish job (skipped in a
     # dry run) declares contents: write, and a called workflow cannot raise
     # the caller's grant.

@@ -124,6 +124,8 @@ jobs:
       tag: ${{ steps.bump.outputs.tag }}
       name: ${{ steps.bump.outputs.name }}
       artifact: ${{ steps.bump.outputs.artifact }}
+      commit: ${{ steps.bump.outputs.commit }}
+      tag-object: ${{ steps.bump.outputs.tag-object }}
     env:
       WD: ${{ inputs.working-directory }}
       DIST_IN: ${{ inputs.dist-dir }}
@@ -211,6 +213,10 @@ jobs:
             echo "tag=${tag}"
             echo "name=${name}"
             echo "artifact=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            # Fixed before the caller's build runs: publish pushes only these
+            # objects, whatever a later step does to the bundle on disk.
+            echo "commit=$(git rev-parse HEAD)"
+            echo "tag-object=$(git rev-parse "refs/tags/${tag}")"
           } >> "$GITHUB_OUTPUT"
           { echo "RELEASE_VERSION=${ver}"; echo "RELEASE_TAG=${tag}"; echo "NAME=${name}"; } >> "$GITHUB_ENV"
           git log --oneline -1
@@ -417,6 +423,8 @@ jobs:
       contents: write   # push the bump commit and the tag, create the release
     env:
       TAG: ${{ needs.build.outputs.tag }}
+      COMMIT: ${{ needs.build.outputs.commit }}
+      TAG_OBJECT: ${{ needs.build.outputs.tag-object }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -427,12 +435,17 @@ jobs:
 
       - name: Push the bump commit and the tag
         # Atomic: if the branch moved since this run started, neither lands.
+        # The bundle travelled through an artifact the caller's build could
+        # reach, so the tag and its commit must be the ones the bump step
+        # recorded before the build ran (job outputs, which no later step can
+        # change); a commit id covers its tree.
         run: |
           R="$RUNNER_TEMP/rel"
           git fetch --quiet "$R/meta/release.bundle" "refs/tags/${TAG}:refs/tags/${TAG}"
-          commit="$(git rev-parse "refs/tags/${TAG}^{commit}")"
-          test "$(git rev-parse "${commit}^")" = "$GITHUB_SHA"
-          git push --atomic origin "${commit}:refs/heads/${GITHUB_REF_NAME}" "refs/tags/${TAG}"
+          test "$(git rev-parse "refs/tags/${TAG}")" = "$TAG_OBJECT"
+          test "$(git rev-parse "refs/tags/${TAG}^{commit}")" = "$COMMIT"
+          test "$(git rev-parse "${COMMIT}^")" = "$GITHUB_SHA"
+          git push --atomic origin "${COMMIT}:refs/heads/${GITHUB_REF_NAME}" "refs/tags/${TAG}"
 
       - name: Publish the release
         env:
