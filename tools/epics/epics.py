@@ -12,9 +12,14 @@ Usage:
   epics.py --self-test
 
 Every command but fetch and --self-test takes `--data FILE` to use saved data
-instead of the GitHub API. `--repos A,B` reads only those repositories, for a
-token that cannot list the org's repositories. The API is read through `gh api`, so it uses the
-caller's `gh` login, or GH_TOKEN in a workflow.
+instead of the GitHub API. `--repos A,B` reads only those repositories. Without
+it the org's repositories are listed through `orgs/swarm-routing/repos`; where
+that is forbidden (HTTP 403, as in a Claude Code cloud session, which is bound
+to its repositories), the list falls back to the repositories named in this
+repository's ROADMAP.md#epics, the last generated list (a repository created
+since then is missing: name it with `--repos`). A line on stderr says which
+source was used. The API is read through `gh api`, so it uses the caller's
+`gh` login, or GH_TOKEN in a workflow.
 
 An epic is an issue labelled `epic`. Its status is derived, never typed:
   Done         closed as completed
@@ -54,6 +59,9 @@ GENERATED = (
 ROADMAP_URL = f"{GH}/{ORG}/.github/blob/main/ROADMAP.md#epics"
 ISSUES_URL = f"{GH}/{ORG}/.github/blob/main/CONTRIBUTING.md#issues"
 ORDER = {"In progress": 0, "Planned": 1}
+ROADMAP = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "ROADMAP.md"
+)
 
 
 # --- data ---------------------------------------------------------------
@@ -65,6 +73,7 @@ class GhError(SystemExit):
     def __init__(self, path, stderr):
         super().__init__(f"gh api {path}: {stderr}")
         self.missing = "HTTP 404" in stderr
+        self.forbidden = "HTTP 403" in stderr
 
 
 def gh_api(path):
@@ -99,13 +108,50 @@ def epic_of(issue):
     }
 
 
-def fetch(names=None):
-    """Every public, non-archived repo of the org, or only `names` (still
-    dropping private ones) where the org listing is not reachable."""
+def roadmap_repos(path=ROADMAP):
+    """The repository names in the generated section of ROADMAP.md, in order."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return []
+    i, j = text.find(BEGIN), text.find(END)
+    if i < 0 or j < i:
+        return []
+    pat = rf"^### \[([^\]]+)\]\({re.escape(GH)}/{re.escape(ORG)}/[^)]+\)$"
+    return re.findall(pat, text[i:j], re.M)
+
+
+def listing_of(names, roadmap=ROADMAP):
+    """The repositories to read and where their names came from (printed on
+    stderr): `names`, else the org listing, else ROADMAP.md when that is 403."""
     if names:
-        listing = [gh_api(f"repos/{ORG}/{n}") for n in names]
+        source = "--repos"
     else:
-        listing = gh_pages(f"orgs/{ORG}/repos?type=public")
+        try:
+            listing = gh_pages(f"orgs/{ORG}/repos?type=public")
+            print(f"epics: repositories from the org listing ({len(listing)})", file=sys.stderr)
+            return listing
+        except GhError as e:
+            if not e.forbidden:
+                raise
+            names = roadmap_repos(roadmap)
+            if not names:
+                raise SystemExit(
+                    f"epics: the org listing is forbidden (HTTP 403) and {roadmap} names no "
+                    "repository; pass --repos A,B"
+                ) from None
+            source = (
+                f"{os.path.basename(roadmap)}#epics, as the org listing is forbidden (HTTP 403)"
+            )
+    print(f"epics: repositories from {source} ({len(names)})", file=sys.stderr)
+    return [gh_api(f"repos/{ORG}/{n}") for n in names]
+
+
+def fetch(names=None, roadmap=ROADMAP):
+    """Every public, non-archived repo of the org, or only `names` (still
+    dropping private ones); see listing_of for where the list comes from."""
+    listing = listing_of(names, roadmap)
     repos = []
     for r in listing:
         if r["private"] or r["archived"] or r["fork"]:
@@ -355,6 +401,61 @@ def fixture():
     }
 
 
+def fallback_test(ok, data):
+    """fetch through a fake `gh api`: the org listing, a 403 on it (the
+    ROADMAP fallback), --repos, and a 403 with no ROADMAP list."""
+    global gh_api
+    real = gh_api
+    calls = []
+
+    def fake(forbid):
+        def api(path):
+            calls.append(path)
+            if path.startswith(f"orgs/{ORG}/repos"):
+                if forbid:
+                    raise GhError(path, "gh: sessions are bound to their repositories (HTTP 403)")
+                return [repo("x"), repo("y"), repo("papers", private=True)]
+            if "/issues?" in path:
+                return []
+            return repo(path.split("/")[2])
+
+        return api
+
+    def repo(name, private=False):
+        url = f"{GH}/{ORG}/{name}"
+        return {"name": name, "html_url": url, "private": private, "archived": False, "fork": False}
+
+    def names(got):
+        return [r["name"] for r in got["repos"]]
+
+    err, quiet = sys.stderr, open(os.devnull, "w")
+    with tempfile.TemporaryDirectory() as d:
+        roadmap = os.path.join(d, "ROADMAP.md")
+        with open(roadmap, "w", encoding="utf-8") as f:
+            f.write("# Roadmap\n\n## Epics\n\n" + roadmap_section(data) + "\n\n### [z](x)\n")
+        ok(roadmap_repos(roadmap) == [".github", "x", "y"], "ROADMAP names, generated section only")
+        sys.stderr = quiet
+        try:
+            gh_api = fake(False)
+            ok(names(fetch(roadmap=roadmap)) == ["x", "y"], "org listing, private dropped")
+            ok(f"repos/{ORG}/x" not in calls, "the listing needs no per-repository read")
+            gh_api, calls[:] = fake(True), []
+            got = names(fetch(roadmap=roadmap))
+            ok(got == [".github", "x", "y"], "403 falls back to the ROADMAP list")
+            ok(f"repos/{ORG}/.github" in calls, "fallback reads each repository")
+            ok(names(fetch(["y"], roadmap=roadmap)) == ["y"], "--repos wins")
+            try:
+                fetch(roadmap=os.path.join(d, "none.md"))
+                ok(False, "403 with no ROADMAP list accepted")
+            except GhError:
+                ok(False, "403 with no ROADMAP list raised the API error")
+            except SystemExit as e:
+                ok("--repos" in str(e), "403 with no ROADMAP list says to pass --repos")
+        finally:
+            gh_api, sys.stderr = real, err
+            quiet.close()
+
+
 def self_test():
     def ok(cond, what):
         if not cond:
@@ -382,6 +483,8 @@ def self_test():
         ok(False, "unknown repo accepted")
     except SystemExit:
         pass
+
+    fallback_test(ok, data)
 
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "README.md")
