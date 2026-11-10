@@ -340,10 +340,18 @@ def validate(s, private=False):
     return errors
 
 
-PR_TRIGGER = re.compile(
-    r"^(?:[ \t]*pull_request[ \t]*:|on:[ \t]*\[[^\]\n]*\bpull_request\b|on:[ \t]*pull_request[ \t]*$)",
-    re.M,
+# `pull_request:` as a key, in an `on: [...]` list, or as the only trigger
+PR_TRIGGERS = (
+    re.compile(r"^[ \t]*pull_request[ \t]*:", re.M),
+    re.compile(r"^on:[ \t]*\[[^\]\n]*\bpull_request\b", re.M),
+    re.compile(r"^on:[ \t]*pull_request[ \t]*$", re.M),
 )
+
+
+def runs_on_pr(text):
+    return any(r.search(text) for r in PR_TRIGGERS)
+
+
 NAME_LINE = re.compile(r"^[ \t]+name:[ \t]*(\S.*)$", re.M)
 
 
@@ -377,7 +385,7 @@ def without_merge_group(checks, workflows):
         found = [
             t
             for p, t in workflows.items()
-            if "/workflows/" in p and PR_TRIGGER.search(t) and names_job(t, job)
+            if "/workflows/" in p and runs_on_pr(t) and names_job(t, job)
         ]
         if not found or not all(MERGE_GROUP.search(t) for t in found):
             out.append(c)
@@ -1601,6 +1609,19 @@ def self_test():
     check(
         "a name that is only an expression names no check",
         without_merge_group(["python / python"], {**reusable, **only_expr}) == [],
+    )
+    check(
+        "pull_request as a key, in a list, as the only trigger; not pull_request_target",
+        [
+            runs_on_pr(t)
+            for t in (
+                "on:\n  pull_request:\n",
+                "on: [push, pull_request]\n",
+                "on: pull_request\n",
+                "on:\n  pull_request_target:\n",
+            )
+        ]
+        == [True, True, True, False],
     )
     check(
         "a matrix job without merge_group is refused",
