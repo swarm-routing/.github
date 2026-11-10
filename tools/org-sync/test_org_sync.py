@@ -416,4 +416,16 @@ check(
 run("reseed", "CONTEXT.md", d)
 check(os.path.exists(os.path.join(d, "CONTEXT.md")), "reseed creates a missing seed")
 
+# a settings-only org-sync.toml (no kind, tools/repo-settings) manages nothing and is not an error
+d = fresh()
+os.makedirs(os.path.join(d, ".github"))
+write(os.path.join(d, ".github/org-sync.toml"), '[settings]\ndescription = "x"\n')
+for cmd in ("plan", "apply", "check"):
+    try:
+        rc, out = run(cmd, d)
+    except SystemExit as e:
+        rc = e.code
+    check(rc in (0, None), f"{cmd} on a settings-only config exits 0")
+check(sorted(os.listdir(d)) == [".git", ".github"], "a settings-only config writes nothing")
+
 print("org-sync self-test: OK")

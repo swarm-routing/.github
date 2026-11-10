@@ -24,6 +24,12 @@ Each managed item is one of:
   targets  a Makefile that is the repository's own, checked only for the
            org's standard target names (swarm-routing/.github#11)
 
+A `[settings]` table holds the repository's GitHub settings (description,
+homepage, topics, ruleset profile, required checks), which
+`tools/repo-settings/repo_settings.py` applies; org-sync ignores it. A file
+with `[settings]` and no `kind` is settings only: every command here says so
+and exits 0, and org-bot skips the repository.
+
 Output is a summary, never file contents, so an agent reads a few lines per
 run (AntHocNet ADR-0014). Only `conflicts` and `reseed` print text: the hunks
 that need a person's judgement, and the change a reseed makes. Stdlib only; Python 3.11+ (tomllib).
@@ -153,6 +159,10 @@ def load_config(repo_dir):
     if text is None:
         sys.exit(f"org-sync: no {CONFIG} in {repo_dir}; run `org_sync.py init --kind KIND`")
     cfg = tomllib.loads(text)
+    if "kind" not in cfg:
+        # a settings-only file: tools/repo-settings reads its [settings], org-sync manages nothing
+        print(f"org-sync: {CONFIG} has no kind: settings only, no templates managed")
+        sys.exit(0)
     if cfg.get("kind") not in KINDS:
         sys.exit(f"org-sync: {CONFIG}: kind must be one of {', '.join(KINDS)}")
     cfg.setdefault(
