@@ -43,20 +43,29 @@ import urllib.request
 EXEMPT_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 EXEMPT_BOTS = frozenset({"swarm-routing-bot[bot]", "dependabot[bot]"})
 EXEMPT_PERMISSIONS = frozenset({"admin", "maintain", "write"})
-SIGNOFF = re.compile(r"^Signed-off-by:\s*(.+?)\s*<([^<>\s]+)>\s*$", re.M | re.I)
+SIGNOFF = re.compile(r"^Signed-off-by:([^<\n]*)<([^<>\s]+)>[ \t]*$", re.M | re.I)
+SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 
+def ident(name: str, email: str) -> str:
+    """`Name <email>` compared without case or extra spaces."""
+    return f"{' '.join(name.split()).casefold()} <{email.strip().casefold()}>"
+
+
 def signoffs(message: str) -> list[str]:
-    """The emails of the message's Signed-off-by trailers, lowercased."""
-    return [m.group(2).lower() for m in SIGNOFF.finditer(message)]
+    """The identities of the message's Signed-off-by trailers (see ident)."""
+    return [ident(m.group(1), m.group(2)) for m in SIGNOFF.finditer(message)]
 
 
 def git_commits(base: str, head: str) -> list[dict]:
     """sha, author name, author email, parent count and message of BASE..HEAD."""
+    for sha in (base, head):
+        if not SHA.match(sha):
+            raise ValueError(f"not a full commit SHA: {sha!r}")
     fmt = "%H%x1f%an%x1f%ae%x1f%P%x1f%B%x1e"
     out = subprocess.run(
-        ["git", "log", "--reverse", f"--format={fmt}", f"{base}..{head}"],
+        ["git", "log", "--reverse", f"--format={fmt}", "--end-of-options", f"{base}..{head}"],
         capture_output=True,
         text=True,
         check=True,
@@ -131,15 +140,15 @@ def verdicts(commits, logins, pr_author, association, has_write) -> list[tuple[s
             out.append(("exempt", c, f"{login} is {association}"))
         elif login and has_write(login):
             out.append(("exempt", c, f"{login} has write access"))
-        elif c["email"].lower() in signoffs(c["message"]):
-            out.append(("ok", c, f"Signed-off-by {c['email']}"))
+        elif ident(c["name"], c["email"]) in signoffs(c["message"]):
+            out.append(("ok", c, f"Signed-off-by {c['name']} <{c['email']}>"))
         elif signoffs(c["message"]):
             out.append(
                 (
                     "FAIL",
                     c,
                     f"Signed-off-by {', '.join(signoffs(c['message']))} does not match "
-                    f"the author email {c['email']}",
+                    f"the author {c['name']} <{c['email']}>",
                 )
             )
         else:
@@ -155,6 +164,9 @@ Certificate of Origin 1.1 (https://developercertificate.org/):
   git commit --amend -s --no-edit            # only the last commit
   git rebase --signoff HEAD~{n}              # all {n} commits of this PR
   git push --force-with-lease
+
+`--signoff` signs as you (the committer): it fixes only commits you
+authored. A commit someone else authored needs that author's own sign-off.
 
 If the author email itself is wrong, set it first (git config user.email
 <you@example.org>), then `git rebase --exec 'git commit --amend --no-edit
@@ -180,7 +192,7 @@ def self_test() -> int:
         return {"sha": sha, "name": name, "email": email, "parents": parents, "message": message}
 
     commits = [
-        commit("a1", "ada@x.org", "feat: a\n\nSigned-off-by: Ada <ADA@x.org>\n"),
+        commit("a1", "ada@x.org", "feat: a\n\nSigned-off-by:  ada  <ADA@x.org>\n"),
         commit("b2", "ada@x.org", "fix: b\n"),
         commit("c3", "ada@x.org", "fix: c\n\nSigned-off-by: Bob <bob@x.org>\n"),
         commit("d4", "m@x.org", "chore: maintainer\n"),
@@ -189,6 +201,7 @@ def self_test() -> int:
         commit("g7", "ada@x.org", "Merge branch 'main'\n", parents=2),
         commit("h8", "w@x.org", "fix: a writer pushed to the fork\n"),
         commit("i9", "nologin@x.org", "fix: no GitHub user\n"),
+        commit("j0", "ada@x.org", "fix: d\n\nSigned-off-by: Bob <ada@x.org>\n"),
     ]
     logins = {
         "a1": "ada",
@@ -217,8 +230,16 @@ def self_test() -> int:
         "g7": "exempt",
         "h8": "exempt",
         "i9": "FAIL",
+        "j0": "FAIL",  # the right email under another name
     }
     fails = 0
+    for bad in ("--output=/tmp/x", "HEAD", "abc"):
+        try:
+            git_commits(bad, "0" * 40)
+            fails += 1
+            print(f"SELF-TEST FAIL (accepted {bad!r} as a SHA)")
+        except ValueError:
+            pass
     got = {c["sha"]: s for s, c, _ in verdicts(commits, logins, "ada", "NONE", has_write)}
     if got != want:
         fails += 1
@@ -287,7 +308,7 @@ def self_test() -> int:
         cwd = os.getcwd()
         os.chdir(d)
         try:
-            cs = git_commits(base, "HEAD")
+            cs = git_commits(base, git("rev-parse", "HEAD"))
         finally:
             os.chdir(cwd)
         st = [s for s, _, _ in verdicts(cs, {}, "ada", "NONE", lambda _: False)]

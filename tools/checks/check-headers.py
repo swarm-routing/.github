@@ -72,13 +72,18 @@ typeindex typeinfo unordered_map unordered_set utility valarray variant vector v
 
 def head(text: str) -> list[str]:
     """The header window: the first HEAD_LINES lines, plus every copyright line
-    met on the way (a contributor's line never pushes the SPDX line out)."""
-    out, counted = [], 0
+    after the first met on the way (a contributor's line never pushes the SPDX
+    line out; a header with one copyright line keeps the plain window)."""
+    out, counted, holders = [], 0, 0
     for line in text.split("\n"):
         if counted >= HEAD_LINES:
             break
         out.append(line)
-        if not COPYRIGHT_RE.match(line):
+        if COPYRIGHT_RE.match(line):
+            holders += 1
+            if holders == 1:
+                counted += 1
+        else:
             counted += 1
     return out
 
@@ -315,6 +320,13 @@ def self_test() -> int:
             "// SPDX-License-Identifier: GPL-2.0-or-later\n",
             True,
             "contributor with an inexact SPDX",
+        ),
+        (
+            "ns3/model/a.cc",
+            "\n" * 4
+            + "// Copyright (c) 2027 Ada Lovelace\n// SPDX-License-Identifier: GPL-2.0-only\n",
+            True,
+            "one copyright line keeps the five-line window",
         ),
     ]
     fails = 0

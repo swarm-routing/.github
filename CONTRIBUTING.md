@@ -172,10 +172,12 @@ full text is in [`DCO`](https://github.com/swarm-routing/.github/blob/main/DCO) 
 Signed-off-by: Ada Lovelace <ada@example.org>
 ```
 
-`git commit -s` adds it (the email must be the commit's author email). Missed
-one? `git commit --amend -s --no-edit` for the last commit, `git rebase
---signoff HEAD~N` for the last N, then `git push --force-with-lease` to your
-fork's branch. The `dco` check (`reusable-dco.yml`, placed in every repository
+`git commit -s` adds it (name and email must be the commit's author's; case
+and extra spaces do not matter). Missed one? `git commit --amend -s --no-edit`
+for the last commit, `git rebase --signoff HEAD~N` for the last N, then
+`git push --force-with-lease` to your fork's branch. `--signoff` signs as you,
+so it fixes only commits you authored; a commit someone else authored needs
+that author's own sign-off. The `dco` check (`reusable-dco.yml`, placed in every repository
 by org-sync as `.github/workflows/dco.yml`) lists any commit without a
 matching sign-off and prints these commands. Commits by the org's members and
 collaborators, the org App (`swarm-routing-bot[bot]`) and Dependabot are
