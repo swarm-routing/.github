@@ -10,7 +10,8 @@ name: Reusable licence check
 # `core-deps` names other repositories' dual-licensed cores a core builds on
 # (a protocol's core/ on swarm-core's), as `owner/repo@ref:subdir`: each is
 # fetched at that ref, and a core may include its files when they carry
-# `MIT OR GPL-2.0-only` themselves (check-headers.py --core-dep).
+# `MIT OR GPL-2.0-only` themselves (check-headers.py --core-dep). The fetched
+# trees and their list live under $RUNNER_TEMP, never in the checkout.
 # The checker is tools/checks/check-headers.py in swarm-routing/.github.
 on:
   workflow_call:
@@ -60,22 +61,27 @@ jobs:
         env:
           CORE_DEPS: ${{ inputs.core-deps }}
         run: |
+          # Outside the checkout, so a PR cannot plant the list or a dependency.
+          base="$RUNNER_TEMP/core-deps"
+          rm -rf "$base"; mkdir -p "$base"; : > "$base.list"
+          i=0
           for spec in $CORE_DEPS; do
             repo=${spec%%@*}; rest=${spec#*@}; ref=${rest%%:*}; sub=${rest#*:}
             if [ "$repo" = "$spec" ] || [ "$sub" = "$rest" ] || [ -z "$ref" ] || [ -z "$sub" ]; then
               echo "::error::core-deps entry '$spec' is not owner/repo@ref:subdir"; exit 1
             fi
-            dir=".core-deps/${repo#*/}"
+            i=$((i + 1)); dir="$base/$i"   # one checkout per entry, even for one repository twice
             git init -q "$dir"
             git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$ref"
             git -C "$dir" checkout -q --detach FETCH_HEAD
             [ -d "$dir/$sub" ] || { echo "::error::$repo@$ref has no $sub/"; exit 1; }
-            echo "$dir/$sub" >> .core-deps/dirs
+            echo "$dir/$sub" >> "$base.list"
           done
       - name: SPDX headers and the one-way include rule
         env:
           DUAL: ${{ inputs.dual-roots }}
           CORE: ${{ inputs.core-roots }}
+          CORE_DEPS: ${{ inputs.core-deps }}
           GPL_ONLY: ${{ inputs.gpl-only }}
           EXCLUDE: ${{ inputs.exclude }}
         run: |
@@ -83,8 +89,9 @@ jobs:
           for d in $DUAL; do args+=(--dual "$d"); done
           for c in $CORE; do args+=(--core "$c"); done
           for g in $GPL_ONLY; do args+=(--gpl-only "$g"); done
-          if [ -f .core-deps/dirs ]; then
-            while read -r dep; do args+=(--core-dep "$dep"); done < .core-deps/dirs
+          # Only the list the fetch step just wrote, and only when deps are declared.
+          if [ -n "$CORE_DEPS" ]; then
+            while read -r dep; do args+=(--core-dep "$dep"); done < "$RUNNER_TEMP/core-deps.list"
           fi
           python3 -I .org/tools/checks/check-headers.py --self-test
           python3 -I .org/tools/checks/check-headers.py "${args[@]}" --exclude "$EXCLUDE" .
