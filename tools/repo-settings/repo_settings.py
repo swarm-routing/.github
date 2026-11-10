@@ -230,6 +230,9 @@ def read_workflows(gh, repo, branch, local=None):
         if e.status in (404, 409):  # no branch, or an empty repository
             return {}
         raise
+    if tree.get("truncated"):
+        # a partial list could miss a `uses:` or a CodeQL workflow: never plan on it
+        raise ValueError(f"{repo}: the git tree is truncated, so its workflows cannot be listed")
     out = {}
     for t in tree.get("tree", []):
         if t.get("type") == "blob" and WORKFLOW_FILE.match(t["path"]):
@@ -947,6 +950,7 @@ def self_test():
         "rogue": '[settings]\nruleset = "tooling"\n',
         "lean": '[settings]\nruleset = "tooling"\nsecurity = { codeql_default_setup = false }\n',
         "empty": '[settings]\nruleset = "tooling"\n',
+        "huge": '[settings]\nruleset = "tooling"\n',
     }
     ci = "jobs:\n  a:\n    steps:\n      - uses: actions/checkout@3d3c42e # v7\n"
     workflows = {
@@ -1012,7 +1016,7 @@ def self_test():
                 "bad": dict(private=False, topics=[]),
                 "secret": dict(private=True, topics=[]),
             }
-            for r in ("bad2", "rogue", "lean", "empty"):
+            for r in ("bad2", "rogue", "lean", "empty", "huge"):
                 self.repos[r] = dict(
                     merge, private=False, topics=[], security_and_analysis=copy.deepcopy(sa_on)
                 )
@@ -1061,7 +1065,8 @@ def self_test():
                 return {"content": base64.b64encode(toml[repo].encode()).decode()}
             if rest.startswith("/git/trees/main?"):
                 files = workflows.get(repo, {})
-                return {"tree": [{"path": p, "type": "blob"} for p in files], "truncated": False}
+                tree = [{"path": p, "type": "blob"} for p in files]
+                return {"tree": tree, "truncated": repo == "huge"}
             if rest.startswith("/contents/"):
                 text = workflows[repo][rest[len("/contents/") :].split("?")[0]]
                 return {"content": base64.b64encode(text.encode()).decode()}
@@ -1367,6 +1372,13 @@ def self_test():
     check(
         "CodeQL 422 unsupported",
         rc == 0 and "empty: unsupported security codeql_default_setup (HTTP 422)" in out,
+    )
+    # a truncated tree could hide a workflow: the repository fails, nothing is written
+    gh = FakeGitHub()
+    rc, out = go("apply", ["huge"], gh)
+    check(
+        "truncated tree fails",
+        rc == 1 and "huge: FAILED: huge: the git tree is truncated" in out and writes(gh) == [],
     )
     # a name that is not a repository is refused before any API call or file read
     gh = FakeGitHub()
