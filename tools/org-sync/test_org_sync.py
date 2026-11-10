@@ -139,6 +139,19 @@ check(
     "codecov.io/gh/swarm-routing/demo/graph/badge.svg" in read(os.path.join(da, "README.md")),
     "the Codecov badge appears once a workflow uploads coverage",
 )
+dz = fresh()
+run("init", dz, "--kind", "protocol", "--dual", "core/")
+with open(os.path.join(dz, ".github/org-sync.toml"), "a") as f:
+    f.write("\n[quality]\nsonar = false\n")
+os.remove(os.path.join(dz, "sonar-project.properties"))
+run("apply", dz)
+rz = read(os.path.join(dz, "README.md"))
+check(
+    "sonarcloud.io" not in rz
+    and not os.path.exists(os.path.join(dz, "sonar-project.properties"))
+    and os.path.exists(os.path.join(dz, ".codecov.yml")),
+    "[quality] sonar = false: no SonarQube Cloud badges or properties seed, Codecov kept",
+)
 dq = fresh()
 run("init", dq, "--kind", "container", "--dual", "")
 rq = read(os.path.join(dq, "README.md"))

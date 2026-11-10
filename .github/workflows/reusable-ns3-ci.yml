@@ -317,6 +317,9 @@ jobs:
             echo "::error::sonar: true needs sonar-project.properties in the repository (org-sync seeds it)"; exit 1
           fi
           key=$(sed -n 's/^sonar\.projectKey=//p' "$src/sonar-project.properties")
+          if [ -z "$key" ]; then
+            echo "::error::sonar-project.properties has no sonar.projectKey"; exit 1
+          fi
           # Automatic Analysis and CI analysis exclude each other: the scanner
           # fails while the project is on Automatic Analysis, so skip, loudly.
           auto=$(python3 -I - "$key" <<'PY'
@@ -329,8 +332,12 @@ jobs:
               print("error:", e)
           PY
           )
-          if [ "$auto" != false ]; then
-            echo "::warning::SonarQube Cloud analysis skipped for $key: ${auto/true/Automatic Analysis is on}. Switch the project to CI-based analysis (SonarQube Cloud: Administration > Analysis Method) so CI imports coverage"
+          if [ "$auto" = true ]; then
+            echo "::warning::SonarQube Cloud analysis skipped for $key: Automatic Analysis is on. Switch the project to CI-based analysis (SonarQube Cloud: Administration > Analysis Method) so CI imports coverage"
+            echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          elif [ "$auto" != false ]; then
+            # SonarQube Cloud unreachable: a transient outage must not fail CI
+            echo "::warning::SonarQube Cloud analysis skipped for $key: could not read its analysis method ($auto)"
             echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           # The compile database of this repository's files only: contrib/<module>

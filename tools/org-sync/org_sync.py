@@ -212,8 +212,14 @@ def check_runs_badge(repo, label, job, logo):
 def badge_lines(cfg, repo_dir):
     repo, out = cfg["repo"], []
     names = []
+    sonar = cfg.get("quality", {}).get("sonar", True)
     for b in cfg["badges"]:
-        names += list(SONAR_METRICS) if b == "sonar" else [b]
+        if b == "sonar":
+            # `[quality] sonar = false`: no SonarQube Cloud project (yet), so
+            # no "project not found" badges; a single sonar-* name still renders
+            names += list(SONAR_METRICS) if sonar else []
+        else:
+            names.append(b)
     for b in names:
         if b == "ci":
             wf = cfg["ci_workflow"]
@@ -439,12 +445,14 @@ def items(cfg):
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))
     if cfg["kind"] in CXX_KINDS:
-        # SonarQube Cloud and Codecov settings for the reusable ns-3 CI's
-        # `sonar` input and reusable-codecov.yml; the repository's own once written
+        # Codecov and SonarQube Cloud settings for reusable-codecov.yml and the
+        # reusable ns-3 CI's `sonar` input; the repository's own once written.
+        # `[quality] sonar = false`: the repo has no SonarQube Cloud project.
         out.append(("seed", ".codecov.yml", "quality/codecov.yml", None))
-        out.append(
-            ("seed", "sonar-project.properties", "quality/sonar-project.properties.in", None)
-        )
+        if cfg.get("quality", {}).get("sonar", True):
+            out.append(
+                ("seed", "sonar-project.properties", "quality/sonar-project.properties.in", None)
+            )
     skip = set(cfg.get("skip", []))
     return [i for i in out if i[1] not in skip and f"{i[1]}#{i[3]}" not in skip]
 

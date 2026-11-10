@@ -166,7 +166,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | Determinism: same seed byte-identical, another seed differs (invariant 4) | `reusable-ns3-ci.yml` `determinism` | off; give it a short program with `{seed}` that prints its results (the marker lines) on stdout. Only stdout is compared: logging and sanitizer output on stderr are not results. A program that prints its seed (a `firstRun=` field, a run index) strips it with `determinism-normalize`, or the label alone would satisfy "seed 2 differs" |
 | C++ coverage (gcovr), report-only | `reusable-ns3-ci.yml` `coverage` | off |
 | SonarQube Cloud CI analysis (compile database + gcovr coverage of the repo's own modules) | `reusable-ns3-ci.yml` `sonar` + the org secret `SONAR_TOKEN`; the repo's `sonar-project.properties` (org-sync seed) | off; skipped on fork PRs and while the project is on Automatic Analysis |
-| Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed) | off; an upload failure never fails CI |
+| Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed). It uploads the `coverage` artifact, so the CI job needs `coverage` or `sonar` on and the `debug` profile | off; an upload failure, or no artifact, never fails CI |
 | Container lint and scans: hadolint, Trivy config and image reports to code scanning | `ns3-containers` `container-security.yml`, `publish-images.yml` | on there |
 | ruff check + format (org `ruff.toml`) and Python coverage, report-only | `reusable-python-ci.yml` | on in every caller |
 
@@ -177,7 +177,8 @@ SonarQube Cloud and Codecov were adopted on 2026-11-09 (#35, #24). A C++ repo
 switches its SonarQube Cloud project to CI-based analysis (Administration >
 Analysis Method) when it turns `sonar` on: Automatic Analysis cannot import
 coverage, and the two cannot run together. Their badges come from org-sync
-(`sonar`, `codecov`, `coderabbit` in `badges`); the org profile shows each
+(`sonar`, `codecov`, `coderabbit` in `badges`; `[quality] sonar = false` in
+`org-sync.toml` for a repository with no SonarQube Cloud project yet); the org profile shows each
 repository's quality gate and coverage.
 
 ## AI agents
