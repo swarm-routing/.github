@@ -260,12 +260,15 @@ jobs:
 ```
 
 Run the dry run first: it does everything but push, tag and publish, and its
-artifact holds the release it would have published. The bump commit is
-pushed to `main` with the workflow's token, so the branch's ruleset must let
-GitHub Actions through. The org's `main` rulesets (`templates/rulesets/`, #118)
-require a pull request and list no bypass actor today, so until the first
-real release settles it (ns3-tools#26), the dry run is all a repository can
-run; the publish job fails at its push, before anything is published. A repository that ships an ns-3 module adds an `image` job after
+artifact holds the release it would have published. The publish job runs in
+the `release` environment: set `release_environment = true` in the
+repository's `[settings]` (Automation, above) so the maintainer approves it. The bump commit is
+pushed to `main` with `GITHUB_TOKEN`. The org's `main` rulesets
+(`templates/rulesets/`, #118) require a pull request, and `GITHUB_TOKEN` cannot
+be a ruleset bypass actor, so today the publish job's push is refused, before
+anything is published: until the first real release settles it
+(ns3-tools#26: push only the tag and open a bump PR, or push with the org
+GitHub App's token as a bypass actor), the dry run is all a repository can run. A repository that ships an ns-3 module adds an `image` job after
 `release` that calls `reusable-ns3-image.yml` with
 `tag: ${{ needs.release.outputs.tag }}` (Images, below; the workflow's header
 has the snippet), so each release has both the module tarball and the image.

@@ -20,7 +20,8 @@ name: Reusable release
 #            bundle `<name>-<version>.sigstore.json`; the SBOM attested against
 #            the assets; then the verify commands of the release notes run
 #            here, and a release that does not verify never goes out.
-#   publish  (skipped with `dry-run: true`) pushes the bump commit and the tag
+#   publish  (skipped with `dry-run: true`; environment `release`, so where a
+#            repository protects it the maintainer approves the run) pushes the bump commit and the tag
 #            to the branch the run started from (atomically: a branch that
 #            moved since makes the push fail and nothing is published), then
 #            creates the GitHub release with every asset and the notes.
@@ -424,6 +425,10 @@ jobs:
     if: ${{ !inputs.dry-run }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # The `release` environment: where the repository enables it
+    # (`[settings] release_environment = true`, tools/repo-settings), the
+    # maintainer approves this job before anything is pushed or published.
+    environment: release
     permissions:
       contents: write   # push the bump commit and the tag, create the release
     env:
