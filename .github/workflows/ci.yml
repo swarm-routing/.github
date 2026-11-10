@@ -51,6 +51,7 @@ jobs:
           python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
           python3 -m json.tool labels.json > /dev/null
       - name: actionlint
+        timeout-minutes: 5  # the pip install of the two pinned linters (CONTRIBUTING invariant 5)
         run: |
           pip install --quiet actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1
           actionlint .github/workflows/*.yml
