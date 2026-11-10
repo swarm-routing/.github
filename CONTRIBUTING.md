@@ -108,8 +108,9 @@ automatic CodeRabbit review, so a new label is added there by hand):
 | Release | only when a roadmap gates the issue | `release:vX.Y.Z` |
 | Contributor | any number, set by a maintainer when an outside contributor can pick the issue up | `good first issue` (small, well scoped, needs no history), `help wanted` (outside help welcome) |
 
-GitHub lists open `good first issue` and `help wanted` issues on each
-repository's Contribute page; such an issue says in its body what a
+GitHub lists open `good first issue` issues on each repository's Contribute
+page (`/contribute`); `help wanted` issues are found through the label filter
+(`/issues?q=is:open+label:"help wanted"`). Either says in its body what a
 newcomer needs (files, the check that proves it, the repository's
 `AGENTS.md` build commands).
 
