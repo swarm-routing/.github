@@ -61,8 +61,8 @@ would hold every PR waiting for them), and `required_status_checks` takes
 `required_checks` (GitHub Actions checks), dropped when there are none: a
 required check that a `paths:` filter skips blocks a PR forever, so list
 only always-running jobs. `merge_queue = true` adds the `merge_queue` rule
-(MERGE_QUEUE: squash, every PR of a group green, groups of up to 5, timeouts
-sized for ns-3 CI). It needs a ruleset profile and `required_checks`, and the
+(MERGE_QUEUE: squash, every PR of a group green, groups of up to 5, a
+120-minute check timeout for ns-3 CI). It needs a ruleset profile and `required_checks`, and the
 workflows producing those checks must also run on `merge_group`, or the queue
 waits for a check that never comes. GitHub offers merge queues on public
 organization repositories (and private ones on Enterprise Cloud only), so a
@@ -119,9 +119,9 @@ MERGE_QUEUE = {
     "merge_method": "SQUASH",  # as every PR: the squash title is the commit on main
     "grouping_strategy": "ALLGREEN",  # every PR of a group must pass, not only its head
     "check_response_timeout_minutes": 120,  # a required check slower than this fails the group
-    "max_entries_to_build": 5,  # groups built at once, so the queue does not starve PR CI
-    "min_entries_to_merge": 1,  # a lone PR still merges...
-    "min_entries_to_merge_wait_minutes": 5,  # ...after waiting this long for company
+    "max_entries_to_build": 5,  # queued PRs whose checks run at once: leaves runners for PR CI
+    "min_entries_to_merge": 1,  # a lone PR merges without waiting for others
+    "min_entries_to_merge_wait_minutes": 5,  # GitHub's default; idle while the minimum is 1
     "max_entries_to_merge": 5,  # PRs merged together in one group at most
 }
 SHARED = ("features", "security", "actions", "tag_ruleset", "release_environment")
