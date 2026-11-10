@@ -1,0 +1,85 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: bot token
+description: >-
+  The org bot's token: a GitHub App installation token for the whole
+  swarm-routing org when the App secrets are set (#21), else the fallback
+  personal token. Also gives the git identity to commit with.
+# A composite action cannot read `secrets`, so the caller passes them in:
+#   - uses: ./.github/actions/bot-token
+#     id: bot
+#     with:
+#       app-id: ${{ secrets.BOT_APP_ID }}
+#       private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+#       fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+# then `${{ steps.bot.outputs.token }}`. An unset secret is an empty input, so
+# before the App exists every run takes the fallback, as it did before.
+inputs:
+  app-id:
+    description: The App's ID (or Client ID); empty when the App is not configured
+    required: false
+    default: ''
+  private-key:
+    description: The App's private key (PEM)
+    required: false
+    default: ''
+  fallback-token:
+    description: The token used when the App is not configured or its token cannot be made
+    required: false
+    default: ''
+outputs:
+  token:
+    description: The App token, else the fallback token, else empty
+    value: ${{ steps.pick.outputs.token }}
+  source:
+    description: '`app`, `fallback` or `none`'
+    value: ${{ steps.pick.outputs.source }}
+  git-name:
+    description: The App's bot login (`<slug>[bot]`) when the App token is used, else empty (the caller keeps its own identity)
+    value: ${{ steps.pick.outputs.git-name }}
+  git-email:
+    description: '`<user id>+<slug>[bot]@users.noreply.github.com` when the App token is used, else empty'
+    value: ${{ steps.pick.outputs.git-email }}
+runs:
+  using: composite
+  steps:
+    - name: App token
+      id: app
+      if: inputs.app-id != '' && inputs.private-key != ''
+      continue-on-error: true
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: swarm-routing
+    - name: Pick the token
+      id: pick
+      shell: bash
+      env:
+        CONFIGURED: ${{ inputs.app-id != '' && inputs.private-key != '' }}
+        APP_TOKEN: ${{ steps.app.outputs.token }}
+        APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        FALLBACK: ${{ inputs.fallback-token }}
+      run: |
+        if [ -n "$APP_TOKEN" ]; then
+          login="${APP_SLUG}[bot]"
+          id=$(GH_TOKEN="$APP_TOKEN" gh api "users/${APP_SLUG}%5Bbot%5D" --jq .id) || id=
+          printf 'token=%s\nsource=app\n' "$APP_TOKEN" >> "$GITHUB_OUTPUT"
+          # both or neither: without the bot's user id the caller keeps its own identity
+          if [ -n "$id" ]; then
+            printf 'git-name=%s\ngit-email=%s\n' "$login" "${id}+${login}@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+          fi
+          echo "::notice::bot token: GitHub App $login"
+          exit 0
+        fi
+        if [ "$CONFIGURED" = true ]; then
+          echo "::warning::bot token: the GitHub App token could not be made (see the step above); using the fallback token (ORG_BOT_TOKEN)"
+        else
+          echo "bot token: the GitHub App is not configured (BOT_APP_ID / BOT_APP_PRIVATE_KEY unset); using the fallback token (ORG_BOT_TOKEN)"
+        fi
+        if [ -n "$FALLBACK" ]; then
+          printf 'token=%s\nsource=fallback\n' "$FALLBACK" >> "$GITHUB_OUTPUT"
+        else
+          echo "bot token: no fallback token either"
+          echo "source=none" >> "$GITHUB_OUTPUT"
+        fi

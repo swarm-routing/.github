@@ -127,15 +127,57 @@ runs until their secret is set, and the secrets belong to the maintainer:
 
 | Workflow | What it does | Secret |
 |---|---|---|
-| `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted. The same change is never proposed twice; an older bot PR is closed as superseded. It never merges | `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write. A GitHub App token can replace it (#21) |
+| `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted. The same change is never proposed twice; an older bot PR is closed as superseded. It never merges | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
-| `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's description, homepage, topics, merge settings (squash only, PR title and body as the commit, delete the branch) and `main` ruleset equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset and only manages the one named in its profiles | `ORG_BOT_TOKEN`, which then also needs **Administration: write** on every repository; until it has it, apply reports `refused` and only the check runs |
+| `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's description, homepage, topics, merge settings (squash only, PR title and body as the commit, delete the branch) and `main` ruleset equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset and only manages the one named in its profiles | The org GitHub App (it has Administration: write), else `ORG_BOT_TOKEN`, which then also needs **Administration: write** on every repository; until it has it, apply reports `refused` and only the check runs |
 
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it; a hand edit shows up as drift the next day. A required check must run on every PR (no `paths:` filter), or the PRs it skips can never merge. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
 The bot's PRs are generated content only; merge them when CI is green. You
 still refresh the epic lists in your own PR when you change an epic: the bot
 catches what was missed, it is not the process.
+
+### The bot's GitHub App
+
+`org-bot`, `repo-settings` and `repo-metadata` get their token from
+`.github/actions/bot-token` (#21): an installation token of the org's GitHub
+App when the `BOT_APP_ID` and `BOT_APP_PRIVATE_KEY` org secrets are set, else
+`ORG_BOT_TOKEN` (`repo-metadata`: `REPO_SETTINGS_TOKEN`, then
+`ORG_BOT_TOKEN`). `ORG_BOT_TOKEN` is the maintainer's personal token, so every
+workflow using it shares his 5,000 requests an hour (it ran out on
+2026-11-10); the App has its own, larger limit and is nobody's account. PRs
+opened with either token run CI, unlike those opened with a workflow's
+`GITHUB_TOKEN`. With the App, the bot commits as `<app-slug>[bot]`
+(`<user id>+<app-slug>[bot]@users.noreply.github.com`); with the personal token
+it keeps `github-actions[bot]`. Each run logs which token it used: a notice
+`bot token: GitHub App <slug>[bot]`, or `the GitHub App is not configured …;
+using the fallback token`, or a warning when the App's token could not be made
+(the run then falls back too).
+
+Creating the App (an org owner, once):
+
+1. Organization **Settings → Developer settings → GitHub Apps → New GitHub
+   App**. Name `swarm-routing-bot` (the slug, and so the commit author, follows
+   the name); homepage `https://github.com/swarm-routing`.
+2. **Webhook**: untick *Active* (no webhook URL, no events).
+3. **Repository permissions**, Read and write: Actions, Administration,
+   Contents, Dependabot alerts, Environments, Issues, Pull requests, Secret
+   scanning alerts, Workflows. Metadata: Read-only (set automatically). No
+   organization or account permissions.
+4. **Where can this GitHub App be installed?** *Only on this account*. Create
+   the App.
+5. On the App's page: note the **App ID** (or the Client ID; either works);
+   **Private keys → Generate a private key** downloads a `.pem`.
+6. **Install App** → `swarm-routing` → **All repositories** → Install.
+7. Organization **Settings → Secrets and variables → Actions → New
+   organization secret**: `BOT_APP_ID` = the App ID, and
+   `BOT_APP_PRIVATE_KEY` = the whole `.pem` file, both with *Repository
+   access: All repositories*. Delete the `.pem` from disk.
+8. Run `org-bot` (dry run) and `repo-settings` (`plan`) from the Actions tab:
+   the *Bot token* step must log `bot token: GitHub App swarm-routing-bot[bot]`.
+9. After the App's runs have worked for a few days, delete the
+   `ORG_BOT_TOKEN` (and `REPO_SETTINGS_TOKEN`) secrets and revoke the personal
+   token. The fallback then does nothing, and can be removed in a later PR.
 
 ## Releases and DOIs
 
