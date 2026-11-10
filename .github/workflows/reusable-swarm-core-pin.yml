@@ -1,0 +1,42 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable swarm-core pin
+
+# For a protocol repository whose dual-licensed core/ builds on swarm-core's
+# core/ at a pinned commit (#174, from ARA#40's `swarm-core pin` job): fails
+# unless core/CMakeLists.txt's SWARM_CORE_REF, the Makefile and every
+# workflow's swarm-core `core-deps` name one commit (and the ns-3 build's
+# swarm-core dependency names `main` or that commit), naming the file and line
+# that disagree; and fails when swarm-core main's core/ differs from the
+# pinned commit's, saying to bump the pin (the ns-3 build follows swarm-core
+# main, swarm-core golden rule 12, so the two must be the same code).
+# The checker is tools/checks/check-swarm-core-pin.py in swarm-routing/.github.
+# Caller:
+#   jobs:
+#     swarm-core:
+#       uses: swarm-routing/.github/.github/workflows/reusable-swarm-core-pin.yml@main
+# (the check is then named `swarm-core / pin`).
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          path: .org
+          sparse-checkout: tools/checks
+          persist-credentials: false
+      - name: The pin is one commit, and swarm-core main's core/ is the pinned core/
+        run: |
+          python3 -I .org/tools/checks/check-swarm-core-pin.py --self-test
+          python3 -I .org/tools/checks/check-swarm-core-pin.py .

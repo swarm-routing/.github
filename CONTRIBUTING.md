@@ -25,7 +25,13 @@ is the long form.
    declared dependency (a protocol's `core/` on swarm-core's `core/`, the
    licence workflow's `core-deps` input). CI
    (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
-   of it. Contributions are accepted under the licence of the directory they
+   of it. Where a protocol's `core/` pins swarm-core, the `swarm-core / pin`
+   check (`reusable-swarm-core-pin.yml`, `tools/checks/check-swarm-core-pin.py`)
+   fails unless `core/CMakeLists.txt`'s `SWARM_CORE_REF`, the `Makefile` and
+   every workflow's swarm-core `core-deps` name one commit (the ns-3 build's
+   swarm-core dependency: `main` or that commit), and unless swarm-core
+   `main`'s `core/` is that commit's `core/`; it checks nothing else about
+   the pin. Contributions are accepted under the licence of the directory they
    land in. Write clean implementations against public ns-3 interfaces rather
    than copying from ns-3's `src/aodv`, `src/olsr` & co.; third-party code keeps
    its own licence and lands only with its provenance recorded.
