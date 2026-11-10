@@ -54,6 +54,7 @@ or out of budget (try later; output printed so far stands). Stdlib only.
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -165,6 +166,10 @@ def _urlopen(method, url, headers, body):
         raise HTTPStatus(e.code, (e.headers or {}).get("Retry-After")) from None
     except urllib.error.URLError as e:
         raise Failure(f"network error: {e.reason}") from None
+    except (OSError, http.client.HTTPException, UnicodeDecodeError) as e:
+        # a read timeout, a dropped connection, a cut or undecodable body: the
+        # source is unavailable, so its caller's per-source handling applies
+        raise Failure(f"network error: {type(e).__name__}") from None
 
 
 def request(url, max_age, body=None):
@@ -525,6 +530,8 @@ def confirm_doi(doi):
     doi = norm_doi(doi)
     try:
         cr = get_json(f"{CROSSREF}/{q(doi)}", RECORD_AGE)
+    except RateLimited:
+        raise  # exit 3, try later, as everywhere else
     except Failure as e:
         raise Failure(f"Crossref, the reference record, is unavailable ({e}); try later") from None
     others, notes = {}, []
@@ -645,11 +652,9 @@ def _oc_dois(rows, side):
     return out, nodoi
 
 
-def s2_batch(dois):
+def s2_batch(dois, fields=S2_FIELDS):
     """{doi: work} from one Semantic Scholar batch call (up to 500)."""
-    data = get_json(
-        f"{S2}/batch?fields={S2_FIELDS}", RECORD_AGE, {"ids": [f"DOI:{d}" for d in dois]}
-    )
+    data = get_json(f"{S2}/batch?fields={fields}", RECORD_AGE, {"ids": [f"DOI:{d}" for d in dois]})
     found = {}
     for p in data or []:
         if p:
@@ -664,6 +669,7 @@ def graph(kind, a, marks):
     doi = norm_doi(a.doi)
     side = "citing" if kind == "citations" else "cited"
     out, limited, works = [], None, None
+    s2_fields = S2_FIELDS + (",abstract" if a.abstract else "")
     try:
         rows = get_json(f"{OC}/{kind}/doi:{q(doi)}", LIST_AGE)
         pairs, nodoi = _oc_dois(rows, side)
@@ -674,7 +680,7 @@ def graph(kind, a, marks):
     if pairs is None or not pairs:
         # OpenCitations is down or has none: Semantic Scholar's own list, one call
         field = "citingPaper" if kind == "citations" else "citedPaper"
-        data = get_json(f"{S2}/DOI:{q(doi)}/{kind}?limit=1000&fields={S2_FIELDS}", LIST_AGE)
+        data = get_json(f"{S2}/DOI:{q(doi)}/{kind}?limit=1000&fields={s2_fields}", LIST_AGE)
         works = [from_s2(x[field]) for x in (data or {}).get("data") or [] if x.get(field)]
         works = [w for w in works if w.get("title")]
         src, nodoi = "Semantic Scholar", 0
@@ -687,7 +693,7 @@ def graph(kind, a, marks):
         if len(pairs) > BATCH:  # the newest first, as follow-up work is what is wanted
             pairs = sorted(pairs, key=lambda p: -(p[1] or 0))[:BATCH]
         try:
-            meta = s2_batch([d for d, _ in pairs])
+            meta = s2_batch([d for d, _ in pairs], s2_fields)
         except RateLimited as e:
             limited, meta = e, {}
             out.append(f"  Semantic Scholar unavailable ({e}): DOIs and years only")
@@ -1005,7 +1011,15 @@ def _fixtures():
         {"citing": "omid:br/4 openalex:W14", "creation": "2022"},
     ]
     batch = [
-        s2w("a11", 2024, "Swarm routing for UAV swarms", "10.1000/new.11", 12, status="GOLD"),
+        s2w(
+            "a11",
+            2024,
+            "Swarm routing for UAV swarms",
+            "10.1000/new.11",
+            12,
+            status="GOLD",
+            ab="Follow-up work on swarm routing.",
+        ),
         s2w("a12", 2009, "A hybrid ant routing", "10.1000/listed.12", 300),
         None,  # Semantic Scholar does not know 10.1000/gone.13
     ]
@@ -1090,13 +1104,13 @@ def _self_test():
             failures.append(name)
 
     fx = _fixtures()
-    calls, down = [], set()
+    calls, down = [], {}  # down: {source: the HTTP status it answers}
 
     def fake(method, url, headers, body):
         calls.append((method, url, dict(headers), body))
         src = _source(url)
         if src in down:
-            raise HTTPStatus(429 if src == "s2" else 503)
+            raise HTTPStatus(down[src])
         u = urllib.parse.unquote(url)
         if src == "crossref":
             if "query.bibliographic" in u:
@@ -1183,7 +1197,7 @@ def _self_test():
 
         # confirm DOI: Semantic Scholar rate-limited and OpenAlex down: unavailable, not fatal
         STATE["cache"] = None
-        down.update({"s2", "openalex"})
+        down.update({"s2": 429, "openalex": 503})
         out, code = go("confirm", "10.1000/seed.1")
         expect("confirm unavailable: exit 0", code == 0)
         expect(
@@ -1249,7 +1263,7 @@ def _self_test():
 
         # citing with Semantic Scholar rate-limited: the OpenCitations lines, then exit 3
         STATE["cache"] = None
-        down.add("s2")
+        down["s2"] = 429
         out, code = go("citing", "10.1000/seed.1")
         expect("citing limited: exit 3", code == 3)
         expect(
@@ -1258,7 +1272,7 @@ def _self_test():
         )
         # OpenCitations down: Semantic Scholar's own citations instead
         down.clear()
-        down.add("oc")
+        down["oc"] = 503
         fx["s2:DOI:10.1000/seed.1/citations"] = {
             "data": [{"citingPaper": fx["s2:batch:citing"][0]}]
         }
@@ -1268,6 +1282,21 @@ def _self_test():
             code == 0 and "OpenCitations unavailable" in out and "1 in Semantic Scholar" in out,
         )
         down.clear()
+        STATE["cache"] = os.path.join(tmp, "cache")
+
+        # confirm DOI: Crossref, the reference, rate-limited: exit 3 (try later), not 2
+        STATE["cache"] = None
+        down["crossref"] = 429
+        msg, code = go("confirm", "10.1000/seed.1")
+        expect("confirm: Crossref rate-limited is exit 3", code == 3 and "Crossref" in msg)
+        down.clear()
+
+        # --abstract reaches citing's batch call and its lines
+        before = len(calls)
+        out, code = go("citing", "10.1000/seed.1", "--abstract")
+        batch = [c for c in calls[before:] if "/batch" in c[1]]
+        expect("citing --abstract: asked for", batch and batch[0][1].endswith(",abstract"))
+        expect("citing --abstract: printed", "\n    Follow-up work on swarm routing." in out)
         STATE["cache"] = os.path.join(tmp, "cache")
 
         # refs: oldest first; saved mark
@@ -1395,6 +1424,29 @@ def _self_test():
         expect(
             "500: exit 2 or 3, no key", code in (2, 3) and OA_KEY not in msg and "http" not in msg
         )
+
+        # transport errors below HTTP (a read timeout, a dropped connection, a cut or
+        # undecodable body) are Failures, so each caller's per-source handling applies
+        real = urllib.request.urlopen
+        for exc in (
+            TimeoutError("timed out"),
+            http.client.RemoteDisconnected("closed"),
+            http.client.IncompleteRead(b"x"),
+        ):
+
+            def boom(*_a, _e=exc, **_k):
+                raise _e
+
+            urllib.request.urlopen = boom
+            try:
+                _urlopen("GET", CROSSREF, {}, None)
+                expect(f"transport: {type(exc).__name__} is a Failure", False)
+            except Failure as e:
+                expect(f"transport: {type(exc).__name__} named", type(exc).__name__ in str(e))
+            except Exception:
+                expect(f"transport: {type(exc).__name__} is a Failure", False)
+            finally:
+                urllib.request.urlopen = real
 
         # an unwritable cache never fails a lookup
         STATE.update(fetch=fake, cache=lib, sleep=lambda s: None)
