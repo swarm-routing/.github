@@ -203,29 +203,52 @@ read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
 ### Cutting a release
 
 Every org repository releases through `reusable-release.yml` (#20); none
-copies AntHocNet's `release.yml`. One run, dispatched by hand:
+copies AntHocNet's `release.yml`. `main` takes no direct push (the `main`
+rulesets require a pull request, and `GITHUB_TOKEN` cannot be a bypass
+actor), so the bump goes through a PR and the tag follows the merge
+(AntHocNet#789 option B, as AntHocNet#883 does for AntHocNet):
 
-1. **Bump** (on the runner only). Commitizen computes the next version from
-   the Conventional-Commit history since the last tag (`feat` → minor, `fix` →
-   patch; a breaking change → minor while 0.x), rewrites the version files,
-   writes `CHANGELOG.md`, commits and tags. A repository with no `v*` tag yet
-   gets **v0.1.0** (ROADMAP "Releases"). A run with nothing that bumps (only
-   `docs:`, `ci:`, …) fails, and nothing happens.
-2. **Build.** The caller's `build` command (default `make dist`) writes the
-   assets into `dist/`, with `RELEASE_VERSION` and `RELEASE_TAG` set. It may
-   test what it built; a failure stops the release. This job's token is
-   read-only.
-3. **Sign.** `SHA256SUMS`, a CycloneDX SBOM (`<repo>-<ver>.cdx.json`), signed
+1. **Bump** (dispatch with mode `bump`). Commitizen computes the next version
+   from the Conventional-Commit history since the last tag (`feat` → minor,
+   `fix` → patch; a breaking change → minor while 0.x), rewrites the version
+   files and writes `CHANGELOG.md`. A repository with no `v*` tag yet gets
+   **v0.1.0** (ROADMAP "Releases"). A run with nothing that bumps (only
+   `docs:`, `ci:`, …) fails, and nothing happens. The commit goes on the
+   fixed branch `bot/release`, rebuilt on `main`'s tip, as the PR
+   **`chore(release): bump version A to B`** (opened, or updated when one is
+   open). It is pushed with the org GitHub App's token
+   (`.github/actions/bot-token`: `BOT_APP_ID` / `BOT_APP_PRIVATE_KEY`, else
+   `ORG_BOT_TOKEN`, else `GITHUB_TOKEN`), so CI runs on it. With
+   `GITHUB_TOKEN` no CI starts, and the org's Actions policy
+   (`can_approve_pull_request_reviews: false`, which also covers creating
+   PRs) refuses the PR, so the App (or `ORG_BOT_TOKEN`) is needed. Nothing is tagged or published. If
+   `main` moves before the merge, dispatch `bump` again.
+2. **Merge the bump PR.** That is the release: the push to `main` runs the
+   workflow, which releases only when the commit is the merge of a PR whose
+   head is `<owner>/<repo>:bot/release` (`GET /repos/{repo}/commits/{sha}/pulls`)
+   and its version is the one the PR's title names; any other push to `main`
+   is a no-op.
+3. **Build.** The caller's `build` command (default `make dist`) writes the
+   assets of the merged commit into `dist/`, with `RELEASE_VERSION` and
+   `RELEASE_TAG` set. It may test what it built; a failure stops the release.
+   This job's token is read-only.
+4. **Sign.** `SHA256SUMS`, a CycloneDX SBOM (`<repo>-<ver>.cdx.json`), signed
    SLSA build provenance for every asset as `<repo>-<ver>.intoto.jsonl`
    (Scorecard's Signed-Releases name) and as the Sigstore bundle
    `<repo>-<ver>.sigstore.json`, and an SBOM attestation. The verify commands
    of the notes then run on the runner: a release that does not verify never
    goes out.
-4. **Publish** (not in a dry run). The bump commit and the tag are pushed
-   atomically to the branch the run started from (if it moved, neither
-   lands), and the GitHub release is created with every asset and notes
-   holding the changelog, the checksums and the verify commands. Zenodo then
-   archives it (above).
+5. **Publish.** The merged commit is tagged `v<ver>` (tags are outside the
+   branch ruleset; the `release-tags` ruleset only stops a tag being moved or
+   deleted, so `GITHUB_TOKEN` pushes it), and the GitHub release is created
+   with every asset and notes holding the version's `CHANGELOG.md` section,
+   the checksums and the verify commands. Zenodo then archives it (above). A
+   re-run resumes: a tag already on this commit is kept and the release
+   completed; a tag on another commit fails the run.
+
+Mode `dry-run` bumps on the runner only, then builds, signs and verifies, and
+stops: nothing is pushed, proposed, tagged or published, and its artifact
+holds the release it would have published.
 
 To adopt it, a repository adds a Commitizen config (in `pyproject.toml`, or
 `.cz.toml` as in `tools/release/fixture/`):
@@ -248,31 +271,42 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      dry-run: { type: boolean, default: true }
+      mode:
+        description: "dry-run: bump, build, attest and verify on the runner only; bump: open the bump PR (merging it releases)"
+        type: choice
+        options: [dry-run, bump]
+        default: dry-run
+  push:
+    branches: [main]   # the merged bump PR releases; any other push is a no-op
 permissions:
   contents: read
+# One run per commit at a time, never cancelled (a later run must not replace
+# a merged bump's pending release).
+concurrency:
+  group: release-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
   release:
-    permissions: { contents: write, id-token: write, attestations: write }
+    # Saves a runner on ordinary pushes; the workflow itself checks the PR.
+    if: ${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}
+    permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
     with:
-      dry-run: ${{ inputs.dry-run }}
+      mode: ${{ inputs.mode }}   # empty on push: release
+    secrets:
+      BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
+      BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+      ORG_BOT_TOKEN: ${{ secrets.ORG_BOT_TOKEN }}
 ```
 
-Run the dry run first: it does everything but push, tag and publish, and its
-artifact holds the release it would have published. The publish job runs in
-the `release` environment: set `release_environment = true` in the
-repository's `[settings]` (Automation, above) so the maintainer approves it. The bump commit is
-pushed to `main` with `GITHUB_TOKEN`. The org's `main` rulesets
-(`templates/rulesets/`, #118) require a pull request, and `GITHUB_TOKEN` cannot
-be a ruleset bypass actor, so today the publish job's push is refused, before
-anything is published: until the first real release settles it
-(ns3-tools#26: push only the tag and open a bump PR, or push with the org
-GitHub App's token as a bypass actor), the dry run is all a repository can run. A repository that ships an ns-3 module adds an `image` job after
-`release` that calls `reusable-ns3-image.yml` with
-`tag: ${{ needs.release.outputs.tag }}` (Images, below; the workflow's header
-has the snippet), so each release has both the module tarball and the image.
-Users verify a download with:
+Run the dry run first. The publish job runs in the `release` environment:
+set `release_environment = true` in the repository's `[settings]`
+(Automation, above) so the maintainer approves it. A repository that ships an
+ns-3 module adds an `image` job after `release` that calls
+`reusable-ns3-image.yml` with `tag: ${{ needs.release.outputs.tag }}` and
+`if: ${{ needs.release.outputs.mode == 'release' }}` (Images, below; the
+workflow's header has the snippet), so each release has both the module
+tarball and the image. Users verify a download with:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
@@ -284,7 +318,12 @@ gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https
 Inputs (a public contract, golden rule 10: they are only added, with
 backward-compatible defaults): `build` (`make dist`), `dist-dir` (`dist`),
 `working-directory` (`.`), `sbom-path` (`.`, the checkout at the release
-commit), `dry-run` (`false`). Outputs: `version`, `tag`, `artifact`.
+commit), `dry-run` (`false`; `true` is mode `dry-run`), `mode` (empty:
+`release` on a push, `bump` otherwise; or `bump`, `release`, `dry-run`).
+Secrets (optional): `BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`, `ORG_BOT_TOKEN`.
+Outputs: `mode` (`bump`, `release`, `dry-run`, or `none` for a push that is
+not a merged bump PR), `version`, `tag`, `artifact`, `pull-request` (bump
+mode).
 
 ### Images
 
