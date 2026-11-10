@@ -50,7 +50,8 @@ set to null there or in the profile: that part is not managed):
 - `actions`: the Actions policy (enabled, allowed_actions `selected`, the
   allowed patterns, default `GITHUB_TOKEN` permissions read, no PR approval,
   and the fork-PR approval policy: workflows of a fork's PR wait for a
-  maintainer's approval when its author is an outside contributor,
+  maintainer's approval when its author is neither a collaborator nor an
+  org member,
   `actions/permissions/fork-pr-contributor-approval`; public repositories
   only, a private one is a note).
   Every `uses:` in the repository's `.github/workflows` and `.github/actions`
