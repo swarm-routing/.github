@@ -10,13 +10,15 @@ name: repo-settings
 # - daily: check, and open, update or close one `[settings]` drift issue here;
 # - on demand: plan (read-only) or apply.
 #
-# It needs the ORG_BOT_TOKEN secret (as org-bot.yml) with, in addition to
-# org-bot's scopes, Administration: write on every repository (and Contents:
-# read, to read each org-sync.toml, private ones included). Until the token
-# has Administration: write, apply reports each write as `refused` (exit 2)
-# and the run ends with a warning, not a failure; the daily check still
-# reports the drift. Without the secret the workflow's own token is used,
-# which only reads this repository's settings: the check then fails clearly.
+# Token as org-bot.yml (#21): the org GitHub App's token when BOT_APP_ID and
+# BOT_APP_PRIVATE_KEY are set (the App has Administration: write), else the
+# ORG_BOT_TOKEN secret, which then needs, in addition to org-bot's scopes,
+# Administration: write on every repository (and Contents: read, to read each
+# org-sync.toml, private ones included). Until the token has Administration:
+# write, apply reports each write as `refused` (exit 2) and the run ends with
+# a warning, not a failure; the daily check still reports the drift. With
+# neither, the workflow's own token is used, which only reads this
+# repository's settings: the check then fails clearly.
 # No pull_request trigger, so the token never runs on code from a PR.
 # A private repository's values never reach the log or the issue: the tool
 # prints only which of its fields differ.
@@ -56,7 +58,6 @@ jobs:
       contents: read
       issues: write
     env:
-      ORG_BOT_TOKEN: ${{ secrets.ORG_BOT_TOKEN }}
       GH_TOKEN: ${{ github.token }}
       MODE: ${{ github.event_name == 'schedule' && 'check' || github.event_name == 'push' && 'apply' || inputs.mode }}
       REPOS: ${{ inputs.repos }}
@@ -66,17 +67,26 @@ jobs:
           persist-credentials: false
       - name: Self-test
         run: python3 -I tools/repo-settings/repo_settings.py --self-test
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Run
         id: run
+        env:
+          ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
         run: |
-          [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::ORG_BOT_TOKEN is not set: only this repository is readable"
+          [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): only this repository is readable"
           rc=0
           # shellcheck disable=SC2086  # REPOS is a space-separated list
           python3 -I tools/repo-settings/repo_settings.py "$MODE" $REPOS > "$RUNNER_TEMP/settings.txt" || rc=$?
           cat "$RUNNER_TEMP/settings.txt"
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           if [ "$MODE" = apply ] && [ "$rc" = 2 ]; then
-            echo "::warning::repo-settings: writes refused; the ORG_BOT_TOKEN needs Administration: write (#117)"
+            echo "::warning::repo-settings: writes refused; the bot token needs Administration: write (#117)"
           elif [ "$MODE" = check ] && [ "$rc" = 1 ]; then
             echo "::notice::repo-settings: drift found (see the [settings] issue)"
           elif [ "$rc" != 0 ]; then
@@ -99,7 +109,7 @@ jobs:
               grep -v ': in sync$' "$RUNNER_TEMP/settings.txt" | sed -n '1,200p'
               printf '%s\n' '```'
               echo
-              echo "Fix the declaration (the repository's \`.github/org-sync.toml\`, or \`templates/rulesets/\`) or run the \`repo-settings\` workflow with \`mode: apply\`. A \`refused\` apply means the ORG_BOT_TOKEN lacks Administration: write (#117)."
+              echo "Fix the declaration (the repository's \`.github/org-sync.toml\`, or \`templates/rulesets/\`) or run the \`repo-settings\` workflow with \`mode: apply\`. A \`refused\` apply means the bot token (the App, else ORG_BOT_TOKEN) lacks Administration: write (#117)."
             } > body.md
             if [ -n "$num" ]; then
               gh issue comment "$num" --body-file body.md

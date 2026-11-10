@@ -7,6 +7,7 @@
 | Path | What | Licence |
 |------|------|---------|
 | `.github/workflows/` | the reusable workflows and this repo's CI | `MIT OR GPL-2.0-only` |
+| `.github/actions/` | the composite actions this repo's workflows use (the bot token) | `MIT OR GPL-2.0-only` |
 | `tools/` | the licence-header checker and other org CI scripts | `MIT OR GPL-2.0-only` |
 | `templates/` | what `tools/org-sync` renders into each repo (AGENTS.md/CLAUDE.md sections, SECURITY, ADR, Makefile, README) | `MIT OR GPL-2.0-only` |
 | `.clang-format` | the org C++ style | `MIT OR GPL-2.0-only` |
