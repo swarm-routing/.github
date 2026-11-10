@@ -1,5 +1,5 @@
 {
-  "about": "A repository that can hold no ruleset (a private repository on the free plan, where the rulesets API answers 403): only the merge settings.",
+  "about": "A repository that can hold no ruleset (a private repository on the free plan, where the rulesets API answers 403): the merge settings and the shared features, security (the parts the free plan offers a private repository) and Actions policy of defaults.json, no rulesets, no release environment.",
   "repo": {
     "allow_squash_merge": true,
     "allow_merge_commit": false,
@@ -8,5 +8,7 @@
     "squash_merge_commit_title": "PR_TITLE",
     "squash_merge_commit_message": "PR_BODY"
   },
-  "ruleset": null
+  "ruleset": null,
+  "tag_ruleset": null,
+  "release_environment": null
 }
