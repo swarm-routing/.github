@@ -429,11 +429,14 @@ def check(repo, base="origin/main", pr_body=None):
                 m
                 and not m.group(1).startswith(("./", "docker://"))
                 # only the org's own reusable workflows (rule 10) and the
-                # composite actions they call may follow @main
-                and not m.group(1).startswith(
-                    (
-                        "swarm-routing/.github/.github/workflows/",
-                        "swarm-routing/.github/.github/actions/",
+                # composite actions they call may follow @main, and only @main
+                and not (
+                    m.group(2) == "main"
+                    and m.group(1).startswith(
+                        (
+                            "swarm-routing/.github/.github/workflows/",
+                            "swarm-routing/.github/.github/actions/",
+                        )
                     )
                 )
             ):
@@ -642,6 +645,20 @@ def self_test():
         },
     )
     expect("rule 8: an org composite action at @main is allowed", not r.fail)
+    r = repo(
+        {},
+        {
+            ".github/workflows/x.yml": "        uses: swarm-routing/.github/.github/actions/bot-token@feature\n"
+        },
+    )
+    expect("rule 8: an org composite action at another ref fails", has(r, "FAIL", "rule 8"))
+    r = repo(
+        {},
+        {
+            ".github/workflows/ci.yml": "      - uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@feature\n"
+        },
+    )
+    expect("rule 8: an org reusable workflow at another ref fails", has(r, "FAIL", "rule 8"))
 
     r = repo(
         {},
