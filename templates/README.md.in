@@ -5,6 +5,12 @@
 
 {description}
 
+## Contributing
+
+Contributions from forks are welcome: see
+[Outside contributions](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#outside-contributions)
+(sign off every commit with `git commit -s`).
+
 ## Licence
 
 See [LICENSING.md](LICENSING.md).
