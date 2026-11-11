@@ -736,9 +736,21 @@ def plan_unrequired(gh, res, full, branch, s):
     """The checks that ran on the default branch's head but are neither
     required nor optional (information for `check`, never drift)."""
     ref = urllib.parse.quote(branch, safe="")
+    runs, statuses = [], []
     try:
-        runs = gh.api("GET", f"repos/{full}/commits/{ref}/check-runs?per_page=100")
-        statuses = gh.api("GET", f"repos/{full}/commits/{ref}/status?per_page=100")
+        # every page of both lists (total_count), so no check is missed
+        for key, kind, into in (
+            ("check_runs", "check-runs", runs),
+            ("statuses", "status", statuses),
+        ):
+            page = 1
+            while True:
+                got = gh.api("GET", f"repos/{full}/commits/{ref}/{kind}?per_page=100&page={page}")
+                batch = got.get(key, [])
+                into += batch
+                if not batch or len(into) >= got.get("total_count", 0):
+                    break
+                page += 1
     except GhError as e:
         if e.status in (404, 409, 422):  # no branch, or an empty repository
             return
@@ -747,8 +759,8 @@ def plan_unrequired(gh, res, full, branch, s):
             "the token needs Checks and Commit statuses read"
         )
         return
-    names = {r["name"] for r in runs.get("check_runs", []) if r.get("conclusion") != "skipped"}
-    names |= {st["context"] for st in statuses.get("statuses", [])}
+    names = {r["name"] for r in runs if r.get("conclusion") != "skipped"}
+    names |= {st["context"] for st in statuses}
     required = set(s.get("required_checks", []))
     optional = s.get("optional_checks", [])
     res["unrequired"] = sorted(
@@ -1205,7 +1217,7 @@ def self_test():
                         ("Analyze (c-cpp)", "success"),
                         ("title / title", "skipped"),
                     ],
-                    ["codecov/patch", "SonarCloud"],
+                    ["codecov/patch", "SonarCloud", "codecov/project", "Late status"],
                 ),
                 "AntHocNet": ([("CI gate", "success")], []),
             }
@@ -1223,15 +1235,19 @@ def self_test():
                 if repo not in toml:
                     raise GhError(method, path, "Not Found (HTTP 404)")
                 return {"content": base64.b64encode(toml[repo].encode()).decode()}
-            m2 = re.match(r"/commits/main/(check-runs|status)\?", rest)
+            m2 = re.match(r"/commits/main/(check-runs|status)\?per_page=100&page=(\d+)$", rest)
             if m2:
                 if repo == "lean":
                     raise GhError(method, path, "Resource not accessible by integration (HTTP 403)")
                 runs, statuses = self.checks.get(repo, ([], []))
+                page, size = int(m2.group(2)), 3  # a small page, so ARA's lists span pages
                 if m2.group(1) == "status":
-                    return {"statuses": [{"context": c, "state": "success"} for c in statuses]}
-                runs = [{"name": n, "conclusion": c} for n, c in runs]
-                return {"total_count": len(runs), "check_runs": runs}
+                    got = [{"context": c, "state": "success"} for c in statuses]
+                    key = "statuses"
+                else:
+                    got = [{"name": n, "conclusion": c} for n, c in runs]
+                    key = "check_runs"
+                return {"total_count": len(got), key: got[(page - 1) * size : page * size]}
             if rest.startswith("/git/trees/main?"):
                 files = workflows.get(repo, {})
                 tree = [{"path": p, "type": "blob"} for p in files]
@@ -1404,7 +1420,8 @@ def self_test():
         "unrequired checks listed",
         "ARA: unrequired check: ci / format\n" in out
         and "ARA: unrequired check: ci / ns-latest debug\n" in out
-        and "ARA: unrequired check: SonarCloud\n" in out,
+        and "ARA: unrequired check: SonarCloud\n" in out
+        and "ARA: unrequired check: Late status\n" in out,  # on the second page
     )
     check(
         "required, optional and skipped checks not listed",
