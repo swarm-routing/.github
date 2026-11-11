@@ -98,6 +98,7 @@ def config(repo):
     return {
         "kind": cfg.get("kind", ""),
         "zenodo_concept": concept if concept.isdigit() else "",
+        "references": cfg.get("references", []),
         "arena_id": d.get("arena_id", default_id),
         "uses_image": d.get("uses_image", cfg.get("kind") in ("protocol", "c-cpp")),
     }
@@ -392,7 +393,7 @@ def check_citation(repo, cfg, readme, r):
     if cff is None:
         r.add("FAIL", "citation", "no CITATION.cff (`citation = true`, org_sync.py apply)")
     elif concept:
-        m = re.search(r'^doi:\s*"?([^"\s]+)"?\s*$', cff, re.M)
+        m = re.search(r"""^doi:\s*["']?([^"'\s]+)["']?\s*$""", cff, re.M)
         have = m.group(1) if m else None
         if have == f"10.5281/zenodo.{concept}":
             r.add("PASS", "citation", "CITATION.cff `doi:` is the concept DOI")
@@ -403,8 +404,11 @@ def check_citation(repo, cfg, readme, r):
                 f"CITATION.cff `doi:` is {have or 'missing'}, not the concept "
                 f"10.5281/zenodo.{concept} (org_sync.py reseed CITATION.cff)",
             )
-    heads = re.findall(r"^#{2,3}\s+(.+)$", readme or "", re.M)
-    if any(re.search(r"\bcit", h, re.I) for h in heads) and "CITATION.cff" in (readme or ""):
+    # the citing section, to the next heading of its level or above, links CITATION.cff
+    sections = re.split(r"^(?=#{1,3} )", readme or "", flags=re.M)
+    if any(
+        re.match(r"#{2,3} [^\n]*\bcit", sec, re.I) and "(CITATION.cff)" in sec for sec in sections
+    ):
         r.add("PASS", "citation", "README says how to cite it")
     else:
         r.add(
@@ -427,8 +431,23 @@ def check_citation(repo, cfg, readme, r):
     bad = [
         (re.search(r"^\s*title:\s*(.+)$", e, re.M) or re.search(r"(.+)", e)).group(1).strip()
         for e in refs
-        if not re.search(r"^\s*doi:\s*\S", e, re.M) and not re.search(r"no doi", e, re.I)
+        if not re.search(r"^\s*doi:\s*\S", e, re.M)
+        and not (re.search(r"^\s*url:\s*\S", e, re.M) and re.search(r"no doi", e, re.I))
     ]
+    # every [[references]] work of .github/org-sync.toml reached CITATION.cff (a seed: reseed it)
+    lack = [
+        w.get("title", "?")
+        for w in cfg["references"]
+        if isinstance(w, dict)
+        and not any((w.get("doi") or w.get("url") or "\0") in e for e in refs)
+    ]
+    if lack:
+        r.add(
+            "FAIL",
+            "citation",
+            "[[references]] missing from CITATION.cff (org_sync.py reseed CITATION.cff)",
+            lack,
+        )
     if bad:
         r.add(
             "FAIL",
@@ -1012,6 +1031,38 @@ def self_test():
     expect(
         "a reference with neither a doi nor its reason fails",
         any(x["level"] == "FAIL" and x["items"] == ['"Thesis"'] for x in r.rows),
+    )
+    configured = cited[".github/org-sync.toml"] + (
+        '[[references]]\ntitle = "Paper"\ndoi = "10.1/x"\n'
+        '[[references]]\ntitle = "Other"\ndoi = "10.1/y"\n'
+    )
+    r = cites(**{".github/org-sync.toml": configured})
+    expect(
+        "a configured reference missing from CITATION.cff fails",
+        any(x["level"] == "FAIL" and x["items"] == ["Other"] for x in r.rows),
+    )
+    r = cites(**{".github/org-sync.toml": configured.split('[[references]]\ntitle = "Other"')[0]})
+    expect("configured references all in CITATION.cff pass", not has(r, "FAIL", "missing from"))
+    r = cites(**{"CITATION.cff": cited["CITATION.cff"].replace('    url: "https://h/1"\n', "")})
+    expect("a no-DOI reference without its url fails", has(r, "FAIL", "neither a doi"))
+    r = cites(
+        **{
+            "CITATION.cff": cited["CITATION.cff"].replace(
+                '"10.5281/zenodo.42"', "'10.5281/zenodo.42'"
+            )
+        }
+    )
+    expect("a single-quoted concept doi passes", has(r, "PASS", "concept DOI"))
+    r = cites(
+        **{
+            "README.md": cited["README.md"]
+            .replace("Use [CITATION.cff](CITATION.cff).", "Ask us.")
+            .replace("## Epics", "[cite](CITATION.cff)\n\n## Epics")
+        }
+    )
+    expect(
+        "a CITATION.cff link outside the citing section fails",
+        has(r, "FAIL", "no section on citing"),
     )
     r = cites(**{"CITATION.cff": 'cff-version: 1.2.0\ndoi: "10.5281/zenodo.42"\n'})
     expect("a protocol citing no source warns", has(r, "WARN", "cites no source"))

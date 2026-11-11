@@ -475,8 +475,11 @@ listed once, as `[[references]]` in `.github/org-sync.toml` (type, title,
 authors, year, venue, `doi`, a one-line `role`; a work with no DOI gives its
 publisher's or institution's `url` and `no_doi`, the reason), and renders
 both the README list and CITATION.cff's `references:` (reseed it after a
-change). Take every field from Crossref, confirmed with
-`tools/lit-search/lit_search.py confirm <DOI>`, never from memory.
+change). Take every field of a work with a DOI from Crossref, confirmed with
+`tools/lit-search/lit_search.py confirm <DOI>`, never from memory; for a work
+with none, from its publisher's or institution's record (for a handle,
+`curl -sSL https://hdl.handle.net/<id> | grep -o '<meta name="citation_[a-z_]*" content="[^"]*"'`).
+`role` is the repository's own line on what the work is for.
 `citation_type = "dataset"` (`software` by default) gives a dataset's
 `type:` and message. `tools/docs-review/check_docs.py` checks a released
 repository (a `v*` tag or `zenodo_concept`) for all of it: the DOI badge,

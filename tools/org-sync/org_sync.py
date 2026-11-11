@@ -263,8 +263,15 @@ def check_references(refs):
             isinstance(a, str) and a.strip() for a in r["authors"]
         ):
             sys.exit(f'{where}: authors is a list of "Family, Given" strings')
+        if not isinstance(r["year"], int) or isinstance(r["year"], bool):
+            sys.exit(f"{where}: year is an integer")
+        for key in ("title", "role", "venue", "doi", "url", "no_doi", "publisher", "thesis_type"):
+            if key in r and not isinstance(r[key], str):
+                sys.exit(f"{where}: {key} is a string")
         if not r.get("doi") and not (r.get("url") and r.get("no_doi")):
             sys.exit(f"{where}: needs a doi, or a url and no_doi (why it has none)")
+        if r.get("doi") and not re.match(r"^10\.\d{4,9}/\S+$", r["doi"]):
+            sys.exit(f"{where}: doi is the identifier (10.NNNN/...), not a resolver URL")
     return refs
 
 

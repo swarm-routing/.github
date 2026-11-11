@@ -409,6 +409,12 @@ check(
 for bad in (
     'citation_type = "paper"\n',
     '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000\nrole = "r"\n',
+    '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000\nrole = "r"\n'
+    'doi = "https://doi.org/10.1/x"\n',
+    '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000.5\nrole = "r"\n'
+    'doi = "10.1/x"\n',
+    '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000\nrole = 7\n'
+    'doi = "10.1/x"\n',
 ):
     db = fresh()
     os.makedirs(os.path.join(db, ".github"))
