@@ -228,9 +228,12 @@ Org-wide (1–9), then this repo's own.
   the required checks, not an up-to-date branch. Bots push `bot/<name>` branches
   and open PRs; a release is the bump PR from `bot/release`, tagged after it
   merges (CONTRIBUTING "Cutting a release").
-- When a PR falls behind `main`, update it
+- A PR behind `main` may merge as it is: the ruleset does not require an
+  up-to-date branch. Update it first
   (`gh api -X PUT "repos/<owner>/<repo>/pulls/<n>/update-branch"`, with
-  `<owner>/<repo>` the PR's base repository and `<n>` its number) and merge PRs one at a time, each after its CI on the updated branch. A
+  `<owner>/<repo>` the PR's base repository and `<n>` its number) only when
+  `main` changed what it touches (a template, a workflow, a required check),
+  then merge after its CI on the updated branch. A
   repository with a merge queue (`merge_queue = true` in its `[settings]`)
   is not updated by hand: enable auto-merge and the queue tests each PR on
   the latest `main` and merges it (CONTRIBUTING "Merge when CI is green").
