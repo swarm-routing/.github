@@ -146,7 +146,7 @@ livelock that pins the anchors to ns-3.48, then #44 and #43), the site
 (deploys from `main`; site#28, epic site#27, and after wave C site#12, #13,
 #55, #56, #57), and `skills` and `.github` (the infrastructure track; their
 two gating items are the tag-push fix ns3-tools#105 for wave A and the
-release workflow's `increment` input for wave E).
+release workflow's `increment` input for wave E, .github#211).
 
 ### The release train
 
@@ -203,7 +203,7 @@ flowchart LR
 | B | `ns3-tools v0.2.0`, `ns3-swarm-core v0.2.0`, then `ARA v0.2.0` and `BeeAdHoc v0.2.0` (the first gated protocol releases) | ns3-tools v0.2.0: a protocol pipeline runs a paired campaign end to end (every protocol pipeline needs it); ns3-swarm-core v0.2.0: the adapter complete, additive and byte-identical, every consumer green; each protocol's own pipeline and anchor (ARA#36, BeeAdHoc#41) |
 | C | `Termite v0.2.0`; `ns3-tools v0.3.0` (marker contract v2, the `benchmarks` schema in step, benchmarks#33), then the `benchmarks` release runs and global suite (benchmarks#24, #23), then the site's leaderboard and results explorer (site#12) | Termite: its module, pipeline and anchor (Termite#37, #31; the pre-registered runs of Termite#5); ns3-tools v0.3.0: readers refuse unknown contracts, outputs byte-identical apart from new fields |
 | D | `HOPNET v0.2.0` | after Termite's; the anchor against AntHocNet through ns3-tools (HOPNET#28; HOPNET golden rule 12) passes or ships as a written infeasibility verdict |
-| E | `1.0.0`s: `ns3-swarm-core` first, then `ns3-tools`, then each protocol after its `v0.3.0` review | swarm-core: two gated protocols on it with no API change; ns3-tools: contract v2 and the CLI frozen; a protocol: its `v0.3.0` review; all of them: the release workflow's `increment` input, so a major can be released (a `.github` issue) |
+| E | `1.0.0`s: `ns3-swarm-core` first, then `ns3-tools`, then each protocol after its `v0.3.0` review | swarm-core: two gated protocols on it with no API change; ns3-tools: contract v2 and the CLI frozen; a protocol: its `v0.3.0` review; all of them: the release workflow's `increment` input, so a major can be released ([.github#211](https://github.com/swarm-routing/.github/issues/211)) |
 
 ## Epics
 
