@@ -5,7 +5,8 @@
   `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
   recommendation, one `priority:P1|P2|P3` on non-epic issues, a
   `release:vX.Y.Z` label only when a release in the repository's ladder
-  (`docs/roadmap.md`) gates the issue: that label set is the version's scope,
+  (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
+  gates the issue: that label set is the version's scope,
   and the version is released when its issues are done (CONTRIBUTING
   "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
   workflow.

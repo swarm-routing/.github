@@ -203,9 +203,13 @@ starts from the newest open `handoff` issue and closes it when done.
 - **Only the required checks gate a merge.** They are the ones in the
   repository's `[settings]` `required_checks` (live:
   `gh api repos/<owner>/<repo>/rules/branches/main`). A red or pending
-  report-only check (Codecov, SonarQube Cloud, Scorecard, `dco`) is read and
+  report-only check (Codecov, SonarQube Cloud, Scorecard) is read and
   triaged, never a reason to hold a PR whose required checks are green
   (GitHub then reports the merge state `unstable`, which is mergeable).
+  `dco` is report-only too, but a red `dco` on an outside contributor's
+  commit still holds the PR until that author signs off (Outside
+  contributions); only its failure on the maintainer's or an agent's
+  commits (#212) is ignored.
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
 
@@ -458,13 +462,16 @@ check here covers the repository.
 children). Every public repository releases, and Zenodo archives each release
 (#216). There is no automatic, scheduled or per-change release. A version's
 scope is the set of issues labelled `release:vX.Y.Z`, set when the issue is
-opened or triaged (each repository's ladder, its `docs/roadmap.md`; ROADMAP
-"Releases"). When that version's labelled issues are done, the maintainer, or
+opened or triaged (each repository's ladder, its `docs/roadmap.md`, or, for a
+repository whose ladder has not landed yet, the ROADMAP's release train;
+ROADMAP "Releases"). When that version's labelled issues are done, the maintainer, or
 an agent on the maintainer's instruction, dispatches `bump`; an agent never
 dispatches it on its own initiative. SemVer meaning: a minor for new features
 (in `benchmarks`, new runs), a patch for fixes and docs, a major for a
 breaking change (an API, wire-format, manifest or marker schema change). The
-first release of every repository is `v0.1.0`. While a repository is at 0.x,
+first release of every repository is `v0.1.0`. Commitizen bumps a patch only
+from `fix:`, `refactor:` or `perf:` commits, so docs-only changes ride along with the
+next release rather than making one of their own. While a repository is at 0.x,
 Commitizen turns a breaking change into a minor (`major_version_zero`); a
 major is a deliberate input of the release workflow (#211). After the release
 is archived, read its concept DOI from Zenodo and set `zenodo_concept`,

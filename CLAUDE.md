@@ -61,8 +61,10 @@ because the issue threads were thorough. Caveman the chat, not the record.
 - In a repository with a merge queue, merge by enabling auto-merge (squash);
   a direct merge (`PUT pulls/<n>/merge`) is refused with HTTP 405. Only the
   required checks (`gh api repos/<owner>/<repo>/rules/branches/main`) gate a
-  merge: a red or pending report-only check (`codecov/patch`, `dco`, Sonar)
-  is triaged, not waited on.
+  merge: a red or pending report-only check (`codecov/patch`, Sonar) is
+  triaged, not waited on. A red `dco` on an outside contributor's commit
+  still holds the PR until that author signs off; on the maintainer's or an
+  agent's commits it is expected (swarm-routing/.github#212).
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").
