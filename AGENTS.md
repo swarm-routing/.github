@@ -25,7 +25,7 @@ labels.json                the label taxonomy (source of truth)
 ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
 tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags)
 tools/checks/check-swarm-core-pin.py   a protocol's swarm-core pin: one commit everywhere, and swarm-core main's core/ (reusable-swarm-core-pin.yml)
-tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: a PR's own); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
+tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: only a PR's own drift fails, the base's warns); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
@@ -40,7 +40,7 @@ tools/repo-settings/repo_settings.py   each repo's description, homepage, topics
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
-                                the org-sync workflow, the marketplace keys of .claude/settings.json,
+                                the org-sync and Scorecard workflows, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
                                 codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
                                 quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
@@ -50,8 +50,8 @@ SUPPORT.md                      the org default support policy: issues for bugs,
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/actions/bot-token/      the bots' token: the org GitHub App's installation token, else ORG_BOT_TOKEN (#21; CONTRIBUTING "The bot's GitHub App")
 .github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-benchmark-cell.yml, reusable-python-ci.yml,
-                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-swarm-core-pin.yml, sync-labels.yml,
-                           epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
+                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-scorecard.yml, reusable-swarm-core-pin.yml,
+                           sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
                            benchmark-cell-selftest.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
 ```
@@ -123,9 +123,10 @@ Org-wide (1–9), then this repo's own.
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`
    of a dependency pinned by commit and declared as the `core-deps` input of
-   whichever workflow runs the licence check (`licence.yml` calling
-   `reusable-licence-check.yml`, or `ci.yml` calling `reusable-ns3-ci.yml`,
-   which forwards it), with `core-roots` naming the repo's own `core/`
+   every workflow that runs the licence check (one calling
+   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
+   forwards it; workflow file names differ per repo), each with the same pin,
+   with `core-roots` naming the repo's own `core/`
    (without it the check skips core includes; a protocol's `core/` on
    swarm-core's; CI checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
    licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its
@@ -215,10 +216,9 @@ Org-wide (1–9), then this repo's own.
   up-to-date branch and the required checks. Bots push `bot/<name>` branches
   and open PRs; a release is the bump PR from `bot/release`, tagged after it
   merges (CONTRIBUTING "Cutting a release").
-- When a PR falls behind `main`, update it from a checkout of the repo (`gh`
-  fills `{owner}` and `{repo}`; set `PR` to the PR number):
-  `PR=123; gh api -X PUT "repos/{owner}/{repo}/pulls/$PR/update-branch"`.
-  Then merge PRs one at a time, each after its CI on the updated branch. Never force-push a
+- When a PR falls behind `main`, update it
+  (`gh api -X PUT "repos/<owner>/<repo>/pulls/<n>/update-branch"`, with
+  `<owner>/<repo>` the PR's base repository and `<n>` its number) and merge PRs one at a time, each after its CI on the updated branch. Never force-push a
   branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch the release `bump` again, so the version and changelog are rebuilt
   on the new `main`.
@@ -248,7 +248,7 @@ Org-wide (1–9), then this repo's own.
 | Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
 | List an org skill in every repo's AGENTS.md (when it ships in the `swarm-routing` plugin) | `templates/agents/skills.md` (task, script, skill); a skill one repo uses stays in that repo's `.claude/skills/` |
-| Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red on its next push to `main` until it runs `org_sync.py apply` (on a PR the check judges only the managed files and sections the PR touches, `check --changed-only BASE`, #159): open those PRs with the change (the `org-repo` skill of the `swarm-routing` plugin in `swarm-routing/skills` does it; org-bot opens them on its own after the push). Seeds (SECURITY.md, Makefile, LICENSING.md, …) are the repo's once written, so a template or config change never reaches them: `org_sync.py seeds [REPO]` says which differ from today's render (information, exit 0; org-bot lists them in its PR body), `org_sync.py reseed FILE [REPO]` shows the diff and writes the fresh render of that one seed |
+| Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red on its next push to `main` until it runs `org_sync.py apply` (on a PR or a merge group only the drift the change brings in fails, an item that did not drift at the base or that it edits by hand; drift already on the base is a warning, `check --changed-only BASE`, #159): open those PRs with the change (the `org-repo` skill of the `swarm-routing` plugin in `swarm-routing/skills` does it; org-bot opens them on its own after the push). Seeds (SECURITY.md, Makefile, LICENSING.md, …) are the repo's once written, so a template or config change never reaches them: `org_sync.py seeds [REPO]` says which differ from today's render (information, exit 0; org-bot lists them in its PR body), `org_sync.py reseed FILE [REPO]` shows the diff and writes the fresh render of that one seed |
 | Bring a repo onto the templates | `python3 tools/org-sync/org_sync.py init <dir> --kind <kind>` (new repo) or write its `.github/org-sync.toml` and run `plan` → `apply` → `conflicts` → `check` (existing repo); CI: `reusable-org-sync-check.yml` |
 | Change the org security policy | `SECURITY.md` (served to every repo without its own) and `templates/SECURITY.md.in` (a repo's own); write no claim a repo cannot back |
 | Change the C++ style | `.clang-format` (repos without their own use it in CI) |
