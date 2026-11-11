@@ -8,7 +8,8 @@ Usage:
   org_bot.py --self-test
 
 Two tasks, each a generator this repository already has, run on a fresh clone
-of each public repository:
+of each public repository (listed by `epics.py fetch`: the org listing, or
+ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
   epics     tools/epics/epics.py: the README's `## Epics` section, and in
             .github also ROADMAP.md#epics and the profile's open epics.
@@ -303,7 +304,11 @@ def run(args, gh=None, clone_url=None):
         fetch = [sys.executable, "-I", EPICS, "fetch", "--out", data]
         if args.repos and "epics" not in tasks:
             fetch += ["--repos", args.repos]
-        sh(fetch, env=gh.env)
+        # epics.py says on stderr where the repository list came from (the org
+        # listing, or ROADMAP.md#epics where that listing is forbidden, #175)
+        source = sh(fetch, env=gh.env).stderr.strip()
+        if source:
+            print(f"org-bot: {source}")
     repos = [r["name"] for r in json.load(open(data))["repos"]]  # public, not archived, not forks
     if args.repos:
         wanted = [n.strip() for n in args.repos.split(",") if n.strip()]
@@ -663,16 +668,17 @@ def self_test():
         if len(cmd) > 3 and cmd[2] == EPICS and cmd[3] == "fetch":
             fetches.append(cmd)
             shutil.copy(wide, cmd[cmd.index("--out") + 1])
-            return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, 0, "", "epics: repositories from X (2)")
         return real_sh(cmd, cwd=cwd, env=env, check=check)
 
     globals()["sh"], globals()["generate"] = fake_sh, spy_generate
     try:
-        go(FakeGitHub(), repos="beta", data="")
+        _, fetched = go(FakeGitHub(), repos="beta", data="")
         go(FakeGitHub(), repos="beta", data="", task="org-sync")
     finally:
         globals()["sh"], globals()["generate"] = real_sh, real_generate
     check("epics fetch is never limited by --repos", fetches and "--repos" not in fetches[0])
+    check("the repository source is printed", "org-bot: epics: repositories from X (2)" in fetched)
     check(
         "org-sync-only fetch is limited to its repositories",
         len(fetches) == 2 and fetches[1][-2:] == ["--repos", "beta"],
