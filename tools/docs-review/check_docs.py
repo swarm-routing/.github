@@ -10,7 +10,11 @@ The standard is AntHocNet's README and docs map (#94): a title and the
 org-sync badge row; an explanation near the top; a link to the project's page
 on the site (https://swarm-routing.github.io/arena/<id>/), and to the ns-3
 image when the repo builds with it; a layout block that matches the tree;
-Epics, License and how-to-work-here sections; AGENTS.md with the org's
+Epics, License and how-to-work-here sections; for a released repository (a
+`v*` tag or `zenodo_concept`), AntHocNet's citing: the DOI badge, CITATION.cff's
+`doi:` equal to the concept, a README section on citing it, and for a protocol
+a CITATION.cff reference per source with a DOI or the reason it has none;
+AGENTS.md with the org's
 sections; CLAUDE.md importing it; CONTEXT.md past its seed; a docs/ map
 when docs/ holds more than ADRs; no broken relative link. The checks are what
 a script can decide; whether the explanation is good is the reviewer's
@@ -90,8 +94,10 @@ def config(repo):
     )
     if cfg.get("kind") == "skills":
         default_id = None
+    concept = str(cfg.get("zenodo_concept", "")).strip()
     return {
         "kind": cfg.get("kind", ""),
+        "zenodo_concept": concept if concept.isdigit() else "",
         "arena_id": d.get("arena_id", default_id),
         "uses_image": d.get("uses_image", cfg.get("kind") in ("protocol", "c-cpp")),
     }
@@ -226,6 +232,8 @@ def check(repo, online=False, fetch=None):
         if s_readme and s_agents and s_readme != s_agents:
             r.add("WARN", "README", f"status `{s_readme}` disagrees with AGENTS.md `{s_agents}`")
 
+    check_citation(repo, cfg, readme, r)
+
     # --- AI files ------------------------------------------------------------------
     if agents is None:
         r.add("FAIL", "AGENTS.md", "missing")
@@ -326,6 +334,106 @@ def check(repo, online=False, fetch=None):
         r.add("PASS", "links", "every relative link resolves")
     check_ai_facts(repo, r, online, fetch)
     return r
+
+
+# --- citation: a released repository cites and is cited like AntHocNet --------
+
+
+def release_tags(repo):
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo, "tag", "-l", "v*"], capture_output=True, text=True, check=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    return out.split()
+
+
+def cff_references(text):
+    """CITATION.cff's `references:` entries, each as its text (no YAML parser:
+    stdlib only; the org-sync seed writes one `  - type:` line per entry)."""
+    m = re.search(r"^references:\n((?:[ \t].*\n?|\n)*)", text, re.M)
+    if not m:
+        return []
+    return [e for e in re.split(r"^  - ", m.group(1), flags=re.M) if e.strip()]
+
+
+def check_citation(repo, cfg, readme, r):
+    """A released repository (a `v*` tag, or `zenodo_concept`) has the DOI badge,
+    a CITATION.cff whose `doi:` is the concept, a README section on citing it,
+    and, for a protocol, a reference per source with a DOI or the reason it has
+    none. The fixes are org-sync's: `citation = true` and `zenodo_concept`, then
+    `org_sync.py apply` and `org_sync.py reseed CITATION.cff`."""
+    concept, tags = cfg["zenodo_concept"], release_tags(repo)
+    cff = read(repo, "CITATION.cff")
+    if not concept and not cfg["kind"]:
+        # a repository org-sync does not manage (AntHocNet): its CITATION.cff names the concept
+        m = re.search(r'^doi:\s*"?10\.5281/zenodo\.(\d+)"?\s*$', cff or "", re.M)
+        concept = m.group(1) if m else ""
+    if not concept and not tags:
+        return  # nothing released: nothing to cite yet
+    if not concept:
+        r.add(
+            "WARN",
+            "citation",
+            f"released ({tags[-1]}) but no `zenodo_concept`: once Zenodo has archived it, "
+            "read the concept id (zenodo.py status) and set it",
+        )
+    else:
+        doi = f"10.5281/zenodo.{concept}"
+        if f"zenodo.org/badge/DOI/{doi}.svg" in (readme or ""):
+            r.add("PASS", "citation", "DOI badge")
+        else:
+            r.add("FAIL", "citation", "no DOI badge for the concept (org_sync.py apply)", [doi])
+    if cff is None:
+        r.add("FAIL", "citation", "no CITATION.cff (`citation = true`, org_sync.py apply)")
+    elif concept:
+        m = re.search(r'^doi:\s*"?([^"\s]+)"?\s*$', cff, re.M)
+        have = m.group(1) if m else None
+        if have == f"10.5281/zenodo.{concept}":
+            r.add("PASS", "citation", "CITATION.cff `doi:` is the concept DOI")
+        else:
+            r.add(
+                "FAIL",
+                "citation",
+                f"CITATION.cff `doi:` is {have or 'missing'}, not the concept "
+                f"10.5281/zenodo.{concept} (org_sync.py reseed CITATION.cff)",
+            )
+    heads = re.findall(r"^#{2,3}\s+(.+)$", readme or "", re.M)
+    if any(re.search(r"\bcit", h, re.I) for h in heads) and "CITATION.cff" in (readme or ""):
+        r.add("PASS", "citation", "README says how to cite it")
+    else:
+        r.add(
+            "FAIL",
+            "citation",
+            "README has no section on citing it that links CITATION.cff "
+            "(`citation = true`, org_sync.py apply: Releases & citing)",
+        )
+    if cfg["kind"] != "protocol" or cff is None:
+        return
+    refs = cff_references(cff)
+    if not refs:
+        r.add(
+            "WARN",
+            "citation",
+            "CITATION.cff cites no source this implements "
+            "([[references]] in .github/org-sync.toml, then org_sync.py reseed CITATION.cff)",
+        )
+        return
+    bad = [
+        (re.search(r"^\s*title:\s*(.+)$", e, re.M) or re.search(r"(.+)", e)).group(1).strip()
+        for e in refs
+        if not re.search(r"^\s*doi:\s*\S", e, re.M) and not re.search(r"no doi", e, re.I)
+    ]
+    if bad:
+        r.add(
+            "FAIL",
+            "citation",
+            "references with neither a doi: nor the reason they have none (no_doi)",
+            bad,
+        )
+    else:
+        r.add("PASS", "citation", f"{len(refs)} reference(s), each with a DOI or the reason")
 
 
 # --- AI files: their facts against the repository (#142) ------------------------
@@ -858,6 +966,85 @@ def self_test():
     expect("status punctuation does not count as a disagreement", not has(r, "WARN", "disagrees"))
     r = repo({"docs/adr/0000-template.md": "Name it [NNNN-title.md](NNNN-title.md)\n"})
     expect("the ADR template's placeholder link is ignored", not has(r, "FAIL", "relative links"))
+
+    # --- citation: a released repository (zenodo_concept or a v* tag) ---
+    expect(
+        "an unreleased repo has no citation rows", not any(x["area"] == "citation" for x in ok.rows)
+    )
+    badge = "[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.42.svg)](https://doi.org/10.5281/zenodo.42)\n"
+    cited = {
+        ".github/org-sync.toml": 'kind = "protocol"\ntitle = "ARA"\nzenodo_concept = "42"\n',
+        "README.md": readme_ok.replace(
+            "<!-- org-sync:end badges -->", badge + "<!-- org-sync:end badges -->"
+        )
+        + "\n## Releases & citing\n\nUse [CITATION.cff](CITATION.cff).\n",
+        "CITATION.cff": 'cff-version: 1.2.0\ndoi: "10.5281/zenodo.42"\nreferences:\n'
+        '  - type: article\n    title: "Paper"\n    doi: "10.1/x"\n'
+        '  - type: thesis\n    title: "Thesis"\n    url: "https://h/1"\n'
+        '    notes: "The source. No DOI: a thesis."\n',
+    }
+
+    def cites(**changes):
+        return repo({**cited, **changes})
+
+    r = cites()
+    expect(
+        "a released repo citing like AntHocNet passes",
+        not any(x["area"] == "citation" and x["level"] != "PASS" for x in r.rows)
+        and has(r, "PASS", "DOI badge")
+        and has(r, "PASS", "concept DOI")
+        and has(r, "PASS", "how to cite")
+        and has(r, "PASS", "2 reference(s)"),
+    )
+    r = cites(**{"README.md": cited["README.md"].replace(badge, "")})
+    expect("a released repo without the DOI badge fails", has(r, "FAIL", "no DOI badge"))
+    r = cites(**{"CITATION.cff": cited["CITATION.cff"].replace("zenodo.42", "zenodo.41")})
+    expect("a CITATION.cff doi that is not the concept fails", has(r, "FAIL", "not the concept"))
+    r = repo({**cited}, drop=("CITATION.cff",))
+    expect("a released repo without CITATION.cff fails", has(r, "FAIL", "no CITATION.cff"))
+    r = cites(**{"README.md": cited["README.md"].replace("## Releases & citing", "## Releases")})
+    expect("a README with no citing section fails", has(r, "FAIL", "no section on citing"))
+    r = cites(**{"CITATION.cff": cited["CITATION.cff"].replace("No DOI: a thesis.", "")})
+    expect(
+        "a reference with neither a doi nor its reason fails",
+        any(x["level"] == "FAIL" and x["items"] == ['"Thesis"'] for x in r.rows),
+    )
+    r = cites(**{"CITATION.cff": 'cff-version: 1.2.0\ndoi: "10.5281/zenodo.42"\n'})
+    expect("a protocol citing no source warns", has(r, "WARN", "cites no source"))
+    r = cites(
+        **{
+            ".github/org-sync.toml": cited[".github/org-sync.toml"].replace("protocol", "data"),
+            "CITATION.cff": 'cff-version: 1.2.0\ndoi: "10.5281/zenodo.42"\n',
+        }
+    )
+    expect("a non-protocol repo needs no references", not has(r, "WARN", "cites no source"))
+    d = tempfile.mkdtemp()
+    for p, t in {**base, ".github/org-sync.toml": 'kind = "data"\ntitle = "ARA"\n'}.items():
+        os.makedirs(os.path.dirname(os.path.join(d, p)) or d, exist_ok=True)
+        with open(os.path.join(d, p), "w") as f:
+            f.write(t)
+    git = [
+        "git",
+        "-C",
+        d,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "commit.gpgsign=false",
+    ]
+    subprocess.run(["git", "init", "-q", d], check=True)
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "x"], check=True)
+    subprocess.run([*git, "tag", "v0.1.0"], check=True)
+    r = check(d)
+    expect(
+        "a tagged repo without zenodo_concept warns, and needs CITATION.cff and a citing section",
+        has(r, "WARN", "no `zenodo_concept`")
+        and has(r, "FAIL", "no CITATION.cff")
+        and has(r, "FAIL", "no section on citing"),
+    )
 
     # --- AI files: facts (#142) ---
     def ai(extra, **kw):

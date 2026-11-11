@@ -130,6 +130,8 @@ ADOPT = {
 # Sections with nothing to adopt: inserted after the first match of the regex.
 INSERT_AFTER = {
     ("README.md", "badges"): r"^# .*\n",
+    # Releases & citing: before the first of Contributing, Epics or Licence
+    ("README.md", "citing"): r"\n(?=\n?## (?:Contributing|Epics|Licen[cs]e)\b)",
     # new in every AGENTS.md: placed before the repository's own table
     # (with or without a blank line before the heading)
     ("AGENTS.md", "skills"): r"\n(?=\n?## Where to look\n)",
@@ -209,7 +211,201 @@ def load_config(repo_dir, slug=None):
     cfg.setdefault("dual", [])
     cfg.setdefault("badges", BASE_BADGES + KIND_BADGES[cfg["kind"]])
     cfg.setdefault("manage", [])
+    if cfg.setdefault("citation_type", "software") not in CITATION_TYPES:
+        sys.exit(f"org-sync: {CONFIG}: citation_type must be one of {', '.join(CITATION_TYPES)}")
+    cfg["references"] = check_references(cfg.get("references", []))
     return cfg
+
+
+# --- citation ------------------------------------------------------------------
+# `citation_type` (#218) sets CITATION.cff's `type:` and message. `[[references]]`
+# lists the work a repository implements or builds on, once, for both the README's
+# "Releases & citing" section and CITATION.cff's `references:` (as AntHocNet's):
+#
+#   [[references]]
+#   type = "conference-paper"    # article, conference-paper, book, thesis, report, software
+#   title = "..."                # as Crossref has it (lit_search.py confirm DOI)
+#   authors = ["Family, Given"]  # in order
+#   year = 2002
+#   venue = "..."                # journal, proceedings or book; the institution of a thesis or report
+#   pages = "79-85"              # optional, as are volume, issue, publisher, thesis_type
+#   doi = "10.1109/..."          # or, for a work with none: url and no_doi (the reason)
+#   role = "The algorithm this repository implements."
+CITATION_TYPES = {
+    "software": "If you use this software, please cite it using the metadata below.",
+    "dataset": "If you use these data, please cite them using the metadata below.",
+}
+REF_VENUE = {
+    "article": "journal",
+    "conference-paper": "collection-title",
+    "book": "collection-title",
+    "thesis": "institution",
+    "report": "institution",
+    "software": None,
+}
+
+
+def check_references(refs):
+    """`[[references]]` entries, checked: each has a type, a title, authors, a
+    year and a role, and a DOI or else a URL and the reason it has no DOI."""
+    if not isinstance(refs, list):
+        sys.exit(f"org-sync: {CONFIG}: references must be an array of tables ([[references]])")
+    for i, r in enumerate(refs, 1):
+        where = f"org-sync: {CONFIG}: references #{i}"
+        if not isinstance(r, dict):
+            sys.exit(f"{where}: not a table")
+        if r.get("type") not in REF_VENUE:
+            sys.exit(f"{where}: type must be one of {', '.join(REF_VENUE)}")
+        for key in ("title", "authors", "year", "role"):
+            if not r.get(key):
+                sys.exit(f"{where}: needs {key}")
+        if not isinstance(r["authors"], list) or not all(
+            isinstance(a, str) and a.strip() for a in r["authors"]
+        ):
+            sys.exit(f'{where}: authors is a list of "Family, Given" strings')
+        if not r.get("doi") and not (r.get("url") and r.get("no_doi")):
+            sys.exit(f"{where}: needs a doi, or a url and no_doi (why it has none)")
+    return refs
+
+
+def yq(s):
+    """A double-quoted YAML scalar."""
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def split_author(a):
+    family, _, given = a.partition(",")
+    return family.strip(), given.strip()
+
+
+def short_authors(authors):
+    """`G. Di Caro, F. Ducatelle, L. M. Gambardella`; more than four: the first, et al."""
+
+    def one(a):
+        family, given = split_author(a)
+        initials = " ".join(p[0] + "." for p in re.split(r"[\s.]+", given) if p)
+        return f"{initials} {family}".strip()
+
+    names = [one(a) for a in authors]
+    return names[0] + " et al." if len(names) > 4 else ", ".join(names)
+
+
+def cff_references(refs):
+    """The `references:` block of CITATION.cff, '' without references."""
+    if not refs:
+        return ""
+    out = ["references:"]
+    for r in refs:
+        out.append(f"  - type: {r['type']}")
+        out.append(f"    title: {yq(r['title'])}")
+        out.append("    authors:")
+        for a in r["authors"]:
+            family, given = split_author(a)
+            out.append(f"      - family-names: {yq(family)}")
+            if given:
+                out.append(f"        given-names: {yq(given)}")
+        venue = REF_VENUE[r["type"]]
+        if r.get("venue") and venue == "institution":
+            out.append(f"    institution:\n      name: {yq(r['venue'])}")
+        elif r.get("venue") and venue:
+            out.append(f"    {venue}: {yq(r['venue'])}")
+            if venue == "collection-title" and r["type"] == "conference-paper":
+                out.append("    collection-type: proceedings")
+        if r.get("thesis_type"):
+            out.append(f"    thesis-type: {yq(r['thesis_type'])}")
+        for key in ("volume", "issue"):
+            if r.get(key):
+                out.append(f"    {key}: {yq(r[key])}")
+        if r.get("pages"):
+            start, _, end = str(r["pages"]).replace("\u2013", "-").partition("-")
+            out.append(f"    start: {yq(start.strip())}")
+            if end:
+                out.append(f"    end: {yq(end.strip())}")
+        out.append(f"    year: {int(r['year'])}")
+        if r.get("publisher"):
+            out.append(f"    publisher:\n      name: {yq(r['publisher'])}")
+        if r.get("doi"):
+            out.append(f"    doi: {yq(r['doi'])}")
+        if r.get("url"):
+            out.append(f"    url: {yq(r['url'])}")
+        notes = r["role"].strip() + (f" No DOI: {r['no_doi'].strip()}" if r.get("no_doi") else "")
+        out.append(f"    notes: {yq(notes)}")
+    return "\n".join(out) + "\n"
+
+
+def reference_line(r):
+    """One README bullet, as AntHocNet's: authors, *title*, venue, pages, year, link: role."""
+    parts = [short_authors(r["authors"]), f"*{r['title']}*"]
+    if r.get("venue"):
+        venue = r["venue"]
+        if r.get("volume"):
+            venue += f" {r['volume']}" + (f"({r['issue']})" if r.get("issue") else "")
+        parts.append(venue)
+    if r.get("pages"):
+        parts.append("pp. " + str(r["pages"]).replace("-", "\u2013"))
+    parts.append(str(r["year"]))
+    if r.get("doi"):
+        parts.append(f"[doi:{r['doi']}](https://doi.org/{r['doi']})")
+    else:
+        parts.append(f"<{r['url']}> (no DOI: {r['no_doi'].strip()})")
+    return f"- {', '.join(parts)}. {r['role'].strip()}"
+
+
+def citing_section(cfg, repo_dir):
+    """README "Releases & citing", as AntHocNet's: how releases ship, the
+    concept DOI (each version DOI is on its Zenodo record, never typed here),
+    the work it builds on, the fidelity sheet. Rendered for `citation = true`."""
+    repo, concept = cfg["repo"], zenodo_concept(cfg)
+    out = ["## Releases & citing", ""]
+    changelog = os.path.exists(os.path.join(repo_dir, "CHANGELOG.md"))
+    if calls_workflow(repo_dir, "reusable-release.yml"):
+        out += [
+            "Versions follow [SemVer](https://semver.org)"
+            + (" ([CHANGELOG.md](CHANGELOG.md))" if changelog else "")
+            + f"; each release is listed under [Releases](https://github.com/{repo}/releases),",
+            "built by the org's release workflow, and archived on [Zenodo](https://zenodo.org)",
+            "with its own DOI.",
+            "",
+        ]
+    what = "these data" if cfg["citation_type"] == "dataset" else "this repository"
+    if concept:
+        doi = f"10.5281/zenodo.{concept}"
+        out += [
+            f"To cite {what}, use the \u201cCite this repository\u201d button (from",
+            "[CITATION.cff](CITATION.cff)):",
+            "",
+            "| DOI | resolves to |",
+            "|---|---|",
+            f"| [`{doi}`](https://doi.org/{doi}) | **concept DOI**: always the latest release. "
+            "This is the badge above, and the right citation when you mean this project. |",
+            "",
+            "Each release also has its own **version DOI**, listed on",
+            f"[its Zenodo record](https://doi.org/{doi}): cite that one when you reproduce a",
+            "number measured at that release.",
+        ]
+    else:
+        out += [
+            f"To cite {what}, use the \u201cCite this repository\u201d button (from",
+            "[CITATION.cff](CITATION.cff)). It has no DOI yet: the concept DOI appears here",
+            "and in the badge above once Zenodo archives its first release.",
+        ]
+    refs = cfg["references"]
+    if refs:
+        out += ["", "Please also cite the work it builds on:", ""]
+        out += [reference_line(r) for r in refs]
+    if os.path.exists(os.path.join(repo_dir, "docs/fidelity.md")):
+        out += [
+            "",
+            "What this implementation reproduces from its sources, and every deliberate",
+            "deviation, is in [docs/fidelity.md](docs/fidelity.md).",
+        ]
+    out += [
+        "",
+        "Using it in your work? Contributions are welcome, and citing the DOI helps just as much."
+        if concept
+        else "Using it in your work? Contributions are welcome, and citing it helps just as much.",
+    ]
+    return "\n".join(out) + "\n"
 
 
 def licence_text(cfg):
@@ -437,7 +633,8 @@ def render_citation(cfg, repo_dir):
     description (`[settings] description`, else the README's `description`),
     the whole work's licence (a CFF list means a choice, so a partly dual repo
     is GPL-2.0-only and LICENSING.md keeps the per-directory MIT),
-    the version Commitizen holds, the concept DOI only when `zenodo_concept`."""
+    the version Commitizen holds, the concept DOI only when `zenodo_concept`,
+    `citation_type`'s type and message, and `[[references]]`."""
     settings = cfg.get("settings") if isinstance(cfg.get("settings"), dict) else {}
     abstract = re.sub(r"\s+", " ", settings.get("description") or cfg["description"]).strip()
     cz = read(os.path.join(repo_dir, ".cz.toml"))
@@ -479,12 +676,16 @@ def render_citation(cfg, repo_dir):
         "VERSION": version.replace('"', ""),
         "LICENSE": lic,
         "REPO": cfg["repo"],
+        "TYPE": cfg["citation_type"],
+        "MESSAGE": CITATION_TYPES[cfg["citation_type"]],
     }
     # one pass over the template, so a value that contains @NAME@ stays as
     # written; @DOI@ fills its whole line, or drops it
+    refs = cff_references(cfg["references"])
+    whole = {"@DOI@\n": doi, "@REFERENCES@\n": refs}
     return re.sub(
-        r"@DOI@\n|@([A-Z]+)@",
-        lambda m: doi if m.group(1) is None else fields.get(m.group(1), m.group(0)),
+        r"@DOI@\n|@REFERENCES@\n|@([A-Z]+)@",
+        lambda m: whole[m.group(0)] if m.group(1) is None else fields.get(m.group(1), m.group(0)),
         template("CITATION.cff.in"),
     )
 
@@ -595,6 +796,7 @@ def items(cfg):
     if cfg.get("citation"):
         # opt-in: citation metadata for a repository that releases (Zenodo, cite badge)
         out.append(("seed", "CITATION.cff", "CITATION.cff.in", None))
+        out.append(("section", "README.md", None, "citing"))
     skip = set(cfg.get("skip", []))
     return [i for i in out if i[1] not in skip and f"{i[1]}#{i[3]}" not in skip]
 
@@ -632,7 +834,12 @@ def wrap(name, body, path=""):
 def render(cfg, repo_dir, item, v=None):
     """What the template and the config produce for this item today."""
     kind, path, src, name = item
-    want = badge_lines(cfg, repo_dir) if name == "badges" else (template(src) or "" if src else "")
+    if name == "badges":
+        want = badge_lines(cfg, repo_dir)
+    elif name == "citing":
+        want = citing_section(cfg, repo_dir)
+    else:
+        want = template(src) or "" if src else ""
     if kind == "seed":
         if path == "Makefile":
             want = render_makefile(cfg)

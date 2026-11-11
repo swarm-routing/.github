@@ -465,6 +465,24 @@ the first release is archived: read its id from Zenodo, set `zenodo_concept`,
 then `org_sync.py reseed CITATION.cff` (or add `doi:` by hand) so the daily
 check here covers the repository.
 
+A repository is cited as AntHocNet is. `citation = true` also manages the
+README's **Releases & citing** section (`<!-- org-sync:begin citing -->`):
+how releases ship, the concept DOI (or, before the first archived release,
+that there is none yet), a pointer to each release's version DOI on its
+Zenodo record (never a hand-kept row per version), the work the repository
+implements or builds on, and `docs/fidelity.md` when it exists. That work is
+listed once, as `[[references]]` in `.github/org-sync.toml` (type, title,
+authors, year, venue, `doi`, a one-line `role`; a work with no DOI gives its
+publisher's or institution's `url` and `no_doi`, the reason), and renders
+both the README list and CITATION.cff's `references:` (reseed it after a
+change). Take every field from Crossref, confirmed with
+`tools/lit-search/lit_search.py confirm <DOI>`, never from memory.
+`citation_type = "dataset"` (`software` by default) gives a dataset's
+`type:` and message. `tools/docs-review/check_docs.py` checks a released
+repository (a `v*` tag or `zenodo_concept`) for all of it: the DOI badge,
+CITATION.cff's `doi:` equal to the concept, the citing section, and for a
+protocol a reference per source with a DOI or the reason it has none.
+
 ### Cutting a release
 
 **When to release** (maintainer decision 2026-11-11, on #216 and its
