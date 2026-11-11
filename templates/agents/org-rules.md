@@ -15,9 +15,10 @@
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`
    of a dependency pinned by commit and declared as the `core-deps` input of
-   whichever workflow runs the licence check (`licence.yml` calling
-   `reusable-licence-check.yml`, or `ci.yml` calling `reusable-ns3-ci.yml`,
-   which forwards it), with `core-roots` naming the repo's own `core/`
+   every workflow that runs the licence check (one calling
+   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
+   forwards it; workflow file names differ per repo), each with the same pin,
+   with `core-roots` naming the repo's own `core/`
    (without it the check skips core includes; a protocol's `core/` on
    swarm-core's; CI checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
    licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its

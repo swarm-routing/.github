@@ -172,6 +172,33 @@ check(
     and "metric=bugs" not in rq,
     "a container repo's scanner badges are live: workflow, Hadolint and Trivy jobs, Sonar gate + security",
 )
+# OpenSSF Scorecard (#23): the caller workflow on every repo, its badge only with it
+sc = os.path.join(dq, ".github/workflows/scorecard.yml")
+check(
+    "uses: swarm-routing/.github/.github/workflows/reusable-scorecard.yml@main" in read(sc)
+    and "id-token: write" in read(sc)
+    and "security-events: write" in read(sc),
+    "init writes the Scorecard caller, granting what publish_results and SARIF need",
+)
+check(
+    "api.securityscorecards.dev/projects/github.com/swarm-routing/demo/badge" in rq
+    and "scorecard.dev/viewer/?uri=github.com/swarm-routing/demo" in rq,
+    "the Scorecard badge links the repo's report on scorecard.dev",
+)
+dp = fresh()
+run("init", dp, "--kind", "data", "--dual", "")
+edit(
+    dp, ".github/org-sync.toml", "\n[docs]", 'skip = [".github/workflows/scorecard.yml"]\n\n[docs]'
+)
+os.remove(os.path.join(dp, ".github/workflows/scorecard.yml"))
+run("apply", dp)
+check(
+    not os.path.exists(os.path.join(dp, ".github/workflows/scorecard.yml"))
+    and "securityscorecards" not in read(os.path.join(dp, "README.md"))
+    and run("check", dp)[0] == 0,
+    "a repo that skips the Scorecard workflow (a private one) gets no badge and stays clean",
+)
+
 da = fresh()
 run("init", da, "--kind", "skills", "--dual", "")
 rd = read(os.path.join(da, "README.md"))
@@ -417,7 +444,8 @@ run("reseed", "CONTEXT.md", d)
 check(os.path.exists(os.path.join(d, "CONTEXT.md")), "reseed creates a missing seed")
 
 
-# check --changed-only BASE (#159): on a PR, only the PR's own drift is red.
+# check --changed-only BASE (#159): on a PR or a merge group, only the drift the
+# change brought in is red; drift a newer template left on the base is a warning.
 def commit(d, msg):
     git = ["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@example.com"]
     subprocess.run([*git, "add", "-A"], check=True)
@@ -439,9 +467,13 @@ os.makedirs(os.path.join(d, "src"))
 write(os.path.join(d, "src/x.py"), "print(1)\n")
 commit(d, "a PR that touches no managed file")
 rc, out = run("check", "--changed-only", base, d)
+WARN = "::warning title=org-sync::"
 check(
-    rc == 0 and "ignored   AGENTS.md#org-rules" in out and "ignored   LICENSE" in out,
-    "--changed-only: a PR that touches no managed file passes despite template drift",
+    rc == 0
+    and f"{WARN}AGENTS.md#org-rules: update" in out
+    and f"{WARN}LICENSE: update" in out
+    and "drift     " not in out,
+    "--changed-only: a PR that touches no managed file passes, the base's drift a warning",
 )
 edit(d, "AGENTS.md", "## Where to look", "## Where to look (the repo's own heading)")
 commit(d, "the PR edits AGENTS.md outside every managed section")
@@ -451,7 +483,7 @@ edit(d, "AGENTS.md", "CI hygiene.", "CI hygiene, edited by hand.")
 commit(d, "the PR edits a managed section by hand")
 rc, out = run("check", "--changed-only", base, d)
 check(
-    rc == 1 and "drift     AGENTS.md#org-rules" in out and "ignored   LICENSE" in out,
+    rc == 1 and "drift     AGENTS.md#org-rules" in out and f"{WARN}LICENSE" in out,
     "--changed-only: a PR that edits a managed section by hand is red (that section only)",
 )
 d2 = fresh()
@@ -490,16 +522,70 @@ check(
     rc == 1 and "drift     AGENTS.md#org-rules" in out,
     "--changed-only: a `+++ ` line inside a hunk is not taken for a file header",
 )
-# a config change is the PR's own for every item it renders
+# HOPNET#32: a PR that only edits .github/org-sync.toml (a [settings] key) on a
+# base that already drifts gets warnings, not a red check
 d5 = fresh()
 run("init", d5, "--kind", "python")
 edit(d5, "LICENSE", "GNU GENERAL PUBLIC LICENSE", "GNU GENERAL PUBLIC LICENCE")
+edit(d5, "AGENTS.md", "1. **Licensing per directory", "1. **Licensing (an older template)")
+os.remove(os.path.join(d5, ".github/CODEOWNERS"))
 base = commit(d5, "init, with drift on main")
 with open(os.path.join(d5, ".github/org-sync.toml"), "a", encoding="utf-8") as f:
-    f.write("# a comment\n")
-commit(d5, "the PR edits .github/org-sync.toml")
+    f.write('\n[settings]\nrequired_checks = ["core-test"]\n')
+commit(d5, "the PR edits .github/org-sync.toml only")
 rc, out = run("check", "--changed-only", base, d5)
-check(rc == 1 and "drift     LICENSE" in out, "--changed-only: a config change touches every item")
+check(
+    rc == 0
+    and all(
+        f"{WARN}{x}" in out
+        for x in ("LICENSE: update", "AGENTS.md#org-rules: update", ".github/CODEOWNERS: create")
+    )
+    and "drift     " not in out,
+    "--changed-only: a config-only PR on a drifting base passes with a warning per item",
+)
+check(run("check", d5)[0] == 1, "plain check on the same tree is still red (push to main)")
+# the base's drift is judged on the merge base: a merge group's base_sha is the same call
+edit(d5, "README.md", "\n## ", "\nA line of the repository's own.\n\n## ")
+commit(d5, "a second queued PR in the merge group, touching no managed section")
+rc, out = run("check", "--changed-only", base, d5)
+check(
+    rc == 0 and f"{WARN}LICENSE: update" in out and "drift     " not in out,
+    "--changed-only on a merge group (several commits past its base) warns the same way",
+)
+# a config change whose render the PR did not apply is the PR's own drift
+d6 = fresh()
+run("init", d6, "--kind", "python")
+base = commit(d6, "init, in sync")
+cfgp = os.path.join(d6, ".github/org-sync.toml")
+write(cfgp, 'badges = ["licence"]\n' + read(cfgp))
+commit(d6, "the PR changes the badge list without running apply")
+rc, out = run("check", "--changed-only", base, d6)
+check(
+    rc == 1 and "drift     README.md#badges" in out,
+    "--changed-only: a config change whose render the PR did not apply is red",
+)
+# ... and stays red when other items already drift at the base
+subprocess.run(["git", "-C", d6, "checkout", "-q", base], check=True)
+edit(d6, "LICENSE", "GNU GENERAL PUBLIC LICENSE", "GNU GENERAL PUBLIC LICENCE")
+base2 = commit(d6, "main with template drift")
+write(cfgp, 'badges = ["licence"]\n' + read(cfgp))
+commit(d6, "the PR changes the badge list without running apply")
+rc, out = run("check", "--changed-only", base2, d6)
+check(
+    rc == 1 and "drift     README.md#badges" in out and f"{WARN}LICENSE: update" in out,
+    "--changed-only: the PR's own drift is red, the base's beside it a warning",
+)
+# a PR that adds the config: nothing to compare against, every drift is its own
+d7 = fresh()
+write(os.path.join(d7, "x.txt"), "x\n")
+base = commit(d7, "before org-sync")
+run("init", d7, "--kind", "python")
+edit(d7, "LICENSE", "GNU GENERAL PUBLIC LICENSE", "GNU GENERAL PUBLIC LICENCE")
+commit(d7, "the PR adopts org-sync, with a hand edit")
+rc, out = run("check", "--changed-only", base, d7)
+check(
+    rc == 1 and "drift     LICENSE" in out, "--changed-only: a base without a config warns nothing"
+)
 
 # CODEOWNERS (#31): a per-kind org section with `#` markers, last in the file,
 # under the repository's own rules, which survive apply.
