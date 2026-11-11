@@ -413,7 +413,8 @@ def render_makefile(cfg):
 def render_citation(cfg, repo_dir):
     """CITATION.cff.in for this repository: the abstract from the GitHub
     description (`[settings] description`, else the README's `description`),
-    the licences from the dual roots (CFF takes SPDX ids, not an expression),
+    the whole work's licence (a CFF list means a choice, so a partly dual repo
+    is GPL-2.0-only and LICENSING.md keeps the per-directory MIT),
     the version Commitizen holds, the concept DOI only when `zenodo_concept`."""
     settings = cfg.get("settings") if isinstance(cfg.get("settings"), dict) else {}
     abstract = re.sub(r"\s+", " ", settings.get("description") or cfg["description"]).strip()
@@ -423,13 +424,14 @@ def render_citation(cfg, repo_dir):
     except (tomllib.TOMLDecodeError, KeyError, TypeError):
         version = "0.0.0"
     if cfg["dual"] == [""]:
+        # a list in CFF is a choice: the whole work is MIT OR GPL-2.0-only
         lic = "license:\n  - MIT\n  - GPL-2.0-only\n"
     elif cfg["dual"]:
+        # a list would offer MIT for the whole work; only the dual roots are
         roots = " ".join(dual_root(d) for d in cfg["dual"])
         lic = (
-            f"# Per directory (LICENSING.md): {roots} MIT OR GPL-2.0-only, the rest\n"
-            "# GPL-2.0-only. CFF takes a list of SPDX ids, not an expression.\n"
-            "license:\n  - GPL-2.0-only\n  - MIT\n"
+            f"# The work as a whole; {roots} also MIT OR GPL-2.0-only (LICENSING.md).\n"
+            "license: GPL-2.0-only\n"
         )
     else:
         lic = "license: GPL-2.0-only\n"

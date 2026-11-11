@@ -338,8 +338,9 @@ when its `.github/org-sync.toml` names the concept as top-level
 `zenodo_concept = "<record id>"`. `citation = true` (also top-level) seeds a
 `CITATION.cff` from `templates/CITATION.cff.in`: title, abstract (the
 `[settings]` description, else `description`), the maintainer's author entry
-as in AntHocNet's, the licences from the dual roots, the repository URL and
-the version in the repo's `.cz.toml`; add `"CITATION.cff:^version:"` to its
+as in AntHocNet's, the whole work's licence (GPL-2.0-only unless the whole
+repository is dual: a CFF list reads as a choice), the repository URL and the
+version in the repo's `.cz.toml`; add `"CITATION.cff:^version:"` to its
 `version_files` so each bump keeps it current. The concept exists only after
 the first release is archived: read its id from Zenodo, set `zenodo_concept`,
 then `org_sync.py reseed CITATION.cff` (or add `doi:` by hand) so the daily

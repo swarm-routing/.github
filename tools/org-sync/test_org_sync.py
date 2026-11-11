@@ -226,9 +226,10 @@ check(
     "version: 0.1.0\n" in cff
     and 'repository-code: "https://github.com/swarm-routing/demo"' in cff
     and 'orcid: "https://orcid.org/0009-0009-6436-8174"' in cff
-    and "  - GPL-2.0-only\n  - MIT\n" in cff
+    and "\nlicense: GPL-2.0-only\n" in cff
+    and "  - MIT" not in cff
     and "abstract: >-\n  **Status: empty.**" in cff,
-    "CITATION.cff: Commitizen's version, the repo URL, AntHocNet's author entry, per-directory licences",
+    "CITATION.cff: Commitizen's version, the repo URL, AntHocNet's author entry, GPL-2.0-only for a partly dual work",
 )
 try:
     import yaml  # optional: the CFF parses as YAML when PyYAML is there
