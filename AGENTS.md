@@ -24,7 +24,7 @@ labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style
 ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
 tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags; contributor copyright lines beneath the org line)
-tools/checks/check-dco.py       the DCO gate of reusable-dco.yml: every PR commit's Signed-off-by matches its author email (members, the org App and Dependabot exempt)
+tools/checks/check-dco.py       the DCO gate of reusable-dco.yml: every PR commit's Signed-off-by matches its author email (members, the org App, Dependabot and agent commits on a member's PR exempt, #212)
 tools/checks/check-swarm-core-pin.py   a protocol's swarm-core pin: one commit everywhere, and swarm-core main's core/ (reusable-swarm-core-pin.yml)
 DCO                             the Developer Certificate of Origin 1.1, verbatim (CONTRIBUTING "Outside contributions")
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: only a PR's own drift fails, the base's warns); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
@@ -68,7 +68,7 @@ actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
-python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsigned, mismatched, exempt (member, write access, bots, merges), a real git history
+python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsigned, mismatched, exempt (member, write access, bots, merges, agent commits on a member's PR), a real git history
 python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
