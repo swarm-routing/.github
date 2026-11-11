@@ -5,8 +5,8 @@
   the commit on `main`, so it is a lowercase Conventional Commit
   (`feat:`/`fix:`/`docs:`/`chore:`/`ci:`…, optional scope).
 - Push with `git push -u origin <branch>`; merge when CI is green.
-- **`main` takes no direct push**, in any repo: its ruleset requires a PR, an
-  up-to-date branch and the required checks. Bots push `bot/<name>` branches
+- **`main` takes no direct push**, in any repo: its ruleset requires a PR and
+  the required checks, not an up-to-date branch. Bots push `bot/<name>` branches
   and open PRs; a release is the bump PR from `bot/release`, tagged after it
   merges (CONTRIBUTING "Cutting a release").
 - When a PR falls behind `main`, update it from a checkout of the repo (`gh`
