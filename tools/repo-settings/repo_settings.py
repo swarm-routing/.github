@@ -22,6 +22,9 @@ DIR/<repo>/.github/):
                                         # data, site, merge-only (no ruleset); "" for neither
     required_checks = ["CI gate"]       # check-run names that run on every PR
     code_scanning = false               # true only where CodeQL uploads results
+    merge_queue = false                 # true: PRs merge through a merge queue (public repos only);
+                                        # a table overrides MERGE_QUEUE's values, e.g.
+                                        # { check_response_timeout_minutes = 60 }
     features = { has_wiki = true }      # overrides the profile's repository features
     security = { codeql_default_setup = false }   # false: leave that feature alone
     release_environment = true          # create the `release` environment here
@@ -59,7 +62,17 @@ with `code_scanning = true` (a repository that never uploads CodeQL results
 would hold every PR waiting for them), and `required_status_checks` takes
 `required_checks` (GitHub Actions checks), dropped when there are none: a
 required check that a `paths:` filter skips blocks a PR forever, so list
-only always-running jobs.
+only always-running jobs. `merge_queue = true` adds the `merge_queue` rule
+(MERGE_QUEUE: squash, every PR of a group green, groups of up to 5, a
+120-minute check timeout for ns-3 CI; a table overrides any of them). It
+needs a ruleset profile and `required_checks`, and the workflow producing each
+required check (a workflow that runs on `pull_request`, with a job named, or
+with the id, the check's first ` / ` segment; `${{ }}` in a name matches any
+text) must also run on `merge_group`, or the queue waits for a
+check that never comes: a repository where one does not is refused before
+anything is written, as for the Actions allowed list. GitHub offers merge
+queues on public organization repositories (and private ones on Enterprise
+Cloud only), so a private repository asking for one is refused.
 
 `plan` lists the differences between the live repository and its
 declaration, `check` does the same and exits 1 on drift (or on a setting it
@@ -107,6 +120,28 @@ REPO_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]{0,99}")  # GitHub's, never 
 TOPIC = re.compile(r"^[a-z0-9][a-z0-9-]{0,49}$")
 RULESET_KEYS = ("name", "target", "enforcement", "conditions", "bypass_actors", "rules")
 SCANNING_RULES = ("code_scanning", "code_quality")
+# the `merge_queue` rule's parameters (REST rulesets API), sized for CI that takes 10-30 minutes
+MERGE_QUEUE = {
+    "merge_method": "SQUASH",  # as every PR: the squash title is the commit on main
+    "grouping_strategy": "ALLGREEN",  # every PR of a group must pass, not only its head
+    "check_response_timeout_minutes": 120,  # a required check slower than this fails the group
+    "max_entries_to_build": 5,  # queued PRs whose checks run at once: leaves runners for PR CI
+    "min_entries_to_merge": 1,  # a lone PR merges without waiting for others
+    "min_entries_to_merge_wait_minutes": 5,  # GitHub's default; idle while the minimum is 1
+    "max_entries_to_merge": 5,  # PRs merged together in one group at most
+}
+MERGE_QUEUE_ENUMS = {
+    "merge_method": ("MERGE", "SQUASH", "REBASE"),
+    "grouping_strategy": ("ALLGREEN", "HEADGREEN"),
+}
+MERGE_QUEUE_RANGES = {  # the REST API's bounds
+    "check_response_timeout_minutes": (1, 360),
+    "max_entries_to_build": (0, 100),
+    "min_entries_to_merge": (0, 100),
+    "min_entries_to_merge_wait_minutes": (0, 360),
+    "max_entries_to_merge": (0, 100),
+}
+MERGE_GROUP = re.compile(r"^\s*merge_group\s*:|^on:\s*\[[^\]]*\bmerge_group\b", re.M)
 SHARED = ("features", "security", "actions", "tag_ruleset", "release_environment")
 FEATURES = (
     "has_issues",
@@ -259,6 +294,40 @@ def validate(s, private=False):
     ]
     if s.get("required_checks") and not s.get("ruleset"):
         errors.append("required_checks without a ruleset profile")
+    mq = s.get("merge_queue", False)
+    if type(mq) is not bool and not isinstance(mq, dict):
+        errors.append("merge_queue is not true, false or a table")
+    elif isinstance(mq, dict):
+        for k, v in mq.items():
+            if k in MERGE_QUEUE_ENUMS:
+                if v not in MERGE_QUEUE_ENUMS[k]:
+                    errors.append(
+                        f"merge_queue.{k} is not one of {', '.join(MERGE_QUEUE_ENUMS[k])}"
+                    )
+            elif k in MERGE_QUEUE_RANGES:
+                lo, hi = MERGE_QUEUE_RANGES[k]
+                if type(v) is not int or not lo <= v <= hi:
+                    errors.append(f"merge_queue.{k} is not an integer from {lo} to {hi}")
+            else:
+                errors.append(f"merge_queue.{k} is not one of {', '.join(MERGE_QUEUE)}")
+        p = {**MERGE_QUEUE, **mq}
+        if type(p["min_entries_to_merge"]) is int and type(p["max_entries_to_merge"]) is int:
+            if p["min_entries_to_merge"] > p["max_entries_to_merge"]:
+                errors.append("merge_queue.min_entries_to_merge is above max_entries_to_merge")
+    if mq is not False:
+        if not s.get("ruleset") or not s.get("required_checks"):
+            errors.append("merge_queue without a ruleset profile and required_checks")
+        else:
+            try:
+                no_main = load_profile(s["ruleset"])["ruleset"] is None
+            except ValueError:
+                no_main = False  # an unknown profile fails on its own in desired()
+            if no_main:
+                errors.append(
+                    f"merge_queue with the {s['ruleset']} profile, which has no main ruleset"
+                )
+        if private:
+            errors.append("merge_queue on a private repository (public organization repos only)")
     for table, allowed in (("features", FEATURES), ("security", SECURITY)):
         t = s.get(table, {})
         if not isinstance(t, dict):
@@ -269,6 +338,58 @@ def validate(s, private=False):
     if "release_environment" in s and type(s["release_environment"]) is not bool:
         errors.append("release_environment is not true or false")
     return errors
+
+
+# `pull_request:` as a key, in an `on: [...]` list, or as the only trigger
+PR_TRIGGERS = (
+    re.compile(r"^[ \t]*pull_request[ \t]*:", re.M),
+    re.compile(r"^on:[ \t]*\[[^\]\n]*\bpull_request\b", re.M),
+    re.compile(r"^on:[ \t]*pull_request[ \t]*$", re.M),
+)
+
+
+def runs_on_pr(text):
+    return any(r.search(text) for r in PR_TRIGGERS)
+
+
+NAME_LINE = re.compile(r"^[ \t]+name:[ \t]*(\S.*)$", re.M)
+
+
+def names_job(text, job):
+    """Whether a workflow has a job with the id `job`, or a `name:` that gives
+    `job` (an expression such as `${{ matrix.python }}` inside a name matches
+    any text; a name that is only an expression is skipped)."""
+    if re.search(rf"^\s+{re.escape(job)}:\s*(?:#.*)?$", text, re.M):
+        return True
+    for m in NAME_LINE.finditer(text):
+        name = m.group(1).split(" #")[0].strip()
+        if len(name) > 1 and name[0] == name[-1] and name[0] in "'\"":
+            name = name[1:-1]
+        parts = re.split(r"\$\{\{.*?\}\}", name)
+        if not "".join(parts).strip():
+            continue  # a name that is only an expression (an artifact's, a step's) names nothing
+        if re.fullmatch(".+".join(re.escape(x) for x in parts), job):
+            return True
+    return False
+
+
+def without_merge_group(checks, workflows):
+    """The required checks a merge group would never get: no workflow found
+    with a job named (or with the id) the check's first ` / ` segment, or one
+    found whose triggers have no merge_group. Only workflows that run on
+    pull_request can report a required check, so a reusable (workflow_call)
+    workflow whose job carries the same name is not one of them."""
+    out = []
+    for c in checks:
+        job = c.split(" / ")[0]
+        found = [
+            t
+            for p, t in workflows.items()
+            if "/workflows/" in p and runs_on_pr(t) and names_job(t, job)
+        ]
+        if not found or not all(MERGE_GROUP.search(t) for t in found):
+            out.append(c)
+    return out
 
 
 def main_ruleset(prof_rs, s):
@@ -285,6 +406,10 @@ def main_ruleset(prof_rs, s):
                 {"context": c, "integration_id": ACTIONS_APP} for c in checks
             ]
         rules.append(r)
+    mq = s.get("merge_queue")
+    if mq:
+        own = mq if isinstance(mq, dict) else {}
+        rules.append({"type": "merge_queue", "parameters": {**MERGE_QUEUE, **own}})
     rs["rules"] = rules
     return rs
 
@@ -605,8 +730,17 @@ def plan_repo(gh, repo, local=None):
         if have != v:
             res["changes"].append((k, have, v))
     workflows = None
-    if want["security"].get("codeql_default_setup") or want["actions"]:
+    if want["security"].get("codeql_default_setup") or want["actions"] or s.get("merge_queue"):
         workflows = read_workflows(gh, repo, meta.get("default_branch") or "main", local)
+    if s.get("merge_queue") and want["rulesets"]:
+        missing = without_merge_group(s.get("required_checks", []), workflows)
+        if missing:
+            res["errors"].append(
+                "merge_queue: a required check's workflow has no merge_group trigger"
+                if res["private"]
+                else f"merge_queue: no merge_group trigger on the workflow of {', '.join(missing)}"
+            )
+            return res
     if want["actions"]:
         plan_actions(gh, res, full, want["actions"], workflows)
         if res["errors"]:
@@ -1410,6 +1544,127 @@ def self_test():
             check(f"api path {bad!r} refused", False)
         except GhError as e:
             check(f"api path {bad!r} refused", "not a plain API path" in str(e))
+
+    # merge_queue: refused while the workflow behind a required check has no merge_group
+    # trigger; then the rule joins the main ruleset, and a live queue is in sync
+    gh = FakeGitHub()
+    plain_toml, plain_ci = toml["AntHocNet"], workflows["AntHocNet"][".github/workflows/ci.yml"]
+    toml["AntHocNet"] = plain_toml + "merge_queue = true\n"
+    gate = "  ci-gate:\n    name: CI gate\n    runs-on: ubuntu-24.04\n"
+    workflows["AntHocNet"][".github/workflows/ci.yml"] = "on:\n  pull_request:\n" + plain_ci + gate
+    rc, out = go("apply", ["AntHocNet"], gh)
+    check(
+        "merge_queue refused without merge_group",
+        rc == 1
+        and "merge_queue: no merge_group trigger on the workflow of CI gate" in out
+        and writes(gh) == [],
+    )
+    workflows["AntHocNet"][".github/workflows/ci.yml"] = (
+        "on:\n  pull_request:\n  merge_group:\n" + plain_ci + gate
+    )
+    rc, out = go("check", ["AntHocNet"], gh)
+    check("merge_queue drift", rc == 1 and "AntHocNet ruleset main: update (+merge_queue)" in out)
+    rc, out = go("apply", ["AntHocNet"], gh)
+    put = [c for c in writes(gh) if c[0] == "PUT" and "rulesets/18147133" in c[1]]
+    mq = [r for c in put for r in c[2]["rules"] if r["type"] == "merge_queue"]
+    check(
+        "merge_queue applied with its parameters",
+        rc == 0 and len(mq) == 1 and mq[0]["parameters"] == MERGE_QUEUE,
+    )
+    check("merge_queue in sync after apply", go("check", ["AntHocNet"], gh)[0] == 0)
+    toml["AntHocNet"] = plain_toml + "merge_queue = { check_response_timeout_minutes = 60 }\n"
+    rc, out = go("check", ["AntHocNet"], gh)
+    check("merge_queue table overrides", rc == 1 and "(~merge_queue)" in out)
+    toml["AntHocNet"], workflows["AntHocNet"][".github/workflows/ci.yml"] = plain_toml, plain_ci
+    one_line = {".github/workflows/t.yml": "on: [pull_request, merge_group]\njobs:\n  title:\n"}
+    check(
+        "merge_group found in a flow list, job id matched, reusable prefix used",
+        without_merge_group(["title / title", "lint"], one_line) == ["lint"],
+    )
+    reusable = {
+        ".github/workflows/ci.yml": "on:\n  pull_request:\n  merge_group:\njobs:\n  python:\n"
+        "    uses: ./.github/workflows/reusable-python-ci.yml\n",
+        ".github/workflows/reusable-python-ci.yml": "on:\n  workflow_call:\njobs:\n  python:\n",
+    }
+    check(
+        "a reusable workflow's own job is not the check's workflow",
+        without_merge_group(["python / python"], reusable) == [],
+    )
+    matrix = {
+        ".github/workflows/python.yml": "on:\n  pull_request:\n  merge_group:\njobs:\n  tests:\n"
+        "    name: ns3-tool tests (Python ${{ matrix.python }})\n"
+    }
+    check(
+        "a matrix job name matches its expanded check names",
+        without_merge_group(["ns3-tool tests (Python 3.11)", "ns3-tool lint"], matrix)
+        == ["ns3-tool lint"],
+    )
+    matrix[".github/workflows/python.yml"] = matrix[".github/workflows/python.yml"].replace(
+        "  merge_group:\n", ""
+    )
+    only_expr = {
+        ".github/workflows/r.yml": "on:\n  pull_request:\njobs:\n  r:\n    steps:\n"
+        "      - uses: x\n        with:\n          name: ${{ needs.r.outputs.artifact }}\n"
+    }
+    check(
+        "a name that is only an expression names no check",
+        without_merge_group(["python / python"], {**reusable, **only_expr}) == [],
+    )
+    check(
+        "pull_request as a key, in a list, as the only trigger; not pull_request_target",
+        [
+            runs_on_pr(t)
+            for t in (
+                "on:\n  pull_request:\n",
+                "on: [push, pull_request]\n",
+                "on: pull_request\n",
+                "on:\n  pull_request_target:\n",
+            )
+        ]
+        == [True, True, True, False],
+    )
+    check(
+        "a matrix job without merge_group is refused",
+        without_merge_group(["ns3-tool tests (Python 3.13)"], matrix)
+        == ["ns3-tool tests (Python 3.13)"],
+    )
+    prof_rs = load_profile("protocol")["ruleset"]
+    off = main_ruleset(prof_rs, {"required_checks": ["CI gate"]})
+    on = main_ruleset(prof_rs, {"required_checks": ["CI gate"], "merge_queue": True})
+    check("no merge_queue rule by default", "merge_queue" not in [r["type"] for r in off["rules"]])
+    check(
+        "merge_queue parameters in GitHub's ranges",
+        on["rules"][-1]["type"] == "merge_queue"
+        and MERGE_QUEUE["merge_method"] == "SQUASH"
+        and MERGE_QUEUE["grouping_strategy"] in ("ALLGREEN", "HEADGREEN")
+        and 1 <= MERGE_QUEUE["check_response_timeout_minutes"] <= 360
+        and 0 <= MERGE_QUEUE["min_entries_to_merge_wait_minutes"] <= 360
+        and MERGE_QUEUE["min_entries_to_merge"] <= MERGE_QUEUE["max_entries_to_merge"] <= 100
+        and 0 <= MERGE_QUEUE["max_entries_to_build"] <= 100,
+    )
+    ok_s = {"ruleset": "protocol", "required_checks": ["CI gate"], "merge_queue": True}
+    check("merge_queue valid", validate(ok_s) == [])
+    for name, s, private, want in (
+        ("not a bool", {**ok_s, "merge_queue": "yes"}, False, "merge_queue is not true, false"),
+        ("unknown key", {**ok_s, "merge_queue": {"speed": 1}}, False, "merge_queue.speed"),
+        (
+            "out of range",
+            {**ok_s, "merge_queue": {"check_response_timeout_minutes": 0}},
+            False,
+            "from 1 to 360",
+        ),
+        (
+            "bad enum",
+            {**ok_s, "merge_queue": {"grouping_strategy": "ALLMERGED"}},
+            False,
+            "ALLGREEN",
+        ),
+        ("min above max", {**ok_s, "merge_queue": {"min_entries_to_merge": 9}}, False, "above"),
+        ("no main ruleset", {**ok_s, "ruleset": "merge-only"}, False, "has no main ruleset"),
+        ("no checks", {"ruleset": "protocol", "merge_queue": True}, False, "required_checks"),
+        ("private", ok_s, True, "merge_queue on a private repository"),
+    ):
+        check(f"merge_queue refused: {name}", any(want in e for e in validate(s, private)))
 
     # covers(): GitHub's added defaults are ignored, a list must match exactly
     check("covers ignores added keys", covers({"a": 1}, {"a": 1, "b": 2}))
