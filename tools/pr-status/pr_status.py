@@ -9,6 +9,7 @@ Usage:
   pr_status.py wait REPO#N [REPO#N ...] [--interval S] [--timeout S] [--json]
   pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--dry-run] [--json]
   pr_status.py --self-test
+  (any command takes --min-rate N, placed before it)
 
 `list` prints one line per open PR, then one line per unresolved review
 thread under it:
@@ -79,7 +80,10 @@ endpoint is missing the count prints as `threads=?` (and `merge` leaves the
 check to the ruleset's thread rule). `list`, `threads` and `wait` are read-only
 (GET only); `merge` writes only the two PUTs above. Every call goes through
 `gh api`, which authenticates with GH_TOKEN or the gh CLI's own login
-(`gh auth token`), so no token is in an argument list. Findings are
+(`gh auth token`), so no token is in an argument list. Each read checks the
+token's `X-RateLimit-Remaining`: below `--min-rate` (default 500) it sleeps
+until `X-RateLimit-Reset` when that is at most 10 minutes away, else it
+stops with a message (#226). Findings are
 printed as data; nothing here acts on their text. Stdlib only.
 """
 
@@ -115,20 +119,70 @@ class Failure(SystemExit):
     pass
 
 
+def split_head(text):
+    """`gh api -i` output as (lower-cased headers, body)."""
+    lines = text.split("\n")
+    headers = {}
+    for i, line in enumerate(lines[1:], 1):
+        line = line.rstrip("\r")
+        if not line:
+            return headers, "\n".join(lines[i + 1 :])
+        k, _, v = line.partition(":")
+        headers[k.strip().lower()] = v.strip()
+    return headers, ""
+
+
 class GitHub:
-    """GitHub REST through `gh api`: GET (None for a 404), and PUT for `merge`."""
+    """GitHub REST through `gh api`: GET (None for a 404), and PUT for `merge`.
+
+    Every GET reads `X-RateLimit-Remaining`/`X-RateLimit-Reset`. Below
+    `min_remaining` it sleeps until the reset when that is at most
+    RATE_WAIT_MAX seconds away, and otherwise stops with a message, so a
+    polling loop never drains the token's quota (swarm-routing/.github#226:
+    Zenodo shares the maintainer's)."""
+
+    min_remaining = 500
+    RATE_WAIT_MAX = 600
+
+    def rate_sleep(self, s):
+        time.sleep(s)
+
+    def rate_clock(self):
+        return time.time()
+
+    def note_rate(self, headers):
+        try:
+            left = int(headers["x-ratelimit-remaining"])
+            reset = int(headers.get("x-ratelimit-reset", "0"))
+        except (KeyError, ValueError):
+            return
+        if left >= self.min_remaining:
+            return
+        wait = max(0, reset - int(self.rate_clock())) + 1
+        if wait > self.RATE_WAIT_MAX:
+            raise Failure(
+                f"pr_status: rate limit low: {left} requests left (below --min-rate "
+                f"{self.min_remaining}), resets in {wait} s; stopping rather than draining it"
+            )
+        print(
+            f"rate limit low: {left} left (below {self.min_remaining}); sleeping {wait} s until reset",
+            file=sys.stderr,
+        )
+        self.rate_sleep(wait)
 
     def get(self, path):
         r = subprocess.run(
-            ["gh", "api", "-H", "Accept: application/vnd.github+json", path],
+            ["gh", "api", "-i", "-H", "Accept: application/vnd.github+json", path],
             capture_output=True,
             text=True,
         )
+        headers, body = split_head(r.stdout or "")
         if r.returncode != 0:
             if "HTTP 404" in r.stderr:
                 return None
             raise Failure(f"gh api {path}: {r.stderr.strip()}")
-        return json.loads(r.stdout or "null")
+        self.note_rate(headers)
+        return json.loads(body or "null")
 
     def put(self, path, fields):
         """(True, response) or (False, "HTTP <code>: <message>"); never raises on a refusal."""
@@ -603,6 +657,12 @@ def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic):
 def parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true")
+    p.add_argument(
+        "--min-rate",
+        type=int,
+        default=GitHub.min_remaining,
+        help="back off when fewer API requests than this remain (default %(default)s)",
+    )
     sub = p.add_subparsers(dest="cmd")
     a = sub.add_parser("list", help="open PRs, one line each, plus their unresolved threads")
     a.add_argument("--repos", default="", help="comma-separated names (default: DEFAULT_REPOS)")
@@ -634,6 +694,7 @@ def main(argv=None, gh=None):
     if not args.cmd:
         p.error("a command is required")
     gh = gh or GitHub()
+    gh.min_remaining = args.min_rate
     cmds = {"list": cmd_list, "threads": cmd_threads, "wait": cmd_wait, "merge": cmd_merge}
     return cmds[args.cmd](args, gh)
 
@@ -1288,6 +1349,45 @@ def self_test():
                 "events": ["merged eeeeeee"],
             }
         ],
+    )
+
+    # the rate limit: a fake `gh api -i` response with X-RateLimit-* headers
+    head = "HTTP/1.1 200 OK\r\nX-Ratelimit-Remaining: {}\r\nX-Ratelimit-Reset: {}\r\n\r\n[1]"
+    check(
+        "split_head",
+        split_head(head.format(7, 9))
+        == ({"x-ratelimit-remaining": "7", "x-ratelimit-reset": "9"}, "[1]"),
+    )
+
+    class RateGitHub(GitHub):
+        def __init__(self, left, reset):
+            self.out, self.slept = head.format(left, reset), []
+            self.rate_sleep = self.slept.append
+            self.rate_clock = lambda: 1000
+
+    import unittest.mock as um
+
+    def rate_get(left, reset, min_rate=500):
+        gh = RateGitHub(left, reset)
+        gh.min_remaining = min_rate
+        done = subprocess.CompletedProcess([], 0, stdout=gh.out, stderr="")
+        err = io.StringIO()
+        with um.patch.object(subprocess, "run", return_value=done), contextlib.redirect_stderr(err):
+            try:
+                return gh.get("x"), gh.slept, None
+            except Failure as e:
+                return None, gh.slept, str(e)
+
+    got, slept, err = rate_get(4000, 1100)
+    check("rate: plenty left, no wait", got == [1] and slept == [] and err is None)
+    got, slept, err = rate_get(100, 1100)
+    check("rate: low, sleeps until the reset", got == [1] and slept == [101] and err is None)
+    got, slept, err = rate_get(100, 5000)
+    check("rate: low, reset far off: stops", err and "100 requests left" in err and slept == [])
+    got, slept, err = rate_get(100, 1100, min_rate=50)
+    check("rate: --min-rate lowers the threshold", slept == [] and err is None)
+    check(
+        "rate: --min-rate parses", parser().parse_args(["--min-rate", "50", "list"]).min_rate == 50
     )
 
     for f in failures:
