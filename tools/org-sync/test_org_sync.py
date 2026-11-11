@@ -355,7 +355,7 @@ check(
     "[doi:10.1109/ICPPW.2002.1039715](https://doi.org/10.1109/ICPPW.2002.1039715). "
     "The algorithm this repository implements.\n"
     in rr
-    and "<https://hdl.handle.net/1993/20935> (no DOI: a thesis in the university's repository.)"
+    and "<https://hdl.handle.net/1993/20935> (no DOI: a thesis in the university's repository). The primary source."
     in rr
     and "[docs/fidelity.md](docs/fidelity.md)" in rr,
     "README cites each reference with its doi.org link, or its page and why it has no DOI",

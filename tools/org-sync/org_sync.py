@@ -328,18 +328,24 @@ def cff_references(refs):
             out.append(f"    doi: {yq(r['doi'])}")
         if r.get("url"):
             out.append(f"    url: {yq(r['url'])}")
-        notes = r["role"].strip() + (f" No DOI: {r['no_doi'].strip()}" if r.get("no_doi") else "")
+        notes = r["role"].strip() + (f" No DOI: {no_doi(r)}." if r.get("no_doi") else "")
         out.append(f"    notes: {yq(notes)}")
     return "\n".join(out) + "\n"
+
+
+def no_doi(r):
+    """Why a reference has no DOI, without a closing full stop."""
+    return r["no_doi"].strip().rstrip(".")
 
 
 def reference_line(r):
     """One README bullet, as AntHocNet's: authors, *title*, venue, pages, year, link: role."""
     parts = [short_authors(r["authors"]), f"*{r['title']}*"]
     if r.get("venue"):
-        venue = r["venue"]
+        venue, issue = r["venue"], f"({r['issue']})" if r.get("issue") else ""
         if r.get("volume"):
-            venue += f" {r['volume']}" + (f"({r['issue']})" if r.get("issue") else "")
+            # a journal's 7(4); a proceedings' or a book's ", vol. 5"
+            venue += f" {r['volume']}{issue}" if r["type"] == "article" else f", vol. {r['volume']}"
         parts.append(venue)
     if r.get("pages"):
         parts.append("pp. " + str(r["pages"]).replace("-", "\u2013"))
@@ -347,14 +353,15 @@ def reference_line(r):
     if r.get("doi"):
         parts.append(f"[doi:{r['doi']}](https://doi.org/{r['doi']})")
     else:
-        parts.append(f"<{r['url']}> (no DOI: {r['no_doi'].strip()})")
+        parts.append(f"<{r['url']}> (no DOI: {no_doi(r)})")
     return f"- {', '.join(parts)}. {r['role'].strip()}"
 
 
 def citing_section(cfg, repo_dir):
     """README "Releases & citing", as AntHocNet's: how releases ship, the
     concept DOI (each version DOI is on its Zenodo record, never typed here),
-    the work it builds on, the fidelity sheet. Rendered for `citation = true`."""
+    the work it builds on, the fidelity sheet. Rendered for `citation = true`;
+    one line per paragraph."""
     repo, concept = cfg["repo"], zenodo_concept(cfg)
     out = ["## Releases & citing", ""]
     changelog = os.path.exists(os.path.join(repo_dir, "CHANGELOG.md"))
@@ -362,32 +369,31 @@ def citing_section(cfg, repo_dir):
         out += [
             "Versions follow [SemVer](https://semver.org)"
             + (" ([CHANGELOG.md](CHANGELOG.md))" if changelog else "")
-            + f"; each release is listed under [Releases](https://github.com/{repo}/releases),",
-            "built by the org's release workflow, and archived on [Zenodo](https://zenodo.org)",
-            "with its own DOI.",
+            + f". Each release is listed under [Releases](https://github.com/{repo}/releases),"
+            " built by the org's release workflow and archived on [Zenodo](https://zenodo.org)"
+            " with its own DOI.",
             "",
         ]
     what = "these data" if cfg["citation_type"] == "dataset" else "this repository"
+    cite = f"To cite {what}, use the \u201cCite this repository\u201d button (from [CITATION.cff](CITATION.cff))"
     if concept:
         doi = f"10.5281/zenodo.{concept}"
         out += [
-            f"To cite {what}, use the \u201cCite this repository\u201d button (from",
-            "[CITATION.cff](CITATION.cff)):",
+            cite + ":",
             "",
             "| DOI | resolves to |",
             "|---|---|",
             f"| [`{doi}`](https://doi.org/{doi}) | **concept DOI**: always the latest release. "
             "This is the badge above, and the right citation when you mean this project. |",
             "",
-            "Each release also has its own **version DOI**, listed on",
-            f"[its Zenodo record](https://doi.org/{doi}): cite that one when you reproduce a",
-            "number measured at that release.",
+            "Each release also has its own **version DOI**, listed on"
+            f" [its Zenodo record](https://doi.org/{doi}): cite that one when you reproduce a"
+            " number measured at that release.",
         ]
     else:
         out += [
-            f"To cite {what}, use the \u201cCite this repository\u201d button (from",
-            "[CITATION.cff](CITATION.cff)). It has no DOI yet: the concept DOI appears here",
-            "and in the badge above once Zenodo archives its first release.",
+            cite + ". It has no DOI yet: the concept DOI appears here and in the badge above"
+            " once Zenodo archives its first release.",
         ]
     refs = cfg["references"]
     if refs:
@@ -396,14 +402,14 @@ def citing_section(cfg, repo_dir):
     if os.path.exists(os.path.join(repo_dir, "docs/fidelity.md")):
         out += [
             "",
-            "What this implementation reproduces from its sources, and every deliberate",
-            "deviation, is in [docs/fidelity.md](docs/fidelity.md).",
+            "What this implementation reproduces from its sources, and every deliberate"
+            " deviation, is in [docs/fidelity.md](docs/fidelity.md).",
         ]
     out += [
         "",
-        "Using it in your work? Contributions are welcome, and citing the DOI helps just as much."
-        if concept
-        else "Using it in your work? Contributions are welcome, and citing it helps just as much.",
+        "Using it in your work? Contributions are welcome, and citing "
+        + ("the DOI" if concept else "it")
+        + " helps just as much.",
     ]
     return "\n".join(out) + "\n"
 
