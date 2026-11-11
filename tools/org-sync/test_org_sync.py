@@ -833,6 +833,143 @@ check(
     rc == 1 and "drift     LICENSE" in out, "--changed-only: a base without a config warns nothing"
 )
 
+
+# Orphan blocks (#235): a block in a managed file whose section is skipped or not
+# enabled (benchmarks#46/#47: a refresh rendered `citing` from a config the skip
+# had already replaced) is drift; apply removes it only with --prune-orphans.
+d8 = fresh()
+run("init", d8, "--kind", "data")
+cfgp = os.path.join(d8, ".github/org-sync.toml")
+write(cfgp, "citation = true\n" + read(cfgp))
+run("apply", d8)
+check(
+    "<!-- org-sync:begin citing -->" in read(os.path.join(d8, "README.md"))
+    and run("check", d8)[0] == 0,
+    "citation = true renders the citing section, in sync",
+)
+base = commit(d8, "main with the citing section")
+write(cfgp, 'skip = ["README.md#citing"]\n' + read(cfgp))
+commit(d8, "the PR skips the section and leaves its block")
+rc, out = run("check", d8)
+check(
+    rc == 1
+    and "drift     README.md#citing: orphan (orphan block citing in README.md" in out
+    and "drop the skip" in out,
+    "check reports a skipped section's block as an orphan, naming it and its file",
+)
+rc, out = run("plan", d8)
+check("orphan    README.md#citing" in out, "plan lists the orphan")
+check(
+    '"item":"README.md#citing","status":"orphan","lines":' in run("plan", "--json", d8)[1],
+    "plan --json lists the orphan with its line count",
+)
+rc, out = run("check", "--changed-only", base, d8)
+check(
+    rc == 1 and "drift     README.md#citing: orphan" in out,
+    "--changed-only: an orphan the PR brings in (a new skip) is red, though the block was "
+    "managed at the base",
+)
+orphaned = commit(d8, "main with the orphan (benchmarks after #46 and #47)")
+edit(d8, "README.md", "\n## Contributing", "\nA line of the repository's own.\n\n## Contributing")
+commit(d8, "a later PR that does not touch the block")
+rc, out = run("check", "--changed-only", orphaned, d8)
+check(
+    rc == 0 and f"{WARN}README.md#citing: orphan" in out,
+    "--changed-only: an orphan already at the base is a warning",
+)
+edit(d8, "README.md", "## Releases & citing", "## Releases and citing")
+commit(d8, "a PR that edits the orphan block by hand")
+check(
+    run("check", "--changed-only", orphaned, d8)[0] == 1,
+    "--changed-only: a PR that edits an orphan block is red",
+)
+before = read(os.path.join(d8, "README.md"))
+rc, out = run("apply", d8)
+check(
+    rc == 1
+    and "orphan    README.md#citing:" in out
+    and read(os.path.join(d8, "README.md")) == before,
+    "apply without --prune-orphans leaves the orphan and reports it (exit 1)",
+)
+rc, out = run("apply", d8, "--prune-orphans")
+rr = read(os.path.join(d8, "README.md"))
+check(
+    rc == 0
+    and "removed   README.md#citing (orphan)" in out
+    and "org-sync:begin citing" not in rr
+    and "Releases and citing" not in rr
+    and "\n\n\n" not in rr
+    and "A line of the repository's own." in rr
+    and run("check", d8)[0] == 0,
+    "apply --prune-orphans removes the block, its markers and one blank line; check is clean",
+)
+# a block of a section that is not enabled (citation off), in YAML too; the
+# repository's own text around it and other files' blocks are left alone
+d9 = fresh()
+run("init", d9, "--kind", "python")
+edit(
+    d9,
+    "AGENTS.md",
+    "## Where to look",
+    "<!-- org-sync:begin stale -->\nold\n<!-- org-sync:end stale -->\n\n## Where to look",
+)
+with open(os.path.join(d9, ".coderabbit.yaml"), "a", encoding="utf-8") as f:
+    f.write("# org-sync:begin old\nold: 1\n# org-sync:end old\n")
+write(os.path.join(d9, "notes.md"), "<!-- org-sync:begin x -->\nx\n<!-- org-sync:end x -->\n")
+rc, out = run("check", d9)
+check(
+    rc == 1
+    and "drift     AGENTS.md#stale: orphan" in out
+    and "drift     .coderabbit.yaml#old: orphan" in out
+    and "enable its item" in out
+    and "notes.md" not in out
+    and out.count("drift     ") == 2,
+    "a block of a section that is not enabled is an orphan (Markdown and YAML markers); "
+    "a file org-sync does not manage is not scanned",
+)
+run("apply", d9, "--prune-orphans")
+check(
+    run("check", d9)[0] == 0
+    and "## Where to look" in read(os.path.join(d9, "AGENTS.md"))
+    and "x\n" in read(os.path.join(d9, "notes.md")),
+    "--prune-orphans clears both; the repository's own text stays",
+)
+
+# citation_message (#235): the repository's own CITATION.cff message, kept on reseed
+dm = fresh()
+run("init", dm, "--kind", "data")
+msg = (
+    "If you use these data, please cite the dataset version (its DOI) and the run directory, "
+    "using the metadata below."
+)
+cfgp = os.path.join(dm, ".github/org-sync.toml")
+write(
+    cfgp, f'citation = true\ncitation_type = "dataset"\ncitation_message = "{msg}"\n' + read(cfgp)
+)
+run("apply", dm)
+cff = os.path.join(dm, "CITATION.cff")
+check(f'message: "{msg}"\n' in read(cff), "citation_message sets CITATION.cff's message")
+edit(dm, "CITATION.cff", msg, "something else")
+run("reseed", "CITATION.cff", dm)
+check(
+    f'message: "{msg}"\n' in read(cff) and "\ntype: dataset\n" in read(cff),
+    "reseed CITATION.cff keeps citation_message",
+)
+for bad in (
+    'citation_message = "a \\"quoted\\" word"\n',
+    'citation_message = ""\n',
+    "citation_message = 3\n",
+    'citation_message = "a\\nb"\n',
+):
+    db = fresh()
+    os.makedirs(os.path.join(db, ".github"))
+    write(os.path.join(db, ".github/org-sync.toml"), 'kind = "data"\ncitation = true\n' + bad)
+    try:
+        rc = run("plan", db)[0]
+    except SystemExit as e:
+        rc = e.code
+    check(rc not in (0, None), f"an invalid citation_message is refused: {bad.strip()}")
+
 # CODEOWNERS (#31): a per-kind org section with `#` markers, last in the file,
 # under the repository's own rules, which survive apply.
 for kind, owned, unowned in (
