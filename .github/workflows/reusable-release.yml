@@ -111,8 +111,10 @@ name: Reusable release
 #   sha256sum -c SHA256SUMS --ignore-missing
 #   gh attestation verify <asset> --repo swarm-routing/<repo> \
 #     --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
-#   gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom
-#   gh attestation verify <asset> --repo swarm-routing/<repo> --bundle <name>-<version>.sigstore.json   # offline
+#   gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom \
+#     --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
+#   gh attestation verify <asset> --repo swarm-routing/<repo> --bundle <name>-<version>.sigstore.json \
+#     --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml   # offline
 #
 # The signing identity is this reusable workflow (Fulcio's SAN is the called
 # workflow's ref); the caller repository is in the certificate's
@@ -536,8 +538,8 @@ jobs:
             echo
             echo '```'
             echo "gh attestation verify ${first} --repo ${REPO} --signer-workflow ${SIGNER}"
-            echo "gh attestation verify ${first} --repo ${REPO} --predicate-type https://cyclonedx.org/bom"
-            echo "gh attestation verify ${first} --repo ${REPO} --bundle ${NAME}-${VER}.sigstore.json   # offline"
+            echo "gh attestation verify ${first} --repo ${REPO} --predicate-type https://cyclonedx.org/bom --signer-workflow ${SIGNER}"
+            echo "gh attestation verify ${first} --repo ${REPO} --bundle ${NAME}-${VER}.sigstore.json --signer-workflow ${SIGNER}   # offline"
             echo '```'
             echo
             echo "Built and signed by [\`reusable-release.yml\`](https://github.com/swarm-routing/.github/blob/main/.github/workflows/reusable-release.yml), run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID})."
@@ -555,14 +557,16 @@ jobs:
           # gh prints nothing when not on a terminal: --format json, and a line
           # per check, so the log shows what was verified.
           ok() { jq -e -r --arg f "$1" --arg w "$2" 'if length > 0 then "verified \($w): \($f)" else empty end'; }
+          # Every check names the signer: without --signer-workflow gh expects it
+          # in --repo, which holds only when the caller is this repository.
           mapfile -t files < <(cut -d' ' -f3- SHA256SUMS)
           for f in "${files[@]}" SHA256SUMS; do
             gh attestation verify "$f" --repo "$REPO" --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" provenance
-            gh attestation verify "$f" --repo "$REPO" --bundle "${NAME}-${VER}.sigstore.json" --format json < /dev/null | ok "$f" "provenance (offline bundle)"
+            gh attestation verify "$f" --repo "$REPO" --bundle "${NAME}-${VER}.sigstore.json" --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" "provenance (offline bundle)"
           done
           for f in "${files[@]}"; do
             [ "$f" = "${NAME}-${VER}.cdx.json" ] && continue
-            gh attestation verify "$f" --repo "$REPO" --predicate-type https://cyclonedx.org/bom --format json < /dev/null | ok "$f" sbom
+            gh attestation verify "$f" --repo "$REPO" --predicate-type https://cyclonedx.org/bom --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" sbom
           done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

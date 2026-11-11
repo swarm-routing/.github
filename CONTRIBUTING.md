@@ -384,8 +384,13 @@ tarball and the image. Users verify a download with:
 sha256sum -c SHA256SUMS --ignore-missing
 gh attestation verify <asset> --repo swarm-routing/<repo> \
   --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
-gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom
+gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom \
+  --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
 ```
+
+Every check names the signer workflow: without `--signer-workflow`, `gh`
+expects the signer in `--repo`, and the signer is this repository's
+reusable workflow, not the caller's.
 
 Inputs (a public contract, golden rule 10: they are only added, with
 backward-compatible defaults): `build` (`make dist`), `dist-dir` (`dist`),
