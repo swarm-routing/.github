@@ -124,6 +124,13 @@ automatic CodeRabbit review, so a new label is added there by hand):
 | Model | exactly one: what a wrong first pass costs, not code volume | `model:haiku-4.5` (mechanical), `model:sonnet-5` (plumbing, tooling, docs), `model:opus-4.8` (protocol semantics, root cause, CI-validated adapter work), `model:fable-5` (architecture, greenfield) |
 | Priority | exactly one on non-epic issues | `priority:P1` (regression / invalidates numbers), `priority:P2` (gates a result or feature), `priority:P3` (valuable, not blocking) |
 | Release | only when a roadmap gates the issue | `release:vX.Y.Z` |
+| Contributor | any number, set by a maintainer when an outside contributor can pick the issue up | `good first issue` (small, well scoped, needs no history), `help wanted` (outside help welcome) |
+
+GitHub lists open `good first issue` issues on each repository's Contribute
+page (`/contribute`); `help wanted` issues are found through the label filter
+(`/issues?q=is:open+label:"help wanted"`). Either says in its body what a
+newcomer needs (files, the check that proves it, the repository's
+`AGENTS.md` build commands).
 
 `migrated` marks an issue cloned from `danieljoppi/AntHocNet` during the split;
 its body starts with *Migrated from `danieljoppi/AntHocNet#N`*.
