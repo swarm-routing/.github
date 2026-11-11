@@ -85,7 +85,7 @@ name: Reusable release
 #   concurrency: { group: "release-${{ github.sha }}", cancel-in-progress: false }
 #   jobs:
 #     release:
-#       if: ${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}
+#       if: "${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}"
 #       permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
 #       uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
 #       with:
