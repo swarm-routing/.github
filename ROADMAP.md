@@ -85,10 +85,14 @@ and kept in the repository's own `docs/roadmap.md`: themed minor releases
 infrastructure track that rides along with any release, labelled but never
 gating one; and deliberate non-goals. Only the issues a release actually gates
 carry its `release:vX.Y.Z` label (CONTRIBUTING, Labels). A major version is
-reserved for a breaking change, and **`1.0.0` is a stability promise**: the
-API and wire format frozen, paper-faithful with every deviation documented in
-the fidelity sheet, the three gates passed (CONTRIBUTING invariant 6), and
-green on the release ns-3 supports. This replaces the earlier per-phase
+reserved for a breaking change, and **`1.0.0` is a stability promise**,
+green on the release ns-3 supports. For a protocol: the `core/` API and wire
+format frozen, paper-faithful with every deviation documented in its fidelity
+sheet, and the three gates passed (CONTRIBUTING invariant 6). For a shared
+component, which has no paper of its own: its public contract frozen with a
+deprecation policy (`ns3-swarm-core`: `kSwarmCoreApiVersion`, with two gated
+protocols on it unchanged; `ns3-tools`: marker contract v2 and the CLI), and
+the protocols that consume it green. This replaces the earlier per-phase
 release targets: this file keeps the phases and the cross-repo
 [release train](#the-release-train) below, and each repository's ladder says
 what its next release holds.
