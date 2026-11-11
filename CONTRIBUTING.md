@@ -50,7 +50,8 @@ is the long form.
    runs; `apt-get update` runs with `--error-on=any` inside a shell retry.
    Ubuntu mirror outages are the usual cause of a red run.
    Every job that runs steps starts with StepSecurity Harden-Runner
-   (`step-security/harden-runner`, pinned by SHA, #164): it records each
+   (`step-security/harden-runner`, pinned by SHA, with `timeout-minutes: 2`,
+   #164): it records each
    network call, file write and process of the job on the GitHub-hosted
    runner, and in `block` mode allows only the listed egress endpoints, the
    control against a compromised action or dependency sending secrets out.
