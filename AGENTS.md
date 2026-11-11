@@ -41,6 +41,7 @@ templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org s
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
+                                codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
                                 quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
 SECURITY.md                     the org default security policy (repos without their own get it)
 CODE_OF_CONDUCT.md              the org default code of conduct: Contributor Covenant 2.1, reports to the maintainer's GitHub profile (no email)

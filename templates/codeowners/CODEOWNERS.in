@@ -1,0 +1,9 @@
+# Code owners (swarm-routing/.github#31). This repository's own rules go
+# above the org section: in CODEOWNERS the last matching line wins, so the
+# paths that encode an org invariant keep their owner whatever is added here.
+# An owner is only requested as a reviewer; whether that review is required
+# is the `main` ruleset's require_code_owner_review (off: one maintainer
+# cannot approve his own pull requests).
+
+# org-sync:begin codeowners
+# org-sync:end codeowners
