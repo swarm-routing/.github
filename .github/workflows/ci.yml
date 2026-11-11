@@ -9,6 +9,7 @@ on:
     branches: [main]
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  merge_group:  # the merge queue runs the required checks on each group (swarm-routing/.github#130)
 
 permissions:
   contents: read
@@ -18,6 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -40,6 +45,8 @@ jobs:
         run: python3 -I tools/fidelity/fidelity.py --self-test
       - name: docs-review self-test (tools/docs-review)
         run: python3 -I tools/docs-review/check_docs.py --self-test
+      - name: ai-files-review self-test (tools/docs-review)
+        run: python3 -I tools/docs-review/ai_files_review.py --self-test
       - name: protocol-review self-test (tools/protocol-review)
         run: python3 -I tools/protocol-review/check_invariants.py --self-test
       - name: pr-status self-test (tools/pr-status)
@@ -67,5 +74,7 @@ jobs:
       source: tools
 
   title:
-    if: github.event_name == 'pull_request'
+    # Not on push: there is no title. On a merge group the reusable job skips
+    # itself, which still reports `title / title` (a skipped check passes).
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     uses: ./.github/workflows/reusable-pr-title.yml

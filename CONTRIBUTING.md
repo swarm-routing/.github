@@ -1,6 +1,9 @@
 # Contributing to swarm-routing
 
 Org-wide defaults. A repository's own `CONTRIBUTING.md` overrides this file.
+Participation follows the org's default [Code of Conduct](CODE_OF_CONDUCT.md);
+where to ask is in the org's default [SUPPORT.md](SUPPORT.md). A repository's
+own `CODE_OF_CONDUCT.md` or `SUPPORT.md`, where it has one, takes precedence.
 These conventions come from [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet),
 the source repository the org was split out of; its
 [ADR-0013](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)
@@ -23,7 +26,9 @@ is the long form.
    may use the dual parts, never the reverse — a `core/` file includes only the
    C++ standard library, other `core/` files and the dual-licensed core of a
    declared dependency (a protocol's `core/` on swarm-core's `core/`, the
-   licence workflow's `core-deps` input). CI
+   `core-deps` input of whichever workflow runs the licence check: `licence.yml`
+   calling `reusable-licence-check.yml`, or `ci.yml` calling
+   `reusable-ns3-ci.yml`, which forwards it). CI
    (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
    of it. Where a protocol's `core/` pins swarm-core, the `swarm-core / pin`
    check (`reusable-swarm-core-pin.yml`, `tools/checks/check-swarm-core-pin.py`)
@@ -50,6 +55,19 @@ is the long form.
    one: the called workflow's jobs carry it), and every apt, npm or installer step its own, sized from recent green
    runs; `apt-get update` runs with `--error-on=any` inside a shell retry.
    Ubuntu mirror outages are the usual cause of a red run.
+   Every job that runs steps starts with StepSecurity Harden-Runner
+   (`step-security/harden-runner`, pinned by SHA, #164): it records each
+   network call, file write and process of the job on the GitHub-hosted
+   runner, and in `block` mode allows only the listed egress endpoints, the
+   control against a compromised action or dependency sending secrets out.
+   Jobs start in `egress-policy: audit`; after about two weeks of audit data a
+   job that holds secrets or publishes (release, image push, org-bot,
+   repo-settings, pages deploy) moves to `block` with an `allowed-endpoints`
+   list copied from the insights of a green run, never guessed. The insights
+   are on the StepSecurity page linked from each run's Harden-Runner step
+   (and from the job summary). A job that runs entirely in a `container:`
+   cannot take it on a hosted runner (it needs sudo on the VM; StepSecurity's
+   limitations), so it goes without: today `reusable-ns3-ci.yml`'s `build`.
 6. **Comparator arms** (protocols we did not design) clear three gates before
    their numbers count: a fidelity sheet from the paper, the per-PR delivery
    smoke, and an anchor reproducing the paper's own trend.
@@ -130,12 +148,19 @@ starts from the newest open `handoff` issue and closes it when done.
   Commit: `type(scope)!: subject`, scope and `!` optional, subject starting
   lowercase. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
   `build`, `ci`, `chore`, `revert` (the list `reusable-pr-title.yml` enforces).
-- Merge when CI is green.
+- Merge when CI is green. A repository that merges through a merge queue
+  (`merge_queue = true` in its `[settings]`, #130) is not updated by hand: add
+  the PR to the queue (the merge button, or auto-merge), and the queue tests
+  it on top of `main` and the PRs ahead of it, then merges it. Every workflow
+  that produces a required check runs `on: merge_group` there; the reusable
+  PR-title check skips itself on a merge group (a skipped check passes) and
+  the org-sync check judges the group's own change against its base.
 - **`main` takes no direct push** in any repo: the `main` ruleset requires a
   PR, an up-to-date branch and the required checks. Bots push `bot/<name>`
   branches and open PRs; releases go through the bump PR (Cutting a release).
-- When a PR falls behind `main`, update it and merge PRs one at a time, each
-  after its CI on the updated branch. `tools/pr-status/pr_status.py merge
+- Where there is no queue yet: when a PR falls behind `main`, update it and
+  merge PRs one at a time, each after its CI on the updated branch.
+  `tools/pr-status/pr_status.py merge
   REPO#N [REPO#N …]` does exactly that: in the order given (repositories
   independently), it updates a PR GitHub reports `behind`
   (`PUT pulls/<n>/update-branch`), waits for every check on the new head,
@@ -172,7 +197,7 @@ PRs too passes `full-check-on-pr: true`.
 
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it (a profile change applies on push here; a `[settings]` change in another repository applies when `repo-settings` is dispatched with mode `apply` after its merge); a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
-A repository's `[settings]` can override what its profile gives it: `features = { has_wiki = true }` (any of `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`), `security = { codeql_default_setup = false }` (false leaves that feature alone; it is never turned off), and `release_environment = true`. `merge_queue = true` adds a merge queue to the `main` ruleset (squash; every PR of a group must pass, `ALLGREEN`; groups of 1 to 5 PRs, checks running for at most 5 queued PRs at once; 120 minutes for the required checks; `MERGE_QUEUE` in the tool); a table such as `merge_queue = { check_response_timeout_minutes = 60 }` overrides any of them, within the API's bounds. It needs `required_checks`, GitHub offers it only on public organization repositories, and every workflow that produces a required check must also run `on: merge_group` (with a path filter or a `changes` job, diff against `github.event.merge_group.base_sha`, since a merge group has no `pull_request`), or the queue waits for a check that never comes: `repo-settings` refuses the repository, before writing anything, while the workflow with a job named (or with the id) a required check's first ` / ` segment lacks that trigger. The Actions policy allows only the actions listed in `templates/rulesets/defaults.json` (`selected_actions.patterns_allowed`, besides GitHub's own and local ones): a workflow that starts using a new third-party action needs its `owner/repo@*` added there in the same change (in another repository: merged here first), or `repo-settings` refuses that repository (the check names the action) rather than switching it to a policy that would break its CI. The `release` environment (required reviewer: the maintainer) is created only where `release_environment = true`; no repository enables it yet: turn it on in a repository when it adopts the reusable release workflow (#116) and that workflow's job names `environment: release`. The `release-tags` ruleset does not restrict who creates a v* tag: the release workflows push tags with `GITHUB_TOKEN`, which cannot be a ruleset bypass actor, so a creation rule would block every release.
+A repository's `[settings]` can override what its profile gives it: `features = { has_wiki = true }` (any of `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`), `security = { codeql_default_setup = false }` (false leaves that feature alone; it is never turned off), and `release_environment = true`. `merge_queue = true` adds a merge queue to the `main` ruleset (squash; every PR of a group must pass, `ALLGREEN`; groups of 1 to 5 PRs, checks running for at most 5 queued PRs at once; 120 minutes for the required checks; `MERGE_QUEUE` in the tool); a table such as `merge_queue = { check_response_timeout_minutes = 60 }` overrides any of them, within the API's bounds. It needs `required_checks`, GitHub offers it only on public organization repositories, and every workflow that produces a required check must also run `on: merge_group` (with a path filter or a `changes` job, diff against `github.event.merge_group.base_sha`, since a merge group has no `pull_request`), or the queue waits for a check that never comes: `repo-settings` refuses the repository, before writing anything, while a workflow that runs on `pull_request` and has a job named (or with the id) a required check's first ` / ` segment lacks that trigger (a `${{ … }}` in a job name, as in a matrix, matches any text; reusable `workflow_call`-only workflows are not counted). The Actions policy allows only the actions listed in `templates/rulesets/defaults.json` (`selected_actions.patterns_allowed`, besides GitHub's own and local ones): a workflow that starts using a new third-party action needs its `owner/repo@*` added there in the same change (in another repository: merged here first), or `repo-settings` refuses that repository (the check names the action) rather than switching it to a policy that would break its CI. The `release` environment (required reviewer: the maintainer) is created only where `release_environment = true`; no repository enables it yet: turn it on in a repository when it adopts the reusable release workflow (#116) and that workflow's job names `environment: release`. The `release-tags` ruleset does not restrict who creates a v* tag: the release workflows push tags with `GITHUB_TOKEN`, which cannot be a ruleset bypass actor, so a creation rule would block every release.
 
 The bot's PRs are generated content only; merge them when CI is green. You
 still refresh the epic lists in your own PR when you change an epic: the bot
@@ -209,6 +234,39 @@ collected into `swarm-routing/benchmarks`, which keeps it.
 `benchmark-cell-selftest.yml` runs one build-mode cell (ns3-tools'
 `routing-bench` at a pinned commit, OLSR, 2 seeds) on every PR that changes
 the workflow.
+
+**Callers follow the safe pattern** (#160). A cell checks out and runs the code
+at a commit it is given (`source_sha`), and a `workflow_dispatch` run does that
+in the default branch's context, whose Actions caches every other workflow of
+the repository shares. Code at that commit could therefore seed a cache that a
+trusted run (a release, `main`'s CI) later restores, which is the cache
+poisoning CodeQL flags (it did on `benchmark-cell-selftest.yml`, #158). The
+rule, which `reusable-benchmark-cell.yml` follows so its callers inherit it:
+
+- **No Actions cache.** The cell job sets `cache-mode: none`, so the cache
+  service refuses every restore and save in it (a called workflow never gets
+  more cache access than that), and no step asks for one (no `actions/cache`,
+  no `setup-*` `cache:`, no buildx `type=gha`), least of all keyed by a caller
+  input such as `source_sha`. The mode matters even with no cache step: code
+  run by `stage` or the harness could alter a later action step, which holds
+  the runtime token, and save a cache from there. The caller adds no cache
+  step and no other job to its cell workflow, and sets `cache-mode: none` on
+  its calling job too (the caller in the workflow's header does). actionlint
+  does not know the key yet; ignore that one message in `.github/actionlint.yaml`
+  as this repository does.
+- **Least permissions.** The caller grants `contents: read` and
+  `packages: read` only, and passes no secrets (no `secrets: inherit`), so the
+  code at `source_sha` holds a read-only token and nothing else.
+- **No credential left behind.** The checkout uses `persist-credentials:
+  false`, and the cell logs out of `ghcr.io` once the image is pulled, before
+  any step runs the checked-out code.
+- **`workflow_dispatch` only.** No `push`, `pull_request_target`,
+  `workflow_run` or `issue_comment` trigger: only someone with write access
+  dispatches a cell, on a commit of their choosing. The self-test here runs on
+  `pull_request` only: a cache a PR run saves is scoped to the PR's merge ref,
+  so it cannot poison `main`'s (a PR run can still restore `main`'s caches, so
+  a cache is never a place for secrets; the cell job's `cache-mode: none`
+  turns both off anyway).
 
 ### The bot's GitHub App
 
