@@ -111,8 +111,10 @@ name: Reusable release
 #   sha256sum -c SHA256SUMS --ignore-missing
 #   gh attestation verify <asset> --repo swarm-routing/<repo> \
 #     --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
-#   gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom
-#   gh attestation verify <asset> --repo swarm-routing/<repo> --bundle <name>-<version>.sigstore.json   # offline
+#   gh attestation verify <asset> --repo swarm-routing/<repo> --predicate-type https://cyclonedx.org/bom \
+#     --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
+#   gh attestation verify <asset> --repo swarm-routing/<repo> --bundle <name>-<version>.sigstore.json \
+#     --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml   # offline
 #
 # The signing identity is this reusable workflow (Fulcio's SAN is the called
 # workflow's ref); the caller repository is in the certificate's
@@ -186,6 +188,11 @@ jobs:
       version: ${{ steps.route.outputs.version }}
       base: ${{ steps.route.outputs.base }}
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - name: Mode
         id: route
         env:
@@ -260,6 +267,11 @@ jobs:
       DIST_IN: ${{ inputs.dist-dir }}
       MODE: ${{ needs.route.outputs.mode }}
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0   # the whole history and its tags, for Commitizen
@@ -462,6 +474,11 @@ jobs:
       NAME: ${{ needs.build.outputs.name }}
       SIGNER: swarm-routing/.github/.github/workflows/reusable-release.yml
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build.outputs.artifact }}
@@ -536,8 +553,8 @@ jobs:
             echo
             echo '```'
             echo "gh attestation verify ${first} --repo ${REPO} --signer-workflow ${SIGNER}"
-            echo "gh attestation verify ${first} --repo ${REPO} --predicate-type https://cyclonedx.org/bom"
-            echo "gh attestation verify ${first} --repo ${REPO} --bundle ${NAME}-${VER}.sigstore.json   # offline"
+            echo "gh attestation verify ${first} --repo ${REPO} --predicate-type https://cyclonedx.org/bom --signer-workflow ${SIGNER}"
+            echo "gh attestation verify ${first} --repo ${REPO} --bundle ${NAME}-${VER}.sigstore.json --signer-workflow ${SIGNER}   # offline"
             echo '```'
             echo
             echo "Built and signed by [\`reusable-release.yml\`](https://github.com/swarm-routing/.github/blob/main/.github/workflows/reusable-release.yml), run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID})."
@@ -555,14 +572,16 @@ jobs:
           # gh prints nothing when not on a terminal: --format json, and a line
           # per check, so the log shows what was verified.
           ok() { jq -e -r --arg f "$1" --arg w "$2" 'if length > 0 then "verified \($w): \($f)" else empty end'; }
+          # Every check names the signer: without --signer-workflow gh expects it
+          # in --repo, which holds only when the caller is this repository.
           mapfile -t files < <(cut -d' ' -f3- SHA256SUMS)
           for f in "${files[@]}" SHA256SUMS; do
             gh attestation verify "$f" --repo "$REPO" --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" provenance
-            gh attestation verify "$f" --repo "$REPO" --bundle "${NAME}-${VER}.sigstore.json" --format json < /dev/null | ok "$f" "provenance (offline bundle)"
+            gh attestation verify "$f" --repo "$REPO" --bundle "${NAME}-${VER}.sigstore.json" --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" "provenance (offline bundle)"
           done
           for f in "${files[@]}"; do
             [ "$f" = "${NAME}-${VER}.cdx.json" ] && continue
-            gh attestation verify "$f" --repo "$REPO" --predicate-type https://cyclonedx.org/bom --format json < /dev/null | ok "$f" sbom
+            gh attestation verify "$f" --repo "$REPO" --predicate-type https://cyclonedx.org/bom --signer-workflow "$SIGNER" --format json < /dev/null | ok "$f" sbom
           done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -607,6 +626,11 @@ jobs:
       TAG: ${{ needs.build.outputs.tag }}
       COMMIT: ${{ needs.build.outputs.commit }}
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       # It runs no code of the caller's: the merged commit's checkout (for
       # the tag) and the built files only.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -679,6 +703,11 @@ jobs:
       OLD: ${{ needs.build.outputs.old-version }}
       BASE: ${{ needs.route.outputs.base }}
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

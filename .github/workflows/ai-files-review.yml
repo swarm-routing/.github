@@ -1,0 +1,91 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: ai-files-review
+
+# Do the AI files still tell the truth? Weekly, and on demand, this runs the
+# AI-files pass of tools/docs-review/check_docs.py (#142) on every public org
+# repository (tools/docs-review/ai_files_review.py, #143) and keeps one issue
+# per repository, `[docs] AI files: N finding(s)` (label documentation):
+# opened when there are findings, updated in place when they change, closed
+# when the repository is clean. Private repositories are never listed, so no
+# issue is opened in one. Pull requests that change the tools run the
+# self-tests only.
+#
+# Token: the org bot's, from .github/actions/bot-token as org-bot.yml uses it
+# (the GitHub App's installation token, else ORG_BOT_TOKEN). It needs Issues:
+# read and write on every repository. Without one, or with dry-run, nothing
+# is written: the run prints what it would open, update or close. The token
+# never runs on code from a pull request (the review step does not run there).
+on:
+  schedule:
+    - cron: '41 6 * * 2'
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: 'Comma-separated repository names (default: every public repo)'
+        type: string
+        default: ''
+      dry-run:
+        description: 'Print what would be opened, updated or closed; write nothing'
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - 'tools/docs-review/**'
+      - '.github/workflows/ai-files-review.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-files-review-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-tests
+        run: |
+          python3 -I tools/docs-review/check_docs.py --self-test
+          python3 -I tools/docs-review/ai_files_review.py --self-test
+      - name: Bot token
+        if: github.event_name != 'pull_request'
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: Review every repository's AI files
+        if: github.event_name != 'pull_request'
+        env:
+          AI_FILES_TOKEN: ${{ steps.bot.outputs.token }}
+          # reads (the org listing, issue states) work with the workflow's own token
+          GH_TOKEN: ${{ steps.bot.outputs.token || github.token }}
+        run: |
+          set -o pipefail
+          args=(run)
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -z "$AI_FILES_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): dry run only"
+          python3 -I tools/docs-review/ai_files_review.py "${args[@]}" | tee "$RUNNER_TEMP/review.txt"
+      - name: Summary
+        if: ${{ always() && github.event_name != 'pull_request' }}
+        run: |
+          {
+            echo "### ai-files-review"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/review.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"

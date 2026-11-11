@@ -10,8 +10,11 @@ name: org-sync check (reusable)
 # On pull_request only the PR's own drift fails (swarm-routing/.github#159):
 # `org_sync.py check --changed-only` against the PR's base, so a newer
 # template never turns red a PR that touches no managed file, and a PR that
-# edits a managed file or a managed section by hand still does. Pushes and
-# every other event keep the full check, so drift on main stays visible.
+# edits a managed file or a managed section by hand still does. A merge group
+# (the merge queue, #130) is judged the same way, against the group's base
+# (merge_group.base_sha), so a newer template does not stall the queue either.
+# Pushes and every other event keep the full check, so drift on main stays
+# visible.
 # A public contract (AGENTS.md rule 10): inputs are only ever added.
 on:
   workflow_call:
@@ -33,12 +36,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: repo
           persist-credentials: false
-          # a PR's merge commit and its first parent (the base), for --changed-only
-          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+          # a PR's merge commit and its first parent (the base), for --changed-only;
+          # a merge group's base can be several queued commits back: full history
+          fetch-depth: ${{ github.event_name == 'merge_group' && '0' || (github.event_name == 'pull_request' && '2' || '1') }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swarm-routing/.github
@@ -47,10 +56,11 @@ jobs:
           persist-credentials: false
       - name: org-sync check
         env:
-          CHANGED_ONLY: ${{ github.event_name == 'pull_request' && !inputs.full-check-on-pr }}
+          CHANGED_ONLY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !inputs.full-check-on-pr }}
+          BASE: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || 'HEAD^1' }}
         run: |
           scope=()
-          if [ "$CHANGED_ONLY" = true ]; then scope=(--changed-only HEAD^1); fi
+          if [ "$CHANGED_ONLY" = true ]; then scope=(--changed-only "$BASE"); fi
           python3 -I org/tools/org-sync/org_sync.py check "${scope[@]}" repo || {
             echo "::error::org-managed files drifted from swarm-routing/.github templates. Run locally: python3 org_sync.py conflicts . && python3 org_sync.py apply ."
             exit 1

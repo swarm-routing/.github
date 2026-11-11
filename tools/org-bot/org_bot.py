@@ -8,7 +8,8 @@ Usage:
   org_bot.py --self-test
 
 Two tasks, each a generator this repository already has, run on a fresh clone
-of each public repository:
+of each public repository (listed by `epics.py fetch`: the org listing, or
+ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
   epics     tools/epics/epics.py: the README's `## Epics` section, and in
             .github also ROADMAP.md#epics and the profile's open epics.
@@ -23,11 +24,20 @@ When a run changes files, the bot opens one PR per repository and task:
 - the title is a lowercase Conventional Commit;
 - the body says what was generated, from which run.
 
-If that exact change is already open as a PR, nothing happens. An older bot
-PR for the same task is closed as superseded, with a pointer to the new one.
-The bot never merges: CI runs on the PR because it is opened with a personal
-or app token, not the workflow's own GITHUB_TOKEN. A person or an agent
-merges it when CI is green.
+If that exact change is already open as a PR, nothing new is opened. An older
+bot PR for the same task is closed as superseded, with a pointer to the new
+one, so a repository has at most one open bot PR per task. CI runs on the PR
+because it is opened with a personal or app token, not the workflow's own
+GITHUB_TOKEN.
+
+Where the base branch has a merge queue (a `merge_queue` rule, read from
+`rules/branches/<base>`; repo-settings `merge_queue = true`, #128), the bot
+enables auto-merge on its own PR (GraphQL `enablePullRequestAutoMerge`, the
+REST API has none), so the PR enters the queue once its checks are green and
+lands with no hand step (#178). Only on the PRs it opens from its `org-bot/`
+branches, never on anyone else's. A repository without a merge queue is
+logged and left to a person or an agent to merge when CI is green; so is a PR
+whose auto-merge GitHub refuses (the line says why; the run goes on).
 
 The token comes from ORG_BOT_TOKEN, never from the command line: the org
 GitHub App's installation token when the workflow can make one (#21), else a
@@ -50,12 +60,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EPICS = os.path.join(ROOT, "tools", "epics", "epics.py")
 ORG_SYNC = os.path.join(ROOT, "tools", "org-sync", "org_sync.py")
 ORG = "swarm-routing"
 BOT = ("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
+AUTO_MERGE = (
+    "mutation($pr: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $pr}) "
+    "{ clientMutationId } }"
+)
 
 TASKS = {
     "epics": {
@@ -105,6 +120,15 @@ class GitHub:
         )
         if r.returncode != 0:
             raise Failure(f"gh api {method} {path}: {r.stderr.strip()}")
+        return json.loads(r.stdout) if r.stdout.strip() else {}
+
+    def graphql(self, query, **variables):
+        cmd = ["gh", "api", "graphql", "-f", f"query={query}"]
+        for k, v in variables.items():
+            cmd += ["-f", f"{k}={v}"]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        if r.returncode != 0:
+            raise Failure(f"gh api graphql: {r.stderr.strip() or r.stdout.strip()}")
         return json.loads(r.stdout) if r.stdout.strip() else {}
 
 
@@ -212,9 +236,31 @@ def pr_body(task, notes, run_url):
         "",
         f"Opened by the org-bot ({run_url or 'a local run'}): swarm-routing/.github "
         "`tools/org-bot/org_bot.py`. A newer change to the same files closes this PR as "
-        "superseded. Merge when CI is green.",
+        "superseded. Where `main` has a merge queue, auto-merge is on and it lands once "
+        "green; elsewhere merge it when CI is green.",
     ]
     return "\n".join(lines)
+
+
+def queue(gh, full, base, pr):
+    """Auto-merge for the bot's own PR `pr` where `base` has a merge queue, so it
+    enters the queue once green; the note to print."""
+    if not pr["head"]["ref"].startswith("org-bot/"):  # never anyone else's PR
+        raise Failure(f"#{pr['number']}: not an org-bot branch, auto-merge left alone")
+    if pr.get("auto_merge"):
+        return "auto-merge already on"
+    ref = urllib.parse.quote(base, safe="")
+    try:
+        rules = gh.api("GET", f"repos/{full}/rules/branches/{ref}?per_page=100")
+    except Failure as e:
+        return f"merge queue unknown ({e}): merge by hand once green"
+    if not any(r.get("type") == "merge_queue" for r in rules):
+        return f"no merge queue on {base}: merge by hand once green"
+    try:
+        gh.graphql(AUTO_MERGE, pr=pr["node_id"])
+    except Failure as e:
+        return f"auto-merge NOT enabled ({e}): merge by hand once green"
+    return "auto-merge on: enters the merge queue once green"
 
 
 def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
@@ -240,10 +286,11 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
         and p["head"].get("repo", {}).get("full_name", full) == full
     ]
     same = [p for p in mine if p["head"]["ref"] == branch]
-    if same:
-        print(f"{repo} {task}: already proposed in #{same[0]['number']}")
-        return {"number": same[0]["number"], "branch": branch}
     base = gh.api("GET", f"repos/{full}")["default_branch"]
+    if same:
+        note = queue(gh, full, base, same[0])
+        print(f"{repo} {task}: already proposed in #{same[0]['number']}; {note}")
+        return {"number": same[0]["number"], "branch": branch, "queue": note}
     sh(["git", "-C", clone, "checkout", "-q", "-b", branch], env=env)
     sh(["git", "-C", clone, "add", "-A"], env=env)
     msg = f"{TASKS[task]['title']}\n\nGenerated by swarm-routing/.github tools/org-bot ({run_url or 'local run'})."
@@ -272,8 +319,9 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
     closed = (
         f"; closed {', '.join('#' + str(o['number']) for o in mine)} as superseded" if mine else ""
     )
-    print(f"{repo} {task}: opened #{pr['number']} from {branch}{closed}")
-    return {"number": pr["number"], "branch": branch}
+    note = queue(gh, full, base, {**pr, "head": {"ref": branch}})
+    print(f"{repo} {task}: opened #{pr['number']} from {branch}{closed}; {note}")
+    return {"number": pr["number"], "branch": branch, "queue": note}
 
 
 def run(args, gh=None, clone_url=None):
@@ -303,7 +351,11 @@ def run(args, gh=None, clone_url=None):
         fetch = [sys.executable, "-I", EPICS, "fetch", "--out", data]
         if args.repos and "epics" not in tasks:
             fetch += ["--repos", args.repos]
-        sh(fetch, env=gh.env)
+        # epics.py says on stderr where the repository list came from (the org
+        # listing, or ROADMAP.md#epics where that listing is forbidden, #175)
+        source = sh(fetch, env=gh.env).stderr.strip()
+        if source:
+            print(f"org-bot: {source}")
     repos = [r["name"] for r in json.load(open(data))["repos"]]  # public, not archived, not forks
     if args.repos:
         wanted = [n.strip() for n in args.repos.split(",") if n.strip()]
@@ -420,18 +472,31 @@ def self_test():
     class FakeGitHub:
         env = dict(os.environ)
 
-        def __init__(self, open_prs=()):
+        def __init__(self, open_prs=(), merge_queue=False, refuse=False):
             self.calls, self.open = [], list(open_prs)
+            self.merge_queue, self.refuse = merge_queue, refuse
 
         def api(self, method, path, body=None):
             self.calls.append((method, path, body))
             if method == "GET" and "/pulls?" in path:
                 return self.open
+            if method == "GET" and "/rules/branches/main?" in path:
+                rules = [{"type": "pull_request"}, {"type": "required_status_checks"}]
+                return rules + ([{"type": "merge_queue"}] if self.merge_queue else [])
             if method == "GET":
                 return {"default_branch": "main"}
             if method == "POST" and path.endswith("/pulls"):
-                return {"number": 42}
+                return {"number": 42, "node_id": "PR_42"}
             return {}
+
+        def graphql(self, query, **variables):
+            self.calls.append(("GRAPHQL", query, variables))
+            if self.refuse:
+                raise Failure("gh api graphql: Auto merge is not allowed for this repository")
+            return {"data": {"enablePullRequestAutoMerge": {"clientMutationId": None}}}
+
+        def auto_merged(self):
+            return [c[2]["pr"] for c in self.calls if c[0] == "GRAPHQL" and "AutoMerge" in c[1]]
 
     clone_url = "file://" + remotes + "/{org}/{repo}.git"
 
@@ -562,6 +627,60 @@ def self_test():
             for c in gh.calls
         ),
     )
+    check("no merge queue: auto-merge not touched", gh.auto_merged() == [])
+    check("no merge queue: logged", "opened #42" in out and "no merge queue on main" in out)
+    # a merge queue on main: the new PR gets auto-merge, the older one is superseded
+    gh = FakeGitHub(
+        [
+            {
+                "number": 7,
+                "node_id": "PR_7",
+                "head": {"ref": "org-bot/epics-00000000", "repo": {"full_name": f"{ORG}/alpha"}},
+            }
+        ],
+        merge_queue=True,
+    )
+    sh(["git", "--git-dir", os.path.join(remotes, ORG, "alpha.git"), "branch", "-D", branch])
+    res, out = go(gh)
+    check(
+        "merge queue: auto-merge on the new PR only, the older one closed",
+        gh.auto_merged() == ["PR_42"]
+        and "closed #7 as superseded; auto-merge on" in out
+        and ("PATCH", f"repos/{ORG}/alpha/pulls/7", {"state": "closed"}) in gh.calls,
+    )
+    # the same change already open: auto-merge enabled once, never twice
+    open_pr = {
+        "number": 42,
+        "node_id": "PR_42",
+        "head": {"ref": branch, "repo": {"full_name": f"{ORG}/alpha"}},
+    }
+    gh = FakeGitHub([open_pr], merge_queue=True)
+    res, out = go(gh)
+    check(
+        "same change, queue: auto-merge enabled",
+        gh.auto_merged() == ["PR_42"] and "already proposed in #42; auto-merge on" in out,
+    )
+    gh = FakeGitHub([dict(open_pr, auto_merge={"merge_method": "squash"})], merge_queue=True)
+    res, out = go(gh)
+    check(
+        "same change, auto-merge already on: nothing written",
+        gh.auto_merged() == [] and "auto-merge already on" in out,
+    )
+    # GitHub refuses auto-merge: logged, the run goes on
+    gh = FakeGitHub([open_pr], merge_queue=True, refuse=True)
+    res, out = go(gh)
+    check(
+        "auto-merge refused: logged, not a failure",
+        "auto-merge NOT enabled" in out and "FAILED" not in out and res,
+    )
+    # only the bot's own branches
+    try:
+        queue(
+            FakeGitHub(merge_queue=True), f"{ORG}/alpha", "main", dict(open_pr, head={"ref": "x"})
+        )
+        check("someone else's PR refused", False)
+    except Failure:
+        pass
     # a PR of another task, or from a fork, is left alone
     gh = FakeGitHub(
         [
@@ -663,16 +782,17 @@ def self_test():
         if len(cmd) > 3 and cmd[2] == EPICS and cmd[3] == "fetch":
             fetches.append(cmd)
             shutil.copy(wide, cmd[cmd.index("--out") + 1])
-            return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, 0, "", "epics: repositories from X (2)")
         return real_sh(cmd, cwd=cwd, env=env, check=check)
 
     globals()["sh"], globals()["generate"] = fake_sh, spy_generate
     try:
-        go(FakeGitHub(), repos="beta", data="")
+        _, fetched = go(FakeGitHub(), repos="beta", data="")
         go(FakeGitHub(), repos="beta", data="", task="org-sync")
     finally:
         globals()["sh"], globals()["generate"] = real_sh, real_generate
     check("epics fetch is never limited by --repos", fetches and "--repos" not in fetches[0])
+    check("the repository source is printed", "org-bot: epics: repositories from X (2)" in fetched)
     check(
         "org-sync-only fetch is limited to its repositories",
         len(fetches) == 2 and fetches[1][-2:] == ["--repos", "beta"],

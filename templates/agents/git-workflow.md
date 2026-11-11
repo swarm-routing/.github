@@ -9,9 +9,10 @@
   up-to-date branch and the required checks. Bots push `bot/<name>` branches
   and open PRs; a release is the bump PR from `bot/release`, tagged after it
   merges (CONTRIBUTING "Cutting a release").
-- When a PR falls behind `main`, update it
-  (`gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`) and merge PRs
-  one at a time, each after its CI on the updated branch. Never force-push a
+- When a PR falls behind `main`, update it from a checkout of the repo (`gh`
+  fills `{owner}` and `{repo}`; set `PR` to the PR number):
+  `PR=123; gh api -X PUT "repos/{owner}/{repo}/pulls/$PR/update-branch"`.
+  Then merge PRs one at a time, each after its CI on the updated branch. Never force-push a
   branch someone else pushed. A behind `bot/release` PR is the exception:
   dispatch the release `bump` again, so the version and changelog are rebuilt
   on the new `main`.

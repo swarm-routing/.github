@@ -195,6 +195,8 @@ jobs:
       # Sanitized leg: fail on the first report; leaks are reported at exit.
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    # No Harden-Runner here (#164): a job that runs entirely in a container
+    # cannot take it on a GitHub-hosted runner (it needs sudo on the VM).
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -485,6 +487,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
