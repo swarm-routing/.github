@@ -188,11 +188,17 @@ runs until their secret is set, and the secrets belong to the maintainer:
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer. The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
 Each adopting repository's `org-sync` check (`reusable-org-sync-check.yml`)
-judges a PR by its own change only (#159): on `pull_request` it runs
-`org_sync.py check --changed-only` against the PR's base, so it fails only when
-the PR changes a managed file (or deletes a seed) or touches a line inside a
-managed section. A template change here therefore never turns red the open PRs
-that touch no managed file; they merge as they are, and org-bot's refresh PR
+judges a PR by its own change only (#159): on `pull_request` and
+`merge_group` it runs `org_sync.py check --changed-only` against the base, so
+an item fails only when it drifts at the PR's head and either did not drift at
+the base (the same templates rendered on the base's tree: a config change
+whose render the PR did not apply) or the PR edited it by hand (changed the
+managed file, deleted a seed, or touched a line inside a managed section).
+Editing `.github/org-sync.toml` alone (a `[settings]` key such as
+`required_checks`) is not a hand edit of every item. Drift a newer template
+left on the base is a `::warning::` annotation per item, naming it, and the
+check passes. A template change here therefore never turns red the open PRs
+of the adopting repositories; they merge as they are, and org-bot's refresh PR
 brings the templates in. A push to `main` keeps the full check, so drift there
 stays visible until the refresh PR merges. A caller that wants the full check on
 PRs too passes `full-check-on-pr: true`.
