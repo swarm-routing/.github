@@ -17,7 +17,10 @@ Exempt, since their commits are made by the maintainer's own account or a bot:
   repository (``repos/{o}/{r}/collaborators/{user}/permission``);
 - commits by ``swarm-routing-bot[bot]`` and ``dependabot[bot]``;
 - agent commits (a ``Claude-Session:`` trailer) on a PR whose
-  ``author_association`` is OWNER, MEMBER or COLLABORATOR: the member who
+  ``author_association`` is OWNER, MEMBER or COLLABORATOR, or whose author
+  has write, maintain or admin permission (the event payload reports a
+  private org member as CONTRIBUTOR, so the permission is the reliable
+  signal): the member who
   opened the PR certifies it, and an agent never signs off (#212); the same
   commit on an outside contributor's PR still needs its author's sign-off;
 - merge commits that add nothing of their own (an "Update branch" merge
@@ -191,7 +194,9 @@ def verdicts(commits, logins, pr_author, association, has_write) -> list[tuple[s
             out.append(("exempt", c, f"{login} is {association}"))
         elif login and has_write(login):
             out.append(("exempt", c, f"{login} has write access"))
-        elif association in EXEMPT_ASSOCIATIONS and agent_commit(c["message"]):
+        elif agent_commit(c["message"]) and (
+            association in EXEMPT_ASSOCIATIONS or (pr_author and has_write(pr_author))
+        ):
             out.append(("exempt", c, f"agent commit on a PR by {pr_author} ({association})"))
         elif ident(c["name"], c["email"]) in signoffs(c["message"]):
             out.append(("ok", c, f"Signed-off-by {c['name']} <{c['email']}>"))
@@ -344,6 +349,11 @@ def self_test() -> int:
         if got["p6"] != "exempt" or got["b2"] != "FAIL" or got["i9"] != "FAIL" or got["a1"] != "ok":
             fails += 1
             print(f"SELF-TEST FAIL (agent commit, {assoc} PR): {got}")
+    # a private org member: the event says CONTRIBUTOR, the permission says write
+    got = {c["sha"]: s for s, c, _ in verdicts(commits, logins, "writer", "CONTRIBUTOR", has_write)}
+    if got["p6"] != "exempt" or got["q7"] != "FAIL" or got["b2"] != "FAIL":
+        fails += 1
+        print(f"SELF-TEST FAIL (agent commit, writer's PR as CONTRIBUTOR): {got}")
     # pagination and a commit without a GitHub author
     pages = {
         1: [{"sha": f"s{i}", "author": {"login": "ada"}} for i in range(100)],

@@ -7,7 +7,8 @@ name: Reusable DCO check
 # author email (`git commit -s`). Commits by the PR's author when the PR is an
 # OWNER's, MEMBER's or COLLABORATOR's, by anyone with write access, by
 # swarm-routing-bot[bot] and Dependabot, agent commits (a `Claude-Session:`
-# trailer) on an OWNER's, MEMBER's or COLLABORATOR's PR (#212), and merge
+# trailer) on an OWNER's, MEMBER's or COLLABORATOR's PR or one by a user with
+# write access (#212), and merge
 # commits that add nothing beyond their parents (an empty combined diff) are
 # exempt. The
 # commits come from git; only each commit's GitHub login comes from the REST

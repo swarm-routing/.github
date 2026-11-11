@@ -262,7 +262,9 @@ under the licence grant already recorded in AntHocNet ADR-0028. **An AI agent
 never adds a `Signed-off-by` trailer**, for the maintainer, for itself or for
 anyone else: a sign-off is a person's own certification. Instead, an agent
 commit (one whose message carries a `Claude-Session:` trailer) is exempt when
-the PR's author is the repository's OWNER, a MEMBER or a COLLABORATOR: the
+the PR's author is the repository's OWNER, a MEMBER or a COLLABORATOR, or has
+write access to it (a private org member shows as CONTRIBUTOR in the PR
+event, so the check also asks for the author's permission): the
 person who opened the PR certifies its contents by opening it (maintainer
 decision, #212). The same commit on an outside contributor's PR is not
 exempt; it needs its author's own sign-off, since no one signs off on anyone
