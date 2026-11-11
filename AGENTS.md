@@ -24,6 +24,7 @@ labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style
 ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
 tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags)
+tools/checks/check-swarm-core-pin.py   a protocol's swarm-core pin: one commit everywhere, and swarm-core main's core/ (reusable-swarm-core-pin.yml)
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: only a PR's own drift fails, the base's warns); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
@@ -49,7 +50,7 @@ SUPPORT.md                      the org default support policy: issues for bugs,
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/actions/bot-token/      the bots' token: the org GitHub App's installation token, else ORG_BOT_TOKEN (#21; CONTRIBUTING "The bot's GitHub App")
 .github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-benchmark-cell.yml, reusable-python-ci.yml,
-                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-scorecard.yml,
+                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-scorecard.yml, reusable-swarm-core-pin.yml,
                            sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
                            benchmark-cell-selftest.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
@@ -65,6 +66,7 @@ actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
+python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
 python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo
