@@ -1,0 +1,19 @@
+# Citation File Format (https://citation-file-format.github.io), seeded by
+# swarm-routing/.github org-sync (`citation = true`); the repository's own once
+# written. Commitizen keeps `version:` in step (`.cz.toml` version_files
+# "CITATION.cff:^version:"); swarm-routing/.github tools/zenodo reads the
+# concept DOI from `doi:` once the first release is archived on Zenodo.
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "@TITLE@"
+abstract: >-
+@ABSTRACT@
+type: software
+authors:
+  - family-names: Joppi
+    given-names: Daniel Henrique
+    orcid: "https://orcid.org/0009-0009-6436-8174"
+version: @VERSION@
+@LICENSE@repository-code: "https://github.com/@REPO@"
+url: "https://github.com/@REPO@"
+@DOI@

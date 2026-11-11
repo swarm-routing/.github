@@ -16,6 +16,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import org_sync  # noqa: E402
 
+sys.path.insert(0, os.path.join(HERE, "..", "zenodo"))
+import zenodo  # noqa: E402
+
 ORG = org_sync.ORG
 
 
@@ -171,6 +174,92 @@ check(
     and "metric=security_rating" in rq
     and "metric=bugs" not in rq,
     "a container repo's scanner badges are live: workflow, Hadolint and Trivy jobs, Sonar gate + security",
+)
+# release, doi and cite: each only when its target exists
+dr = fresh()
+run("init", dr, "--kind", "protocol", "--dual", "core/")
+rr = read(os.path.join(dr, "README.md"))
+check(
+    "github/v/release" not in rr
+    and "zenodo.org" not in rr
+    and "CITATION.cff" not in rr
+    and not os.path.exists(os.path.join(dr, "CITATION.cff")),
+    "no release, DOI or cite badge and no CITATION.cff by default",
+)
+os.makedirs(os.path.join(dr, ".github/workflows"), exist_ok=True)
+write(
+    os.path.join(dr, ".github/workflows/release.yml"),
+    "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n",
+)
+write(
+    os.path.join(dr, ".cz.toml"),
+    '[tool.commitizen]\nversion = "0.1.0"\nversion_files = ["CITATION.cff:^version:"]\n',
+)
+# top-level keys, so before the [docs] table init wrote
+edit(
+    dr,
+    ".github/org-sync.toml",
+    'kind = "protocol"\n',
+    'kind = "protocol"\ncitation = true\nzenodo_concept = "not-read-from-zenodo"\n',
+)
+run("apply", dr)
+rr = read(os.path.join(dr, "README.md"))
+cff = read(os.path.join(dr, "CITATION.cff"))
+check(
+    "[![Release](https://img.shields.io/github/v/release/swarm-routing/demo?sort=semver&cacheSeconds=1800)]"
+    "(https://github.com/swarm-routing/demo/releases)" in rr,
+    "the release badge appears once a workflow calls reusable-release.yml (AntHocNet's form)",
+)
+check(
+    "[![Cite](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)" in rr,
+    "citation = true seeds CITATION.cff, and the cite badge follows it",
+)
+check(
+    "zenodo.org" not in rr and "\ndoi:" not in cff,
+    "a zenodo_concept that is not a record id renders no DOI",
+)
+check(
+    "version: 0.1.0\n" in cff
+    and 'repository-code: "https://github.com/swarm-routing/demo"' in cff
+    and 'orcid: "https://orcid.org/0009-0009-6436-8174"' in cff
+    and "  - GPL-2.0-only\n  - MIT\n" in cff
+    and "abstract: >-\n  **Status: empty.**" in cff,
+    "CITATION.cff: Commitizen's version, the repo URL, AntHocNet's author entry, per-directory licences",
+)
+try:
+    import yaml  # optional: the CFF parses as YAML when PyYAML is there
+except ImportError:
+    yaml = None
+if yaml:
+    doc = yaml.safe_load(cff)
+    check(doc["cff-version"] == "1.2.0" and doc["title"] == "demo", "CITATION.cff is valid YAML")
+edit(dr, ".github/org-sync.toml", '"not-read-from-zenodo"', '"1234567"')
+run("apply", dr)
+rr = read(os.path.join(dr, "README.md"))
+check(
+    "[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1234567.svg)]"
+    "(https://doi.org/10.5281/zenodo.1234567)" in rr,
+    "zenodo_concept renders the DOI badge",
+)
+check(
+    "\ndoi:" not in read(os.path.join(dr, "CITATION.cff")),
+    "a written CITATION.cff is the repo's own",
+)
+rc, out = run("reseed", "CITATION.cff", dr)
+cff = read(os.path.join(dr, "CITATION.cff"))
+check(
+    rc == 0 and 'doi: "10.5281/zenodo.1234567"' in cff and zenodo.concept_from(cff) == "1234567",
+    "reseed CITATION.cff writes the concept DOI once zenodo_concept is set, as zenodo.py reads it",
+)
+check(run("check", dr)[0] == 0, "check is clean with release, doi and cite")
+dl = fresh()
+run("init", dl, "--kind", "python", "--dual", "")
+edit(dl, ".github/org-sync.toml", 'kind = "python"\n', 'kind = "python"\ncitation = true\n')
+run("apply", dl)
+cff = read(os.path.join(dl, "CITATION.cff"))
+check(
+    "license:\n  - MIT\n  - GPL-2.0-only\n" in cff and "version: 0.0.0\n" in cff,
+    "a fully dual repo's CITATION.cff lists both licences; no .cz.toml reads 0.0.0",
 )
 da = fresh()
 run("init", da, "--kind", "skills", "--dual", "")

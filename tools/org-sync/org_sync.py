@@ -51,6 +51,7 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 import tomllib
 from urllib.parse import quote
 
@@ -74,8 +75,11 @@ def markers(path):
 
 
 # Badges per kind (swarm-routing/.github#8). Each appears only when its target
-# exists (see badge_lines). `sonar` is the four SonarQube Cloud badges
-# (quality gate, bugs, security, maintainability); `sonar-gate`, `sonar-bugs`,
+# exists (see badge_lines): `release` when a workflow calls reusable-release.yml,
+# `doi` when the config names its `zenodo_concept` (read from Zenodo, never
+# typed: the concept exists only after the first release is archived), `cite`
+# when the repository has a CITATION.cff (`citation = true` seeds one).
+# `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security, maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
 SONAR_METRICS = {
     "sonar-gate": ("Quality Gate Status", "alert_status"),
@@ -83,7 +87,7 @@ SONAR_METRICS = {
     "sonar-security": ("Security Rating", "security_rating"),
     "sonar-maintainability": ("Maintainability Rating", "sqale_rating"),
 }
-BASE_BADGES = ["ci", "licence", "conventional", "arena"]
+BASE_BADGES = ["ci", "release", "doi", "cite", "licence", "conventional", "arena"]
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
     "c-cpp": ["cxx", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -219,15 +223,26 @@ def sonar_key(cfg):
     return cfg.get("quality", {}).get("sonar_key") or cfg["repo"].replace("/", "_")
 
 
-def uploads_coverage(cfg, repo_dir):
-    """True when a workflow of the repository sends coverage to Codecov (the
-    reusable-codecov.yml job), so the badge never reads `unknown`."""
+def calls_workflow(repo_dir, reusable):
+    """True when a workflow of the repository calls this reusable workflow."""
     wfdir = os.path.join(repo_dir, ".github/workflows")
     try:
         names = sorted(os.listdir(wfdir))
     except OSError:
         return False
-    return any("reusable-codecov.yml" in (read(os.path.join(wfdir, n)) or "") for n in names)
+    return any(reusable in (read(os.path.join(wfdir, n)) or "") for n in names)
+
+
+def uploads_coverage(cfg, repo_dir):
+    """True when a workflow of the repository sends coverage to Codecov (the
+    reusable-codecov.yml job), so the badge never reads `unknown`."""
+    return calls_workflow(repo_dir, "reusable-codecov.yml")
+
+
+def zenodo_concept(cfg):
+    """The Zenodo concept record id from `zenodo_concept`, digits only, else ''."""
+    c = str(cfg.get("zenodo_concept", "")).strip()
+    return c if c.isdigit() else ""
 
 
 def check_runs_badge(repo, label, job, logo):
@@ -253,6 +268,18 @@ def badge_lines(cfg, repo_dir):
             if os.path.exists(os.path.join(repo_dir, ".github/workflows", wf)):
                 url = f"https://github.com/{repo}/actions/workflows/{wf}"
                 out.append(f"[![CI]({url}/badge.svg)]({url})")
+        elif b == "release" and calls_workflow(repo_dir, "reusable-release.yml"):
+            out.append(
+                f"[![Release](https://img.shields.io/github/v/release/{repo}?sort=semver&cacheSeconds=1800)]"
+                f"(https://github.com/{repo}/releases)"
+            )
+        elif b == "doi" and zenodo_concept(cfg):
+            doi = f"10.5281/zenodo.{zenodo_concept(cfg)}"
+            out.append(f"[![DOI](https://zenodo.org/badge/DOI/{doi}.svg)](https://doi.org/{doi})")
+        elif b == "cite" and os.path.exists(os.path.join(repo_dir, "CITATION.cff")):
+            out.append(
+                "[![Cite](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)"
+            )
         elif b == "licence":
             out.append(
                 f"[![Licence: {licence_text(cfg)}]({shield('licence', licence_text(cfg), 'blue')})](LICENSING.md)"
@@ -383,6 +410,47 @@ def render_makefile(cfg):
     )
 
 
+def render_citation(cfg, repo_dir):
+    """CITATION.cff.in for this repository: the abstract from `description`,
+    the licences from the dual roots (CFF takes SPDX ids, not an expression),
+    the version Commitizen holds, the concept DOI only when `zenodo_concept`."""
+    abstract = re.sub(r"\s+", " ", cfg["description"]).strip()
+    cz = read(os.path.join(repo_dir, ".cz.toml"))
+    try:
+        version = tomllib.loads(cz)["tool"]["commitizen"]["version"] if cz else "0.0.0"
+    except (tomllib.TOMLDecodeError, KeyError, TypeError):
+        version = "0.0.0"
+    if cfg["dual"] == [""]:
+        lic = "license:\n  - MIT\n  - GPL-2.0-only\n"
+    elif cfg["dual"]:
+        roots = " ".join(dual_root(d) for d in cfg["dual"])
+        lic = (
+            f"# Per directory (LICENSING.md): {roots} MIT OR GPL-2.0-only, the rest\n"
+            "# GPL-2.0-only. CFF takes a list of SPDX ids, not an expression.\n"
+            "license:\n  - GPL-2.0-only\n  - MIT\n"
+        )
+    else:
+        lic = "license: GPL-2.0-only\n"
+    doi = ""
+    if zenodo_concept(cfg):
+        d = f"10.5281/zenodo.{zenodo_concept(cfg)}"
+        doi = (
+            f'doi: "{d}"\nidentifiers:\n  - type: doi\n    value: "{d}"\n'
+            '    description: "Concept DOI: always resolves to the latest released version."\n'
+        )
+    return (
+        template("CITATION.cff.in")
+        .replace("@TITLE@", cfg["title"].replace('"', "'"))
+        .replace(
+            "@ABSTRACT@", textwrap.fill(abstract, 78, initial_indent="  ", subsequent_indent="  ")
+        )
+        .replace("@VERSION@", version)
+        .replace("@LICENSE@", lic)
+        .replace("@REPO@", cfg["repo"])
+        .replace("@DOI@\n", doi)
+    )
+
+
 def header_args(cfg):
     """check-headers.py flags from the repo's dual roots (the same list
     LICENSING.md is rendered from); a dual `core/` also gets the include check."""
@@ -484,6 +552,9 @@ def items(cfg):
             out.append(
                 ("seed", "sonar-project.properties", "quality/sonar-project.properties.in", None)
             )
+    if cfg.get("citation"):
+        # opt-in: citation metadata for a repository that releases (Zenodo, cite badge)
+        out.append(("seed", "CITATION.cff", "CITATION.cff.in", None))
     skip = set(cfg.get("skip", []))
     return [i for i in out if i[1] not in skip and f"{i[1]}#{i[3]}" not in skip]
 
@@ -523,7 +594,12 @@ def render(cfg, repo_dir, item, v=None):
     kind, path, src, name = item
     want = badge_lines(cfg, repo_dir) if name == "badges" else (template(src) or "" if src else "")
     if kind == "seed":
-        want = render_makefile(cfg) if path == "Makefile" else want.format_map(v or values(cfg))
+        if path == "Makefile":
+            want = render_makefile(cfg)
+        elif path == "CITATION.cff":
+            want = render_citation(cfg, repo_dir)
+        else:
+            want = want.format_map(v or values(cfg))
     return want
 
 
