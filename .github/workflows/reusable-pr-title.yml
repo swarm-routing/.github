@@ -13,6 +13,7 @@ name: Reusable PR title check
 #   on:
 #     pull_request:
 #       types: [opened, edited, synchronize, reopened]
+#     merge_group:   # where the repository merges through a merge queue (#130)
 #   permissions: {}
 #   jobs:
 #     title:
@@ -30,9 +31,11 @@ permissions: {}
 jobs:
   title:
     # Dependabot titles `chore(deps): Bump …` with a capital B and cannot be
-    # told otherwise; its type prefix is valid. A job skipped by `if:` still
-    # satisfies a required check.
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    # told otherwise; its type prefix is valid. A merge group has no PR title:
+    # the title was checked on the PR before it entered the queue, and an edit
+    # after that re-runs this check on the PR (#130). A job skipped by `if:`
+    # still satisfies a required check.
+    if: github.event_name != 'merge_group' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

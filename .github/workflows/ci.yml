@@ -9,6 +9,7 @@ on:
     branches: [main]
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  merge_group:  # the merge queue runs the required checks on each group (swarm-routing/.github#130)
 
 permissions:
   contents: read
@@ -65,5 +66,7 @@ jobs:
       source: tools
 
   title:
-    if: github.event_name == 'pull_request'
+    # Not on push: there is no title. On a merge group the reusable job skips
+    # itself, which still reports `title / title` (a skipped check passes).
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     uses: ./.github/workflows/reusable-pr-title.yml
