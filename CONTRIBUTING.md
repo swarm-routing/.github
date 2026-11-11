@@ -529,7 +529,9 @@ with none, from its publisher's or institution's record (for a handle,
 `curl -sSL https://hdl.handle.net/<id> | grep -o '<meta name="citation_[a-z_]*" content="[^"]*"'`).
 `role` is the repository's own line on what the work is for.
 `citation_type = "dataset"` (`software` by default) gives a dataset's
-`type:` and message. `tools/docs-review/check_docs.py` checks a released
+`type:` and message; `citation_message = "..."` (one line, no double quotes)
+replaces that message with the repository's own, which CITATION.cff then
+keeps on `reseed`. `tools/docs-review/check_docs.py` checks a released
 repository (a `v*` tag or `zenodo_concept`) for all of it: the DOI badge,
 CITATION.cff's `doi:` equal to the concept, the citing section, and for a
 protocol a reference per source with a DOI or the reason it has none.
