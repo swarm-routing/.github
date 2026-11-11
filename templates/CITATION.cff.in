@@ -13,7 +13,7 @@ authors:
   - family-names: Joppi
     given-names: Daniel Henrique
     orcid: "https://orcid.org/0009-0009-6436-8174"
-version: @VERSION@
+version: "@VERSION@"
 @LICENSE@repository-code: "https://github.com/@REPO@"
 url: "https://github.com/@REPO@"
 @DOI@

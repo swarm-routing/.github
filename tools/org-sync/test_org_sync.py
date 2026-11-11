@@ -223,7 +223,7 @@ check(
     "a zenodo_concept that is not a record id renders no DOI",
 )
 check(
-    "version: 0.1.0\n" in cff
+    'version: "0.1.0"\n' in cff
     and 'repository-code: "https://github.com/swarm-routing/demo"' in cff
     and 'orcid: "https://orcid.org/0009-0009-6436-8174"' in cff
     and "\nlicense: GPL-2.0-only\n" in cff
@@ -266,13 +266,25 @@ check(
     and (not yaml or yaml.safe_load(cff)["abstract"] == GH_DESC),
     "the abstract is [settings] description, every hyphenated word whole",
 )
+write(os.path.join(dr, ".cz.toml"), '[tool.commitizen]\nversion = "1.20"\n')
+edit(
+    dr, ".github/org-sync.toml", 'kind = "protocol"\n', 'kind = "protocol"\ntitle = "Test @REPO@"\n'
+)
+run("reseed", "CITATION.cff", dr)
+cff = read(os.path.join(dr, "CITATION.cff"))
+check(
+    'title: "Test @REPO@"\n' in cff
+    and 'version: "1.20"\n' in cff
+    and (not yaml or yaml.safe_load(cff)["version"] == "1.20"),
+    "CITATION.cff: placeholders filled in one pass, the version quoted (1.20 stays a string)",
+)
 dl = fresh()
 run("init", dl, "--kind", "python", "--dual", "")
 edit(dl, ".github/org-sync.toml", 'kind = "python"\n', 'kind = "python"\ncitation = true\n')
 run("apply", dl)
 cff = read(os.path.join(dl, "CITATION.cff"))
 check(
-    "license:\n  - MIT\n  - GPL-2.0-only\n" in cff and "version: 0.0.0\n" in cff,
+    "license:\n  - MIT\n  - GPL-2.0-only\n" in cff and 'version: "0.0.0"\n' in cff,
     "a fully dual repo's CITATION.cff lists both licences; no .cz.toml reads 0.0.0",
 )
 da = fresh()

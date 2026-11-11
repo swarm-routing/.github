@@ -442,25 +442,28 @@ def render_citation(cfg, repo_dir):
             f'doi: "{d}"\nidentifiers:\n  - type: doi\n    value: "{d}"\n'
             '    description: "Concept DOI: always resolves to the latest released version."\n'
         )
-    return (
-        template("CITATION.cff.in")
-        .replace("@TITLE@", cfg["title"].replace('"', "'"))
-        .replace(
-            "@ABSTRACT@",
-            textwrap.fill(
-                abstract,
-                78,
-                initial_indent="  ",
-                subsequent_indent="  ",
-                # a folded scalar joins lines with a space: never split a word
-                break_on_hyphens=False,
-                break_long_words=False,
-            ),
-        )
-        .replace("@VERSION@", version)
-        .replace("@LICENSE@", lic)
-        .replace("@REPO@", cfg["repo"])
-        .replace("@DOI@\n", doi)
+    abstract = textwrap.fill(
+        abstract,
+        78,
+        initial_indent="  ",
+        subsequent_indent="  ",
+        # a folded scalar joins lines with a space: never split a word
+        break_on_hyphens=False,
+        break_long_words=False,
+    )
+    fields = {
+        "TITLE": cfg["title"].replace('"', "'"),
+        "ABSTRACT": abstract,
+        "VERSION": version.replace('"', ""),
+        "LICENSE": lic,
+        "REPO": cfg["repo"],
+    }
+    # one pass over the template, so a value that contains @NAME@ stays as
+    # written; @DOI@ fills its whole line, or drops it
+    return re.sub(
+        r"@DOI@\n|@([A-Z]+)@",
+        lambda m: doi if m.group(1) is None else fields.get(m.group(1), m.group(0)),
+        template("CITATION.cff.in"),
     )
 
 
