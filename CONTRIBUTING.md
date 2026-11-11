@@ -211,6 +211,39 @@ collected into `swarm-routing/benchmarks`, which keeps it.
 `routing-bench` at a pinned commit, OLSR, 2 seeds) on every PR that changes
 the workflow.
 
+**Callers follow the safe pattern** (#160). A cell checks out and runs the code
+at a commit it is given (`source_sha`), and a `workflow_dispatch` run does that
+in the default branch's context, whose Actions caches every other workflow of
+the repository shares. Code at that commit could therefore seed a cache that a
+trusted run (a release, `main`'s CI) later restores, which is the cache
+poisoning CodeQL flags (it did on `benchmark-cell-selftest.yml`, #158). The
+rule, which `reusable-benchmark-cell.yml` follows so its callers inherit it:
+
+- **No Actions cache.** The cell job sets `cache-mode: none`, so the cache
+  service refuses every restore and save in it (a called workflow never gets
+  more cache access than that), and no step asks for one (no `actions/cache`,
+  no `setup-*` `cache:`, no buildx `type=gha`), least of all keyed by a caller
+  input such as `source_sha`. The mode matters even with no cache step: code
+  run by `stage` or the harness could alter a later action step, which holds
+  the runtime token, and save a cache from there. The caller adds no cache
+  step and no other job to its cell workflow, and sets `cache-mode: none` on
+  its calling job too (the caller in the workflow's header does). actionlint
+  does not know the key yet; ignore that one message in `.github/actionlint.yaml`
+  as this repository does.
+- **Least permissions.** The caller grants `contents: read` and
+  `packages: read` only, and passes no secrets (no `secrets: inherit`), so the
+  code at `source_sha` holds a read-only token and nothing else.
+- **No credential left behind.** The checkout uses `persist-credentials:
+  false`, and the cell logs out of `ghcr.io` once the image is pulled, before
+  any step runs the checked-out code.
+- **`workflow_dispatch` only.** No `push`, `pull_request_target`,
+  `workflow_run` or `issue_comment` trigger: only someone with write access
+  dispatches a cell, on a commit of their choosing. The self-test here runs on
+  `pull_request` only: a cache a PR run saves is scoped to the PR's merge ref,
+  so it cannot poison `main`'s (a PR run can still restore `main`'s caches, so
+  a cache is never a place for secrets; the cell job's `cache-mode: none`
+  turns both off anyway).
+
 ### The bot's GitHub App
 
 `org-bot`, `repo-settings` and `repo-metadata` get their token from

@@ -69,6 +69,7 @@ name: Reusable benchmark cell
 #   permissions: { contents: read, packages: read }
 #   jobs:
 #     cell:
+#       cache-mode: none
 #       uses: swarm-routing/.github/.github/workflows/reusable-benchmark-cell.yml@main
 #       with:
 #         image: ${{ inputs.image }}
@@ -84,6 +85,29 @@ name: Reusable benchmark cell
 #         dependencies: |
 #           swarm-core=swarm-routing/ns3-swarm-core@<40-char commit>
 #           routing-bench=swarm-routing/ns3-tools@<40-char commit>:ns3/routing-bench
+#
+# Callers: the safe pattern (#160). A cell checks out and runs the code at
+# `source_sha` in the caller's default-branch context, where Actions caches
+# are shared with every other workflow of the repository, so CodeQL's cache
+# poisoning query looks at it. This workflow keeps it safe, and a caller keeps
+# it so:
+#
+#   - no Actions cache: the cell job sets `cache-mode: none`, so the cache
+#     service refuses every restore and save in it (a called workflow never
+#     gets more cache access than this), and no step asks for one (no
+#     actions/cache, no setup-* `cache:`, no buildx `type=gha`). Without it,
+#     code at a caller-chosen commit (`stage`, the harness) could alter a
+#     later action step, which holds the runtime token, and seed a cache a
+#     trusted run restores. The caller adds no cache step or other job to its
+#     cell workflow, and may set `cache-mode: none` on its calling job too;
+#   - least permissions: the caller's workflow grants `contents: read,
+#     packages: read` and nothing more, and passes no secrets (no `secrets:
+#     inherit`); the job asks for exactly those two;
+#   - no credential left behind: the checkout uses `persist-credentials:
+#     false`, and the registry login is logged out as soon as the image is
+#     pulled, before any step runs the checked-out code;
+#   - `workflow_dispatch` only: no push, pull_request_target, workflow_run or
+#     issue_comment trigger, so only someone with write access starts a cell.
 #
 # Inputs only ever gain backward-compatible defaults (rule 10). The workflow
 # declares `contents: read, packages: read`, which the caller grants.
@@ -132,6 +156,10 @@ jobs:
     name: ${{ inputs.harness }} ${{ inputs.cell }}
     runs-on: ubuntu-24.04
     timeout-minutes: 360   # the hosted-runner ceiling
+    # No Actions cache restore or save in a job that runs code at a given
+    # commit (#160; enforced by the cache service). actionlint does not know
+    # the key yet: .github/actionlint.yaml ignores that one message.
+    cache-mode: none
     permissions:
       contents: read
       packages: read
@@ -184,7 +212,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The pinned commit, not the dispatch ref (#157, AntHocNet#867).
+          # The pinned commit, not the dispatch ref (#157, AntHocNet#867). No
+          # token is left in .git/config for the code at that commit (#160).
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
 
@@ -210,6 +239,9 @@ jobs:
         run: |
           set -euo pipefail
           docker pull --quiet "$IMAGE"
+          # No registry credential stays on the runner while the checked-out
+          # code runs (#160): the image is local now, nothing pulls again.
+          docker logout ghcr.io
           docker image inspect "$IMAGE" --format '{{json .Config}}' > "$RUNNER_TEMP/config.json"
           python3 - "$RUNNER_TEMP/config.json" <<'PY' >> "$GITHUB_ENV"
           import json, os, re, sys
