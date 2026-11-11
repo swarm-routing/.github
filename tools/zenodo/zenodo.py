@@ -68,12 +68,18 @@ AntHocNet's v2.6.1 was):
   record linking one of the release tags), or, with none, the first version
   of a new concept with `create`'s metadata. The concept and version DOIs go
   to the output and the job summary. A dry run unless --publish is given;
-  --publish without ZENODO_TOKEN is refused.
+  --publish without ZENODO_TOKEN is refused. The tag must be a published,
+  non-prerelease GitHub release, and a tag older than one the concept already
+  holds is refused (as `sync` leaves a stranded release to the maintainer).
+  With --sandbox the recorded concept (the real Zenodo's) is ignored: only a
+  sandbox record linking a release tag counts, else a test concept is made.
 
 Every Zenodo call is retried with exponential backoff (5 s, doubling, 5
-tries; Retry-After honoured): a 429 or 503 always, a 500, 502 or 504 or a
-dropped connection only when the call is not a POST. Any other refusal stops
-the command with a non-zero exit.
+tries; Retry-After honoured, as seconds or a date, up to 300 s): a 429
+always, a 500, 502, 503 or 504 or a dropped connection only when the call is
+not a POST (a POST may have acted; the next run finds what it left). Any
+other refusal stops the command with a non-zero exit. The token is only ever
+sent over HTTPS (or to a loopback address, the self-test's fake).
 
 GitHub is read through `gh api` (the caller's login, or GH_TOKEN in a
 workflow); Zenodo writes need ZENODO_TOKEN (scopes deposit:write and
@@ -86,6 +92,7 @@ with GITHUB_STEP_SUMMARY set, the table goes there too. Otherwise stdlib only.
 import argparse
 import base64
 import datetime
+import email.utils
 import json
 import os
 import re
@@ -177,16 +184,21 @@ class Checkout(GitHub):
 
 class Zenodo:
     # Retried with backoff: a rate limit (429) always, since Zenodo did not act
-    # on the request; a gateway error or a dropped connection only for a call
-    # that is safe to repeat (a POST may have acted: the next run's checks
-    # find what it left, a draft or a published version).
-    RETRY_ALWAYS = (429, 503)
-    RETRY_IDEMPOTENT = (500, 502, 504)
+    # on the request; a server or gateway error or a dropped connection only
+    # for a call that is safe to repeat. A POST (a new deposition, a new
+    # version, a publish) may have acted before a 5xx came back, so it is
+    # never replayed: the next run's checks find what it left (a draft, which
+    # is reused, or a published version, which is reported).
+    RETRY_ALWAYS = (429,)
+    RETRY_IDEMPOTENT = (500, 502, 503, 504)
 
     def __init__(self, base, token=None, tries=5, backoff=5.0):
         self.base = base.rstrip("/")
         self.token = token
         self.tries, self.backoff = tries, backoff
+        u = urllib.parse.urlsplit(self.base)
+        if token and u.scheme != "https" and u.hostname not in ("127.0.0.1", "localhost", "::1"):
+            raise Failure(f"zenodo: {self.base}: the token goes over HTTPS only (or to loopback)")
 
     def call(self, method, url, body=None, raw=None):
         if not url.startswith("http"):
@@ -214,9 +226,7 @@ class Zenodo:
                 )
                 if not again or attempt == self.tries:
                     raise Failure(f"{where}: HTTP {e.code}: {detail}")
-                after = (e.headers.get("Retry-After") or "").strip()
-                if after.isdigit():
-                    wait = max(wait, min(int(after), 300))
+                wait = max(wait, retry_after(e.headers.get("Retry-After")))
                 print(f"{where}: HTTP {e.code}, retry {attempt}/{self.tries - 1} in {wait:g} s")
             except urllib.error.URLError as e:
                 if method == "POST" or attempt == self.tries:
@@ -250,6 +260,21 @@ class Zenodo:
                 break
             page += 1
         return out, str(latest["id"])
+
+
+def retry_after(value, now=None):
+    """Seconds a Retry-After header asks for (delay-seconds or an HTTP date), at most 300."""
+    value = (value or "").strip()
+    if value.isdigit():
+        return min(int(value), 300)
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return 0
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return max(0, min((when - now).total_seconds(), 300))
 
 
 # --- the plan ---------------------------------------------------------------
@@ -620,11 +645,18 @@ def deposited(zen, repo, tag):
     right after a publish still sees it and does not archive the tag twice.
     """
     link = tree_link(repo, tag).lower()
-    q = urllib.parse.urlencode({"size": 100, "sort": "mostrecent", "all_versions": "true"})
-    for d in zen.call("GET", f"/deposit/depositions?{q}") or []:
-        if d.get("submitted") and link in links_of(d.get("metadata")):
-            return d
-    return None
+    page = 1
+    while True:
+        q = urllib.parse.urlencode(
+            {"size": 100, "page": page, "sort": "mostrecent", "all_versions": "true"}
+        )
+        batch = zen.call("GET", f"/deposit/depositions?{q}") or []
+        for d in batch:
+            if d.get("submitted") and link in links_of(d.get("metadata")):
+                return d
+        if len(batch) < 100:
+            return None
+        page += 1
 
 
 def release_files(paths):
@@ -678,10 +710,16 @@ def cmd_publish_release(args, gh, zen, now):
             return {"state": "archived", **got}
     rels = gh.releases(repo)
     rel = next((r for r in rels if r["tag"] == tag), None)
+    if not rel and not getattr(args, "allow_unreleased", False):
+        raise Failure(f"{repo}: {tag} is not a published, non-prerelease GitHub release")
     date = args.date or (rel["published"][:10] if rel else now.date().isoformat())
     cff = gh.file(repo, "CITATION.cff", ref=tag)
     if args.concept:
         concept, why = str(args.concept), "--concept"
+    elif getattr(args, "sandbox", False):
+        # the recorded concept is the real Zenodo's: on the sandbox only a
+        # record the sandbox holds counts, else a test concept is created
+        concept, why = None, ""
     else:
         concept, why = recorded_concept(gh, repo)
     if not concept:
@@ -698,6 +736,13 @@ def cmd_publish_release(args, gh, zen, now):
             )
             summarize(repo, tag, "already archived", got)
             return {"state": "archived", **got}
+        state = {r["tag"]: r["state"] for r in classify(rels, versions, now, 0)}.get(tag)
+        if state in ("stranded", "predates"):
+            raise Failure(
+                f"{repo} {tag}: older than a release already archived in concept {concept}; "
+                "adding it now would make it the newest version, so the maintainer decides "
+                "(Zenodo's upload form can add an older version)"
+            )
         plan = f"a new version of concept {concept} ({why}), files {listed}"
     else:
         if not cff:
@@ -824,6 +869,8 @@ def main(argv=None):
     )
     pr.add_argument("--sandbox", action="store_true")
     pr.add_argument("--api", help=argparse.SUPPRESS)  # another Zenodo API base (the fake)
+    # release-selftest.yml: its dry run's tag is no GitHub release
+    pr.add_argument("--allow-unreleased", action="store_true", help=argparse.SUPPRESS)
     f = sub.add_parser("fake-zenodo")
     f.add_argument("--port-file", required=True)
     args = p.parse_args(argv)
@@ -922,7 +969,10 @@ def fake_zenodo():
             if method == "GET" and path == "/api/deposit/depositions":
                 new = st.draft and st.draft.get("new")
                 listed = {"id": st.draft["id"], "metadata": st.meta or {}} if new else None
-                return self.send(200, ([listed] if listed else []) + st.published)
+                q = dict(x.split("=", 1) for x in query.split("&") if "=" in x)
+                size, page = int(q.get("size", 100)), int(q.get("page", 1))
+                every = ([listed] if listed else []) + st.published
+                return self.send(200, every[(page - 1) * size : page * size])
             if method == "POST" and path == "/api/deposit/depositions":
                 st.draft = {"id": st.next_id, "files": [], "new": True}
                 st.next_id += 1
@@ -1535,14 +1585,68 @@ def self_test():
     got, err, out = push(FakeGitHub(rel))
     check("push: a 400 is not retried", err and "HTTP 400" in err and len(st.calls) == 1)
     zen = Zenodo(base, "t0k", 5, 0)
-    st.reset()
-    st.fail_next = [502]
+    for code in (502, 503):
+        st.reset()
+        st.fail_next = [code]
+        try:
+            zen.call("POST", "/deposit/depositions/101/actions/newversion")
+            err = None
+        except Failure as e:
+            err = str(e)
+        check(
+            f"push: a {code} on a POST is not retried",
+            err and f"HTTP {code}" in err and len(st.calls) == 1,
+        )
+    check(
+        "Retry-After: seconds and a date, capped",
+        retry_after("7") == 7
+        and retry_after("9999") == 300
+        and retry_after("Sun, 08 Nov 2026 12:02:00 GMT", now) == 120
+        and retry_after("Sun, 08 Nov 2026 11:00:00 GMT", now) == 0
+        and retry_after("soon") == 0,
+    )
     try:
-        zen.call("POST", "/deposit/depositions/101/actions/newversion")
+        Zenodo("http://zenodo.example/api", "t0k")
         err = None
     except Failure as e:
         err = str(e)
-    check("push: a 502 on a POST is not retried", err and "HTTP 502" in err and len(st.calls) == 1)
+    check("the token never goes over plain HTTP", err and "HTTPS only" in err)
+    check("no token, any base", Zenodo("http://zenodo.example/api").token is None)
+    # the owner's depositions are read page by page
+    st.reset()
+    st.published = [{"id": i, "submitted": True, "metadata": {}} for i in range(150)]
+    st.published.append(
+        {
+            "id": 999,
+            "submitted": True,
+            "doi": "10.0/z.999",
+            "metadata": {
+                "related_identifiers": [{"identifier": "https://github.com/org/R/tree/v1.2.0"}]
+            },
+        }
+    )
+    got, err, out = push(FakeGitHub(rel))
+    check(
+        "push: a deposition on a later page counts",
+        err is None and got["doi"] == "10.0/z.999" and only_reads(),
+    )
+    # a tag that is not a release is refused; an older one than the newest archived too
+    st.reset()
+    got, err, out = push(FakeGitHub(rel), tag="v9.9.9")
+    check("push: a tag that is not a release is refused", err and "not a published" in err)
+    st.reset(versions=("v1.0.0", "v1.2.0"))
+    got, err, out = push(FakeGitHub(rel), tag="v1.1.0")
+    check(
+        "push: an older release is refused",
+        err and "older than a release already archived" in err and only_reads(),
+    )
+    # the sandbox ignores the real concept CITATION.cff names: a test concept
+    st.reset()
+    got, err, out = push(FakeGitHub(rel), sandbox=True)
+    check(
+        "push: sandbox makes its own concept",
+        err is None and got["state"] == "new concept" and got["concept"] == "500",
+    )
     # a local checkout's files
     with open(os.path.join(tmp, "CITATION.cff"), "w") as fh:
         fh.write(NEW)

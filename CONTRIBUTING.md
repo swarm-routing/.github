@@ -476,7 +476,12 @@ time:
    (the integration's copy is a source zip; the push uploads the assets);
 3. the daily `zenodo` run stays the backstop: a release whose `zenodo` job
    failed is archived by `sync` after the 12-hour grace period, or re-run the
-   job.
+   job. Not a *first* release: with no concept yet, `sync` has nothing to add
+   it to, and the daily run only reports it (`orphans`, an issue once past
+   the grace period). Re-run the release run with "Re-run all jobs", or
+   dispatch `gh workflow run zenodo.yml -R swarm-routing/.github -f mode=create
+   -f repo=<repo> -f tag=<tag>` (a dry run first with `-f dry-run=true`;
+   "When Zenodo fails a release", below).
 
 `zenodo-sandbox: true` sends the same upload to sandbox.zenodo.org (with a
 sandbox token as `ZENODO_TOKEN`), to prove the path before a real release.

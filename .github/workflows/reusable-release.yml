@@ -69,7 +69,8 @@ name: Reusable release
 #               archived twice (CONTRIBUTING "Releases and DOIs"). A failed
 #               zenodo job leaves the GitHub release as it is: re-run it, or
 #               the daily zenodo.yml `sync` archives the release after its
-#               grace period.
+#               grace period (a first release, with no concept yet: re-run
+#               it, or zenodo.yml mode `create`).
 #
 # mode `dry-run` (or `dry-run: true`) bumps on the runner only, then builds,
 # checksums, writes the SBOM, attests (real attestations, in the caller's

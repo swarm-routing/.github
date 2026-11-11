@@ -142,7 +142,8 @@ jobs:
           test "${#files[@]}" -eq 6
           push() {
             python3 -I tools/zenodo/zenodo.py publish-release --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
-              --checkout tools/release/fixture --publish --api "$api" --files "${files[@]}"
+              --checkout tools/release/fixture --publish --api "$api" --allow-unreleased \
+              --files "${files[@]}"
           }
           # a first release: a new concept, every asset
           ZENODO_TOKEN=t0k push | tee "$RUNNER_TEMP/first.txt"
