@@ -44,7 +44,8 @@ import urllib.request
 EXEMPT_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 EXEMPT_BOTS = frozenset({"swarm-routing-bot[bot]", "dependabot[bot]"})
 EXEMPT_PERMISSIONS = frozenset({"admin", "maintain", "write"})
-SIGNOFF = re.compile(r"^Signed-off-by:([^<\n]*)<([^<>\s]+)>[ \t]*$", re.M | re.I)
+SIGNOFF = re.compile(r"^Signed-off-by:([^<\n]*)<([^<>\s]+)>[ \t]*$", re.I)
+TRAILER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*:")
 SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
@@ -54,9 +55,29 @@ def ident(name: str, email: str) -> str:
     return f"{' '.join(name.split()).casefold()} <{email.strip().casefold()}>"
 
 
+def trailer_block(message: str) -> list[str]:
+    """The message's trailer lines: its last paragraph, not the subject's, when
+    every line of it is `Token: value` or a continuation (leading whitespace)
+    of one, as git reads trailers. A Signed-off-by quoted in the body is not
+    a trailer."""
+    paragraphs = re.split(r"\n[ \t]*\n", message.strip("\n"))
+    if len(paragraphs) < 2:
+        return []
+    lines = paragraphs[-1].split("\n")
+    if not TRAILER.match(lines[0]):
+        return []
+    if all(TRAILER.match(line) or line[:1] in (" ", "\t") for line in lines):
+        return lines
+    return []
+
+
 def signoffs(message: str) -> list[str]:
     """The identities of the message's Signed-off-by trailers (see ident)."""
-    return [ident(m.group(1), m.group(2)) for m in SIGNOFF.finditer(message)]
+    return [
+        ident(m.group(1), m.group(2))
+        for m in (SIGNOFF.match(line) for line in trailer_block(message))
+        if m
+    ]
 
 
 def git_commits(base: str, head: str) -> list[dict]:
@@ -203,6 +224,17 @@ def self_test() -> int:
         commit("h8", "w@x.org", "fix: a writer pushed to the fork\n"),
         commit("i9", "nologin@x.org", "fix: no GitHub user\n"),
         commit("j0", "ada@x.org", "fix: d\n\nSigned-off-by: Bob <ada@x.org>\n"),
+        # quoted in the body, not a trailer
+        commit("k1", "ada@x.org", "fix: e\n\nSigned-off-by: Ada <ada@x.org>\nmore body text\n"),
+        commit("l2", "ada@x.org", "fix: f\n\nSigned-off-by: Ada <ada@x.org>\n\nthe end\n"),
+        commit("m3", "ada@x.org", "Signed-off-by: Ada <ada@x.org>\n"),
+        # in the trailer block, among other trailers and a continuation line
+        commit(
+            "n4",
+            "ada@x.org",
+            "fix: g\n\nbody\n\nCo-Authored-By: Bob\n <bob@x.org>\n"
+            "Signed-off-by: Ada <ada@x.org>\nClaude-Session: https://x\n",
+        ),
     ]
     logins = {
         "a1": "ada",
@@ -232,6 +264,10 @@ def self_test() -> int:
         "h8": "exempt",
         "i9": "FAIL",
         "j0": "FAIL",  # the right email under another name
+        "k1": "FAIL",
+        "l2": "FAIL",
+        "m3": "FAIL",
+        "n4": "ok",
     }
     fails = 0
     for bad in ("--output=/tmp/x", "HEAD", "abc"):
