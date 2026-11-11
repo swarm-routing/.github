@@ -133,7 +133,7 @@ automatic CodeRabbit review, so a new label is added there by hand):
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `learn-site`, `literature` |
 | Model | exactly one: what a wrong first pass costs, not code volume | `model:haiku-4.5` (mechanical), `model:sonnet-5` (plumbing, tooling, docs), `model:opus-4.8` (protocol semantics, root cause, CI-validated adapter work), `model:fable-5` (architecture, greenfield) |
 | Priority | exactly one on non-epic issues | `priority:P1` (regression / invalidates numbers), `priority:P2` (gates a result or feature), `priority:P3` (valuable, not blocking) |
-| Release | only when a roadmap gates the issue | `release:vX.Y.Z` |
+| Release | only when a release in the repository's own ladder (its `docs/roadmap.md`) gates the issue; never on infrastructure-track work that only rides along | `release:v0.1.0`, `release:v0.2.0`, `release:v0.3.0`, `release:v0.4.0`, `release:v1.0.0` (shared, from `labels.json`); a repository with a longer ladder (AntHocNet) keeps its own `release:vX.Y.Z` labels |
 | Contributor | any number, set by a maintainer when an outside contributor can pick the issue up | `good first issue` (small, well scoped, needs no history), `help wanted` (outside help welcome) |
 
 GitHub lists open `good first issue` issues on each repository's Contribute
@@ -143,7 +143,9 @@ newcomer needs (files, the check that proves it, the repository's
 `AGENTS.md` build commands).
 
 `migrated` marks an issue cloned from `danieljoppi/AntHocNet` during the split;
-its body starts with *Migrated from `danieljoppi/AntHocNet#N`*.
+its body starts with *Migrated from `danieljoppi/AntHocNet#N`*. It takes the
+`release:` label of the target repository's ladder, not AntHocNet's (ROADMAP
+"Releases"; decision 2026-11-11).
 
 **Handoffs are issues** (template *Handoff*, label `handoff`). A new session
 starts from the newest open `handoff` issue and closes it when done.

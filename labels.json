@@ -1,5 +1,5 @@
 {
-  "_comment": "Org label taxonomy (mirrors danieljoppi/AntHocNet ADR-0013). Applied to a repo by .github/workflows/sync-labels.yml; release:vX.Y.Z labels are created per repo when a roadmap gates an issue.",
+  "_comment": "Org label taxonomy (mirrors danieljoppi/AntHocNet ADR-0013). Applied to a repo by .github/workflows/sync-labels.yml; the shared release:vX.Y.Z labels serve each repo's own ladder (its docs/roadmap.md); a repo with a longer ladder (AntHocNet) keeps its own release labels.",
   "labels": [
     {"name": "bug", "color": "d73a4a", "description": "Type: defect, regression or wrong result"},
     {"name": "enhancement", "color": "a2eeef", "description": "Type: new mechanism or capability"},
@@ -30,6 +30,12 @@
     {"name": "priority:P1", "color": "b60205", "description": "Fix first: regression or blocker that invalidates numbers"},
     {"name": "priority:P2", "color": "d93f0b", "description": "Gates publishing a result or enabling a gated feature"},
     {"name": "priority:P3", "color": "fbca04", "description": "Valuable, not blocking"},
+
+    {"name": "release:v0.1.0", "color": "ededed", "description": "Gated by this repository's v0.1.0 release (its docs/roadmap.md)"},
+    {"name": "release:v0.2.0", "color": "ededed", "description": "Gated by this repository's v0.2.0 release (its docs/roadmap.md)"},
+    {"name": "release:v0.3.0", "color": "ededed", "description": "Gated by this repository's v0.3.0 release (its docs/roadmap.md)"},
+    {"name": "release:v0.4.0", "color": "ededed", "description": "Gated by this repository's v0.4.0 release (its docs/roadmap.md)"},
+    {"name": "release:v1.0.0", "color": "ededed", "description": "Gated by this repository's v1.0.0 release (its docs/roadmap.md)"},
 
     {"name": "migrated", "color": "cccccc", "description": "Cloned from danieljoppi/AntHocNet during the org split"}
   ]
