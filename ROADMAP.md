@@ -82,7 +82,7 @@ The org has no version ladder of its own: AntHocNet keeps its ladder in its
 the first tagged release of the repository that owns it, cut when that
 repository's own criteria in the table below hold. They are the repository's
 slice of the phase's exit criteria, not the whole phase: `ns3-tools v0.1.0`
-waits on the tools items only, not on BeeAdHoc or the data format. Two rules (decided 2026-11-09, [.github#81](https://github.com/swarm-routing/.github/issues/81)):
+waits on the tools items only, not on BeeAdHoc or the data format. Two rules (decided 2026-11-09, [.github#81](https://github.com/swarm-routing/.github/issues/81)) and, for the protocols, a third (2026-11-10):
 
 - **Every org repository releases through the reusable release workflow**,
   `reusable-release.yml`
@@ -98,16 +98,26 @@ waits on the tools items only, not on BeeAdHoc or the data format. Two rules (de
 - **A first release is `v0.1.0`**, bumped from there by Commitizen. A release
   of a citable repository is archived on Zenodo under that repository's
   concept DOI ([.github#45](https://github.com/swarm-routing/.github/issues/45), the daily `zenodo` workflow).
+- **A protocol's `v0.1.0` comes before its gates** (maintainer decision
+  2026-11-10). ARA, BeeAdHoc, Termite and HOPNET cut `v0.1.0` now, from what
+  is on `main` (ARA#45, BeeAdHoc#49, Termite#36, HOPNET#35, all merged); it replaces the
+  earlier rule "module green plus anchor verdict recorded". Such a release
+  has **not** cleared the three gates (CONTRIBUTING invariant 6), and its notes
+  and README say so. The anchor and the three gates move to the next, gated
+  release, **proposed `v0.2.0`**. An ungated release does not enter the
+  `benchmarks` global suite, which holds released protocols that cleared their
+  gates ([benchmarks ADR-0002](https://github.com/swarm-routing/benchmarks/blob/main/docs/adr/0002-benchmarks-records-released-versions.md)
+  decision 3; benchmarks#23).
 
 | Phase | Release target | Cut when |
 |---|---|---|
 | 4 Tools | `ns3-tools v0.1.0` (the first org release) | ns3-tools#14, #31, #28, #6 merged (all four closed 2026-11-10; the release workflow is adopted in ns3-tools#26, open); then AntHocNet's switch-over (ns3-tools#29) pins this tag |
 | 2 swarm-core | `ns3-swarm-core v0.1.0` | the three exit criteria hold. ARA#5 starts once the primitives and the glue are merged (ns3-swarm-core#8, #9; both merged 2026-11-10), before the phase exits; its first green build against `@main` is what proves the third criterion |
-| 3 ARA | `ARA v0.1.0` | module green, determinism gate, anchor verdict recorded (PASS, or a written infeasibility verdict): the anchor is a change test in ARA's own benchmark pipeline (ARA#36), and the released version's run is then recorded in `benchmarks` (benchmarks ADR-0002) |
-| 4 BeeAdHoc | `BeeAdHoc v0.1.0` | fidelity settled (BeeAdHoc#4, #5), module green, standalone anchor verdict re-recorded using the `v270a` pre-registration or a new pre-registration (decision on BeeAdHoc#4), as a change test in BeeAdHoc's pipeline (BeeAdHoc#41; benchmarks ADR-0002) |
+| 3 ARA | `ARA v0.1.0` (ungated), then `ARA v0.2.0` (gated, proposed) | **v0.1.0: now, before the gates** (maintainer decision 2026-11-10; release workflow ARA#45): the ns-3 module `ara` and `core/` as they are on `main`; the anchor pending; it has not cleared the three gates. **v0.2.0 (proposed), the gated release:** module green, determinism gate, anchor verdict recorded (PASS, or a written infeasibility verdict): the anchor is a change test in ARA's own benchmark pipeline (ARA#36), and the released version's run is then recorded in `benchmarks` (benchmarks ADR-0002) |
+| 4 BeeAdHoc | `BeeAdHoc v0.1.0` (ungated), then `BeeAdHoc v0.2.0` (gated, proposed) | **v0.1.0: now, before the gates** (maintainer decision 2026-11-10; release workflow BeeAdHoc#49): `core/` and `docs/`; the ns-3 module (BeeAdHoc#48) and the anchor pending; it has not cleared the three gates. **v0.2.0 (proposed), the gated release:** fidelity settled (BeeAdHoc#4, #5), module green, standalone anchor verdict re-recorded using the `v270a` pre-registration or a new pre-registration (decision on BeeAdHoc#4), as a change test in BeeAdHoc's pipeline (BeeAdHoc#41; benchmarks ADR-0002) |
 | 4 Data | none (data is immutable runs, not versions) | runs are triggered by releases: a protocol release, a new supported ns-3 release or an `ns3-tools` release that changes what is measured starts a recorded run (benchmarks ADR-0002; benchmarks#24); the manifest schema and validator (benchmarks#3, done) carry their own schema version |
-| 5 Termite | `Termite v0.1.0` | the anchor-miss pre-registration (Termite#5) is recorded before `core/` (Termite golden rule 12); module green; three gates (the anchor a change test in Termite's pipeline, Termite#31; benchmarks ADR-0002) or a written verdict |
-| 5+ HOPNET (after Termite) | `HOPNET v0.1.0` | fidelity sheet and the #5 pre-registration settled (done 2026-11-10, HOPNET#4, #5), module green, the anchor against AntHocNet (HOPNET golden rule 12; a change test in HOPNET's pipeline, HOPNET#28) passes or ships as a written infeasibility verdict |
+| 5 Termite | `Termite v0.1.0` (ungated), then `Termite v0.2.0` (gated, proposed) | **v0.1.0: now, before the gates** (maintainer decision 2026-11-10; release workflow Termite#36): `core/` and `docs/`; the ns-3 module (Termite#37) and the anchor pending; it has not cleared the three gates. **v0.2.0 (proposed), the gated release:** the anchor-miss pre-registration (Termite#5) is recorded before `core/` (Termite golden rule 12); module green; three gates (the anchor a change test in Termite's pipeline, Termite#31; benchmarks ADR-0002) or a written verdict |
+| 5+ HOPNET (after Termite) | `HOPNET v0.1.0` (ungated), then `HOPNET v0.2.0` (gated, proposed) | **v0.1.0: now, before the gates** (maintainer decision 2026-11-10; release workflow HOPNET#35): `core/` and `docs/`; the ns-3 module and the anchor pending; it has not cleared the three gates. **v0.2.0 (proposed), the gated release:** fidelity sheet and the #5 pre-registration settled (done 2026-11-10, HOPNET#4, #5), module green, the anchor against AntHocNet (HOPNET golden rule 12; a change test in HOPNET's pipeline, HOPNET#28) passes or ships as a written infeasibility verdict |
 | Site | none (deploys from `main`) | the live smoke verifies each deploy by its build marker (site#28) |
 | Images | none (tags per ns-3 release and profile) | each image is tested by digest before its tag moves (ns3-containers golden rule 17) |
 | AntHocNet | its own ladder: next **v2.7.0** | after AntHocNet#460's two PRs, the ns3-tools#29 switch-over (its "harness packaged" exit, superseding AntHocNet#770) and the hardening P2s #786, #787, #789, #840; fixes before then ship as v2.6.x (decision 2026-11-09 on AntHocNet#856). Status 2026-11-10: #786 and #787 closed; #460, #789, #840 and ns3-tools#29 open; latest release v2.6.1 |
