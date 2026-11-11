@@ -494,11 +494,12 @@ quota (5,000 requests an hour, shared by every OAuth token of that user). benchm
 `v0.1.0` (2026-11-11) failed this way: Zenodo's GitHub page lists the release
 as *Failed* with `403 API rate limit exceeded`, and the webhook delivery shows
 "An exception occurred". Zenodo keeps a failed release id, so redelivering the
-webhook gets `409` and never archives it. Until `zenodo.py create` archives a
-first release from its tag (#226), the fix is the repository's next release,
-which Zenodo archives as usual (for a repository without a concept yet, it
-creates the concept); the daily check adds versions only to an existing
-concept. Around a release, keep API polling as the maintainer low (#226).
+webhook gets `409` and never archives it. The repository's next release is
+archived as usual (for a repository without a concept yet, it creates the
+concept), but that archives the new release, not the failed one, and the daily
+check adds versions only to an existing concept and may skip the older tag.
+The failed release itself needs its own recovery: `zenodo.py create` archives
+it from its tag (#226). Around a release, keep API polling as the maintainer low (#226).
 
 ### Archived releases
 
@@ -513,7 +514,7 @@ Read from Zenodo; the concept DOI resolves to the newest version.
 | BeeAdHoc | [10.5281/zenodo.24124821](https://doi.org/10.5281/zenodo.24124821) | v0.1.0 [10.5281/zenodo.24124822](https://doi.org/10.5281/zenodo.24124822) |
 | Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
 | HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.1.0 [10.5281/zenodo.24125266](https://doi.org/10.5281/zenodo.24125266) |
-| benchmarks | none yet | v0.1.0 released 2026-11-11, not archived (rate limit, above); archived with #226 or its next release ([benchmarks#39](https://github.com/swarm-routing/benchmarks/issues/39)) |
+| benchmarks | none yet | v0.1.0 released 2026-11-11, not archived (rate limit, above); to be archived from its tag by `zenodo.py create` (#226; a next release would not archive v0.1.0) ([benchmarks#39](https://github.com/swarm-routing/benchmarks/issues/39)) |
 
 ### Cutting a release
 
