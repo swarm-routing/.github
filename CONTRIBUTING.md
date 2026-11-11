@@ -39,7 +39,11 @@ is the long form.
    every workflow's swarm-core `core-deps` name one commit (the ns-3 build's
    swarm-core dependency: `main` or that commit), and unless swarm-core
    `main`'s `core/` is that commit's `core/`; it checks nothing else about
-   the pin. Contributions are accepted under the licence of the directory they
+   the pin. So every merged change to swarm-core's `core/` turns that check
+   red on each protocol's `main` and blocks its open PRs: whoever merges it
+   opens the pin-bump PR in every protocol repository that pins swarm-core
+   (the failing check names each place to change), until org-bot does it
+   (#208). Contributions are accepted under the licence of the directory they
    land in (inbound = outbound, below). Write clean implementations against public ns-3 interfaces rather
    than copying from ns-3's `src/aodv`, `src/olsr` & co.; third-party code keeps
    its own licence and lands only with its provenance recorded.
@@ -87,6 +91,13 @@ is the long form.
 ## Issues
 
 Every finding, bug and decision is an issue, never a chat message or a file.
+
+**Papers are cited by their `https://doi.org/<DOI>` link** in public issues,
+PRs and docs (maintainer preference, 2026-11-11), read from a record
+(`tools/lit-search/lit_search.py confirm`), never typed from memory; a work
+without a DOI is cited by its publisher's or institution's page. A public
+surface never points into, or names, the private paper library: no paths,
+extracted text or file names from it.
 
 **Body shape:** **Context** (evidence, numbers, links) · **Scope** ·
 **Acceptance criteria** (checkboxes) · **Depends on** (cross-repo form
@@ -161,7 +172,11 @@ starts from the newest open `handoff` issue and closes it when done.
   `build`, `ci`, `chore`, `revert` (the list `reusable-pr-title.yml` enforces).
 - Merge when CI is green. A repository that merges through a merge queue
   (`merge_queue = true` in its `[settings]`, #130) is not updated by hand: add
-  the PR to the queue (the merge button, or auto-merge), and the queue tests
+  the PR to the queue by enabling auto-merge with the squash method (the
+  merge button, `gh pr merge --auto --squash`, or a GitHub tool's auto-merge
+  call); a direct merge (`PUT pulls/<n>/merge`) is refused there with
+  HTTP 405 "Changes must be made through the merge queue", so agents never
+  retry it. The queue tests
   it on top of `main` and the PRs ahead of it, then merges it. Every workflow
   that produces a required check runs `on: merge_group` there; the reusable
   PR-title check skips itself on a merge group (a skipped check passes) and
@@ -185,7 +200,20 @@ starts from the newest open `handoff` issue and closes it when done.
   that ended in `startup_failure` counts as one), an unresolved review thread, a conflict, a draft or a refusal, and never
   reruns a check or resolves a thread itself (`--dry-run` says what it would
   do). Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
-  dispatch `bump` again (Cutting a release).
+  dispatch `bump` again (Cutting a release). `merge` does not enter a merge
+  queue yet, and it waits on (or stops at) checks no ruleset requires, such
+  as `codecov/patch` or `dco` (#196): in a merge-queue repository enable
+  auto-merge instead.
+- **Only the required checks gate a merge.** They are the ones in the
+  repository's `[settings]` `required_checks` (live:
+  `gh api repos/<owner>/<repo>/rules/branches/main`). A red or pending
+  report-only check (Codecov, SonarQube Cloud, Scorecard) is read and
+  triaged, never a reason to hold a PR whose required checks are green
+  (GitHub then reports the merge state `unstable`, which is mergeable).
+  `dco` is report-only too, but a red `dco` on an outside contributor's
+  commit still holds the PR until that author signs off (Outside
+  contributions); only its failure on the maintainer's or an agent's
+  commits (#212) is ignored.
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
 
@@ -228,7 +256,12 @@ exempt, and so is a merge commit that adds nothing beyond its parents (an
 "Update branch" merge); a merge that resolves a conflict with new text or
 carries a change of its own needs a sign-off like any other commit.
 Maintainer and agent commits are made from the maintainer's own account,
-under the licence grant already recorded in AntHocNet ADR-0028.
+under the licence grant already recorded in AntHocNet ADR-0028. **An AI agent
+never adds a `Signed-off-by` trailer**, for the maintainer, for itself or for
+anyone else: a sign-off is a person's own certification. Until the policy for
+agent-made commits is decided (#212), the `dco` check is red on them; it is
+not a required check in any repository, so it blocks nothing, and its advice
+to rebase and force-push does not apply to a shared branch.
 
 The sign-off is the recorded grant AntHocNet
 [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)
@@ -429,6 +462,25 @@ check here covers the repository.
 
 ### Cutting a release
 
+**When to release** (maintainer decision 2026-11-11, on #216 and its
+children). Every public repository releases, and Zenodo archives each release
+(#216). There is no automatic, scheduled or per-change release. A version's
+scope is the set of issues labelled `release:vX.Y.Z`, set when the issue is
+opened or triaged (each repository's ladder, its `docs/roadmap.md`, or, for a
+repository whose ladder has not landed yet, the ROADMAP's release train;
+ROADMAP "Releases"). When that version's labelled issues are done, the maintainer, or
+an agent on the maintainer's instruction, dispatches `bump`; an agent never
+dispatches it on its own initiative. SemVer meaning: a minor for new features
+(in `benchmarks`, new runs), a patch for fixes and docs, a major for a
+breaking change (an API, wire-format, manifest or marker schema change). The
+first release of every repository is `v0.1.0`. Commitizen bumps a patch only
+from `fix:`, `refactor:` or `perf:` commits, so docs-only changes ride along with the
+next release rather than making one of their own. While a repository is at 0.x,
+Commitizen turns a breaking change into a minor (`major_version_zero`); a
+major is a deliberate input of the release workflow (#211). After the release
+is archived, read its concept DOI from Zenodo and set `zenodo_concept`,
+reseed `CITATION.cff` and get the DOI badge (Releases and DOIs, above).
+
 Every org repository releases through `reusable-release.yml` (#20); none
 copies AntHocNet's `release.yml`. `main` takes no direct push (the `main`
 rulesets require a pull request, and `GITHUB_TOKEN` cannot be a bypass
@@ -481,6 +533,18 @@ actor), so the bump goes through a PR and the tag follows the merge
 Mode `dry-run` bumps on the runner only, then builds, signs and verifies, and
 stops: nothing is pushed, proposed, tagged or published, and its artifact
 holds the release it would have published.
+
+**A publish that fails, or waits.** Where a repository has the `release`
+environment gate (Automation; off for now, #215, review #214), approving the
+publish job is the maintainer's alone: an agent reports the waiting run and
+never approves it. To recover a failed publish of a merged bump, re-run the
+release run with **"Re-run all jobs"** (`gh api -X POST
+repos/<owner>/<repo>/actions/runs/<id>/rerun`), never "Re-run failed jobs":
+a partial re-run reuses the reusable workflow at the commit of the first
+attempt, so a fix merged here since (ns3-tools#105, #209) would not apply.
+The re-run keeps the bump's merge commit, rebuilds, re-attests and resumes;
+a new `bump` dispatch is no substitute, since it would propose the version
+again on another commit.
 
 To adopt it, a repository adds a Commitizen config (in `pyproject.toml`, or
 `.cz.toml` as in `tools/release/fixture/`):
