@@ -96,4 +96,6 @@ Conventions:
 
 Support the work: [sponsor @danieljoppi](https://github.com/sponsors/danieljoppi)
 (it keeps the ns-3 images, CI and benchmark campaigns running), or cite
-[AntHocNet's DOI](https://doi.org/10.5281/zenodo.20981979).
+the work: every repository with an archived release has a Zenodo concept DOI (its README's DOI
+badge; the list is in [CONTRIBUTING, Archived releases](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#archived-releases)),
+AntHocNet's is [10.5281/zenodo.20981979](https://doi.org/10.5281/zenodo.20981979).
