@@ -4,15 +4,15 @@ Org-wide defaults. A repository's own `CONTRIBUTING.md` overrides this file.
 Participation follows the org's default [Code of Conduct](CODE_OF_CONDUCT.md);
 where to ask is in the org's default [SUPPORT.md](SUPPORT.md). A repository's
 own `CODE_OF_CONDUCT.md` or `SUPPORT.md`, where it has one, takes precedence.
-These conventions come from [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet),
+These conventions come from [`swarm-routing/AntHocNet`](https://github.com/swarm-routing/AntHocNet),
 the source repository the org was split out of; its
-[ADR-0013](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)
+[ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)
 is the long form.
 
 ## Invariants (every repo)
 
-1. **Licensing per directory, as AntHocNet** ([LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
-   [ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
+1. **Licensing per directory, as AntHocNet** ([LICENSING.md](https://github.com/swarm-routing/AntHocNet/blob/main/LICENSING.md),
+   [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
    A simulator-free `core/` and the standalone tooling (`tools/`, Python CLIs,
    CI and image scripts) are `MIT OR GPL-2.0-only`; ns-3 modules, the site,
    docs and data are `GPL-2.0-only`. Each repo carries `LICENSE` (GPL-2.0),

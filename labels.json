@@ -1,5 +1,5 @@
 {
-  "_comment": "Org label taxonomy (mirrors danieljoppi/AntHocNet ADR-0013). Applied to a repo by .github/workflows/sync-labels.yml; the shared release:vX.Y.Z labels serve each repo's own ladder (its docs/roadmap.md); a repo with a longer ladder (AntHocNet) keeps its own release labels.",
+  "_comment": "Org label taxonomy (mirrors swarm-routing/AntHocNet ADR-0013). Applied to a repo by .github/workflows/sync-labels.yml; the shared release:vX.Y.Z labels serve each repo's own ladder (its docs/roadmap.md); a repo with a longer ladder (AntHocNet) keeps its own release labels.",
   "labels": [
     {"name": "bug", "color": "d73a4a", "description": "Type: defect, regression or wrong result"},
     {"name": "enhancement", "color": "a2eeef", "description": "Type: new mechanism or capability"},
