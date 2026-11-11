@@ -252,6 +252,13 @@ check(
     "reseed CITATION.cff writes the concept DOI once zenodo_concept is set, as zenodo.py reads it",
 )
 check(run("check", dr)[0] == 0, "check is clean with release, doi and cite")
+with open(os.path.join(dr, ".github/org-sync.toml"), "a") as f:
+    f.write('\n[settings]\ndescription = "The GitHub description."\n')
+run("reseed", "CITATION.cff", dr)
+check(
+    "abstract: >-\n  The GitHub description.\n" in read(os.path.join(dr, "CITATION.cff")),
+    "the abstract is [settings] description when there is one",
+)
 dl = fresh()
 run("init", dl, "--kind", "python", "--dual", "")
 edit(dl, ".github/org-sync.toml", 'kind = "python"\n', 'kind = "python"\ncitation = true\n')

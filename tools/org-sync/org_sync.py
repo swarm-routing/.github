@@ -411,10 +411,12 @@ def render_makefile(cfg):
 
 
 def render_citation(cfg, repo_dir):
-    """CITATION.cff.in for this repository: the abstract from `description`,
+    """CITATION.cff.in for this repository: the abstract from the GitHub
+    description (`[settings] description`, else the README's `description`),
     the licences from the dual roots (CFF takes SPDX ids, not an expression),
     the version Commitizen holds, the concept DOI only when `zenodo_concept`."""
-    abstract = re.sub(r"\s+", " ", cfg["description"]).strip()
+    settings = cfg.get("settings") if isinstance(cfg.get("settings"), dict) else {}
+    abstract = re.sub(r"\s+", " ", settings.get("description") or cfg["description"]).strip()
     cz = read(os.path.join(repo_dir, ".cz.toml"))
     try:
         version = tomllib.loads(cz)["tool"]["commitizen"]["version"] if cz else "0.0.0"

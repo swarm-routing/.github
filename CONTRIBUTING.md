@@ -332,18 +332,18 @@ belongs to the maintainer. Without it every run is a dry run. Never type a DOI:
 read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
 
 A repository's README shows AntHocNet's three badges through org-sync, each
-only once its target exists: **Release** when a workflow calls
-`reusable-release.yml`, **Cite** when it has a `CITATION.cff`, and **DOI** when
-its `.github/org-sync.toml` names the concept as top-level
-`zenodo_concept = "<record id>"`. `citation = true` (also top-level) seeds a
-`CITATION.cff` from `templates/CITATION.cff.in`: title, abstract (the
-`description`), the maintainer's author entry as in AntHocNet's, the licences
-from the dual roots, the repository URL and the version in the repo's
+only once its target exists: **Release** when a workflow calls `reusable-
+release.yml`, **Cite** when it has a `CITATION.cff`, and **DOI** when its
+`.github/org-sync.toml` names the concept as top-level `zenodo_concept =
+"<record id>"`. `citation = true` (also top-level) seeds a `CITATION.cff` from
+`templates/CITATION.cff.in`: title, abstract (the `[settings]` description,
+else `description`), the maintainer's author entry as in AntHocNet's, the
+licences from the dual roots, the repository URL and the version in the repo's
 `.cz.toml`; add `"CITATION.cff:^version:"` to its `version_files` so each bump
-keeps it current. The concept exists only after the first release is
-archived: read its id from Zenodo, set `zenodo_concept`, then
-`org_sync.py reseed CITATION.cff` (or add `doi:` by hand) so the daily check
-here covers the repository.
+keeps it current. The concept exists only after the first release is archived:
+read its id from Zenodo, set `zenodo_concept`, then `org_sync.py reseed
+CITATION.cff` (or add `doi:` by hand) so the daily check here covers the
+repository.
 
 ### Cutting a release
 
