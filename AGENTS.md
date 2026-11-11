@@ -60,7 +60,7 @@ LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-
 No build. Before pushing:
 
 ```bash
-pip install actionlint-py shellcheck-py      # once
+pip install actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1   # once, as ci.yml
 actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
