@@ -12,6 +12,13 @@ name: zenodo
 #   metadata and its swarm-routing/<repo> link.
 # A missing release older than the newest archived one is not added (it would
 # become the concept's newest version): the run fails and opens an issue here.
+# A repository with a release but no concept (its FIRST release failed on
+# Zenodo, as benchmarks v0.1.0 did, #226) is invisible to `sync`: `orphans`
+# reports it in the summary, and past the grace period fails the run and opens
+# the issue. The recovery is maintainer-dispatched: mode `create` with `repo`
+# and `tag` archives that tag as the first version of a new concept (refused
+# when a concept already exists; a dry run when `dry-run` is set or without
+# the token).
 # Without the ZENODO_TOKEN secret (a Zenodo personal access token with
 # deposit:write and deposit:actions) every run is a dry run. Runs on a pull
 # request are dry runs too, and the token is not passed to them.
@@ -32,6 +39,19 @@ on:
         description: 'A release younger than this is left to the GitHub integration'
         type: string
         default: '12'
+      mode:
+        description: 'sync: check and archive every release (the daily run); create: a first concept from repo + tag'
+        type: choice
+        options: [sync, create]
+        default: sync
+      repo:
+        description: 'mode create: the repository name, e.g. benchmarks'
+        type: string
+        default: ''
+      tag:
+        description: 'mode create: the released tag to archive, e.g. v0.1.0'
+        type: string
+        default: ''
   pull_request:
     paths:
       - 'tools/zenodo/**'
@@ -46,6 +66,7 @@ concurrency:
 
 jobs:
   sync:
+    if: ${{ inputs.mode != 'create' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -93,6 +114,15 @@ jobs:
             python3 -I tools/zenodo/zenodo.py sync --repo "swarm-routing/$r" \
               --grace-hours "$GRACE" "${mode[@]}" 2>&1 | tee -a "$report" || rc=1
           done
+          # released repositories without a concept: invisible to sync (#226)
+          if ! python3 -I tools/zenodo/zenodo.py orphans --grace-hours "$GRACE" "${sel[@]}" \
+              2>&1 | tee -a "$report"; then
+            if [ "$EVENT" = pull_request ]; then
+              echo "::warning::a released repository has no Zenodo concept (see the summary)"
+            else
+              rc=1
+            fi
+          fi
           exit "$rc"
       - name: Open or update the issue
         if: ${{ failure() && steps.sync.outcome == 'failure' && github.event_name != 'pull_request' }}
@@ -107,7 +137,7 @@ jobs:
             printf '%s\n' '```'
             echo
             cat <<'EOF'
-          A *stranded* release is older than the newest archived one: adding it through the API would make it the concept's newest version, so it is the maintainer's call (Zenodo's upload form can add it as an older version). Anything else is an API error: re-run the `zenodo` workflow once it is fixed; a draft left by a failed run is reused.
+          A *stranded* release is older than the newest archived one: adding it through the API would make it the concept's newest version, so it is the maintainer's call (Zenodo's upload form can add it as an older version). A repository with *no concept* had its first release fail on Zenodo: dispatch this workflow with mode `create`, its `repo` and that `tag` (CONTRIBUTING "When Zenodo fails a release"). Anything else is an API error: re-run the `zenodo` workflow once it is fixed; a draft left by a failed run is reused.
           EOF
           } > "$body"
           n=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
@@ -117,3 +147,43 @@ jobs:
             gh issue create --title "$title" --body-file "$body" \
               --label bug --label packaging --label model:sonnet-5 --label priority:P2
           fi
+
+  create:
+    # maintainer-dispatched only: the first concept of a repository from one tag
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'create' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+      REPO: ${{ inputs.repo }}
+      TAG: ${{ inputs.tag }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: python3 -I tools/zenodo/zenodo.py --self-test
+      - name: Create the first concept
+        run: |
+          if [ -z "$REPO" ] || [ -z "$TAG" ]; then
+            echo "::error::mode create needs repo and tag"
+            exit 1
+          fi
+          mode=(--publish)
+          if [ "$DRY_RUN" = true ]; then
+            mode=()
+          elif [ -z "$ZENODO_TOKEN" ]; then
+            echo "::warning::ZENODO_TOKEN is not set: dry run only"
+            mode=()
+          fi
+          python3 -I tools/zenodo/zenodo.py create --repo "swarm-routing/${REPO#swarm-routing/}" \
+            --tag "$TAG" "${mode[@]}"

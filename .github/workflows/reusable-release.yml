@@ -700,6 +700,34 @@ jobs:
           git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
           git push origin "refs/tags/${TAG}"
 
+      # A signal only (#226): Zenodo archives the release with the
+      # maintainer's OAuth token, whose quota these tokens do not share, so a
+      # low number here is a hint, never a reason to stop. `rate_limit` costs
+      # no quota.
+      - name: API quota before publishing
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          RELEASE_TOKEN: ${{ github.token }}
+          BOT_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          {
+            echo "### GitHub API quota before publishing ${TAG}"
+            echo
+            echo "| token | core remaining / limit | resets (UTC) |"
+            echo "|---|---|---|"
+            for which in RELEASE_TOKEN BOT_TOKEN; do
+              tok="${!which}"
+              [ -n "$tok" ] || continue
+              row=$(GH_TOKEN="$tok" gh api rate_limit \
+                --jq '.resources.core | "\(.remaining) / \(.limit) | \(.reset | todate)"' 2>/dev/null) \
+                || row="unavailable | -"
+              echo "| ${which,,} | ${row} |"
+            done
+            echo
+            echo "Zenodo fetches the release with the maintainer's own quota, not these (CONTRIBUTING \"When Zenodo fails a release\")."
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}

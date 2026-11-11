@@ -498,8 +498,25 @@ webhook gets `409` and never archives it. The repository's next release is
 archived as usual (for a repository without a concept yet, it creates the
 concept), but that archives the new release, not the failed one, and the daily
 check adds versions only to an existing concept and may skip the older tag.
-The failed release itself needs its own recovery: `zenodo.py create` archives
-it from its tag (#226). Around a release, keep API polling as the maintainer low (#226).
+The failed release itself needs its own recovery: dispatch the `zenodo`
+workflow with mode `create`, the repository and the tag (`zenodo.py create
+--repo OWNER/NAME --tag vX.Y.Z --publish`; a dry run first, with `dry-run`).
+It archives the tag as the first version of a new concept, with its
+CITATION.cff metadata (a dataset stays a dataset), refuses when the repository
+already has a concept, and prints the concept and version DOIs; then set
+`zenodo_concept` and reseed CITATION.cff. The daily `zenodo` run lists every
+released repository without a concept (`zenodo.py orphans`) and opens an issue
+once its first release is past the 12-hour grace period (#226).
+
+**No polling as the maintainer around a release.** From the bump PR's merge
+until Zenodo has archived the release, nothing runs a polling loop on the
+maintainer's GitHub account: monitors use webhooks or `subscribe_pr_activity`,
+long intervals (minutes, not seconds) and conditional requests (`ETag` /
+`If-None-Match`, whose `304` costs no quota). `pr_status.py` backs off when its
+token's `X-RateLimit-Remaining` drops below `--min-rate` (default 500), and
+`reusable-release.yml` prints the release token's remaining quota in the job
+summary before it publishes (a signal only: that token is the job's, not the
+maintainer's) (#226).
 
 ### Archived releases
 
