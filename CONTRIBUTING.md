@@ -260,10 +260,13 @@ carries a change of its own needs a sign-off like any other commit.
 Maintainer and agent commits are made from the maintainer's own account,
 under the licence grant already recorded in AntHocNet ADR-0028. **An AI agent
 never adds a `Signed-off-by` trailer**, for the maintainer, for itself or for
-anyone else: a sign-off is a person's own certification. Until the policy for
-agent-made commits is decided (#212), the `dco` check is red on them; it is
-not a required check in any repository, so it blocks nothing, and its advice
-to rebase and force-push does not apply to a shared branch.
+anyone else: a sign-off is a person's own certification. Instead, an agent
+commit (one whose message carries a `Claude-Session:` trailer) is exempt when
+the PR's author is the repository's OWNER, a MEMBER or a COLLABORATOR: the
+person who opened the PR certifies its contents by opening it (maintainer
+decision, #212). The same commit on an outside contributor's PR is not
+exempt; it needs its author's own sign-off, since no one signs off on anyone
+else's behalf.
 
 The sign-off is the recorded grant AntHocNet
 [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)

@@ -16,6 +16,10 @@ Exempt, since their commits are made by the maintainer's own account or a bot:
 - commits whose GitHub author has write, maintain or admin permission on the
   repository (``repos/{o}/{r}/collaborators/{user}/permission``);
 - commits by ``swarm-routing-bot[bot]`` and ``dependabot[bot]``;
+- agent commits (a ``Claude-Session:`` trailer) on a PR whose
+  ``author_association`` is OWNER, MEMBER or COLLABORATOR: the member who
+  opened the PR certifies it, and an agent never signs off (#212); the same
+  commit on an outside contributor's PR still needs its author's sign-off;
 - merge commits that add nothing of their own (an "Update branch" merge
   brings in main, nothing new): a merge whose combined diff against its
   parents is not empty (a conflict resolved with new text, or a change slipped
@@ -50,6 +54,7 @@ EXEMPT_BOTS = frozenset({"swarm-routing-bot[bot]", "dependabot[bot]"})
 EXEMPT_PERMISSIONS = frozenset({"admin", "maintain", "write"})
 SIGNOFF = re.compile(r"^Signed-off-by:([^<\n]*)<([^<>\s]+)>[ \t]*$", re.I)
 TRAILER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*:")
+AGENT_TRAILER = re.compile(r"^Claude-Session:", re.I)
 SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
@@ -82,6 +87,11 @@ def signoffs(message: str) -> list[str]:
         for m in (SIGNOFF.match(line) for line in trailer_block(message))
         if m
     ]
+
+
+def agent_commit(message: str) -> bool:
+    """Whether the message's trailer block carries a Claude-Session trailer."""
+    return any(AGENT_TRAILER.match(line) for line in trailer_block(message))
 
 
 def git_commits(base: str, head: str) -> list[dict]:
@@ -181,6 +191,8 @@ def verdicts(commits, logins, pr_author, association, has_write) -> list[tuple[s
             out.append(("exempt", c, f"{login} is {association}"))
         elif login and has_write(login):
             out.append(("exempt", c, f"{login} has write access"))
+        elif association in EXEMPT_ASSOCIATIONS and agent_commit(c["message"]):
+            out.append(("exempt", c, f"agent commit on a PR by {pr_author} ({association})"))
         elif ident(c["name"], c["email"]) in signoffs(c["message"]):
             out.append(("ok", c, f"Signed-off-by {c['name']} <{c['email']}>"))
         elif signoffs(c["message"]):
@@ -255,6 +267,16 @@ def self_test() -> int:
             "fix: g\n\nbody\n\nCo-Authored-By: Bob\n <bob@x.org>\n"
             "Signed-off-by: Ada <ada@x.org>\nClaude-Session: https://x\n",
         ),
+        # an agent commit: Claude-Session trailer, no sign-off, no GitHub login
+        commit(
+            "p6",
+            "noreply@anthropic.com",
+            "fix: h\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+            "Claude-Session: https://claude.ai/code/session_x\n",
+            name="Claude",
+        ),
+        # the trailer quoted in the body is not a trailer
+        commit("q7", "noreply@anthropic.com", "fix: i\n\nClaude-Session: https://x\nbody\n"),
     ]
     logins = {
         "a1": "ada",
@@ -290,6 +312,8 @@ def self_test() -> int:
         "l2": "FAIL",
         "m3": "FAIL",
         "n4": "ok",
+        "p6": "FAIL",  # an outside contributor's PR: the trailer exempts nothing
+        "q7": "FAIL",
     }
     fails = 0
     for bad in ("--output=/tmp/x", "HEAD", "abc"):
@@ -305,14 +329,21 @@ def self_test() -> int:
         print(f"SELF-TEST FAIL (outside PR): {got}")
     # the same commits in a PR the maintainer opened: their own commit is exempt
     got = {c["sha"]: s for s, c, _ in verdicts(commits, logins, "maint", "OWNER", has_write)}
-    if got["d4"] != "exempt" or got["b2"] != "FAIL":
+    if got["d4"] != "exempt" or got["b2"] != "FAIL" or got["p6"] != "exempt" or got["q7"] != "FAIL":
         fails += 1
         print(f"SELF-TEST FAIL (member PR): {got}")
     # an outside PR's author is never exempt by association alone
     got = {c["sha"]: s for s, c, _ in verdicts(commits, logins, "ada", "CONTRIBUTOR", has_write)}
-    if got["b2"] != "FAIL":
+    if got["b2"] != "FAIL" or got["p6"] != "FAIL":
         fails += 1
         print(f"SELF-TEST FAIL (contributor association): {got}")
+    # a member's PR: the agent commit is exempt, an unsigned commit without the
+    # trailer still fails, and a signed one is still ok
+    for assoc in ("MEMBER", "COLLABORATOR"):
+        got = {c["sha"]: s for s, c, _ in verdicts(commits, logins, "maint", assoc, has_write)}
+        if got["p6"] != "exempt" or got["b2"] != "FAIL" or got["i9"] != "FAIL" or got["a1"] != "ok":
+            fails += 1
+            print(f"SELF-TEST FAIL (agent commit, {assoc} PR): {got}")
     # pagination and a commit without a GitHub author
     pages = {
         1: [{"sha": f"s{i}", "author": {"login": "ada"}} for i in range(100)],
