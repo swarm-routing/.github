@@ -39,10 +39,15 @@ name: Reusable release
 #               never goes out.
 #      publish  (environment `release`, so where a repository protects it the
 #               maintainer approves the run) tags the merged commit
-#               v<version> (tags are outside the branch ruleset, so
-#               GITHUB_TOKEN pushes it) and creates the GitHub release with
-#               every asset and the notes (the version's CHANGELOG.md
-#               section, the checksums, the verify commands).
+#               v<version> and creates the GitHub release with every
+#               asset and the notes (the version's CHANGELOG.md section, the
+#               checksums, the verify commands). Tags are outside the branch
+#               ruleset; the org App's token (else ORG_BOT_TOKEN, else
+#               GITHUB_TOKEN) pushes the tag, because GitHub refuses a new
+#               ref to GITHUB_TOKEN when the commit's .github/workflows/
+#               differs from the default branch's tip (the branch moved
+#               while the approval waited, ns3-tools v0.1.0). The release
+#               itself is created with GITHUB_TOKEN (the tag exists by then).
 #    Re-runs resume: a tag already on this commit is kept and the release is
 #    completed; a tag on a different commit fails the run. Nothing in any
 #    mode pushes to the default branch.
@@ -148,13 +153,13 @@ on:
         default: ''
     secrets:
       BOT_APP_ID:
-        description: "The org GitHub App's ID, for the bump PR's token (.github/actions/bot-token)"
+        description: "The org GitHub App's ID, for the bump PR's and the release tag's token (.github/actions/bot-token)"
         required: false
       BOT_APP_PRIVATE_KEY:
         description: "The org GitHub App's private key"
         required: false
       ORG_BOT_TOKEN:
-        description: "Fallback token for the bump PR when the App is not configured"
+        description: "Fallback token for the bump PR and the release tag when the App is not configured"
         required: false
     outputs:
       mode:
@@ -632,21 +637,53 @@ jobs:
         with:
           egress-policy: audit
       # It runs no code of the caller's: the merged commit's checkout (for
-      # the tag) and the built files only.
+      # the tag) and the built files only. No persisted GITHUB_TOKEN: the
+      # tag step authenticates git itself, with the token it picks.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/rel
 
+      # The org App's token (else ORG_BOT_TOKEN) pushes the tag. For a new
+      # ref GitHub checks the pushed commit's workflow files against the
+      # default branch, and a release commit whose `.github/workflows/`
+      # differs from the branch's tip (main moved while the `release`
+      # environment waited for approval) is refused to GITHUB_TOKEN, which
+      # can never hold the `workflows` permission; the App holds it (#21).
+      # The action is this repository's, by path: a reusable workflow's `./`
+      # would be the caller's checkout.
+      - name: Bot token
+        id: bot
+        uses: swarm-routing/.github/.github/actions/bot-token@main
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+
       - name: Tag the merged commit
         # Tags are outside the branch ruleset (the release-tags ruleset only
-        # stops a v* tag being moved or deleted), so GITHUB_TOKEN pushes it.
-        # Idempotent: a tag already on this commit is kept (a re-run
-        # resumes); one on another commit fails.
+        # stops a v* tag being moved or deleted), so the bot token (else
+        # GITHUB_TOKEN) pushes it. Idempotent: a tag already on this commit
+        # is kept (a re-run resumes); one on another commit fails.
+        env:
+          BOT_TOKEN: ${{ steps.bot.outputs.token }}
+          BOT_NAME: ${{ steps.bot.outputs.git-name }}
+          BOT_EMAIL: ${{ steps.bot.outputs.git-email }}
+          WORKFLOW_GITHUB_TOKEN: ${{ github.token }}
         run: |
           test "$COMMIT" = "$GITHUB_SHA"
+          token="$BOT_TOKEN"
+          if [ -z "$token" ]; then
+            echo "::warning::no bot token: GITHUB_TOKEN pushes the tag, which GitHub refuses when the commit's .github/workflows/ differs from the default branch's tip"
+            token="$WORKFLOW_GITHUB_TOKEN"
+          fi
+          auth="$(printf 'x-access-token:%s' "$token" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git config "http.${GITHUB_SERVER_URL}/.extraheader" "AUTHORIZATION: basic $auth"
           # The peeled line (^{}) of an annotated tag sorts last; a
           # lightweight tag has only its own line.
           tagged="$(git ls-remote origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}" | tail -n 1 | cut -f1)"
@@ -658,8 +695,8 @@ jobs:
             echo "${TAG} already tags ${GITHUB_SHA}; resuming."
             exit 0
           fi
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "${BOT_NAME:-github-actions[bot]}"
+          git config user.email "${BOT_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
           git tag -a "$TAG" -m "$TAG" "$GITHUB_SHA"
           git push origin "refs/tags/${TAG}"
 
