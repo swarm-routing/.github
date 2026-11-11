@@ -31,12 +31,16 @@ profile's features, security features and release environment), which
 with `[settings]` and no `kind` is settings only: every command here says so
 and exits 0, so org-bot finds nothing to propose there.
 
-`check --changed-only BASE` judges only the items the change since BASE
-touched (a PR's own drift, swarm-routing/.github#159): a section counts when
-a changed line falls between its markers, any other item when its file
-changed (a change to .github/org-sync.toml touches every item). Drift a
-newer template causes in an untouched item is listed as
-`ignored` and does not fail; plain `check` (pushes to main) still does.
+`check --changed-only BASE` fails only on the drift the change since BASE
+brought in (a PR's or a merge group's own, swarm-routing/.github#159): an
+item fails when it drifts at HEAD and either did not drift at BASE (the same
+templates rendered against BASE's tree, e.g. a config change whose render the
+PR did not apply) or the change edited it by hand (a changed line between a
+section's markers, any change to another item's file; editing only
+.github/org-sync.toml is not a hand edit). Every other drifting item, drift a
+newer template left on BASE, is a `::warning::` line and exit 0, so a template
+merge in swarm-routing/.github does not block every PR until the org-bot
+refresh lands; plain `check` (pushes to main) still fails on it.
 
 Output is a summary, never file contents, so an agent reads a few lines per
 run (AntHocNet ADR-0014). Only `conflicts` and `reseed` print text: the hunks
@@ -46,11 +50,14 @@ that need a person's judgement, and the change a reseed makes. Stdlib only; Pyth
 import argparse
 import datetime
 import difflib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tarfile
+import tempfile
 import textwrap
 import tomllib
 from urllib.parse import quote
@@ -78,8 +85,12 @@ def markers(path):
 # exists (see badge_lines): `release` when a workflow calls reusable-release.yml,
 # `doi` when the config names its `zenodo_concept` (read from Zenodo, never
 # typed: the concept exists only after the first release is archived), `cite`
-# when the repository has a CITATION.cff (`citation = true` seeds one).
-# `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security, maintainability); `sonar-gate`, `sonar-bugs`,
+# when the repository has a CITATION.cff (`citation = true` seeds one);
+# `scorecard` (OpenSSF Scorecard, #23) only where
+# .github/workflows/scorecard.yml runs it, so a private repository, which skips
+# that workflow (`skip = [".github/workflows/scorecard.yml"]`), never gets one.
+# `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security,
+# maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
 SONAR_METRICS = {
     "sonar-gate": ("Quality Gate Status", "alert_status"),
@@ -87,7 +98,7 @@ SONAR_METRICS = {
     "sonar-security": ("Security Rating", "security_rating"),
     "sonar-maintainability": ("Maintainability Rating", "sqale_rating"),
 }
-BASE_BADGES = ["ci", "release", "doi", "cite", "licence", "conventional", "arena"]
+BASE_BADGES = ["ci", "release", "doi", "cite", "licence", "conventional", "arena", "scorecard"]
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
     "c-cpp": ["cxx", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -176,7 +187,7 @@ class SettingsOnly(Exception):
 SETTINGS_ONLY_JSON = {"plan": '{"unchanged":0,"changes":[]}', "seeds": "[]", "settings": "{}"}
 
 
-def load_config(repo_dir):
+def load_config(repo_dir, slug=None):
     text = read(os.path.join(repo_dir, CONFIG))
     if text is None:
         sys.exit(f"org-sync: no {CONFIG} in {repo_dir}; run `org_sync.py init --kind KIND`")
@@ -187,7 +198,10 @@ def load_config(repo_dir):
     if cfg.get("kind") not in KINDS:
         sys.exit(f"org-sync: {CONFIG}: kind must be one of {', '.join(KINDS)}")
     cfg.setdefault(
-        "repo", git_slug(repo_dir) or "swarm-routing/" + os.path.basename(os.path.abspath(repo_dir))
+        "repo",
+        slug
+        or git_slug(repo_dir)
+        or "swarm-routing/" + os.path.basename(os.path.abspath(repo_dir)),
     )
     cfg.setdefault("title", cfg["repo"].split("/")[1])
     cfg.setdefault("description", "**Status: empty.** Describe the repository here.")
@@ -361,6 +375,14 @@ def badge_lines(cfg, repo_dir):
                 img = check_runs_badge(repo, "Trivy", "trivy-config", "aquasecurity")
                 link = f"https://github.com/{repo}/security/code-scanning"
             out.append(f"[![{b.capitalize()}]({img})]({link})")
+        elif b == "scorecard" and os.path.exists(
+            os.path.join(repo_dir, ".github/workflows/scorecard.yml")
+        ):
+            # the score the workflow publishes to the public OpenSSF API
+            out.append(
+                f"[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/{repo}/badge)]"
+                f"(https://scorecard.dev/viewer/?uri=github.com/{repo})"
+            )
         elif b == "claude-plugin":
             out.append(
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
@@ -548,6 +570,7 @@ def items(cfg):
         ("seed", "Makefile", "make/Makefile.in", None),
         ("targets", "Makefile", None, "targets"),
         ("file", ".github/workflows/org-sync.yml", "workflows/org-sync.yml", None),
+        ("file", ".github/workflows/scorecard.yml", "workflows/scorecard.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),
@@ -948,14 +971,13 @@ def pr_changes(repo_dir, base):
 
 
 def touched(repo_dir, item, changes):
-    """Did the change touch this item? A section counts only when a changed
-    line (or a deletion) falls between its markers, markers included; a file
-    without the markers counts when any of it changed; any other item counts
-    when its file changed. A change to the config touches every item: it
-    decides how each one renders."""
+    """Did the change edit this item by hand? A section counts only when a
+    changed line (or a deletion) falls between its markers, markers included;
+    a file without the markers counts when any of it changed; any other item
+    counts when its file changed. A change to the config alone is not a hand
+    edit: what it does to an item's render is judged against the base
+    (`base_drift`)."""
     kind, path, _, name = item
-    if CONFIG in changes:
-        return True
     if path not in changes:
         return False
     ranges = changes[path]
@@ -972,6 +994,44 @@ def touched(repo_dir, item, changes):
     )
 
 
+def git(repo_dir, *args, binary=False):
+    r = subprocess.run(["git", "-C", repo_dir, *args], capture_output=True, text=not binary)
+    if r.returncode:
+        err = r.stderr if not binary else r.stderr.decode(errors="replace")
+        sys.exit(f"org-sync: git {' '.join(args)} failed: {err.strip()}")
+    return r.stdout
+
+
+def base_drift(repo_dir, base, slug):
+    """The labels of the items that drift at `base`'s merge base with HEAD,
+    judged with the same templates on that commit's own tree (its config, its
+    managed files, its .github/ and SECURITY.md, which decide the badges).
+    None when the base has no config org-sync manages: every drift is then the
+    change's own."""
+    rev = git(repo_dir, "merge-base", base, "HEAD").strip()
+    with tempfile.TemporaryDirectory(prefix="org-sync-base-") as tmp:
+        r = subprocess.run(
+            ["git", "-C", repo_dir, "show", f"{rev}:{CONFIG}"], capture_output=True, text=True
+        )
+        if r.returncode:
+            return None
+        write(tmp, CONFIG, r.stdout)
+        try:
+            cfg = load_config(tmp, slug)
+        except (SettingsOnly, SystemExit, tomllib.TOMLDecodeError):
+            return None
+        paths = sorted({i[1] for i in items(cfg)} | {".github", "SECURITY.md"})
+        names = git(repo_dir, "ls-tree", "-r", "--name-only", rev, "--", *paths).splitlines()
+        if names:
+            data = git(repo_dir, "archive", "--format=tar", rev, "--", *names, binary=True)
+            with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+                if hasattr(tarfile, "data_filter"):
+                    tar.extractall(tmp, filter="data")
+                else:  # Python 3.11 before 3.11.4
+                    tar.extractall(tmp)  # our own git objects, filtered by path above
+        return {label(item) for item, status, _, _ in plan(cfg, tmp) if status != "unchanged"}
+
+
 def cmd_check(a):
     cfg = load_config(a.repo)
     drift = [
@@ -979,12 +1039,24 @@ def cmd_check(a):
         for item, status, _, detail in plan(cfg, a.repo)
         if status != "unchanged"
     ]
-    if a.changed_only:
+    warned = 0
+    if a.changed_only and drift:
         changes = pr_changes(a.repo, a.changed_only)
-        for item, status, _ in drift:
-            if not touched(a.repo, item, changes):
-                print(f"ignored   {label(item)}: {status} (not touched since {a.changed_only})")
-        drift = [d for d in drift if touched(a.repo, d[0], changes)]
+        before = base_drift(a.repo, a.changed_only, cfg["repo"])
+        own = []
+        for d in drift:
+            item, status, detail = d
+            if before is None or label(item) not in before or touched(a.repo, item, changes):
+                own.append(d)
+            else:
+                warned += 1
+                print(
+                    f"::warning title=org-sync::{label(item)}: {status}"
+                    + (f" ({detail})" if detail else "")
+                    + f", already drifting at {a.changed_only} (a newer template); "
+                    "the org-bot refresh PR, or `org_sync.py apply` on main, fixes it"
+                )
+        drift = own
     for item, status, detail in drift:
         print(f"drift     {label(item)}: {status}" + (f" ({detail})" if detail else ""))
     if drift:
@@ -994,7 +1066,11 @@ def cmd_check(a):
             file=sys.stderr,
         )
         return 1
-    print("org-sync: in sync")
+    print(
+        f"org-sync: no drift of this change's own; {warned} item(s) already drifting at the base"
+        if a.changed_only and warned
+        else "org-sync: in sync"
+    )
     return 0
 
 
@@ -1115,9 +1191,9 @@ def main(argv=None):
             s.add_argument(
                 "--changed-only",
                 metavar="BASE",
-                help="judge only the drift in items the change since BASE touched "
-                "(`git diff BASE...HEAD`): a section counts when a changed line falls "
-                "between its markers, any other item when its file changed",
+                help="fail only on the drift the change since BASE brought in "
+                "(`git diff BASE...HEAD`): an item that drifts at HEAD but not at BASE, "
+                "or one the change edited by hand; drift already at BASE is a warning",
             )
         if name in ("plan", "seeds", "settings"):
             s.add_argument("--json", action="store_true")

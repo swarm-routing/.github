@@ -26,9 +26,9 @@ is the long form.
    may use the dual parts, never the reverse — a `core/` file includes only the
    C++ standard library, other `core/` files and the dual-licensed core of a
    declared dependency (a protocol's `core/` on swarm-core's `core/`, the
-   `core-deps` input of whichever workflow runs the licence check: `licence.yml`
-   calling `reusable-licence-check.yml`, or `ci.yml` calling
-   `reusable-ns3-ci.yml`, which forwards it). CI
+   `core-deps` input of every workflow that runs the licence check: one calling
+   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
+   forwards it; file names differ per repo, and each names the same pin). CI
    (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
    of it. Contributions are accepted under the licence of the directory they
    land in. Write clean implementations against public ns-3 interfaces rather
@@ -188,11 +188,17 @@ runs until their secret is set, and the secrets belong to the maintainer:
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer. The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
 Each adopting repository's `org-sync` check (`reusable-org-sync-check.yml`)
-judges a PR by its own change only (#159): on `pull_request` it runs
-`org_sync.py check --changed-only` against the PR's base, so it fails only when
-the PR changes a managed file (or deletes a seed) or touches a line inside a
-managed section. A template change here therefore never turns red the open PRs
-that touch no managed file; they merge as they are, and org-bot's refresh PR
+judges a PR by its own change only (#159): on `pull_request` and
+`merge_group` it runs `org_sync.py check --changed-only` against the base, so
+an item fails only when it drifts at the PR's head and either did not drift at
+the base (the same templates rendered on the base's tree: a config change
+whose render the PR did not apply) or the PR edited it by hand (changed the
+managed file, deleted a seed, or touched a line inside a managed section).
+Editing `.github/org-sync.toml` alone (a `[settings]` key such as
+`required_checks`) is not a hand edit of every item. Drift a newer template
+left on the base is a `::warning::` annotation per item, naming it, and the
+check passes. A template change here therefore never turns red the open PRs
+of the adopting repositories; they merge as they are, and org-bot's refresh PR
 brings the templates in. A push to `main` keeps the full check, so drift there
 stays visible until the refresh PR merges. A caller that wants the full check on
 PRs too passes `full-check-on-pr: true`.
@@ -515,6 +521,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed). It uploads the `coverage` artifact, so the CI job needs `coverage` or `sonar` on and the `debug` profile | off; an upload failure, or no artifact, never fails CI |
 | Container lint and scans: hadolint, Trivy config and image reports to code scanning | `ns3-containers` `container-security.yml`, `publish-images.yml` | on there |
 | ruff check + format (org `ruff.toml`) and Python coverage, report-only | `reusable-python-ci.yml` | on in every caller |
+| OpenSSF Scorecard, report-only: score published to the OpenSSF API (badge) and SARIF to code scanning | `reusable-scorecard.yml`, called by org-sync's `.github/workflows/scorecard.yml` (weekly, on push to `main`, on demand) | on in every public repo; a private one lists the workflow in `skip` |
 
 Coverage has no threshold: read it as a map of untested paths (AntHocNet #162).
 A floor, if ever, is chosen from evidence in its own issue. Codecov's statuses
@@ -526,6 +533,19 @@ coverage, and the two cannot run together. Their badges come from org-sync
 (`sonar`, `codecov`, `coderabbit` in `badges`; `[quality] sonar = false` in
 `org-sync.toml` for a repository with no SonarQube Cloud project yet); the org profile shows each
 repository's quality gate and coverage.
+
+OpenSSF Scorecard (#23) runs from the reusable workflow, not a copy per repo:
+the Scorecard API accepts a published result only from a workflow that keeps
+its [restrictions](https://github.com/ossf/scorecard-action#workflow-restrictions),
+and it checks the called workflow (the one holding the `ossf/scorecard-action`
+step), so `reusable-scorecard.yml` keeps them: no top-level `env` or
+`defaults`, no workflow-level write permission, `id-token: write` on the
+Scorecard job only, a literal Ubuntu runner, and only `uses:` steps from the
+approved actions. The caller's job grants `security-events: write` and
+`id-token: write`. The `scorecard` badge (org-sync) appears with the workflow,
+and the first push to `main` after it lands publishes the first score. A low
+score is a finding to triage in an issue, not a build break. Whether a repo
+also fills the CII Best Practices questionnaire is decided per repo on #23.
 
 ## AI agents
 

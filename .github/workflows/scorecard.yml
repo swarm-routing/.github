@@ -1,0 +1,28 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Scorecard
+
+# OpenSSF Scorecard on this repo (#23), as templates/workflows/scorecard.yml
+# gives every other repo, but calling the reusable workflow from this checkout.
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analysis:
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-scorecard.yml

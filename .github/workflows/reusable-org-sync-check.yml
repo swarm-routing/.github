@@ -8,13 +8,18 @@ name: org-sync check (reusable)
 # section, LICENSE, the ADR template, the org-sync workflow, the marketplace
 # keys of .claude/settings.json, and the standard Makefile target names.
 # On pull_request only the PR's own drift fails (swarm-routing/.github#159):
-# `org_sync.py check --changed-only` against the PR's base, so a newer
-# template never turns red a PR that touches no managed file, and a PR that
-# edits a managed file or a managed section by hand still does. A merge group
-# (the merge queue, #130) is judged the same way, against the group's base
-# (merge_group.base_sha), so a newer template does not stall the queue either.
-# Pushes and every other event keep the full check, so drift on main stays
-# visible.
+# `org_sync.py check --changed-only` against the PR's base fails an item only
+# when it drifts at the head and either did not drift at the base (the same
+# templates rendered on the base's tree, e.g. a config change whose render the
+# PR did not apply) or the PR edited it by hand (its file, or a line inside its
+# section; editing .github/org-sync.toml alone is not one). Drift a newer
+# template already left on the base is a ::warning:: annotation per item and
+# passes, so a template merge here never blocks a PR, not even one that only
+# adds a [settings] key (HOPNET#32). A merge group (the merge queue, #130) is
+# judged the same way, against the group's base (merge_group.base_sha), so a
+# newer template does not stall the queue either. Pushes and every other
+# event keep the full check, so drift on main stays red and visible;
+# full-check-on-pr: true restores it on PRs too.
 # A public contract (AGENTS.md rule 10): inputs are only ever added.
 on:
   workflow_call:
@@ -45,7 +50,8 @@ jobs:
         with:
           path: repo
           persist-credentials: false
-          # a PR's merge commit and its first parent (the base), for --changed-only;
+          # a PR's merge commit and its first parent (the base), for --changed-only
+          # (its diff, and the base's tree to tell the base's drift from the PR's);
           # a merge group's base can be several queued commits back: full history
           fetch-depth: ${{ github.event_name == 'merge_group' && '0' || (github.event_name == 'pull_request' && '2' || '1') }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
