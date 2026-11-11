@@ -51,6 +51,26 @@ name: Reusable release
 #    Re-runs resume: a tag already on this commit is kept and the release is
 #    completed; a tag on a different commit fails the run. Nothing in any
 #    mode pushes to the default branch.
+#      zenodo   (opt-in, `zenodo: true`, #232) archives the published release
+#               on Zenodo with its own assets (every file of the release:
+#               the build's, SHA256SUMS, the SBOM, the provenance) and the
+#               metadata of the commit's CITATION.cff, through
+#               tools/zenodo/zenodo.py `publish-release` (this repository's,
+#               at main): the first version of a new concept for a first
+#               release, else a new version of the repository's concept, so
+#               the concept DOI is kept. Idempotent (a tag already on Zenodo
+#               is reported, not archived again), retried with backoff on 429
+#               and 5xx; the concept and version DOIs go to the job summary,
+#               and a refusal fails the job. It needs the ZENODO_TOKEN secret
+#               (a Zenodo token with deposit:write and deposit:actions) and
+#               runs in the `release` environment, so the token can live
+#               there as an environment secret. Once a repository opts in,
+#               turn Zenodo's GitHub integration off for it, or the release is
+#               archived twice (CONTRIBUTING "Releases and DOIs"). A failed
+#               zenodo job leaves the GitHub release as it is: re-run it, or
+#               the daily zenodo.yml `sync` archives the release after its
+#               grace period (a first release, with no concept yet: re-run
+#               it, or zenodo.yml mode `create`).
 #
 # mode `dry-run` (or `dry-run: true`) bumps on the runner only, then builds,
 # checksums, writes the SBOM, attests (real attestations, in the caller's
@@ -99,6 +119,9 @@ name: Reusable release
 #         BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
 #         BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
 #         ORG_BOT_TOKEN: ${{ secrets.ORG_BOT_TOKEN }}
+#
+# To archive on Zenodo from the release job (#232), add `zenodo: true` under
+# `with:` and `ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}` under `secrets:`.
 #
 # An ns-3 repository also publishes its images at the same version (#107):
 #
@@ -151,6 +174,14 @@ on:
         description: "bump (open or update the bump PR), release (publish the merged bump PR this commit is), dry-run; empty: release on push, bump otherwise"
         type: string
         default: ''
+      zenodo:
+        description: "After a release is published, archive it on Zenodo with its own assets (needs the ZENODO_TOKEN secret; turn Zenodo's GitHub integration off for the repository)"
+        type: boolean
+        default: false
+      zenodo-sandbox:
+        description: "With zenodo: archive on sandbox.zenodo.org instead (a sandbox token as ZENODO_TOKEN), to prove the path"
+        type: boolean
+        default: false
     secrets:
       BOT_APP_ID:
         description: "The org GitHub App's ID, for the bump PR's and the release tag's token (.github/actions/bot-token)"
@@ -160,6 +191,9 @@ on:
         required: false
       ORG_BOT_TOKEN:
         description: "Fallback token for the bump PR and the release tag when the App is not configured"
+        required: false
+      ZENODO_TOKEN:
+        description: "With zenodo: a Zenodo token with deposit:write and deposit:actions (a secret of the `release` environment, where it is one, takes its place)"
         required: false
     outputs:
       mode:
@@ -710,6 +744,7 @@ jobs:
         env:
           RELEASE_TOKEN: ${{ github.token }}
           BOT_TOKEN: ${{ steps.bot.outputs.token }}
+          ZENODO_PUSH: ${{ inputs.zenodo }}
         run: |
           {
             echo "### GitHub API quota before publishing ${TAG}"
@@ -725,7 +760,11 @@ jobs:
               echo "| ${which,,} | ${row} |"
             done
             echo
-            echo "Zenodo fetches the release with the maintainer's own quota, not these (CONTRIBUTING \"When Zenodo fails a release\")."
+            if [ "$ZENODO_PUSH" = true ]; then
+              echo "The \`zenodo\` job archives this release from the workflow, with ZENODO_TOKEN; Zenodo reads nothing from GitHub."
+            else
+              echo "Zenodo fetches the release with the maintainer's own quota, not these (CONTRIBUTING \"When Zenodo fails a release\")."
+            fi
           } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Publish the release
@@ -742,6 +781,73 @@ jobs:
               --notes-file "$R/meta/notes.md" "$R"/release/*
           fi
           echo "Published ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+  # Opt-in (`zenodo: true`, #232): the published release, archived on Zenodo
+  # from here, so Zenodo never fetches it from GitHub with the maintainer's
+  # OAuth token (and quota, #226). No code of the caller's runs: its
+  # checkout is read for CITATION.cff and .github/org-sync.toml only.
+  zenodo:
+    needs: [route, build, publish]
+    if: ${{ inputs.zenodo && needs.route.outputs.mode == 'release' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # The `release` environment: ZENODO_TOKEN may be its secret (the caller
+    # repository's), which then takes the place of the one passed in, and no
+    # job outside the environment can read it. Where the environment has
+    # required reviewers, this job waits for an approval too.
+    environment: release
+    concurrency:
+      group: release-zenodo-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      SANDBOX: ${{ inputs.zenodo-sandbox }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - name: The release commit (CITATION.cff, .github/org-sync.toml)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: caller
+          persist-credentials: false
+      # zenodo.py is this repository's, at main, as the bot-token action is:
+      # a reusable workflow's `./` would be the caller's checkout.
+      - name: The archiving tool (swarm-routing/.github tools/zenodo)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          ref: main
+          path: org-tools
+          sparse-checkout: tools/zenodo
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/rel
+      - name: Archive on Zenodo
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          if [ -z "$ZENODO_TOKEN" ]; then
+            echo "::error::zenodo: true, but no ZENODO_TOKEN reached this job: pass it under secrets: (or set it on the release environment). The GitHub release is published; archive it with the zenodo workflow (CONTRIBUTING \"When Zenodo fails a release\")."
+            exit 1
+          fi
+          sandbox=()
+          [ "$SANDBOX" = true ] && sandbox=(--sandbox)
+          files=()
+          for f in "$RUNNER_TEMP"/rel/release/*; do [ -f "$f" ] && files+=("$f"); done
+          if ! python3 -I org-tools/tools/zenodo/zenodo.py publish-release --repo "$GITHUB_REPOSITORY" \
+              --tag "$TAG" --checkout caller --publish "${sandbox[@]}" --files "${files[@]}"; then
+            echo "::error::Zenodo did not archive ${TAG} (the reason is above). The GitHub release is published; re-run this job, or the daily zenodo workflow archives it after its grace period."
+            exit 1
+          fi
 
   # mode bump: the bump commit as the PR `chore(release): bump version A to
   # B` from bot/release. It runs no code of the caller's (the build job ran

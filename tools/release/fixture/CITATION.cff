@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "The release self-test's fixture; never archived on the real Zenodo."
+title: "release fixture"
+type: software
+license: MIT OR GPL-2.0-only
+authors:
+  - family-names: Joppi
+    given-names: Daniel
+abstract: >-
+  The caller release-selftest.yml dry-runs reusable-release.yml on, and whose
+  assets the Zenodo push path is tested with, against a fake Zenodo.
