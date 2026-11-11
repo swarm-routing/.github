@@ -531,7 +531,7 @@ Read from Zenodo; the concept DOI resolves to the newest version.
 | BeeAdHoc | [10.5281/zenodo.24124821](https://doi.org/10.5281/zenodo.24124821) | v0.1.0 [10.5281/zenodo.24124822](https://doi.org/10.5281/zenodo.24124822) |
 | Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
 | HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.1.0 [10.5281/zenodo.24125266](https://doi.org/10.5281/zenodo.24125266) |
-| benchmarks | none yet | v0.1.0 released 2026-11-11, not archived (rate limit, above); to be archived from its tag by `zenodo.py create` (#226; a next release would not archive v0.1.0) ([benchmarks#39](https://github.com/swarm-routing/benchmarks/issues/39)) |
+| benchmarks | [10.5281/zenodo.24145189](https://doi.org/10.5281/zenodo.24145189) | v0.1.0 [10.5281/zenodo.24145190](https://doi.org/10.5281/zenodo.24145190) (failed on the rate limit, archived from its tag by `zenodo.py create` on 2026-11-11, #226) |
 
 ### Cutting a release
 
