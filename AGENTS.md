@@ -39,7 +39,7 @@ tools/repo-settings/repo_settings.py   each repo's description, homepage, topics
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
-                                the org-sync workflow, the marketplace keys of .claude/settings.json,
+                                the org-sync and Scorecard workflows, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
                                 codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
                                 quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
@@ -49,8 +49,8 @@ SUPPORT.md                      the org default support policy: issues for bugs,
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/actions/bot-token/      the bots' token: the org GitHub App's installation token, else ORG_BOT_TOKEN (#21; CONTRIBUTING "The bot's GitHub App")
 .github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-benchmark-cell.yml, reusable-python-ci.yml,
-                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, sync-labels.yml,
-                           epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
+                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-scorecard.yml,
+                           sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
                            benchmark-cell-selftest.yml
 LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
 ```

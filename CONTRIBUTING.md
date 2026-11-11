@@ -506,6 +506,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed). It uploads the `coverage` artifact, so the CI job needs `coverage` or `sonar` on and the `debug` profile | off; an upload failure, or no artifact, never fails CI |
 | Container lint and scans: hadolint, Trivy config and image reports to code scanning | `ns3-containers` `container-security.yml`, `publish-images.yml` | on there |
 | ruff check + format (org `ruff.toml`) and Python coverage, report-only | `reusable-python-ci.yml` | on in every caller |
+| OpenSSF Scorecard, report-only: score published to the OpenSSF API (badge) and SARIF to code scanning | `reusable-scorecard.yml`, called by org-sync's `.github/workflows/scorecard.yml` (weekly, on push to `main`, on demand) | on in every public repo; a private one lists the workflow in `skip` |
 
 Coverage has no threshold: read it as a map of untested paths (AntHocNet #162).
 A floor, if ever, is chosen from evidence in its own issue. Codecov's statuses
@@ -517,6 +518,19 @@ coverage, and the two cannot run together. Their badges come from org-sync
 (`sonar`, `codecov`, `coderabbit` in `badges`; `[quality] sonar = false` in
 `org-sync.toml` for a repository with no SonarQube Cloud project yet); the org profile shows each
 repository's quality gate and coverage.
+
+OpenSSF Scorecard (#23) runs from the reusable workflow, not a copy per repo:
+the Scorecard API accepts a published result only from a workflow that keeps
+its [restrictions](https://github.com/ossf/scorecard-action#workflow-restrictions),
+and it checks the called workflow (the one holding the `ossf/scorecard-action`
+step), so `reusable-scorecard.yml` keeps them: no top-level `env` or
+`defaults`, no workflow-level write permission, `id-token: write` on the
+Scorecard job only, a literal Ubuntu runner, and only `uses:` steps from the
+approved actions. The caller's job grants `security-events: write` and
+`id-token: write`. The `scorecard` badge (org-sync) appears with the workflow,
+and the first push to `main` after it lands publishes the first score. A low
+score is a finding to triage in an issue, not a build break. Whether a repo
+also fills the CII Best Practices questionnaire is decided per repo on #23.
 
 ## AI agents
 

@@ -81,8 +81,11 @@ def markers(path):
 
 
 # Badges per kind (swarm-routing/.github#8). Each appears only when its target
-# exists (see badge_lines). `sonar` is the four SonarQube Cloud badges
-# (quality gate, bugs, security, maintainability); `sonar-gate`, `sonar-bugs`,
+# exists (see badge_lines); `scorecard` (OpenSSF Scorecard, #23) only where
+# .github/workflows/scorecard.yml runs it, so a private repository, which skips
+# that workflow (`skip = [".github/workflows/scorecard.yml"]`), never gets one.
+# `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security,
+# maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
 SONAR_METRICS = {
     "sonar-gate": ("Quality Gate Status", "alert_status"),
@@ -90,7 +93,7 @@ SONAR_METRICS = {
     "sonar-security": ("Security Rating", "security_rating"),
     "sonar-maintainability": ("Maintainability Rating", "sqale_rating"),
 }
-BASE_BADGES = ["ci", "licence", "conventional", "arena"]
+BASE_BADGES = ["ci", "licence", "conventional", "arena", "scorecard"]
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
     "c-cpp": ["cxx", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -344,6 +347,14 @@ def badge_lines(cfg, repo_dir):
                 img = check_runs_badge(repo, "Trivy", "trivy-config", "aquasecurity")
                 link = f"https://github.com/{repo}/security/code-scanning"
             out.append(f"[![{b.capitalize()}]({img})]({link})")
+        elif b == "scorecard" and os.path.exists(
+            os.path.join(repo_dir, ".github/workflows/scorecard.yml")
+        ):
+            # the score the workflow publishes to the public OpenSSF API
+            out.append(
+                f"[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/{repo}/badge)]"
+                f"(https://scorecard.dev/viewer/?uri=github.com/{repo})"
+            )
         elif b == "claude-plugin":
             out.append(
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
@@ -474,6 +485,7 @@ def items(cfg):
         ("seed", "Makefile", "make/Makefile.in", None),
         ("targets", "Makefile", None, "targets"),
         ("file", ".github/workflows/org-sync.yml", "workflows/org-sync.yml", None),
+        ("file", ".github/workflows/scorecard.yml", "workflows/scorecard.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),
