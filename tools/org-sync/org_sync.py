@@ -24,6 +24,14 @@ Each managed item is one of:
   targets  a Makefile that is the repository's own, checked only for the
            org's standard target names (swarm-routing/.github#11)
 
+An orphan is an `org-sync:begin NAME` / `org-sync:end NAME` block left in a
+managed file whose section is not one of the repository's items (skipped, or
+not enabled), e.g. rendered by a refresh that branched before the skip landed
+(swarm-routing/.github#235). `plan` and `check` report it as drift, status
+`orphan`; `apply` removes it only with `--prune-orphans` (org-bot passes it,
+so the removal is proposed in a reviewed PR), otherwise leaves it, reports it
+and exits 1, like a conflict.
+
 A `[settings]` table holds the repository's GitHub settings (description,
 homepage, topics, ruleset profile, required checks, and overrides of the
 profile's features, security features and release environment), which
@@ -213,12 +221,22 @@ def load_config(repo_dir, slug=None):
     cfg.setdefault("manage", [])
     if cfg.setdefault("citation_type", "software") not in CITATION_TYPES:
         sys.exit(f"org-sync: {CONFIG}: citation_type must be one of {', '.join(CITATION_TYPES)}")
+    msg = cfg.get("citation_message")
+    if msg is not None and (
+        not isinstance(msg, str) or not msg.strip() or re.search(r'["\\\x00-\x1f]', msg)
+    ):
+        sys.exit(
+            f"org-sync: {CONFIG}: citation_message must be one line of text, "
+            "without double quotes or backslashes"
+        )
     cfg["references"] = check_references(cfg.get("references", []))
     return cfg
 
 
 # --- citation ------------------------------------------------------------------
-# `citation_type` (#218) sets CITATION.cff's `type:` and message. `[[references]]`
+# `citation_type` (#218) sets CITATION.cff's `type:` and message; `citation_message`
+# (#235), one line, replaces that message with the repository's own (CITATION.cff
+# is a seed: it reaches the file on init and on `reseed CITATION.cff`). `[[references]]`
 # lists the work a repository implements or builds on, once, for both the README's
 # "Releases & citing" section and CITATION.cff's `references:` (as AntHocNet's):
 #
@@ -647,7 +665,7 @@ def render_citation(cfg, repo_dir):
     the whole work's licence (a CFF list means a choice, so a partly dual repo
     is GPL-2.0-only and LICENSING.md keeps the per-directory MIT),
     the version Commitizen holds, the concept DOI only when `zenodo_concept`,
-    `citation_type`'s type and message, and `[[references]]`."""
+    `citation_type`'s type and message (or `citation_message`), and `[[references]]`."""
     settings = cfg.get("settings") if isinstance(cfg.get("settings"), dict) else {}
     abstract = re.sub(r"\s+", " ", settings.get("description") or cfg["description"]).strip()
     cz = read(os.path.join(repo_dir, ".cz.toml"))
@@ -690,7 +708,7 @@ def render_citation(cfg, repo_dir):
         "LICENSE": lic,
         "REPO": cfg["repo"],
         "TYPE": cfg["citation_type"],
-        "MESSAGE": CITATION_TYPES[cfg["citation_type"]],
+        "MESSAGE": cfg.get("citation_message") or CITATION_TYPES[cfg["citation_type"]],
     }
     # one pass over the template, so a value that contains @NAME@ stays as
     # written; @DOI@ fills its whole line, or drops it
@@ -825,6 +843,57 @@ def find_section(text, name, path=""):
         return None
     start = i + len(b) + 1  # after the begin line's newline
     return start, j
+
+
+def block_names(text, path):
+    """The names of the complete org-sync blocks in `text`, in order."""
+    pre, post = markers(path)[0].split("{}")
+    pat = re.compile("^" + re.escape(pre) + r"(\S+)" + re.escape(post) + "$", re.M)
+    out = []
+    for m in pat.finditer(text):
+        if m.group(1) not in out and find_section(text, m.group(1), path):
+            out.append(m.group(1))
+    return out
+
+
+def remove_block(text, name, path):
+    """`text` without the block `name`, markers included, and without the blank
+    line that separated it from what follows when one also precedes it."""
+    begin, end = (m.format(name) for m in markers(path))
+    s = text.find(begin)
+    e = text.find(end, s) + len(end)
+    if text[e : e + 1] == "\n":
+        e += 1
+    if (s == 0 or text[:s].endswith("\n\n")) and text[e : e + 1] == "\n":
+        e += 1
+    return text[:s] + text[e:]
+
+
+def orphans(cfg, repo_dir):
+    """(item, new_text, detail) for each org-sync block in a managed file whose
+    section is not one of this repository's items: skipped, or not enabled
+    (#235). The item is ("orphan", path, None, name); new_text drops the block."""
+    its = items(cfg)
+    known = {(i[1], i[3]) for i in its if i[0] == "section"}
+    skip = set(cfg.get("skip", []))
+    out = []
+    for path in dict.fromkeys(i[1] for i in its):
+        text = read(os.path.join(repo_dir, path))
+        if text is None:
+            continue
+        for name in block_names(text, path):
+            if (path, name) in known:
+                continue
+            fix = "drop the skip" if f"{path}#{name}" in skip else "enable its item"
+            out.append(
+                (
+                    ("orphan", path, None, name),
+                    remove_block(text, name, path),
+                    f"orphan block {name} in {path}: not one of this repository's items "
+                    f"(skipped, or not enabled); remove it (`apply --prune-orphans`), or {fix}",
+                )
+            )
+    return out
 
 
 def adopt_span(text, path, name):
@@ -1001,6 +1070,7 @@ def plan(cfg, repo_dir):
     for item in items(cfg):
         status, new, detail = evaluate(cfg, repo_dir, item)
         rows.append((item, status, new, detail))
+    rows += [(item, "orphan", new, detail) for item, new, detail in orphans(cfg, repo_dir)]
     return rows
 
 
@@ -1015,15 +1085,24 @@ def write(repo_dir, path, text):
         f.write(text)
 
 
-def apply(cfg, repo_dir, force=()):
+def apply(cfg, repo_dir, force=(), prune=False):
     """Write every change; repeat until stable, since a badge can depend on a
-    file a later item creates (at most three passes)."""
+    file a later item creates (at most three passes). An orphan block is removed
+    only with `prune`; otherwise it is left and reported, like a conflict."""
     changed, conflicts = [], []
     for _ in range(3):
         c, conflicts = apply_once(cfg, repo_dir, force)
         if not c:
             break
         changed += [x for x in c if x not in changed]
+    for item, _, detail in orphans(cfg, repo_dir):
+        if prune:
+            # re-read: another orphan in the same file may just have gone
+            text = read(os.path.join(repo_dir, item[1]))
+            write(repo_dir, item[1], remove_block(text, item[3], item[1]))
+            changed.append(f"{'removed':9} {label(item)} (orphan)")
+        else:
+            conflicts.append(f"orphan    {label(item)}: {detail}")
     return changed, conflicts
 
 
@@ -1092,7 +1171,7 @@ def cmd_plan(a):
                 same += 1
                 continue
             r = {"item": label(item), "status": status}
-            if new is not None and status in ("update", "adopt", "conflict"):
+            if new is not None and status in ("update", "adopt", "conflict", "orphan"):
                 old = read(os.path.join(a.repo, item[1])) or ""
                 d = list(difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=0))
                 r["lines"] = sum(1 for x in d if x[:1] in "+-" and x[:3] not in ("+++", "---"))
@@ -1112,7 +1191,12 @@ def cmd_plan(a):
 
 def cmd_apply(a):
     cfg = load_config(a.repo)
-    changed, conflicts = apply(cfg, a.repo, set(getattr(a, "force", None) or ()))
+    changed, conflicts = apply(
+        cfg,
+        a.repo,
+        set(getattr(a, "force", None) or ()),
+        prune=getattr(a, "prune_orphans", False),
+    )
     for line in changed + conflicts:
         print(line)
     if not changed and not conflicts:
@@ -1202,7 +1286,7 @@ def touched(repo_dir, item, changes):
     if path not in changes:
         return False
     ranges = changes[path]
-    if ranges is None or kind != "section":
+    if ranges is None or kind not in ("section", "orphan"):
         return True
     cur = read(os.path.join(repo_dir, path)) or ""
     span = find_section(cur, name, path)
@@ -1250,7 +1334,17 @@ def base_drift(repo_dir, base, slug):
                     tar.extractall(tmp, filter="data")
                 else:  # Python 3.11 before 3.11.4
                     tar.extractall(tmp)  # our own git objects, filtered by path above
-        return {label(item) for item, status, _, _ in plan(cfg, tmp) if status != "unchanged"}
+        return {
+            drift_key(item, status)
+            for item, status, _, _ in plan(cfg, tmp)
+            if status != "unchanged"
+        }
+
+
+def drift_key(item, status):
+    """An item's drift as `--changed-only` compares it with the base's: an
+    orphan block is not the same drift as the managed section it once was."""
+    return ("orphan " if status == "orphan" else "") + label(item)
 
 
 def cmd_check(a):
@@ -1267,7 +1361,11 @@ def cmd_check(a):
         own = []
         for d in drift:
             item, status, detail = d
-            if before is None or label(item) not in before or touched(a.repo, item, changes):
+            if (
+                before is None
+                or drift_key(item, status) not in before
+                or touched(a.repo, item, changes)
+            ):
                 own.append(d)
             else:
                 warned += 1
@@ -1426,6 +1524,12 @@ def main(argv=None):
                 nargs="+",
                 metavar="ITEM",
                 help="replace these conflicting sections with the template (ITEM as `plan` prints it, or all)",
+            )
+            s.add_argument(
+                "--prune-orphans",
+                action="store_true",
+                help="remove org-sync blocks whose section is not one of this repository's items "
+                "(skipped, or not enabled); without it they are left and reported",
             )
     a = p.parse_args(argv)
     try:

@@ -195,7 +195,8 @@ def generate(task, repo, clone, data, out):
     else:
         if not os.path.exists(os.path.join(clone, ".github", "org-sync.toml")):
             return None
-        cmds = [[sys.executable, "-I", ORG_SYNC, "apply", clone]]
+        # orphan blocks (#235) go too: the removal is proposed in this reviewed PR
+        cmds = [[sys.executable, "-I", ORG_SYNC, "apply", clone, "--prune-orphans"]]
     for c in cmds:
         # org_sync.py apply exits 1 when sections the repository owns differ (it
         # leaves them and lists them on stdout); only a crash writes to stderr.
@@ -838,7 +839,15 @@ def self_test():
         fh.write(text.replace('kind = "data"\n', 'kind = "data"\nposture = "a dataset"\n'))
     with open(os.path.join(adopted, "SECURITY.md")) as fh:
         before = fh.read()
+    with open(os.path.join(adopted, "AGENTS.md"), "a") as fh:
+        fh.write("\n<!-- org-sync:begin stale -->\nold\n<!-- org-sync:end stale -->\n")
     notes = generate("org-sync", "adopted", adopted, data, [])
+    with open(os.path.join(adopted, "AGENTS.md")) as fh:
+        check(
+            "org-sync removes an orphan block (#235)",
+            "org-sync:begin stale" not in fh.read()
+            and any("removed   AGENTS.md#stale (orphan)" in n for n in notes),
+        )
     with open(os.path.join(adopted, "SECURITY.md")) as fh:
         after = fh.read()
     check(
