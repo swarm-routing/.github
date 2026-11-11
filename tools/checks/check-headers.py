@@ -17,7 +17,12 @@ The MIT option is only real while three things hold, so this gate checks them:
 2. every covered file under a dual root carries exactly
    ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on
    purpose, with the reason in the caller);
-3. a C++ file under a core root includes nothing from outside it: angle
+3. a file whose header names more than one copyright holder (an outside
+   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath
+   the org line, CONTRIBUTING "Outside contributions") keeps the org line
+   first and the exact SPDX expression of its directory; those extra lines
+   do not count against the five-line window;
+4. a C++ file under a core root includes nothing from outside it: angle
    includes are C++ standard-library headers, quote includes resolve to a
    file under the same core root. A ``core/`` file that pulled in an ns-3
    header would bind the whole core to GPL. A core built on another
@@ -43,6 +48,12 @@ import sys
 SPDX = "SPDX-License-Identifier"
 DUAL_SPDX = f"{SPDX}: MIT OR GPL-2.0-only"
 HEAD_LINES = 5
+COPYRIGHT_RE = re.compile(r"^\s*(?://|#)\s*Copyright \(c\) \d{4}(?:-\d{4})? \S")
+ORG_COPYRIGHT_RE = re.compile(
+    r"^\s*(?://|#)\s*Copyright \(c\) \d{4}(?:-\d{4})? "
+    r"Daniel Joppi \(https://github\.com/swarm-routing\)\s*$"
+)
+ORG_COPYRIGHT = "Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)"
 EXTS = (".h", ".hpp", ".cc", ".cpp", ".py", ".sh")
 CXX = (".h", ".hpp", ".cc", ".cpp")
 STD_HEADERS = frozenset(
@@ -59,8 +70,47 @@ typeindex typeinfo unordered_map unordered_set utility valarray variant vector v
 )
 
 
+def head(text: str) -> list[str]:
+    """The header window: the first HEAD_LINES lines, plus every copyright line
+    after the first met on the way (a contributor's line never pushes the SPDX
+    line out; a header with one copyright line keeps the plain window)."""
+    out, counted, holders = [], 0, 0
+    for line in text.split("\n"):
+        if counted >= HEAD_LINES:
+            break
+        out.append(line)
+        if COPYRIGHT_RE.match(line):
+            holders += 1
+            if holders == 1:
+                counted += 1
+        else:
+            counted += 1
+    return out
+
+
 def head_has(text: str, needle: str) -> bool:
-    return any(needle in line for line in text.split("\n")[:HEAD_LINES])
+    return any(needle in line for line in head(text))
+
+
+def copyright_findings(rel: str, text: str, expr: str) -> list[str]:
+    """Extra copyright lines are fine beneath the org line, with the exact SPDX."""
+    lines = head(text)
+    holders = [line for line in lines if COPYRIGHT_RE.match(line)]
+    if len(holders) < 2:
+        return []
+    out = []
+    if not ORG_COPYRIGHT_RE.match(holders[0]):
+        out.append(
+            f"{rel}:1: a contributor's copyright line goes beneath the org line "
+            f"'{ORG_COPYRIGHT}', which must come first"
+        )
+    spdx = [line for line in lines if SPDX in line]
+    if not any(line.split(f"{SPDX}:", 1)[-1].strip() == expr for line in spdx):
+        out.append(
+            f"{rel}:1: with more than one copyright line the header must say exactly "
+            f"'{SPDX}: {expr}'"
+        )
+    return out
 
 
 def check_file(
@@ -73,12 +123,8 @@ def check_file(
     dep_ok=lambda name: False,
 ) -> list[str]:
     out = []
+    expr = "MIT OR GPL-2.0-only" if rel.startswith(dual) and rel not in gpl_only else "GPL-2.0-only"
     if not head_has(text, SPDX):
-        expr = (
-            "MIT OR GPL-2.0-only"
-            if rel.startswith(dual) and rel not in gpl_only
-            else "GPL-2.0-only"
-        )
         out.append(
             f"{rel}:1: no {SPDX} in the first {HEAD_LINES} lines — add\n"
             f"    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n"
@@ -90,6 +136,7 @@ def check_file(
             f"{rel}:1: this root is dual-licensed — the header must say "
             f"exactly '{DUAL_SPDX}' (or list the file with --gpl-only)"
         )
+    out += copyright_findings(rel, text, expr)
     root = next((c for c in core if rel.startswith(c)), None)
     if root and rel.endswith(CXX):
         out += include_findings(rel, text, root, exists, dep_ok)
@@ -236,6 +283,50 @@ def self_test() -> int:
             H + '// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include "../../ns3/model/a.h"\n',
             True,
             "escape by ..",
+        ),
+        (
+            "core/src/b.cc",
+            "// " + ORG_COPYRIGHT + "\n// Copyright (c) 2027 Ada Lovelace\n"
+            "// Copyright (c) 2027 Alan Turing\n// Copyright (c) 2027 Grace Hopper\n"
+            "// Copyright (c) 2027 Edsger Dijkstra\n"
+            "// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+            False,
+            "contributors beneath the org line",
+        ),
+        (
+            "tools/x.py",
+            "#!/usr/bin/env python3\n# " + ORG_COPYRIGHT + "\n# Copyright (c) 2027 Ada Lovelace\n"
+            "# SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+            False,
+            "contributor in a script",
+        ),
+        (
+            "ns3/model/a.cc",
+            "// Copyright (c) 2027 Ada Lovelace\n// SPDX-License-Identifier: GPL-2.0-only\n"
+            "// Copyright (c) 2027 Alan Turing\n",
+            True,
+            "contributors without the org line",
+        ),
+        (
+            "ns3/model/a.cc",
+            "// Copyright (c) 2027 Ada Lovelace\n// " + ORG_COPYRIGHT + "\n"
+            "// SPDX-License-Identifier: GPL-2.0-only\n",
+            True,
+            "contributor above the org line",
+        ),
+        (
+            "ns3/model/a.cc",
+            "// " + ORG_COPYRIGHT + "\n// Copyright (c) 2027 Ada Lovelace\n"
+            "// SPDX-License-Identifier: GPL-2.0-or-later\n",
+            True,
+            "contributor with an inexact SPDX",
+        ),
+        (
+            "ns3/model/a.cc",
+            "\n" * 4
+            + "// Copyright (c) 2027 Ada Lovelace\n// SPDX-License-Identifier: GPL-2.0-only\n",
+            True,
+            "one copyright line keeps the five-line window",
         ),
     ]
     fails = 0

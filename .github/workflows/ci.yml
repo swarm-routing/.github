@@ -30,6 +30,7 @@ jobs:
       - name: Licence headers (the whole repo is tooling, so all of it is dual)
         run: |
           python3 -I tools/checks/check-headers.py --self-test
+          python3 -I tools/checks/check-dco.py --self-test
           python3 -I tools/checks/check-headers.py --dual '' .
           for f in LICENSE LICENSE-MIT LICENSING.md; do test -f "$f"; done
       - name: swarm-core pin self-test (tools/checks)

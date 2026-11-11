@@ -1,0 +1,65 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable DCO check
+
+# Developer Certificate of Origin (CONTRIBUTING "Outside contributions", #179):
+# every commit of a PR carries `Signed-off-by: Name <email>` matching its
+# author email (`git commit -s`). Commits by the PR's author when the PR is an
+# OWNER's, MEMBER's or COLLABORATOR's, by anyone with write access, by
+# swarm-routing-bot[bot] and Dependabot, and merge commits are exempt. The
+# commits come from git; only each commit's GitHub login comes from the REST
+# API. The checker is tools/checks/check-dco.py in swarm-routing/.github; no
+# third-party action. It runs on `pull_request`, never `pull_request_target`:
+# a fork PR's code is checked out, never executed, and the token is read-only.
+#
+# Caller (org-sync writes it as .github/workflows/dco.yml):
+#
+#   on:
+#     pull_request:
+#   permissions:
+#     contents: read
+#     pull-requests: read
+#   jobs:
+#     dco:
+#       uses: swarm-routing/.github/.github/workflows/reusable-dco.yml@main
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          path: .org
+          sparse-checkout: tools/checks
+          persist-credentials: false
+      - name: Every commit signed off (DCO 1.1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          ASSOCIATION: ${{ github.event.pull_request.author_association }}
+        run: |
+          python3 -I .org/tools/checks/check-dco.py --repo "$REPO" --pr "$PR" \
+            --pr-author "$PR_AUTHOR" --association "$ASSOCIATION"
