@@ -21,6 +21,8 @@ DIR/<repo>/.github/):
     ruleset = "protocol"                # templates/rulesets/<profile>.json: protocol, tooling,
                                         # data, site, merge-only (no ruleset); "" for neither
     required_checks = ["CI gate"]       # check-run names that run on every PR
+    optional_checks = ["codecov/*"]     # checks that may run on main without being required
+                                        # (fnmatch patterns): `check` does not list them
     code_scanning = false               # true only where CodeQL uploads results
     merge_queue = false                 # true: PRs merge through a merge queue (public repos only);
                                         # a table overrides MERGE_QUEUE's values, e.g.
@@ -79,6 +81,14 @@ anything is written, as for the Actions allowed list. GitHub offers merge
 queues on public organization repositories (and private ones on Enterprise
 Cloud only), so a private repository asking for one is refused.
 
+Checks that ran on the head of the default branch (check runs that were not
+skipped, and commit statuses) but are neither in `required_checks` nor matched
+by `optional_checks` are listed as `<repo>: unrequired check: <name>` (a
+private repository: only their number). It is information, never drift: a
+check run on `main` may not run on every PR, and only such checks can be
+required. Listed only where the profile has a `main` ruleset; the daily
+workflow keeps one `[settings] <repo>: …` issue per listed repository (#177).
+
 `plan` lists the differences between the live repository and its
 declaration, `check` does the same and exits 1 on drift (or on a setting it
 cannot read), `apply` writes only the differences (`--dry-run`: says what it
@@ -97,7 +107,8 @@ from the command line; GitHub is reached through `gh api`. A fine-grained
 token needs, on every repository: Administration read and write (every
 write, and reading the rulesets, security and Actions settings), Contents
 read (org-sync.toml and the workflows), Actions read (the environment),
-Metadata read. Output is one summary line per difference (AntHocNet
+Checks read and Commit statuses read (the unrequired checks; unreadable is a
+note, not drift), Metadata read. Output is one summary line per difference (AntHocNet
 ADR-0014). Stdlib only; Python 3.11+.
 """
 
@@ -305,6 +316,9 @@ def validate(s, private=False):
     ]
     if s.get("required_checks") and not s.get("ruleset"):
         errors.append("required_checks without a ruleset profile")
+    opt = s.get("optional_checks", [])
+    if not isinstance(opt, list) or not all(isinstance(c, str) and c for c in opt):
+        errors.append("optional_checks is not a list of check names")
     mq = s.get("merge_queue", False)
     if type(mq) is not bool and not isinstance(mq, dict):
         errors.append("merge_queue is not true, false or a table")
@@ -742,6 +756,7 @@ def plan_repo(gh, repo, local=None):
         "unreadable": [],
         "notes": [],
         "errors": [],
+        "unrequired": [],
     }
     s = read_settings(gh, repo, local)
     if s is None:
@@ -784,7 +799,50 @@ def plan_repo(gh, repo, local=None):
         plan_environment(gh, res, full, want["environment"])
     if want["rulesets"]:
         plan_rulesets(gh, res, full, want["rulesets"])
+    if any(r["name"] == "main" for r in want["rulesets"]):
+        plan_unrequired(gh, res, full, meta.get("default_branch") or "main", s)
     return res
+
+
+def plan_unrequired(gh, res, full, branch, s):
+    """The checks that ran on the default branch's head but are neither
+    required nor optional (information for `check`, never drift)."""
+    ref = urllib.parse.quote(branch, safe="")
+    runs, statuses = [], []
+    try:
+        # every page of both lists (total_count), so no check is missed
+        for key, kind, into in (
+            ("check_runs", "check-runs", runs),
+            ("statuses", "status", statuses),
+        ):
+            page = 1
+            while True:
+                got = gh.api("GET", f"repos/{full}/commits/{ref}/{kind}?per_page=100&page={page}")
+                batch = got.get(key, [])
+                into += batch
+                if not batch or len(into) >= got.get("total_count", 0):
+                    break
+                page += 1
+    except GhError as e:
+        if e.status in (404, 409, 422):  # no branch, or an empty repository
+            return
+        res["notes"].append(
+            f"checks on {branch} unreadable (HTTP {e.status or '?'}): "
+            "the token needs Checks and Commit statuses read"
+        )
+        return
+    names = {r["name"] for r in runs if r.get("conclusion") != "skipped"}
+    names |= {st["context"] for st in statuses}
+    required = set(s.get("required_checks", []))
+    optional = s.get("optional_checks", [])
+    res["unrequired"] = sorted(
+        (
+            n
+            for n in names
+            if n not in required and not any(fnmatch.fnmatchcase(n, p) for p in optional)
+        ),
+        key=lambda n: (n.lower(), n),
+    )
 
 
 def plan_rulesets(gh, res, full, wanted):
@@ -843,6 +901,10 @@ def lines(res, verb="differs"):
     out += [f"{name} {u}: unreadable" for u in res["unreadable"]]
     if not out:
         out.append(f"{name}: in sync")
+    if res["private"] and res["unrequired"]:
+        out.append(f"{name}: {len(res['unrequired'])} unrequired check(s)")
+    elif not res["private"]:
+        out += [f"{name}: unrequired check: {c}" for c in res["unrequired"]]
     return out + [f"{name}: note: {n}" for n in res["notes"]]
 
 
@@ -1108,6 +1170,7 @@ def self_test():
         'topics = ["manet", "aco"]\nruleset = "protocol"\nrequired_checks = ["CI gate"]\ncode_scanning = true\n',
         "ARA": 'kind = "protocol"\n[settings]\ndescription = "ARA."\nhomepage = ""\ntopics = ["ara"]\n'
         'ruleset = "protocol"\nrequired_checks = ["check / org-sync"]\n'
+        'optional_checks = ["codecov/*", "Analyze (*)"]\n'
         "features = { has_discussions = true }\nrelease_environment = true\n",
         "plain": 'kind = "protocol"\n',
         "papers": '[settings]\ndescription = "Secret workspace."\ntopics = ["papers"]\nruleset = "merge-only"\n',
@@ -1220,6 +1283,20 @@ def self_test():
                     copy.deepcopy(tags_live),
                 ]
             self.next_id = 100
+            # the default branch's head: check runs (name, conclusion) and commit statuses
+            self.checks = {
+                "ARA": (
+                    [
+                        ("check / org-sync", "success"),
+                        ("ci / ns-latest debug", "success"),
+                        ("ci / format", "failure"),
+                        ("Analyze (c-cpp)", "success"),
+                        ("title / title", "skipped"),
+                    ],
+                    ["codecov/patch", "SonarCloud", "codecov/project", "Late status"],
+                ),
+                "AntHocNet": ([("CI gate", "success")], []),
+            }
 
         def api(self, method, path, body=None):
             self.calls.append((method, path, body))
@@ -1234,6 +1311,19 @@ def self_test():
                 if repo not in toml:
                     raise GhError(method, path, "Not Found (HTTP 404)")
                 return {"content": base64.b64encode(toml[repo].encode()).decode()}
+            m2 = re.match(r"/commits/main/(check-runs|status)\?per_page=100&page=(\d+)$", rest)
+            if m2:
+                if repo == "lean":
+                    raise GhError(method, path, "Resource not accessible by integration (HTTP 403)")
+                runs, statuses = self.checks.get(repo, ([], []))
+                page, size = int(m2.group(2)), 3  # a small page, so ARA's lists span pages
+                if m2.group(1) == "status":
+                    got = [{"context": c, "state": "success"} for c in statuses]
+                    key = "statuses"
+                else:
+                    got = [{"name": n, "conclusion": c} for n, c in runs]
+                    key = "check_runs"
+                return {"total_count": len(got), key: got[(page - 1) * size : page * size]}
             if rest.startswith("/git/trees/main?"):
                 files = workflows.get(repo, {})
                 tree = [{"path": p, "type": "blob"} for p in files]
@@ -1411,6 +1501,21 @@ def self_test():
     ):
         check(f"check line: {want}", want in out)
     check("no scanning rules without code_scanning", "code_scanning" not in out)
+    # checks that ran on main: listed unless required, optional (patterns) or skipped
+    check(
+        "unrequired checks listed",
+        "ARA: unrequired check: ci / format\n" in out
+        and "ARA: unrequired check: ci / ns-latest debug\n" in out
+        and "ARA: unrequired check: SonarCloud\n" in out
+        and "ARA: unrequired check: Late status\n" in out,  # on the second page
+    )
+    check(
+        "required, optional and skipped checks not listed",
+        all(
+            f"unrequired check: {c}" not in out
+            for c in ("check / org-sync", "codecov/patch", "Analyze (c-cpp)", "title / title")
+        ),
+    )
     check("plan exits 0 on drift", go("plan", ["ARA"], gh)[0] == 0)
     check("plan and check write nothing", writes(gh) == [])
 
@@ -1486,6 +1591,13 @@ def self_test():
     )
     rc, out = go("check", ["ARA"], gh)
     check("in sync after apply", rc == 0 and "ARA: in sync" in out)
+    check(
+        "unrequired checks are not drift", rc == 0 and "ARA: unrequired check: ci / format" in out
+    )
+    check(
+        "the required check is not listed",
+        "AntHocNet: unrequired" not in go("check", ["AntHocNet"], gh)[1],
+    )
     n = len(gh.calls)
     go("apply", ["ARA"], gh)
     check("apply is idempotent", writes(gh) == w and len(gh.calls) > n)
@@ -1564,6 +1676,23 @@ def self_test():
         and "codeql" not in out,
     )
     check("unreadable plan exit 0", go("plan", ["lean"], gh)[0] == 0)
+    check(
+        "unreadable checks on main are a note",
+        "lean: note: checks on main unreadable (HTTP 403)" in out,
+    )
+    # a private repository's unrequired checks: their number, never their names
+    priv = {"repo": "p", "private": True, "skip": None, "changes": [], "rulesets": []}
+    priv.update(items=[], unreadable=[], notes=[], errors=[], unrequired=["Secret job"])
+    check(
+        "private unrequired checks counted, not named",
+        lines(priv) == ["p (private): in sync", "p (private): 1 unrequired check(s)"],
+    )
+    check(
+        "optional_checks must be a list of names",
+        validate({"optional_checks": "codecov/*"})
+        and validate({"optional_checks": [""]})
+        and not validate({"optional_checks": ["codecov/*"]}),
+    )
     rc, out = go("apply", ["empty"], gh)
     check(
         "CodeQL 422 unsupported",
