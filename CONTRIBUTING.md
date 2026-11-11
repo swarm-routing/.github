@@ -434,7 +434,8 @@ concurrency:
 jobs:
   release:
     # Saves a runner on ordinary pushes; the workflow itself checks the PR.
-    if: ${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}
+    # Quoted: the expression holds ': ', which YAML reads as a mapping in a plain scalar.
+    if: "${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}"
     permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
     with:
