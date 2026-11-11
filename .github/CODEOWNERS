@@ -1,0 +1,20 @@
+# Code owners of swarm-routing/.github (#31). This repository has no org-sync
+# kind, so this file is written by hand; the other repositories get theirs from
+# templates/codeowners/. An owner is only requested as a reviewer; whether that
+# review is required is the `main` ruleset's require_code_owner_review (off:
+# one maintainer cannot approve his own pull requests).
+# Licence boundary (rules 1-2): the licence texts, the table and the gate.
+/LICENSE @danieljoppi
+/LICENSE-MIT @danieljoppi
+/LICENSING.md @danieljoppi
+/tools/checks/ @danieljoppi
+# Reusable workflows, a public contract (rule 10), this repository's own
+# workflows and the actions they use (rule 8).
+/.github/workflows/ @danieljoppi
+/.github/actions/ @danieljoppi
+# What org-sync renders into every repository's workflows and CODEOWNERS.
+/templates/workflows/ @danieljoppi
+/templates/codeowners/ @danieljoppi
+# The label taxonomy (rule 11).
+/labels.json @danieljoppi
+/.github/CODEOWNERS @danieljoppi

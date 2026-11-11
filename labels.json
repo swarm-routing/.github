@@ -10,6 +10,9 @@
     {"name": "epic", "color": "3e4b9e", "description": "Umbrella issue; children are sub-issues"},
     {"name": "handoff", "color": "fbca04", "description": "Work in flight handed to the next session"},
 
+    {"name": "good first issue", "color": "7057ff", "description": "Contributor: small, well-scoped, a good start for a newcomer"},
+    {"name": "help wanted", "color": "008672", "description": "Contributor: outside help is welcome on this issue"},
+
     {"name": "protocol", "color": "0e8a16", "description": "Area: a protocol's core/ algorithm"},
     {"name": "adapter", "color": "1d76db", "description": "Area: ns-3 translation layer"},
     {"name": "ns3", "color": "006b75", "description": "Area: ns-3 build, versions, contrib module"},

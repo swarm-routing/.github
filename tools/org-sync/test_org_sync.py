@@ -528,6 +528,61 @@ commit(d5, "the PR edits .github/org-sync.toml")
 rc, out = run("check", "--changed-only", base, d5)
 check(rc == 1 and "drift     LICENSE" in out, "--changed-only: a config change touches every item")
 
+# CODEOWNERS (#31): a per-kind org section with `#` markers, last in the file,
+# under the repository's own rules, which survive apply.
+for kind, owned, unowned in (
+    ("protocol", ("/core/", "*-header.*", "wire-format.md"), ("/runs/", "/skills/")),
+    ("data", ("/runs/",), ("/core/", "*-header.*")),
+    ("skills", ("/.claude-plugin/", "/skills/"), ("/core/",)),
+):
+    d = fresh()
+    run("init", d, "--kind", kind, "--dual", "tools/")
+    co = read(os.path.join(d, ".github/CODEOWNERS"))
+    lines = [ln.split()[0] for ln in co.splitlines() if ln and not ln.startswith("#")]
+    check(
+        all(p in lines for p in owned + ("/LICENSING.md", "/.github/workflows/"))
+        and not any(p in lines for p in unowned),
+        f"CODEOWNERS covers the {kind} kind's invariant paths, and only its own",
+    )
+    check(
+        co.rstrip("\n").endswith("# org-sync:end codeowners"),
+        f"the org section ends the {kind} CODEOWNERS (the last match wins)",
+    )
+edit(
+    d,
+    ".github/CODEOWNERS",
+    "# org-sync:begin codeowners\n",
+    "/docs/ @someone\n# org-sync:begin codeowners\n",
+)
+edit(d, ".github/CODEOWNERS", "/skills/ ", "/skillz/ ")
+rc, out = run("check", d)
+check(
+    rc == 1 and ".github/CODEOWNERS#codeowners" in out,
+    "an edit in the CODEOWNERS org section is drift",
+)
+run("apply", d)
+co = read(os.path.join(d, ".github/CODEOWNERS"))
+check(
+    run("check", d)[0] == 0 and "/docs/ @someone" in co and "/skills/ " in co,
+    "apply restores the CODEOWNERS org section and keeps the repository's own rule",
+)
+
+with open(os.path.join(d, ".github/CODEOWNERS"), "a", encoding="utf-8") as f:
+    f.write("/LICENSE @someone\n")
+rc, out = run("check", d)
+check(rc == 1 and "override it" in out, "a rule after the CODEOWNERS org section is drift")
+d = fresh()
+os.makedirs(os.path.join(d, ".github"))
+write(os.path.join(d, ".github/CODEOWNERS"), "* @someone\n")
+run("init", d, "--kind", "container")
+co = read(os.path.join(d, ".github/CODEOWNERS"))
+check(
+    co.startswith("* @someone\n")
+    and co.rstrip("\n").endswith("# org-sync:end codeowners")
+    and run("check", d)[0] == 0,
+    "an existing CODEOWNERS keeps its rules and gets the org section appended",
+)
+
 # a settings-only org-sync.toml (no kind, tools/repo-settings) manages nothing and is not an error
 d = fresh()
 os.makedirs(os.path.join(d, ".github"))

@@ -11,8 +11,10 @@ name: org-bot
 #   repository the same day instead of turning its check red.
 # Daily, on every push to main that changes the templates or the generators,
 # and on demand. One PR per repository and task; the same change is never
-# proposed twice, and an older bot PR is closed as superseded. The bot never
-# merges.
+# proposed twice, and an older bot PR is closed as superseded. Where the
+# repository's main has a merge queue, the bot enables auto-merge on its own
+# PR, which then lands through the queue once green (#178); elsewhere a person
+# or an agent merges it.
 #
 # Token (#21): the org GitHub App's installation token, made by
 # .github/actions/bot-token when the BOT_APP_ID and BOT_APP_PRIVATE_KEY org
@@ -67,6 +69,11 @@ jobs:
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

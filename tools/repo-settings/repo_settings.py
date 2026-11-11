@@ -21,7 +21,12 @@ DIR/<repo>/.github/):
     ruleset = "protocol"                # templates/rulesets/<profile>.json: protocol, tooling,
                                         # data, site, merge-only (no ruleset); "" for neither
     required_checks = ["CI gate"]       # check-run names that run on every PR
+    optional_checks = ["codecov/*"]     # checks that may run on main without being required
+                                        # (fnmatch patterns): `check` does not list them
     code_scanning = false               # true only where CodeQL uploads results
+    merge_queue = false                 # true: PRs merge through a merge queue (public repos only);
+                                        # a table overrides MERGE_QUEUE's values, e.g.
+                                        # { check_response_timeout_minutes = 60 }
     features = { has_wiki = true }      # overrides the profile's repository features
     security = { codeql_default_setup = false }   # false: leave that feature alone
     release_environment = true          # create the `release` environment here
@@ -45,7 +50,12 @@ set to null there or in the profile: that part is not managed):
   workflow runs `github/codeql-action/init` or `analyze` (advanced setup,
   which default setup would conflict with) keeps it;
 - `actions`: the Actions policy (enabled, allowed_actions `selected`, the
-  allowed patterns, default `GITHUB_TOKEN` permissions read, no PR approval).
+  allowed patterns, default `GITHUB_TOKEN` permissions read, no PR approval,
+  and the fork-PR approval policy: workflows of a fork's PR wait for a
+  maintainer's approval when its author is neither a collaborator nor an
+  org member,
+  `actions/permissions/fork-pr-contributor-approval`; public repositories
+  only, a private one is a note).
   Every `uses:` in the repository's `.github/workflows` and `.github/actions`
   must be covered by the allowed list, or the repository is refused before
   anything is written (switching it to `selected` would break its CI);
@@ -59,7 +69,25 @@ with `code_scanning = true` (a repository that never uploads CodeQL results
 would hold every PR waiting for them), and `required_status_checks` takes
 `required_checks` (GitHub Actions checks), dropped when there are none: a
 required check that a `paths:` filter skips blocks a PR forever, so list
-only always-running jobs.
+only always-running jobs. `merge_queue = true` adds the `merge_queue` rule
+(MERGE_QUEUE: squash, every PR of a group green, groups of up to 5, a
+120-minute check timeout for ns-3 CI; a table overrides any of them). It
+needs a ruleset profile and `required_checks`, and the workflow producing each
+required check (a workflow that runs on `pull_request`, with a job named, or
+with the id, the check's first ` / ` segment; `${{ }}` in a name matches any
+text) must also run on `merge_group`, or the queue waits for a
+check that never comes: a repository where one does not is refused before
+anything is written, as for the Actions allowed list. GitHub offers merge
+queues on public organization repositories (and private ones on Enterprise
+Cloud only), so a private repository asking for one is refused.
+
+Checks that ran on the head of the default branch (check runs that were not
+skipped, and commit statuses) but are neither in `required_checks` nor matched
+by `optional_checks` are listed as `<repo>: unrequired check: <name>` (a
+private repository: only their number). It is information, never drift: a
+check run on `main` may not run on every PR, and only such checks can be
+required. Listed only where the profile has a `main` ruleset; the daily
+workflow keeps one `[settings] <repo>: …` issue per listed repository (#177).
 
 `plan` lists the differences between the live repository and its
 declaration, `check` does the same and exits 1 on drift (or on a setting it
@@ -79,7 +107,8 @@ from the command line; GitHub is reached through `gh api`. A fine-grained
 token needs, on every repository: Administration read and write (every
 write, and reading the rulesets, security and Actions settings), Contents
 read (org-sync.toml and the workflows), Actions read (the environment),
-Metadata read. Output is one summary line per difference (AntHocNet
+Checks read and Commit statuses read (the unrequired checks; unreadable is a
+note, not drift), Metadata read. Output is one summary line per difference (AntHocNet
 ADR-0014). Stdlib only; Python 3.11+.
 """
 
@@ -107,6 +136,34 @@ REPO_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]{0,99}")  # GitHub's, never 
 TOPIC = re.compile(r"^[a-z0-9][a-z0-9-]{0,49}$")
 RULESET_KEYS = ("name", "target", "enforcement", "conditions", "bypass_actors", "rules")
 SCANNING_RULES = ("code_scanning", "code_quality")
+# the `merge_queue` rule's parameters (REST rulesets API), sized for CI that takes 10-30 minutes
+MERGE_QUEUE = {
+    "merge_method": "SQUASH",  # as every PR: the squash title is the commit on main
+    "grouping_strategy": "ALLGREEN",  # every PR of a group must pass, not only its head
+    "check_response_timeout_minutes": 120,  # a required check slower than this fails the group
+    "max_entries_to_build": 5,  # queued PRs whose checks run at once: leaves runners for PR CI
+    "min_entries_to_merge": 1,  # a lone PR merges without waiting for others
+    "min_entries_to_merge_wait_minutes": 5,  # GitHub's default; idle while the minimum is 1
+    "max_entries_to_merge": 5,  # PRs merged together in one group at most
+}
+MERGE_QUEUE_ENUMS = {
+    "merge_method": ("MERGE", "SQUASH", "REBASE"),
+    "grouping_strategy": ("ALLGREEN", "HEADGREEN"),
+}
+MERGE_QUEUE_RANGES = {  # the REST API's bounds
+    "check_response_timeout_minutes": (1, 360),
+    "max_entries_to_build": (0, 100),
+    "min_entries_to_merge": (0, 100),
+    "min_entries_to_merge_wait_minutes": (0, 360),
+    "max_entries_to_merge": (0, 100),
+}
+MERGE_GROUP = re.compile(r"^\s*merge_group\s*:|^on:\s*\[[^\]]*\bmerge_group\b", re.M)
+# GitHub's values for the fork-PR approval policy, loosest first
+FORK_PR_POLICIES = (
+    "first_time_contributors_new_to_github",
+    "first_time_contributors",
+    "all_external_contributors",
+)
 SHARED = ("features", "security", "actions", "tag_ruleset", "release_environment")
 FEATURES = (
     "has_issues",
@@ -259,6 +316,43 @@ def validate(s, private=False):
     ]
     if s.get("required_checks") and not s.get("ruleset"):
         errors.append("required_checks without a ruleset profile")
+    opt = s.get("optional_checks", [])
+    if not isinstance(opt, list) or not all(isinstance(c, str) and c for c in opt):
+        errors.append("optional_checks is not a list of check names")
+    mq = s.get("merge_queue", False)
+    if type(mq) is not bool and not isinstance(mq, dict):
+        errors.append("merge_queue is not true, false or a table")
+    elif isinstance(mq, dict):
+        for k, v in mq.items():
+            if k in MERGE_QUEUE_ENUMS:
+                if v not in MERGE_QUEUE_ENUMS[k]:
+                    errors.append(
+                        f"merge_queue.{k} is not one of {', '.join(MERGE_QUEUE_ENUMS[k])}"
+                    )
+            elif k in MERGE_QUEUE_RANGES:
+                lo, hi = MERGE_QUEUE_RANGES[k]
+                if type(v) is not int or not lo <= v <= hi:
+                    errors.append(f"merge_queue.{k} is not an integer from {lo} to {hi}")
+            else:
+                errors.append(f"merge_queue.{k} is not one of {', '.join(MERGE_QUEUE)}")
+        p = {**MERGE_QUEUE, **mq}
+        if type(p["min_entries_to_merge"]) is int and type(p["max_entries_to_merge"]) is int:
+            if p["min_entries_to_merge"] > p["max_entries_to_merge"]:
+                errors.append("merge_queue.min_entries_to_merge is above max_entries_to_merge")
+    if mq is not False:
+        if not s.get("ruleset") or not s.get("required_checks"):
+            errors.append("merge_queue without a ruleset profile and required_checks")
+        else:
+            try:
+                no_main = load_profile(s["ruleset"])["ruleset"] is None
+            except ValueError:
+                no_main = False  # an unknown profile fails on its own in desired()
+            if no_main:
+                errors.append(
+                    f"merge_queue with the {s['ruleset']} profile, which has no main ruleset"
+                )
+        if private:
+            errors.append("merge_queue on a private repository (public organization repos only)")
     for table, allowed in (("features", FEATURES), ("security", SECURITY)):
         t = s.get(table, {})
         if not isinstance(t, dict):
@@ -269,6 +363,58 @@ def validate(s, private=False):
     if "release_environment" in s and type(s["release_environment"]) is not bool:
         errors.append("release_environment is not true or false")
     return errors
+
+
+# `pull_request:` as a key, in an `on: [...]` list, or as the only trigger
+PR_TRIGGERS = (
+    re.compile(r"^[ \t]*pull_request[ \t]*:", re.M),
+    re.compile(r"^on:[ \t]*\[[^\]\n]*\bpull_request\b", re.M),
+    re.compile(r"^on:[ \t]*pull_request[ \t]*$", re.M),
+)
+
+
+def runs_on_pr(text):
+    return any(r.search(text) for r in PR_TRIGGERS)
+
+
+NAME_LINE = re.compile(r"^[ \t]+name:[ \t]*(\S.*)$", re.M)
+
+
+def names_job(text, job):
+    """Whether a workflow has a job with the id `job`, or a `name:` that gives
+    `job` (an expression such as `${{ matrix.python }}` inside a name matches
+    any text; a name that is only an expression is skipped)."""
+    if re.search(rf"^\s+{re.escape(job)}:\s*(?:#.*)?$", text, re.M):
+        return True
+    for m in NAME_LINE.finditer(text):
+        name = m.group(1).split(" #")[0].strip()
+        if len(name) > 1 and name[0] == name[-1] and name[0] in "'\"":
+            name = name[1:-1]
+        parts = re.split(r"\$\{\{.*?\}\}", name)
+        if not "".join(parts).strip():
+            continue  # a name that is only an expression (an artifact's, a step's) names nothing
+        if re.fullmatch(".+".join(re.escape(x) for x in parts), job):
+            return True
+    return False
+
+
+def without_merge_group(checks, workflows):
+    """The required checks a merge group would never get: no workflow found
+    with a job named (or with the id) the check's first ` / ` segment, or one
+    found whose triggers have no merge_group. Only workflows that run on
+    pull_request can report a required check, so a reusable (workflow_call)
+    workflow whose job carries the same name is not one of them."""
+    out = []
+    for c in checks:
+        job = c.split(" / ")[0]
+        found = [
+            t
+            for p, t in workflows.items()
+            if "/workflows/" in p and runs_on_pr(t) and names_job(t, job)
+        ]
+        if not found or not all(MERGE_GROUP.search(t) for t in found):
+            out.append(c)
+    return out
 
 
 def main_ruleset(prof_rs, s):
@@ -285,6 +431,10 @@ def main_ruleset(prof_rs, s):
                 {"context": c, "integration_id": ACTIONS_APP} for c in checks
             ]
         rules.append(r)
+    mq = s.get("merge_queue")
+    if mq:
+        own = mq if isinstance(mq, dict) else {}
+        rules.append({"type": "merge_queue", "parameters": {**MERGE_QUEUE, **own}})
     rs["rules"] = rules
     return rs
 
@@ -512,8 +662,8 @@ def plan_actions(gh, res, full, want, workflows):
         have = gh.api("GET", f"repos/{full}/actions/permissions/workflow")
     except GhError as e:
         res["unreadable"].append(f"actions workflow permissions (HTTP {e.status or '?'})")
-        return
-    if not covers(ww, have):
+        have = None
+    if have is not None and not covers(ww, have):
 
         def show(p):
             approve = "+approve" if p.get("can_approve_pull_request_reviews") else ""
@@ -526,6 +676,28 @@ def plan_actions(gh, res, full, want, workflows):
             show(ww),
             ("PUT", f"repos/{full}/actions/permissions/workflow", ww),
         )
+    if want.get("fork_pr_contributor_approval"):
+        plan_fork_approval(gh, res, full, want["fork_pr_contributor_approval"])
+
+
+def plan_fork_approval(gh, res, full, fa):
+    """Which fork PRs wait for a maintainer before their workflows run (public only:
+    a private repository's fork-PR workflows are a separate, unmanaged setting)."""
+    what = "actions fork_pr_contributor_approval"
+    if res["private"]:
+        res["notes"].append(f"unsupported here: {what} (private repository)")
+        return
+    path = f"repos/{full}/actions/permissions/fork-pr-contributor-approval"
+    try:
+        have = gh.api("GET", path)
+    except GhError as e:
+        if e.status in (404, 422):
+            res["notes"].append(f"unsupported here: {what} (HTTP {e.status})")
+        else:
+            res["unreadable"].append(f"{what} (HTTP {e.status or '?'})")
+        return
+    if have.get("approval_policy") != fa["approval_policy"]:
+        item(res, what, have.get("approval_policy"), fa["approval_policy"], ("PUT", path, fa))
 
 
 def plan_environment(gh, res, full, env):
@@ -584,6 +756,7 @@ def plan_repo(gh, repo, local=None):
         "unreadable": [],
         "notes": [],
         "errors": [],
+        "unrequired": [],
     }
     s = read_settings(gh, repo, local)
     if s is None:
@@ -605,8 +778,17 @@ def plan_repo(gh, repo, local=None):
         if have != v:
             res["changes"].append((k, have, v))
     workflows = None
-    if want["security"].get("codeql_default_setup") or want["actions"]:
+    if want["security"].get("codeql_default_setup") or want["actions"] or s.get("merge_queue"):
         workflows = read_workflows(gh, repo, meta.get("default_branch") or "main", local)
+    if s.get("merge_queue") and want["rulesets"]:
+        missing = without_merge_group(s.get("required_checks", []), workflows)
+        if missing:
+            res["errors"].append(
+                "merge_queue: a required check's workflow has no merge_group trigger"
+                if res["private"]
+                else f"merge_queue: no merge_group trigger on the workflow of {', '.join(missing)}"
+            )
+            return res
     if want["actions"]:
         plan_actions(gh, res, full, want["actions"], workflows)
         if res["errors"]:
@@ -617,7 +799,50 @@ def plan_repo(gh, repo, local=None):
         plan_environment(gh, res, full, want["environment"])
     if want["rulesets"]:
         plan_rulesets(gh, res, full, want["rulesets"])
+    if any(r["name"] == "main" for r in want["rulesets"]):
+        plan_unrequired(gh, res, full, meta.get("default_branch") or "main", s)
     return res
+
+
+def plan_unrequired(gh, res, full, branch, s):
+    """The checks that ran on the default branch's head but are neither
+    required nor optional (information for `check`, never drift)."""
+    ref = urllib.parse.quote(branch, safe="")
+    runs, statuses = [], []
+    try:
+        # every page of both lists (total_count), so no check is missed
+        for key, kind, into in (
+            ("check_runs", "check-runs", runs),
+            ("statuses", "status", statuses),
+        ):
+            page = 1
+            while True:
+                got = gh.api("GET", f"repos/{full}/commits/{ref}/{kind}?per_page=100&page={page}")
+                batch = got.get(key, [])
+                into += batch
+                if not batch or len(into) >= got.get("total_count", 0):
+                    break
+                page += 1
+    except GhError as e:
+        if e.status in (404, 409, 422):  # no branch, or an empty repository
+            return
+        res["notes"].append(
+            f"checks on {branch} unreadable (HTTP {e.status or '?'}): "
+            "the token needs Checks and Commit statuses read"
+        )
+        return
+    names = {r["name"] for r in runs if r.get("conclusion") != "skipped"}
+    names |= {st["context"] for st in statuses}
+    required = set(s.get("required_checks", []))
+    optional = s.get("optional_checks", [])
+    res["unrequired"] = sorted(
+        (
+            n
+            for n in names
+            if n not in required and not any(fnmatch.fnmatchcase(n, p) for p in optional)
+        ),
+        key=lambda n: (n.lower(), n),
+    )
 
 
 def plan_rulesets(gh, res, full, wanted):
@@ -676,6 +901,10 @@ def lines(res, verb="differs"):
     out += [f"{name} {u}: unreadable" for u in res["unreadable"]]
     if not out:
         out.append(f"{name}: in sync")
+    if res["private"] and res["unrequired"]:
+        out.append(f"{name}: {len(res['unrequired'])} unrequired check(s)")
+    elif not res["private"]:
+        out += [f"{name}: unrequired check: {c}" for c in res["unrequired"]]
     return out + [f"{name}: note: {n}" for n in res["notes"]]
 
 
@@ -941,6 +1170,7 @@ def self_test():
         'topics = ["manet", "aco"]\nruleset = "protocol"\nrequired_checks = ["CI gate"]\ncode_scanning = true\n',
         "ARA": 'kind = "protocol"\n[settings]\ndescription = "ARA."\nhomepage = ""\ntopics = ["ara"]\n'
         'ruleset = "protocol"\nrequired_checks = ["check / org-sync"]\n'
+        'optional_checks = ["codecov/*", "Analyze (*)"]\n'
         "features = { has_discussions = true }\nrelease_environment = true\n",
         "plain": 'kind = "protocol"\n',
         "papers": '[settings]\ndescription = "Secret workspace."\ntopics = ["papers"]\nruleset = "merge-only"\n',
@@ -1030,6 +1260,10 @@ def self_test():
             self.perms["ARA"] = {"enabled": True, "allowed_actions": "all"}
             self.selected = {r: copy.deepcopy(sel) for r in self.perms if r != "ARA"}
             self.wfperms = {r: dict(shared["actions"]["workflow"]) for r in self.perms}
+            self.forkpr = {
+                r: dict(shared["actions"]["fork_pr_contributor_approval"]) for r in self.perms
+            }
+            self.forkpr["ARA"] = {"approval_policy": "first_time_contributors"}
             self.wfperms["ARA"] = {
                 "default_workflow_permissions": "write",
                 "can_approve_pull_request_reviews": True,
@@ -1049,6 +1283,20 @@ def self_test():
                     copy.deepcopy(tags_live),
                 ]
             self.next_id = 100
+            # the default branch's head: check runs (name, conclusion) and commit statuses
+            self.checks = {
+                "ARA": (
+                    [
+                        ("check / org-sync", "success"),
+                        ("ci / ns-latest debug", "success"),
+                        ("ci / format", "failure"),
+                        ("Analyze (c-cpp)", "success"),
+                        ("title / title", "skipped"),
+                    ],
+                    ["codecov/patch", "SonarCloud", "codecov/project", "Late status"],
+                ),
+                "AntHocNet": ([("CI gate", "success")], []),
+            }
 
         def api(self, method, path, body=None):
             self.calls.append((method, path, body))
@@ -1063,6 +1311,19 @@ def self_test():
                 if repo not in toml:
                     raise GhError(method, path, "Not Found (HTTP 404)")
                 return {"content": base64.b64encode(toml[repo].encode()).decode()}
+            m2 = re.match(r"/commits/main/(check-runs|status)\?per_page=100&page=(\d+)$", rest)
+            if m2:
+                if repo == "lean":
+                    raise GhError(method, path, "Resource not accessible by integration (HTTP 403)")
+                runs, statuses = self.checks.get(repo, ([], []))
+                page, size = int(m2.group(2)), 3  # a small page, so ARA's lists span pages
+                if m2.group(1) == "status":
+                    got = [{"context": c, "state": "success"} for c in statuses]
+                    key = "statuses"
+                else:
+                    got = [{"name": n, "conclusion": c} for n, c in runs]
+                    key = "check_runs"
+                return {"total_count": len(got), key: got[(page - 1) * size : page * size]}
             if rest.startswith("/git/trees/main?"):
                 files = workflows.get(repo, {})
                 tree = [{"path": p, "type": "blob"} for p in files]
@@ -1135,6 +1396,14 @@ def self_test():
                     if method == "PUT":
                         self.wfperms[repo] = dict(body)
                     return dict(self.wfperms[repo])
+                if sub == "/fork-pr-contributor-approval":
+                    if self.repos[repo].get("private"):
+                        raise GhError(method, path, "public repositories only (HTTP 422)")
+                    if method == "PUT":
+                        if body.get("approval_policy") not in FORK_PR_POLICIES:
+                            raise GhError(method, path, "invalid approval_policy (HTTP 422)")
+                        self.forkpr[repo] = dict(body)
+                    return dict(self.forkpr[repo])
             m2 = re.match(r"/environments/([^/]+)$", rest)
             if m2:
                 if method == "PUT":
@@ -1223,6 +1492,8 @@ def self_test():
         "ARA security codeql_default_setup: differs",
         'ARA actions allowed_actions: differs: "all" -> "selected"',
         'ARA actions workflow: differs: "write+approve" -> "read"',
+        'ARA actions fork_pr_contributor_approval: differs: "first_time_contributors" -> '
+        '"all_external_contributors"',
         'ARA environment release: differs: "missing" -> "danieljoppi"',
         "ARA ruleset main: update (conditions, +copilot_code_review, +pull_request, +required_status_checks)",
         "ARA ruleset release-tags: create (missing)",
@@ -1230,6 +1501,21 @@ def self_test():
     ):
         check(f"check line: {want}", want in out)
     check("no scanning rules without code_scanning", "code_scanning" not in out)
+    # checks that ran on main: listed unless required, optional (patterns) or skipped
+    check(
+        "unrequired checks listed",
+        "ARA: unrequired check: ci / format\n" in out
+        and "ARA: unrequired check: ci / ns-latest debug\n" in out
+        and "ARA: unrequired check: SonarCloud\n" in out
+        and "ARA: unrequired check: Late status\n" in out,  # on the second page
+    )
+    check(
+        "required, optional and skipped checks not listed",
+        all(
+            f"unrequired check: {c}" not in out
+            for c in ("check / org-sync", "codecov/patch", "Analyze (c-cpp)", "title / title")
+        ),
+    )
     check("plan exits 0 on drift", go("plan", ["ARA"], gh)[0] == 0)
     check("plan and check write nothing", writes(gh) == [])
 
@@ -1272,6 +1558,16 @@ def self_test():
         < paths.index(f"repos/{ORG}/ARA/actions/permissions/selected-actions"),
     )
     check(
+        "fork PRs of every outside contributor wait for approval",
+        (
+            "PUT",
+            f"repos/{ORG}/ARA/actions/permissions/fork-pr-contributor-approval",
+            {"approval_policy": "all_external_contributors"},
+        )
+        in w
+        and gh.forkpr["ARA"] == {"approval_policy": "all_external_contributors"},
+    )
+    check(
         "release environment with the maintainer as reviewer",
         any(
             c[1].endswith("/environments/release")
@@ -1295,6 +1591,13 @@ def self_test():
     )
     rc, out = go("check", ["ARA"], gh)
     check("in sync after apply", rc == 0 and "ARA: in sync" in out)
+    check(
+        "unrequired checks are not drift", rc == 0 and "ARA: unrequired check: ci / format" in out
+    )
+    check(
+        "the required check is not listed",
+        "AntHocNet: unrequired" not in go("check", ["AntHocNet"], gh)[1],
+    )
     n = len(gh.calls)
     go("apply", ["ARA"], gh)
     check("apply is idempotent", writes(gh) == w and len(gh.calls) > n)
@@ -1328,6 +1631,11 @@ def self_test():
         in out
         and "security secret_scanning" not in out
         and not any("default-setup" in c[1] for c in gh.calls),
+    )
+    check(
+        "private: fork-PR approval is a note, never read",
+        "unsupported here: actions fork_pr_contributor_approval (private repository)" in out
+        and not any("fork-pr-contributor-approval" in c[1] for c in gh.calls),
     )
     rc, out = go("apply", ["papers"], gh)
     check("private apply masked", "Secret" not in out and "papers (private): applied" in out)
@@ -1368,6 +1676,23 @@ def self_test():
         and "codeql" not in out,
     )
     check("unreadable plan exit 0", go("plan", ["lean"], gh)[0] == 0)
+    check(
+        "unreadable checks on main are a note",
+        "lean: note: checks on main unreadable (HTTP 403)" in out,
+    )
+    # a private repository's unrequired checks: their number, never their names
+    priv = {"repo": "p", "private": True, "skip": None, "changes": [], "rulesets": []}
+    priv.update(items=[], unreadable=[], notes=[], errors=[], unrequired=["Secret job"])
+    check(
+        "private unrequired checks counted, not named",
+        lines(priv) == ["p (private): in sync", "p (private): 1 unrequired check(s)"],
+    )
+    check(
+        "optional_checks must be a list of names",
+        validate({"optional_checks": "codecov/*"})
+        and validate({"optional_checks": [""]})
+        and not validate({"optional_checks": ["codecov/*"]}),
+    )
     rc, out = go("apply", ["empty"], gh)
     check(
         "CodeQL 422 unsupported",
@@ -1410,6 +1735,127 @@ def self_test():
             check(f"api path {bad!r} refused", False)
         except GhError as e:
             check(f"api path {bad!r} refused", "not a plain API path" in str(e))
+
+    # merge_queue: refused while the workflow behind a required check has no merge_group
+    # trigger; then the rule joins the main ruleset, and a live queue is in sync
+    gh = FakeGitHub()
+    plain_toml, plain_ci = toml["AntHocNet"], workflows["AntHocNet"][".github/workflows/ci.yml"]
+    toml["AntHocNet"] = plain_toml + "merge_queue = true\n"
+    gate = "  ci-gate:\n    name: CI gate\n    runs-on: ubuntu-24.04\n"
+    workflows["AntHocNet"][".github/workflows/ci.yml"] = "on:\n  pull_request:\n" + plain_ci + gate
+    rc, out = go("apply", ["AntHocNet"], gh)
+    check(
+        "merge_queue refused without merge_group",
+        rc == 1
+        and "merge_queue: no merge_group trigger on the workflow of CI gate" in out
+        and writes(gh) == [],
+    )
+    workflows["AntHocNet"][".github/workflows/ci.yml"] = (
+        "on:\n  pull_request:\n  merge_group:\n" + plain_ci + gate
+    )
+    rc, out = go("check", ["AntHocNet"], gh)
+    check("merge_queue drift", rc == 1 and "AntHocNet ruleset main: update (+merge_queue)" in out)
+    rc, out = go("apply", ["AntHocNet"], gh)
+    put = [c for c in writes(gh) if c[0] == "PUT" and "rulesets/18147133" in c[1]]
+    mq = [r for c in put for r in c[2]["rules"] if r["type"] == "merge_queue"]
+    check(
+        "merge_queue applied with its parameters",
+        rc == 0 and len(mq) == 1 and mq[0]["parameters"] == MERGE_QUEUE,
+    )
+    check("merge_queue in sync after apply", go("check", ["AntHocNet"], gh)[0] == 0)
+    toml["AntHocNet"] = plain_toml + "merge_queue = { check_response_timeout_minutes = 60 }\n"
+    rc, out = go("check", ["AntHocNet"], gh)
+    check("merge_queue table overrides", rc == 1 and "(~merge_queue)" in out)
+    toml["AntHocNet"], workflows["AntHocNet"][".github/workflows/ci.yml"] = plain_toml, plain_ci
+    one_line = {".github/workflows/t.yml": "on: [pull_request, merge_group]\njobs:\n  title:\n"}
+    check(
+        "merge_group found in a flow list, job id matched, reusable prefix used",
+        without_merge_group(["title / title", "lint"], one_line) == ["lint"],
+    )
+    reusable = {
+        ".github/workflows/ci.yml": "on:\n  pull_request:\n  merge_group:\njobs:\n  python:\n"
+        "    uses: ./.github/workflows/reusable-python-ci.yml\n",
+        ".github/workflows/reusable-python-ci.yml": "on:\n  workflow_call:\njobs:\n  python:\n",
+    }
+    check(
+        "a reusable workflow's own job is not the check's workflow",
+        without_merge_group(["python / python"], reusable) == [],
+    )
+    matrix = {
+        ".github/workflows/python.yml": "on:\n  pull_request:\n  merge_group:\njobs:\n  tests:\n"
+        "    name: ns3-tool tests (Python ${{ matrix.python }})\n"
+    }
+    check(
+        "a matrix job name matches its expanded check names",
+        without_merge_group(["ns3-tool tests (Python 3.11)", "ns3-tool lint"], matrix)
+        == ["ns3-tool lint"],
+    )
+    matrix[".github/workflows/python.yml"] = matrix[".github/workflows/python.yml"].replace(
+        "  merge_group:\n", ""
+    )
+    only_expr = {
+        ".github/workflows/r.yml": "on:\n  pull_request:\njobs:\n  r:\n    steps:\n"
+        "      - uses: x\n        with:\n          name: ${{ needs.r.outputs.artifact }}\n"
+    }
+    check(
+        "a name that is only an expression names no check",
+        without_merge_group(["python / python"], {**reusable, **only_expr}) == [],
+    )
+    check(
+        "pull_request as a key, in a list, as the only trigger; not pull_request_target",
+        [
+            runs_on_pr(t)
+            for t in (
+                "on:\n  pull_request:\n",
+                "on: [push, pull_request]\n",
+                "on: pull_request\n",
+                "on:\n  pull_request_target:\n",
+            )
+        ]
+        == [True, True, True, False],
+    )
+    check(
+        "a matrix job without merge_group is refused",
+        without_merge_group(["ns3-tool tests (Python 3.13)"], matrix)
+        == ["ns3-tool tests (Python 3.13)"],
+    )
+    prof_rs = load_profile("protocol")["ruleset"]
+    off = main_ruleset(prof_rs, {"required_checks": ["CI gate"]})
+    on = main_ruleset(prof_rs, {"required_checks": ["CI gate"], "merge_queue": True})
+    check("no merge_queue rule by default", "merge_queue" not in [r["type"] for r in off["rules"]])
+    check(
+        "merge_queue parameters in GitHub's ranges",
+        on["rules"][-1]["type"] == "merge_queue"
+        and MERGE_QUEUE["merge_method"] == "SQUASH"
+        and MERGE_QUEUE["grouping_strategy"] in ("ALLGREEN", "HEADGREEN")
+        and 1 <= MERGE_QUEUE["check_response_timeout_minutes"] <= 360
+        and 0 <= MERGE_QUEUE["min_entries_to_merge_wait_minutes"] <= 360
+        and MERGE_QUEUE["min_entries_to_merge"] <= MERGE_QUEUE["max_entries_to_merge"] <= 100
+        and 0 <= MERGE_QUEUE["max_entries_to_build"] <= 100,
+    )
+    ok_s = {"ruleset": "protocol", "required_checks": ["CI gate"], "merge_queue": True}
+    check("merge_queue valid", validate(ok_s) == [])
+    for name, s, private, want in (
+        ("not a bool", {**ok_s, "merge_queue": "yes"}, False, "merge_queue is not true, false"),
+        ("unknown key", {**ok_s, "merge_queue": {"speed": 1}}, False, "merge_queue.speed"),
+        (
+            "out of range",
+            {**ok_s, "merge_queue": {"check_response_timeout_minutes": 0}},
+            False,
+            "from 1 to 360",
+        ),
+        (
+            "bad enum",
+            {**ok_s, "merge_queue": {"grouping_strategy": "ALLMERGED"}},
+            False,
+            "ALLGREEN",
+        ),
+        ("min above max", {**ok_s, "merge_queue": {"min_entries_to_merge": 9}}, False, "above"),
+        ("no main ruleset", {**ok_s, "ruleset": "merge-only"}, False, "has no main ruleset"),
+        ("no checks", {"ruleset": "protocol", "merge_queue": True}, False, "required_checks"),
+        ("private", ok_s, True, "merge_queue on a private repository"),
+    ):
+        check(f"merge_queue refused: {name}", any(want in e for e in validate(s, private)))
 
     # covers(): GitHub's added defaults are ignored, a list must match exactly
     check("covers ignores added keys", covers({"a": 1}, {"a": 1, "b": 2}))

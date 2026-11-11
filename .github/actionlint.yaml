@@ -1,0 +1,7 @@
+# actionlint configuration. `cache-mode` (GitHub, 2026-09) is a valid job key
+# that actionlint does not know yet (1.7.12): the benchmark cell sets it (#160).
+# Drop this once a pinned actionlint accepts the key.
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - 'unexpected key "cache-mode" for "job" section'

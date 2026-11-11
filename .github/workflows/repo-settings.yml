@@ -8,14 +8,17 @@ name: repo-settings
 # policy and `release` environment, declared in the [settings] table of its
 # .github/org-sync.toml and the profiles in templates/rulesets/.
 # - push to main changing a profile or the tool: apply;
-# - daily: check, and open, update or close one `[settings]` drift issue here;
+# - daily: check, and open, update or close one `[settings]` drift issue here,
+#   and one `[settings] <repo>: …` issue per repository whose checks ran on
+#   main without being required or optional (#177);
 # - on demand: plan (read-only) or apply.
 #
 # Token as org-bot.yml (#21): the org GitHub App's token when BOT_APP_ID and
 # BOT_APP_PRIVATE_KEY are set, else the ORG_BOT_TOKEN secret. Either needs, in
 # addition to org-bot's scopes, on every repository: Administration read and
 # write, Contents read (each org-sync.toml and the workflows, private ones
-# included), Actions read (the release environment). Until the token has
+# included), Actions read (the release environment), Checks and Commit
+# statuses read (the checks that ran on main). Until the token has
 # Administration: write, apply reports each write as `refused` (exit 2) and
 # the run ends with a warning, not a failure; the daily check still reports
 # the drift. With neither, the workflow's own token is used, which only reads
@@ -63,6 +66,11 @@ jobs:
       MODE: ${{ github.event_name == 'schedule' && 'check' || github.event_name == 'push' && 'apply' || inputs.mode }}
       REPOS: ${{ inputs.repos }}
     steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -107,7 +115,7 @@ jobs:
               echo "The daily \`repo_settings.py check\` found settings that differ from each repository's \`[settings]\` table: $RUN_URL"
               echo
               printf '%s\n' '```'
-              grep -v ': in sync$' "$RUNNER_TEMP/settings.txt" | sed -n '1,200p'
+              grep -v -e ': in sync$' -e ' unrequired check' "$RUNNER_TEMP/settings.txt" | sed -n '1,200p'
               printf '%s\n' '```'
               echo
               echo "Fix the declaration (the repository's \`.github/org-sync.toml\`, or \`templates/rulesets/\`) or run the \`repo-settings\` workflow with \`mode: apply\`. A \`refused\` or \`unreadable\` line means the bot token (the App, else ORG_BOT_TOKEN) lacks Administration read and write, Contents read or Actions read (CONTRIBUTING \"Automation\", #117)."
@@ -120,6 +128,60 @@ jobs:
           elif [ -n "$num" ]; then
             gh issue close "$num" --comment "Every repository matches its declared settings again: $RUN_URL"
           fi
+      - name: Open, update or close the unrequired-checks issues
+        if: github.event_name == 'schedule'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -I - <<'PY'
+          import json, os, re, subprocess
+          SUFFIX = ": checks that ran on main are neither required nor optional"
+          def gh(*args):
+              return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
+          listed, seen, unsure = {}, set(), set()
+          for ln in open(os.path.join(os.environ["RUNNER_TEMP"], "settings.txt"), encoding="utf-8"):
+              m = re.match(r"([^ :]+)(?: \(private\))?[ :]", ln)
+              if not m:
+                  continue
+              repo = m.group(1)
+              seen.add(repo)
+              if re.search(r": (unrequired check: |\d+ unrequired check)", ln):
+                  listed.setdefault(repo, []).append(ln.rstrip("\n"))
+              if re.search(r": (FAILED|skipped|invalid)|checks on \S+ unreadable", ln):
+                  unsure.add(repo)  # not read this time: leave its issue as it is
+          issues = json.loads(gh("issue", "list", "--state", "open", "--limit", "200",
+                                 "--search", "in:title \"neither required nor optional\"",
+                                 "--json", "number,title"))
+          mine = {i["title"][len("[settings] "):-len(SUFFIX)]: i["number"] for i in issues
+                  if i["title"].startswith("[settings] ") and i["title"].endswith(SUFFIX)}
+          for repo, found in sorted(listed.items()):
+              body = "\n".join([
+                  f"The daily `repo_settings.py check` ({os.environ['RUN_URL']}) found checks that ran "
+                  f"on the head of `{repo}`'s default branch but are not in its `[settings]` "
+                  "`required_checks`, so a PR can merge with them red:",
+                  "", "```", *found, "```", "",
+                  f"In `{repo}`'s `.github/org-sync.toml` `[settings]`, add each check every PR must "
+                  "pass to `required_checks` (only checks that run on every PR: a required check a "
+                  "`paths:` filter skips blocks the PR), and each one that is optional on purpose "
+                  "to `optional_checks` (fnmatch patterns, e.g. `codecov/*`, `Analyze (*)`). "
+                  "This issue is updated by each daily run and closed when the list is empty "
+                  "(swarm-routing/.github#177).",
+              ])
+              title = f"[settings] {repo}{SUFFIX}"
+              if repo in mine:
+                  gh("issue", "edit", str(mine[repo]), "--body", body)
+                  print(f"{repo}: updated #{mine[repo]}")
+              else:
+                  print(f"{repo}: opened", gh("issue", "create", "--title", title, "--label", "chore",
+                                              "--label", "packaging", "--label", "priority:P2",
+                                              "--body", body).strip())
+          for repo, num in sorted(mine.items()):
+              if repo in seen and repo not in listed and repo not in unsure:
+                  gh("issue", "close", str(num), "--comment",
+                     f"Every check that ran on `{repo}`'s main is required or optional again: "
+                     + os.environ["RUN_URL"])
+                  print(f"{repo}: closed #{num}")
+          PY
       - name: Summary
         if: ${{ always() }}
         run: |
