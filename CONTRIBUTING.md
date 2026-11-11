@@ -26,9 +26,9 @@ is the long form.
    may use the dual parts, never the reverse — a `core/` file includes only the
    C++ standard library, other `core/` files and the dual-licensed core of a
    declared dependency (a protocol's `core/` on swarm-core's `core/`, the
-   `core-deps` input of whichever workflow runs the licence check: `licence.yml`
-   calling `reusable-licence-check.yml`, or `ci.yml` calling
-   `reusable-ns3-ci.yml`, which forwards it). CI
+   `core-deps` input of every workflow that runs the licence check: one calling
+   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
+   forwards it; file names differ per repo, and each names the same pin). CI
    (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
    of it. Contributions are accepted under the licence of the directory they
    land in. Write clean implementations against public ns-3 interfaces rather
