@@ -10,7 +10,10 @@
    outside contributor may add their own `Copyright (c) <year> <Name>` line
    beneath the org line, never replace it, and signs off every commit (DCO,
    CONTRIBUTING "Outside contributions"). CI (`reusable-licence-check.yml`)
-   checks it. A new directory gets its row in `LICENSING.md` in the same PR.
+   checks the SPDX line, and the org line's place when a header names more
+   than one holder; a header with a single, other holder (a replaced org line,
+   or third-party code) passes it, so review catches that. A new directory
+   gets its row in `LICENSING.md` in the same PR.
 2. **The licence boundary only goes one way.** GPL code may use the dual
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`

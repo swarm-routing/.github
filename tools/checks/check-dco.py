@@ -16,7 +16,10 @@ Exempt, since their commits are made by the maintainer's own account or a bot:
 - commits whose GitHub author has write, maintain or admin permission on the
   repository (``repos/{o}/{r}/collaborators/{user}/permission``);
 - commits by ``swarm-routing-bot[bot]`` and ``dependabot[bot]``;
-- merge commits (an "Update branch" merge brings in main, nothing new).
+- merge commits that add nothing of their own (an "Update branch" merge
+  brings in main, nothing new): a merge whose combined diff against its
+  parents is not empty (a conflict resolved with new text, or a change slipped
+  into the merge) is checked like any other commit.
 
 The commits and their messages come from git (``BASE..HEAD`` in the checkout);
 only the GitHub login of each commit's author comes from the REST API
@@ -35,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -81,7 +85,8 @@ def signoffs(message: str) -> list[str]:
 
 
 def git_commits(base: str, head: str) -> list[dict]:
-    """sha, author name, author email, parent count and message of BASE..HEAD."""
+    """sha, author name, author email, parent count, message of BASE..HEAD, and
+    for a merge whether it adds anything of its own (`adds`)."""
     for sha in (base, head):
         if not SHA.match(sha):
             raise ValueError(f"not a full commit SHA: {sha!r}")
@@ -105,9 +110,23 @@ def git_commits(base: str, head: str) -> list[dict]:
                 "email": email,
                 "parents": len(parents.split()),
                 "message": message,
+                "adds": len(parents.split()) > 1 and merge_adds(sha),
             }
         )
     return commits
+
+
+def merge_adds(sha: str) -> bool:
+    """Whether a merge commit's tree differs from all of its parents anywhere:
+    its combined diff (`git diff-tree --cc`) is empty for a clean merge, and
+    shows only the lines that come from none of the parents."""
+    out = subprocess.run(
+        ["git", "diff-tree", "--cc", "--no-commit-id", "-p", "--end-of-options", sha],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return bool(out.strip())
 
 
 def api_get(path: str):
@@ -154,8 +173,8 @@ def verdicts(commits, logins, pr_author, association, has_write) -> list[tuple[s
     out = []
     for c in commits:
         login = logins.get(c["sha"], "")
-        if c["parents"] > 1:
-            out.append(("exempt", c, "merge commit"))
+        if c["parents"] > 1 and not c.get("adds"):
+            out.append(("exempt", c, "merge commit, nothing new"))
         elif login in EXEMPT_BOTS:
             out.append(("exempt", c, f"bot {login}"))
         elif login and login == pr_author and association in EXEMPT_ASSOCIATIONS:
@@ -221,6 +240,7 @@ def self_test() -> int:
         commit("e5", "bot@x.org", "chore: bot\n"),
         commit("f6", "d@x.org", "chore(deps): bump\n"),
         commit("g7", "ada@x.org", "Merge branch 'main'\n", parents=2),
+        commit("o5", "ada@x.org", "Merge branch 'main'\n", parents=2) | {"adds": True},
         commit("h8", "w@x.org", "fix: a writer pushed to the fork\n"),
         commit("i9", "nologin@x.org", "fix: no GitHub user\n"),
         commit("j0", "ada@x.org", "fix: d\n\nSigned-off-by: Bob <ada@x.org>\n"),
@@ -244,6 +264,7 @@ def self_test() -> int:
         "e5": "swarm-routing-bot[bot]",
         "f6": "dependabot[bot]",
         "g7": "ada",
+        "o5": "ada",
         "h8": "writer",
     }
     perms = {"writer": "write", "ada": "read"}
@@ -261,6 +282,7 @@ def self_test() -> int:
         "e5": "exempt",
         "f6": "exempt",
         "g7": "exempt",
+        "o5": "FAIL",  # a merge that adds its own text is not exempt
         "h8": "exempt",
         "i9": "FAIL",
         "j0": "FAIL",  # the right email under another name
@@ -342,14 +364,39 @@ def self_test() -> int:
         base = git("rev-parse", "HEAD")
         git("commit", "-q", "--allow-empty", "-s", "-m", "feat: signed")
         git("commit", "-q", "--allow-empty", "-m", "fix: unsigned")
+        # a clean merge of a side branch, then a merge that slips in a file
+        git("checkout", "-q", "-b", "side", base)
+        pathlib.Path(d, "a.txt").write_text("a\n")
+        git("add", "a.txt")
+        git("commit", "-q", "-s", "-m", "feat: side")
+        git("checkout", "-q", "-")
+        git("merge", "-q", "--no-ff", "--no-edit", "side")
+        git("checkout", "-q", "-b", "side2", base)
+        git("commit", "-q", "--allow-empty", "-s", "-m", "feat: side2")
+        git("checkout", "-q", "-")
+        git("merge", "-q", "--no-ff", "--no-commit", "side2")
+        pathlib.Path(d, "b.txt").write_text("b\n")
+        git("add", "b.txt")
+        git("commit", "-q", "--no-edit")
         cwd = os.getcwd()
         os.chdir(d)
         try:
             cs = git_commits(base, git("rev-parse", "HEAD"))
         finally:
             os.chdir(cwd)
-        st = [s for s, _, _ in verdicts(cs, {}, "ada", "NONE", lambda _: False)]
-        if st != ["ok", "FAIL"]:
+        st = {
+            c["message"].split("\n", 1)[0]: s
+            for s, c, _ in verdicts(cs, {}, "ada", "NONE", lambda _: False)
+        }
+        want_git = {
+            "feat: signed": "ok",
+            "fix: unsigned": "FAIL",
+            "feat: side": "ok",
+            "Merge branch 'side'": "exempt",
+            "feat: side2": "ok",
+            "Merge branch 'side2'": "FAIL",
+        }
+        if st != want_git:
             fails += 1
             print(f"SELF-TEST FAIL (git): {st}")
     print("self-test:", "PASS" if not fails else f"{fails} FAILURE(S)")

@@ -6,7 +6,8 @@ name: Reusable DCO check
 # every commit of a PR carries `Signed-off-by: Name <email>` matching its
 # author email (`git commit -s`). Commits by the PR's author when the PR is an
 # OWNER's, MEMBER's or COLLABORATOR's, by anyone with write access, by
-# swarm-routing-bot[bot] and Dependabot, and merge commits are exempt. The
+# swarm-routing-bot[bot] and Dependabot, and merge commits that add nothing
+# beyond their parents (an empty combined diff) are exempt. The
 # commits come from git; only each commit's GitHub login comes from the REST
 # API. The checker is tools/checks/check-dco.py in swarm-routing/.github; no
 # third-party action. It runs on `pull_request`, never `pull_request_target`:
