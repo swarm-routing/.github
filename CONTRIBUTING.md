@@ -465,6 +465,33 @@ the first release is archived: read its id from Zenodo, set `zenodo_concept`,
 then `org_sync.py reseed CITATION.cff` (or add `doi:` by hand) so the daily
 check here covers the repository.
 
+**When Zenodo fails a release.** Zenodo fetches each published release from
+GitHub as the maintainer's account, so it shares that account's API rate
+quota (5,000 requests an hour, shared by every OAuth token of that user). benchmarks
+`v0.1.0` (2026-11-11) failed this way: Zenodo's GitHub page lists the release
+as *Failed* with `403 API rate limit exceeded`, and the webhook delivery shows
+"An exception occurred". Zenodo keeps a failed release id, so redelivering the
+webhook gets `409` and never archives it. Until `zenodo.py create` archives a
+first release from its tag (#226), the fix is the repository's next release,
+which Zenodo archives as usual (for a repository without a concept yet, it
+creates the concept); the daily check adds versions only to an existing
+concept. Around a release, keep API polling as the maintainer low (#226).
+
+### Archived releases
+
+Read from Zenodo; the concept DOI resolves to the newest version.
+
+| Repository | Concept DOI | Versions |
+|---|---|---|
+| AntHocNet | [10.5281/zenodo.20981979](https://doi.org/10.5281/zenodo.20981979) | every release to v2.6.1 (its CONTRIBUTING lists them) |
+| ns3-swarm-core | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v0.1.0 [10.5281/zenodo.24138629](https://doi.org/10.5281/zenodo.24138629) |
+| ns3-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v0.1.0 [10.5281/zenodo.24136069](https://doi.org/10.5281/zenodo.24136069) |
+| ARA | [10.5281/zenodo.24125198](https://doi.org/10.5281/zenodo.24125198) | v0.1.0 [10.5281/zenodo.24125199](https://doi.org/10.5281/zenodo.24125199) |
+| BeeAdHoc | [10.5281/zenodo.24124821](https://doi.org/10.5281/zenodo.24124821) | v0.1.0 [10.5281/zenodo.24124822](https://doi.org/10.5281/zenodo.24124822) |
+| Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
+| HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.1.0 [10.5281/zenodo.24125266](https://doi.org/10.5281/zenodo.24125266) |
+| benchmarks | none yet | v0.1.0 released 2026-11-11, not archived (rate limit, above); archived with #226 or its next release ([benchmarks#39](https://github.com/swarm-routing/benchmarks/issues/39)) |
+
 ### Cutting a release
 
 **When to release** (maintainer decision 2026-11-11, on #216 and its
