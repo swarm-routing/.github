@@ -3,7 +3,7 @@
 Operational guide for LLM agents working in `swarm-routing/.github`. Read this
 before changing anything. Org-wide conventions:
 [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md). Shape and rules mirror
-[AntHocNet's AGENTS.md](https://github.com/danieljoppi/AntHocNet/blob/main/AGENTS.md), the source repository.
+[AntHocNet's AGENTS.md](https://github.com/swarm-routing/AntHocNet/blob/main/AGENTS.md), the source repository.
 
 ## What this repo is
 
@@ -31,7 +31,7 @@ tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py) and templates (org_sync.py apply)
 tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones
-tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against the org standard (AntHocNet's): badges, explanation, site page, ns-3 image, layout, sections, links; the AI files' facts (paths, planned paths, open issues with --online, org-rule contradictions, required checks)
+tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against the org standard (AntHocNet's): badges, explanation, site page, ns-3 image, layout, sections, links, citing (a released repo: DOI badge, CITATION.cff doi, citing section, references); the AI files' facts (paths, planned paths, open issues with --online, org-rule contradictions, required checks)
 tools/docs-review/ai_files_review.py   the weekly AI-files review: check_docs.py's AI-files pass on every public repo, one `[docs] AI files: N finding(s)` issue per repo, opened, updated in place, closed when clean
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
 tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's, with HINT lines at the likely spots
@@ -42,6 +42,7 @@ tools/repo-settings/repo_settings.py   each repo's description, homepage, topics
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
+                                CITATION.cff and the README's Releases & citing section (`citation = true`, `[[references]]`),
                                 the org-sync, dco and Scorecard workflows, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
                                 codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
@@ -112,8 +113,8 @@ and its tag-and-publish job are proven by the first caller's release
 Org-wide (1–9), then this repo's own.
 
 1. **Licensing per directory, as AntHocNet** ([`LICENSING.md`](LICENSING.md);
-   AntHocNet [LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
-   [ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
+   AntHocNet [LICENSING.md](https://github.com/swarm-routing/AntHocNet/blob/main/LICENSING.md),
+   [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
    simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
    ns-3 modules, the site, docs and data are `GPL-2.0-only`. Every original
    `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
@@ -175,7 +176,7 @@ Org-wide (1–9), then this repo's own.
 ## Conventions
 
 - Issues follow the org taxonomy ([CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#issues), from
-  [AntHocNet ADR-0013](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)): one type label
+  [AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)): one type label
   (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
   umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
   `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
@@ -283,5 +284,5 @@ Org-wide (1–9), then this repo's own.
 | Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `verify --text KEY=<pdfx text>`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
-| The reference implementation and its history | [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |
+| The reference implementation and its history | [`swarm-routing/AntHocNet`](https://github.com/swarm-routing/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |
 | Pick up open work | this repo's issues — highest open `priority:P*` first; newest open `handoff` issue for work in flight |

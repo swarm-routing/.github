@@ -4,15 +4,15 @@ Org-wide defaults. A repository's own `CONTRIBUTING.md` overrides this file.
 Participation follows the org's default [Code of Conduct](CODE_OF_CONDUCT.md);
 where to ask is in the org's default [SUPPORT.md](SUPPORT.md). A repository's
 own `CODE_OF_CONDUCT.md` or `SUPPORT.md`, where it has one, takes precedence.
-These conventions come from [`danieljoppi/AntHocNet`](https://github.com/danieljoppi/AntHocNet),
+These conventions come from [`swarm-routing/AntHocNet`](https://github.com/swarm-routing/AntHocNet),
 the source repository the org was split out of; its
-[ADR-0013](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)
+[ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)
 is the long form.
 
 ## Invariants (every repo)
 
-1. **Licensing per directory, as AntHocNet** ([LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
-   [ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
+1. **Licensing per directory, as AntHocNet** ([LICENSING.md](https://github.com/swarm-routing/AntHocNet/blob/main/LICENSING.md),
+   [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
    A simulator-free `core/` and the standalone tooling (`tools/`, Python CLIs,
    CI and image scripts) are `MIT OR GPL-2.0-only`; ns-3 modules, the site,
    docs and data are `GPL-2.0-only`. Each repo carries `LICENSE` (GPL-2.0),
@@ -262,7 +262,9 @@ under the licence grant already recorded in AntHocNet ADR-0028. **An AI agent
 never adds a `Signed-off-by` trailer**, for the maintainer, for itself or for
 anyone else: a sign-off is a person's own certification. Instead, an agent
 commit (one whose message carries a `Claude-Session:` trailer) is exempt when
-the PR's author is the repository's OWNER, a MEMBER or a COLLABORATOR: the
+the PR's author is the repository's OWNER, a MEMBER or a COLLABORATOR, or has
+write access to it (a private org member shows as CONTRIBUTOR in the PR
+event, so the check also asks for the author's permission): the
 person who opened the PR certifies its contents by opening it (maintainer
 decision, #212). The same commit on an outside contributor's PR is not
 exempt; it needs its author's own sign-off, since no one signs off on anyone
@@ -464,6 +466,27 @@ version in the repo's `.cz.toml`; add `"CITATION.cff:^version:"` to its
 the first release is archived: read its id from Zenodo, set `zenodo_concept`,
 then `org_sync.py reseed CITATION.cff` (or add `doi:` by hand) so the daily
 check here covers the repository.
+
+A repository is cited as AntHocNet is. `citation = true` also manages the
+README's **Releases & citing** section (`<!-- org-sync:begin citing -->`):
+how releases ship, the concept DOI (or, before the first archived release,
+that there is none yet), a pointer to each release's version DOI on its
+Zenodo record (never a hand-kept row per version), the work the repository
+implements or builds on, and `docs/fidelity.md` when it exists. That work is
+listed once, as `[[references]]` in `.github/org-sync.toml` (type, title,
+authors, year, venue, `doi`, a one-line `role`; a work with no DOI gives its
+publisher's or institution's `url` and `no_doi`, the reason), and renders
+both the README list and CITATION.cff's `references:` (reseed it after a
+change). Take every field of a work with a DOI from Crossref, confirmed with
+`tools/lit-search/lit_search.py confirm <DOI>`, never from memory; for a work
+with none, from its publisher's or institution's record (for a handle,
+`curl -sSL https://hdl.handle.net/<id> | grep -o '<meta name="citation_[a-z_]*" content="[^"]*"'`).
+`role` is the repository's own line on what the work is for.
+`citation_type = "dataset"` (`software` by default) gives a dataset's
+`type:` and message. `tools/docs-review/check_docs.py` checks a released
+repository (a `v*` tag or `zenodo_concept`) for all of it: the DOI badge,
+CITATION.cff's `doi:` equal to the concept, the citing section, and for a
+protocol a reference per source with a DOI or the reason it has none.
 
 **When Zenodo fails a release.** Zenodo fetches each published release from
 GitHub as the maintainer's account, so it shares that account's API rate

@@ -2,8 +2,8 @@
 
 Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing).
 Licensed per directory, as AntHocNet
-([LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
-[ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
+([LICENSING.md](https://github.com/swarm-routing/AntHocNet/blob/main/LICENSING.md),
+[ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)).
 
 | Path | Licence |
 |------|---------|

@@ -246,7 +246,7 @@ check(
     "citation = true seeds CITATION.cff, and the cite badge follows it",
 )
 check(
-    "zenodo.org" not in rr and "\ndoi:" not in cff,
+    "zenodo.org/badge" not in rr and "\ndoi:" not in cff,
     "a zenodo_concept that is not a record id renders no DOI",
 )
 check(
@@ -305,6 +305,137 @@ check(
     and (not yaml or yaml.safe_load(cff)["version"] == "1.20"),
     "CITATION.cff: placeholders filled in one pass, the version quoted (1.20 stays a string)",
 )
+# Releases & citing (README section) and CITATION.cff references, from [[references]]
+rr = read(os.path.join(dr, "README.md"))
+check(
+    "<!-- org-sync:begin citing -->\n## Releases & citing\n" in rr
+    and rr.index("org-sync:end citing") < rr.index("## Contributing")
+    and "| [`10.5281/zenodo.1234567`](https://doi.org/10.5281/zenodo.1234567) | **concept DOI**"
+    in rr
+    and "own **version DOI**" in rr
+    and "citing the DOI helps just as much" in rr
+    and "Please also cite" not in rr,
+    "citation = true renders Releases & citing before Contributing: the concept DOI, no version rows",
+)
+REFS = """
+[[references]]
+type = "conference-paper"
+title = "ARA-the ant-colony based routing algorithm for MANETs"
+authors = ["G\u00fcne\u015f, Mesut", "Sorges, Udo", "Bouazizi, Imed"]
+year = 2002
+venue = "Proceedings. International Conference on Parallel Processing Workshop"
+pages = "79-85"
+publisher = "IEEE"
+doi = "10.1109/ICPPW.2002.1039715"
+role = "The algorithm this repository implements."
+
+[[references]]
+type = "thesis"
+title = "A \\"quoted\\" thesis"
+authors = ["Wang, Jianping"]
+year = 2007
+venue = "University of Manitoba"
+thesis_type = "MSc thesis"
+url = "https://hdl.handle.net/1993/20935"
+no_doi = "a thesis in the university's repository."
+role = "The primary source."
+"""
+with open(os.path.join(dr, ".github/org-sync.toml"), "a") as f:
+    f.write(REFS)
+write(os.path.join(dr, "docs/fidelity.md"), "# Fidelity\n")
+rc, out = run("check", dr)
+check(rc == 1 and "README.md#citing" in out, "a new reference is drift in the managed section")
+run("apply", dr)
+run("reseed", "CITATION.cff", dr)
+rr = read(os.path.join(dr, "README.md"))
+cff = read(os.path.join(dr, "CITATION.cff"))
+check(
+    "- M. G\u00fcne\u015f, U. Sorges, I. Bouazizi, *ARA-the ant-colony based routing algorithm for MANETs*, "
+    "Proceedings. International Conference on Parallel Processing Workshop, pp. 79\u201385, 2002, "
+    "[doi:10.1109/ICPPW.2002.1039715](https://doi.org/10.1109/ICPPW.2002.1039715). "
+    "The algorithm this repository implements.\n"
+    in rr
+    and "<https://hdl.handle.net/1993/20935> (no DOI: a thesis in the university's repository). The primary source."
+    in rr
+    and "[docs/fidelity.md](docs/fidelity.md)" in rr,
+    "README cites each reference with its doi.org link, or its page and why it has no DOI",
+)
+check(
+    cff.rstrip().endswith(
+        'notes: "The primary source. No DOI: a thesis in the university\'s repository."'
+    )
+    and '    doi: "10.1109/ICPPW.2002.1039715"\n' in cff
+    and '    collection-title: "Proceedings. International Conference on Parallel Processing Workshop"\n'
+    "    collection-type: proceedings\n"
+    in cff
+    and '    start: "79"\n    end: "85"\n    year: 2002\n' in cff
+    and '    institution:\n      name: "University of Manitoba"\n' in cff
+    and '      - family-names: "G\u00fcne\u015f"\n        given-names: "Mesut"\n' in cff
+    and 'title: "A \\"quoted\\" thesis"' in cff,
+    "CITATION.cff references: CFF keys per type, a DOI or a URL with the reason",
+)
+if yaml:
+    refs = yaml.safe_load(cff)["references"]
+    check(
+        len(refs) == 2 and refs[1]["title"] == 'A "quoted" thesis' and refs[0]["year"] == 2002,
+        "CITATION.cff references parse as YAML",
+    )
+check(run("check", dr)[0] == 0, "check is clean with references")
+dd = fresh()
+run("init", dd, "--kind", "data", "--dual", "tools/")
+edit(
+    dd,
+    ".github/org-sync.toml",
+    'kind = "data"\n',
+    'kind = "data"\ncitation = true\ncitation_type = "dataset"\n',
+)
+run("apply", dd)
+cff = read(os.path.join(dd, "CITATION.cff"))
+rr = read(os.path.join(dd, "README.md"))
+check(
+    "\ntype: dataset\n" in cff
+    and 'message: "If you use these data, please cite them using the metadata below."' in cff
+    and "references:" not in cff
+    and "To cite these data" in rr
+    and "It has no DOI yet" in rr
+    and "citing it helps just as much" in rr
+    and "Releases](" not in rr,
+    "citation_type = dataset: type and message; no concept yet: the citing section says so",
+)
+check(
+    "\ntype: software\n" in read(os.path.join(dr, "CITATION.cff")),
+    "the default citation_type is software",
+)
+for bad in (
+    'citation_type = "paper"\n',
+    '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000\nrole = "r"\n',
+    '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000\nrole = "r"\n'
+    'doi = "https://doi.org/10.1/x"\n',
+    '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000.5\nrole = "r"\n'
+    'doi = "10.1/x"\n',
+    '[[references]]\ntype = "article"\ntitle = "t"\nauthors = ["A, B"]\nyear = 2000\nrole = 7\n'
+    'doi = "10.1/x"\n',
+):
+    db = fresh()
+    os.makedirs(os.path.join(db, ".github"))
+    write(os.path.join(db, ".github/org-sync.toml"), 'kind = "data"\ncitation = true\n' + bad)
+    try:
+        rc = run("plan", db)[0]
+    except SystemExit as e:
+        rc = e.code
+    check(rc not in (0, None), "refused: " + bad.splitlines()[0])
+# an existing README without Contributing: the section goes before Epics
+de = fresh()
+run("init", de, "--kind", "protocol")
+edit(de, "README.md", "## Contributing", "## Epics\n\nx\n\n## Contributing")
+edit(de, ".github/org-sync.toml", 'kind = "protocol"\n', 'kind = "protocol"\ncitation = true\n')
+run("apply", de)
+rr = read(os.path.join(de, "README.md"))
+check(
+    rr.index("org-sync:end citing -->\n\n## Epics") > 0 and run("check", de)[0] == 0,
+    "the citing section is inserted before the first of Contributing, Epics, Licence",
+)
+
 dl = fresh()
 run("init", dl, "--kind", "python", "--dual", "")
 edit(dl, ".github/org-sync.toml", 'kind = "python"\n', 'kind = "python"\ncitation = true\n')

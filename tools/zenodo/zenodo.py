@@ -181,9 +181,10 @@ def norm(tag):
 def concept_from(cff_text):
     if not cff_text:
         return None
-    m = re.search(r"^doi:\s*[\"']?10\.5281/zenodo\.(\d+)", cff_text, re.M) or DOI_RE.search(
-        cff_text
-    )
+    # the work's own DOI: top-level `doi:` or `identifiers:`, never a cited
+    # work's under `references:` (another repository's concept, swarm-routing/.github#228)
+    own = re.split(r"^references:", cff_text, maxsplit=1, flags=re.M)[0]
+    m = re.search(r"^doi:\s*[\"']?10\.5281/zenodo\.(\d+)", own, re.M) or DOI_RE.search(own)
     return m.group(1) if m else None
 
 
@@ -618,6 +619,11 @@ def self_test():
         concept_from('identifiers:\n  - value: "10.5281/zenodo.7"\n') == "7",
     )
     check("no concept", concept_from("title: x\n") is None and concept_from(None) is None)
+    check(
+        "a cited work's Zenodo DOI is never the concept",
+        concept_from('title: x\nreferences:\n  - type: software\n    doi: "10.5281/zenodo.9"\n')
+        is None,
+    )
     # status: archived, missing, pending and stranded
     st.reset()
     rows, err, out, _ = run("status")

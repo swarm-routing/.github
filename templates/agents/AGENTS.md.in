@@ -3,7 +3,7 @@
 Operational guide for LLM agents working in `{repo}`. Read this
 before changing anything. Org-wide conventions:
 [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md). Shape and rules mirror
-[AntHocNet's AGENTS.md](https://github.com/danieljoppi/AntHocNet/blob/main/AGENTS.md), the source repository.
+[AntHocNet's AGENTS.md](https://github.com/swarm-routing/AntHocNet/blob/main/AGENTS.md), the source repository.
 
 ## What this repo is
 
