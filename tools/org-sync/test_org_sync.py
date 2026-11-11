@@ -176,6 +176,10 @@ check(
     "a container repo's scanner badges are live: workflow, Hadolint and Trivy jobs, Sonar gate + security",
 )
 # release, doi and cite: each only when its target exists
+GH_DESC = (
+    "The GitHub description: ant-colony routing over routing zones, a simulator-agnostic"
+    " C++ core, little-endian wire helpers and an ns-3 contrib module on swarm-core."
+)
 dr = fresh()
 run("init", dr, "--kind", "protocol", "--dual", "core/")
 rr = read(os.path.join(dr, "README.md"))
@@ -253,11 +257,13 @@ check(
 )
 check(run("check", dr)[0] == 0, "check is clean with release, doi and cite")
 with open(os.path.join(dr, ".github/org-sync.toml"), "a") as f:
-    f.write('\n[settings]\ndescription = "The GitHub description."\n')
+    f.write(f'\n[settings]\ndescription = "{GH_DESC}"\n')
 run("reseed", "CITATION.cff", dr)
+cff = read(os.path.join(dr, "CITATION.cff"))
 check(
-    "abstract: >-\n  The GitHub description.\n" in read(os.path.join(dr, "CITATION.cff")),
-    "the abstract is [settings] description when there is one",
+    "abstract: >-\n  The GitHub description:" in cff
+    and (not yaml or yaml.safe_load(cff)["abstract"] == GH_DESC),
+    "the abstract is [settings] description, every hyphenated word whole",
 )
 dl = fresh()
 run("init", dl, "--kind", "python", "--dual", "")

@@ -444,7 +444,16 @@ def render_citation(cfg, repo_dir):
         template("CITATION.cff.in")
         .replace("@TITLE@", cfg["title"].replace('"', "'"))
         .replace(
-            "@ABSTRACT@", textwrap.fill(abstract, 78, initial_indent="  ", subsequent_indent="  ")
+            "@ABSTRACT@",
+            textwrap.fill(
+                abstract,
+                78,
+                initial_indent="  ",
+                subsequent_indent="  ",
+                # a folded scalar joins lines with a space: never split a word
+                break_on_hyphens=False,
+                break_long_words=False,
+            ),
         )
         .replace("@VERSION@", version)
         .replace("@LICENSE@", lic)
