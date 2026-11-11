@@ -1,6 +1,6 @@
 1. **Licensing per directory, as AntHocNet** ([`LICENSING.md`](LICENSING.md);
-   AntHocNet [LICENSING.md](https://github.com/danieljoppi/AntHocNet/blob/main/LICENSING.md),
-   [ADR-0028](https://github.com/danieljoppi/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
+   AntHocNet [LICENSING.md](https://github.com/swarm-routing/AntHocNet/blob/main/LICENSING.md),
+   [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
    simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
    ns-3 modules, the site, docs and data are `GPL-2.0-only`. Every original
    `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
