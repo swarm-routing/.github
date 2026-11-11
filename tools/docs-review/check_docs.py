@@ -342,7 +342,11 @@ def check(repo, online=False, fetch=None):
 def release_tags(repo):
     try:
         out = subprocess.run(
-            ["git", "-C", repo, "tag", "-l", "v*"], capture_output=True, text=True, check=True
+            ["git", "tag", "-l", "v*"],
+            cwd=os.path.abspath(repo),  # a directory, never a command-line argument
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
     except (OSError, subprocess.CalledProcessError):
         return []
