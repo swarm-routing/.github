@@ -39,4 +39,4 @@ jobs:
       - name: The pin is one commit, and swarm-core main's core/ is the pinned core/
         run: |
           python3 -I .org/tools/checks/check-swarm-core-pin.py --self-test
-          python3 -I .org/tools/checks/check-swarm-core-pin.py .
+          python3 -I .org/tools/checks/check-swarm-core-pin.py

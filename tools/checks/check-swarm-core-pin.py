@@ -23,8 +23,8 @@ PR. It clones swarm-core (`--swarm-core`, default its GitHub URL) without
 blobs into a temporary directory. Output is one line per finding and a summary
 line (AntHocNet ADR-0014). Stdlib only.
 
-Usage:
-  check-swarm-core-pin.py [REPO_DIR] [--swarm-core URL_OR_PATH]
+Usage (the protocol repository's root as cwd; it reads no path from its arguments):
+  check-swarm-core-pin.py [--swarm-core URL_OR_PATH]
   check-swarm-core-pin.py --self-test
 """
 
@@ -61,9 +61,9 @@ def lines_matching(path, pattern):
     return out
 
 
-def check_files(repo):
-    """(pin, errors): the pinned commit and the files that disagree with it."""
-    cmake = os.path.join(repo, CMAKE)
+def check_files():
+    """(pin, errors): the pinned commit and the files that disagree with it, in the cwd."""
+    cmake = CMAKE
     if not os.path.exists(cmake):
         return None, [f"{CMAKE}: missing (no swarm-core pin to check)"]
     with open(cmake, encoding="utf-8") as f:
@@ -71,7 +71,7 @@ def check_files(repo):
     if not m:
         return None, [f'{CMAKE}: no set(SWARM_CORE_REF "<40-char commit>" ...)']
     pin, errors = m.group(1), []
-    make = os.path.join(repo, "Makefile")
+    make = "Makefile"
     found = lines_matching(make, MAKE_PIN) if os.path.exists(make) else []
     if not found:
         errors.append(f"Makefile: no SWARM_CORE_REF (want {pin})")
@@ -79,8 +79,8 @@ def check_files(repo):
         f"Makefile:{n}: SWARM_CORE_REF is {ref}, not {pin}" for n, ref in found if ref != pin
     ]
     deps = 0
-    for path in sorted(glob.glob(os.path.join(repo, ".github", "workflows", "*.y*ml"))):
-        rel = os.path.relpath(path, repo).replace(os.sep, "/")
+    for path in sorted(glob.glob(".github/workflows/*.y*ml")):
+        rel = path.replace(os.sep, "/")
         for n, ref in lines_matching(path, CORE_DEP):
             deps += 1
             if ref != pin:
@@ -114,8 +114,8 @@ def check_main(pin, url):
         return [], main
 
 
-def run(repo, url):
-    pin, errors = check_files(repo)
+def run(url):
+    pin, errors = check_files()
     main = None
     if pin:
         more, main = check_main(pin, url)
@@ -175,9 +175,13 @@ def self_test():
         import contextlib
         import io
 
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            rc = run(repo, url)
+        out, here = io.StringIO(), os.getcwd()
+        try:
+            os.chdir(repo)
+            with contextlib.redirect_stdout(out):
+                rc = run(url)
+        finally:
+            os.chdir(here)
         return rc, out.getvalue()
 
     with tempfile.TemporaryDirectory() as t:
@@ -248,11 +252,10 @@ def self_test():
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("repo", nargs="?", default=".")
     p.add_argument("--swarm-core", default=SWARM_CORE, help="swarm-core's git URL or a local path")
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
-    return self_test() if a.self_test else run(a.repo, a.swarm_core)
+    return self_test() if a.self_test else run(a.swarm_core)
 
 
 if __name__ == "__main__":
