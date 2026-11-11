@@ -9,6 +9,9 @@ Usage:
   zenodo.py sync   --repo OWNER/NAME [--concept ID] [--grace-hours H] [--dry-run] [--sandbox]
   zenodo.py orphans [--org ORG] [--repos A,B] [--grace-hours H] [--sandbox]
   zenodo.py create --repo OWNER/NAME --tag vX.Y.Z [--publish] [--sandbox]
+  zenodo.py publish-release --repo OWNER/NAME --tag vX.Y.Z --files F... [--checkout DIR]
+            [--concept ID] [--date YYYY-MM-DD] [--publish] [--sandbox]
+  zenodo.py fake-zenodo --port-file F           the self-test's fake Zenodo, for release-selftest.yml
   zenodo.py --self-test
 
 Zenodo's GitHub integration archives each published release and mints its DOI.
@@ -52,6 +55,25 @@ AntHocNet's v2.6.1 was):
   repository's release tags), so it never makes a duplicate. A dry run unless
   --publish is given and ZENODO_TOKEN is set; it prints the concept and
   version DOIs. A draft a failed run left is reused.
+- `publish-release` is the push path (swarm-routing/.github#232): the release
+  job of reusable-release.yml (`zenodo: true`) archives the release it just
+  published, with the release's own assets (--files: the dist files,
+  SHA256SUMS, the SBOM, the provenance) instead of a source zip, so Zenodo
+  never reads GitHub. With --checkout, CITATION.cff and .github/org-sync.toml
+  come from the release commit's checkout. It is idempotent: a tag already
+  archived (the token owner's published depositions, which Zenodo lists
+  without the search index's lag, or a version of the concept) is reported
+  and nothing is written. Otherwise the tag becomes a new version of the
+  concept `create` would find (CITATION.cff, `zenodo_concept`, a Zenodo
+  record linking one of the release tags), or, with none, the first version
+  of a new concept with `create`'s metadata. The concept and version DOIs go
+  to the output and the job summary. A dry run unless --publish is given;
+  --publish without ZENODO_TOKEN is refused.
+
+Every Zenodo call is retried with exponential backoff (5 s, doubling, 5
+tries; Retry-After honoured): a 429 or 503 always, a 500, 502 or 504 or a
+dropped connection only when the call is not a POST. Any other refusal stops
+the command with a non-zero exit.
 
 GitHub is read through `gh api` (the caller's login, or GH_TOKEN in a
 workflow); Zenodo writes need ZENODO_TOKEN (scopes deposit:write and
@@ -69,6 +91,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -135,13 +158,35 @@ class GitHub:
         ]
 
 
+class Checkout(GitHub):
+    """GitHub, with the repository's files read from a local checkout (the release commit)."""
+
+    def __init__(self, root):
+        self.root = root
+
+    def file(self, repo, path, ref=None):
+        p = os.path.join(self.root, path)
+        if not os.path.isfile(p):
+            return None
+        with open(p, encoding="utf-8") as fh:
+            return fh.read()
+
+
 # --- Zenodo, through urllib --------------------------------------------------
 
 
 class Zenodo:
-    def __init__(self, base, token=None):
+    # Retried with backoff: a rate limit (429) always, since Zenodo did not act
+    # on the request; a gateway error or a dropped connection only for a call
+    # that is safe to repeat (a POST may have acted: the next run's checks
+    # find what it left, a draft or a published version).
+    RETRY_ALWAYS = (429, 503)
+    RETRY_IDEMPOTENT = (500, 502, 504)
+
+    def __init__(self, base, token=None, tries=5, backoff=5.0):
         self.base = base.rstrip("/")
         self.token = token
+        self.tries, self.backoff = tries, backoff
 
     def call(self, method, url, body=None, raw=None):
         if not url.startswith("http"):
@@ -154,14 +199,31 @@ class Zenodo:
             data, headers["Content-Type"] = raw, "application/octet-stream"
         if self.token:
             headers["Authorization"] = "Bearer " + self.token
-        req = urllib.request.Request(url, data=data, method=method, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                text = r.read().decode()
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="replace")[:500]
-            raise Failure(f"zenodo: {method} {url.split('?')[0]}: HTTP {e.code}: {detail}")
-        return json.loads(text) if text.strip() else {}
+        where = f"zenodo: {method} {url.split('?')[0]}"
+        for attempt in range(1, self.tries + 1):
+            req = urllib.request.Request(url, data=data, method=method, headers=headers)
+            wait = self.backoff * 2 ** (attempt - 1)
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    text = r.read().decode()
+                return json.loads(text) if text.strip() else {}
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode(errors="replace")[:500]
+                again = e.code in self.RETRY_ALWAYS or (
+                    method != "POST" and e.code in self.RETRY_IDEMPOTENT
+                )
+                if not again or attempt == self.tries:
+                    raise Failure(f"{where}: HTTP {e.code}: {detail}")
+                after = (e.headers.get("Retry-After") or "").strip()
+                if after.isdigit():
+                    wait = max(wait, min(int(after), 300))
+                print(f"{where}: HTTP {e.code}, retry {attempt}/{self.tries - 1} in {wait:g} s")
+            except urllib.error.URLError as e:
+                if method == "POST" or attempt == self.tries:
+                    raise Failure(f"{where}: {e.reason}")
+                print(f"{where}: {e.reason}, retry {attempt}/{self.tries - 1} in {wait:g} s")
+            time.sleep(wait)
+        raise Failure(f"{where}: no attempt left")  # unreachable: the last attempt raises
 
     def versions(self, concept):
         """Every published version of the concept, oldest first, and the newest one's id."""
@@ -180,6 +242,7 @@ class Zenodo:
                     "id": str(h["id"]),
                     "version": h.get("metadata", {}).get("version", ""),
                     "doi": h.get("doi", ""),
+                    "conceptdoi": h.get("conceptdoi", ""),
                 }
                 for h in batch
             ]
@@ -344,7 +407,13 @@ def new_version(zen, latest_id, concept, repo, tag, date, files, cff_text):
     rec = zen.call("POST", f"/deposit/depositions/{did}/actions/publish")
     doi = rec.get("doi") or rec.get("metadata", {}).get("doi", "")
     rid = str(rec.get("record_id") or rec.get("id") or did)
-    return {"doi": doi, "id": rid, "note": f"{note}; {meta_note}"}
+    return {
+        "doi": doi,
+        "id": rid,
+        "concept": str(rec.get("conceptrecid") or concept),
+        "conceptdoi": rec.get("conceptdoi") or "",
+        "note": f"{note}; {meta_note}",
+    }
 
 
 def tree_link(repo, tag):
@@ -543,6 +612,123 @@ def cmd_create(args, gh, zen, now):
     return {"state": "created", **got}
 
 
+def deposited(zen, repo, tag):
+    """A published deposition of the token's owner that links the tag's tree.
+
+    Zenodo's record search and version lists are an index that can lag a
+    publish by minutes; the owner's own deposition list is not, so a re-run
+    right after a publish still sees it and does not archive the tag twice.
+    """
+    link = tree_link(repo, tag).lower()
+    q = urllib.parse.urlencode({"size": 100, "sort": "mostrecent", "all_versions": "true"})
+    for d in zen.call("GET", f"/deposit/depositions?{q}") or []:
+        if d.get("submitted") and link in links_of(d.get("metadata")):
+            return d
+    return None
+
+
+def release_files(paths):
+    files = []
+    for p in paths:
+        if not os.path.isfile(p):
+            raise Failure(f"{p}: not a file; nothing archived")
+        with open(p, "rb") as fh:
+            files.append((os.path.basename(p), fh.read()))
+    names = [n for n, _ in files]
+    if not files or len(set(names)) != len(names):
+        raise Failure(f"--files: none given, or two with one name ({', '.join(names)})")
+    return files
+
+
+def summarize(repo, tag, state, got):
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    with open(path, "a") as fh:
+        fh.write(
+            f"### {repo} {tag} on Zenodo: {state}\n\n"
+            "| concept | concept DOI | version DOI |\n|---|---|---|\n"
+            f"| {got.get('concept') or '-'} | {got.get('conceptdoi') or '-'} | "
+            f"{got.get('doi') or '-'} |\n\n"
+        )
+
+
+def cmd_publish_release(args, gh, zen, now):
+    """Archive one published release with its own assets (the release job's push, #232)."""
+    repo, tag = args.repo, args.tag
+    files = release_files(args.files)
+    write = bool(args.publish and zen.token)
+    if args.publish and not zen.token:
+        raise Failure(
+            "zenodo: --publish needs ZENODO_TOKEN (scopes deposit:write, deposit:actions)"
+        )
+    if write:
+        d = deposited(zen, repo, tag)
+        if d:
+            got = {
+                "concept": str(d.get("conceptrecid") or ""),
+                "conceptdoi": d.get("conceptdoi") or "",
+                "doi": d.get("doi") or "",
+                "id": str(d.get("record_id") or d.get("id") or ""),
+            }
+            print(
+                f"{repo} {tag}: already archived as {got['doi']} (record {got['id']}); nothing to do"
+            )
+            summarize(repo, tag, "already archived", got)
+            return {"state": "archived", **got}
+    rels = gh.releases(repo)
+    rel = next((r for r in rels if r["tag"] == tag), None)
+    date = args.date or (rel["published"][:10] if rel else now.date().isoformat())
+    cff = gh.file(repo, "CITATION.cff", ref=tag)
+    if args.concept:
+        concept, why = str(args.concept), "--concept"
+    else:
+        concept, why = recorded_concept(gh, repo)
+    if not concept:
+        others = [r["tag"] for r in rels if r["tag"] != tag]
+        concept, why = zenodo_concept_for(zen, repo, [tag, *others])
+    listed = ", ".join(n for n, _ in files)
+    if concept:
+        versions, latest_id = zen.versions(concept)
+        have = next((v for v in versions if norm(v["version"]) == norm(tag)), None)
+        if have:
+            got = {"concept": concept, "conceptdoi": have["conceptdoi"], **have}
+            print(
+                f"{repo} {tag}: already archived as {have['doi']} (concept {concept}); nothing to do"
+            )
+            summarize(repo, tag, "already archived", got)
+            return {"state": "archived", **got}
+        plan = f"a new version of concept {concept} ({why}), files {listed}"
+    else:
+        if not cff:
+            raise Failure(f"{repo} {tag}: no CITATION.cff, so no metadata for a first concept")
+        meta = first_metadata(repo, tag, date, cff)
+        plan = (
+            f"a new Zenodo concept ({meta['upload_type']}, title {meta['title']!r}, "
+            f"licence {meta.get('license') or '-'}), files {listed}"
+        )
+    if not write:
+        print(f"{repo} {tag}: would archive as {plan}")
+        return {"state": "dry-run"}
+    if concept:
+        got = new_version(zen, latest_id, concept, repo, tag, date, files, cff)
+        state = "new version"
+    else:
+        got = create_concept(zen, repo, tag, meta, files)
+        state = "new concept"
+    print(
+        f"{repo} {tag}: archived as {plan}: version {got['doi']} (record {got['id']}), "
+        f"concept {got['concept']} ({got['conceptdoi'] or 'DOI pending'}); {got['note']}"
+    )
+    if state == "new concept":
+        print(
+            f'next: zenodo_concept = "{got["concept"]}" in {repo}\'s .github/org-sync.toml, then '
+            "`org_sync.py reseed CITATION.cff` (keep its `type:`)"
+        )
+    summarize(repo, tag, state, got)
+    return {"state": state, **got}
+
+
 def cmd_orphans(args, gh, zen, now):
     """Each repository with a published release and no concept: (repo, state, detail)."""
     names = args.repos.split(",") if args.repos else gh.org_repos(args.org)
@@ -620,59 +806,68 @@ def main(argv=None):
         "--publish", action="store_true", help="write (needs ZENODO_TOKEN); else a dry run"
     )
     c.add_argument("--sandbox", action="store_true")
+    pr = sub.add_parser("publish-release")
+    pr.add_argument("--repo", required=True)
+    pr.add_argument("--tag", required=True)
+    pr.add_argument(
+        "--files", nargs="+", required=True, help="the release's assets, uploaded as they are"
+    )
+    pr.add_argument(
+        "--checkout", help="read CITATION.cff and .github/org-sync.toml here, not through gh"
+    )
+    pr.add_argument(
+        "--concept", help="the concept to add a version to (default: as `create` finds it)"
+    )
+    pr.add_argument("--date", help="publication date, YYYY-MM-DD (default: the release's)")
+    pr.add_argument(
+        "--publish", action="store_true", help="write (needs ZENODO_TOKEN); else a dry run"
+    )
+    pr.add_argument("--sandbox", action="store_true")
+    pr.add_argument("--api", help=argparse.SUPPRESS)  # another Zenodo API base (the fake)
+    f = sub.add_parser("fake-zenodo")
+    f.add_argument("--port-file", required=True)
     args = p.parse_args(argv)
     if args.self_test:
         return self_test()
     if not args.cmd:
         p.error("a command is required")
-    gh = GitHub()
+    if args.cmd == "fake-zenodo":
+        srv, _ = fake_zenodo()
+        with open(args.port_file, "w") as fh:
+            fh.write(f"{srv.server_port}\n")
+        print(f"fake Zenodo on http://127.0.0.1:{srv.server_port}/api (token t0k)", flush=True)
+        while True:
+            time.sleep(3600)
+    gh = Checkout(args.checkout) if getattr(args, "checkout", None) else GitHub()
     if args.cmd == "repos":
         found = cmd_repos(args, gh)
         if args.json:
             print(json.dumps(found))
         return 0
-    zen = Zenodo(ZENODO[args.sandbox], os.environ.get("ZENODO_TOKEN") or None)
+    zen = Zenodo(
+        getattr(args, "api", None) or ZENODO[args.sandbox], os.environ.get("ZENODO_TOKEN") or None
+    )
     now = datetime.datetime.now(datetime.timezone.utc)
     if args.cmd == "orphans":
         rows = cmd_orphans(args, gh, zen, now)
         return 1 if any(s == "no concept" for _, s, _ in rows) else 0
-    cmds = {"status": cmd_status, "sync": cmd_sync, "create": cmd_create}
+    cmds = {
+        "status": cmd_status,
+        "sync": cmd_sync,
+        "create": cmd_create,
+        "publish-release": cmd_publish_release,
+    }
     cmds[args.cmd](args, gh, zen, now)
     return 0
 
 
-# --- self-test: fake GitHub and a fake Zenodo on 127.0.0.1 -----------------
+# --- the fake Zenodo: the self-test's, and `fake-zenodo` for release-selftest.yml --
 
 
-def self_test():
-    import contextlib
-    import io
+def fake_zenodo():
+    """A fake Zenodo on 127.0.0.1, serving in a thread: (server, state). Token: t0k."""
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-    CFF = (
-        'cff-version: 1.2.0\ntitle: "New Title"\nabstract: >-\n  One line\n  two lines.\n'
-        'authors:\n  - family-names: Doe\n    given-names: Jane\n    orcid: "https://orcid.org/0000-0001"\n'
-        'keywords:\n  - ants\ndoi: "10.5281/zenodo.100"\n'
-    )
-
-    class FakeGitHub:
-        def __init__(self, releases, cff=CFF, toml=None):
-            self.rel, self.cff, self.reads, self.zip = releases, cff, [], None
-            self.toml = toml
-
-        def releases(self, repo):
-            return sorted(self.rel, key=lambda r: r["published"])
-
-        def file(self, repo, path, ref=None):
-            self.reads.append((path, ref))
-            return self.toml if path == ".github/org-sync.toml" else self.cff
-
-        def org_repos(self, org):
-            return ["R"]
-
-        def zipball(self, repo, tag):
-            return self.zip if self.zip is not None else f"PK zip of {tag}".encode()
 
     class State:
         def reset(self, versions=("v1.0.0", "v1.1.0"), concept="100", leftover=False):
@@ -686,6 +881,8 @@ def self_test():
             )
             self.next_id = 200
             self.search = []  # what the fake's record search returns, whatever the query
+            self.published = []  # the owner's published depositions, as the deposit list shows them
+            self.fail_next = []  # HTTP codes the next requests get, one each, before any route
 
     st = State()
 
@@ -707,6 +904,8 @@ def self_test():
             authed = self.headers.get("Authorization") == "Bearer t0k"
             path, _, query = self.path.partition("?")
             st.calls.append((method, path, authed))
+            if st.fail_next:
+                return self.send(st.fail_next.pop(0), {"message": "fake: told to fail"})
             base = f"http://127.0.0.1:{self.server.server_port}/api"
             newest = st.versions[-1]
             if method == "GET" and path == f"/api/records/{st.concept}":
@@ -723,7 +922,7 @@ def self_test():
             if method == "GET" and path == "/api/deposit/depositions":
                 new = st.draft and st.draft.get("new")
                 listed = {"id": st.draft["id"], "metadata": st.meta or {}} if new else None
-                return self.send(200, [listed] if listed else [])
+                return self.send(200, ([listed] if listed else []) + st.published)
             if method == "POST" and path == "/api/deposit/depositions":
                 st.draft = {"id": st.next_id, "files": [], "new": True}
                 st.next_id += 1
@@ -802,6 +1001,17 @@ def self_test():
                         "doi": f"10.0/z.{rid}",
                     }
                 )
+                st.published.append(
+                    {
+                        "id": rid,
+                        "record_id": rid,
+                        "submitted": True,
+                        "doi": f"10.0/z.{rid}",
+                        "conceptrecid": cid,
+                        "conceptdoi": f"10.0/z.{cid}",
+                        "metadata": st.meta,
+                    }
+                )
                 st.draft = None
                 return self.send(
                     202,
@@ -827,8 +1037,45 @@ def self_test():
         def do_DELETE(self):
             self.route("DELETE")
 
+    st.reset()
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, st
+
+
+# --- self-test: fake GitHub and a fake Zenodo on 127.0.0.1 -----------------
+
+
+def self_test():
+    import contextlib
+    import io
+    import tempfile
+
+    CFF = (
+        'cff-version: 1.2.0\ntitle: "New Title"\nabstract: >-\n  One line\n  two lines.\n'
+        'authors:\n  - family-names: Doe\n    given-names: Jane\n    orcid: "https://orcid.org/0000-0001"\n'
+        'keywords:\n  - ants\ndoi: "10.5281/zenodo.100"\n'
+    )
+
+    class FakeGitHub:
+        def __init__(self, releases, cff=CFF, toml=None):
+            self.rel, self.cff, self.reads, self.zip = releases, cff, [], None
+            self.toml = toml
+
+        def releases(self, repo):
+            return sorted(self.rel, key=lambda r: r["published"])
+
+        def file(self, repo, path, ref=None):
+            self.reads.append((path, ref))
+            return self.toml if path == ".github/org-sync.toml" else self.cff
+
+        def org_repos(self, org):
+            return ["R"]
+
+        def zipball(self, repo, tag):
+            return self.zip if self.zip is not None else f"PK zip of {tag}".encode()
+
+    srv, st = fake_zenodo()
     base = f"http://127.0.0.1:{srv.server_port}/api"
     now = datetime.datetime(2026, 11, 8, 12, tzinfo=datetime.timezone.utc)
     rel = [
@@ -1159,6 +1406,150 @@ def self_test():
     check(
         "licence ids",
         zenodo_license("MIT OR GPL-2.0-only") == "mit" and zenodo_license(None) is None,
+    )
+    # publish-release: the release job's push path (#232), with the release's own assets
+    tmp = tempfile.mkdtemp()
+    assets = []
+    for name, body in (("r-1.2.0.tar.gz", b"tarball"), ("SHA256SUMS", b"sums\n")):
+        assets.append(os.path.join(tmp, name))
+        with open(assets[-1], "wb") as fh:
+            fh.write(body)
+    summary = os.path.join(tmp, "summary.md")
+
+    def push(gh, token="t0k", tries=5, **kw):
+        ns = argparse.Namespace(
+            repo="org/R", tag="v1.2.0", files=assets, concept=None, date=None, publish=True
+        )
+        for k, v in kw.items():
+            setattr(ns, k, v)
+        out = io.StringIO()
+        old = os.environ.get("GITHUB_STEP_SUMMARY")
+        os.environ["GITHUB_STEP_SUMMARY"] = summary
+        with contextlib.redirect_stdout(out):
+            try:
+                got, err = cmd_publish_release(ns, gh, Zenodo(base, token, tries, 0), now), None
+            except Failure as e:
+                got, err = None, str(e)
+        if old is None:
+            os.environ.pop("GITHUB_STEP_SUMMARY")
+        else:
+            os.environ["GITHUB_STEP_SUMMARY"] = old
+        return got, err, out.getvalue()
+
+    # a first release: a new concept, the assets as they are, metadata from CITATION.cff
+    st.reset()
+    got, err, out = push(FakeGitHub(rel, NEW))
+    m = st.meta or {}
+    check(
+        "push: first release is a new concept",
+        err is None
+        and got["state"] == "new concept"
+        and got["concept"] == "500"
+        and got["doi"] == "10.0/z.200"
+        and ("POST", "/api/deposit/depositions", True) in st.calls
+        and not any(c[1].endswith("/newversion") for c in st.calls),
+    )
+    check(
+        "push: the release's assets uploaded, no source zip",
+        st.uploads == {"r-1.2.0.tar.gz": b"tarball", "SHA256SUMS": b"sums\n"},
+    )
+    check(
+        "push: first metadata",
+        m.get("title") == "R data"
+        and m.get("version") == "v1.2.0"
+        and m.get("upload_type") == "dataset",
+    )
+    with open(summary) as fh:
+        text = fh.read()
+    check("push: DOIs in the summary", "| 500 | 10.0/z.500 | 10.0/z.200 |" in text)
+    # the same release again: found among the owner's depositions, nothing written
+    st.calls = []
+    got, err, out = push(FakeGitHub(rel, NEW))
+    check(
+        "push: a re-run is a no-op",
+        err is None and got["state"] == "archived" and got["doi"] == "10.0/z.200" and only_reads(),
+    )
+    # the next version of an existing concept (CITATION.cff names it)
+    st.reset()
+    gh = FakeGitHub(rel)
+    got, err, out = push(gh)
+    check(
+        "push: next release is a new version",
+        err is None
+        and got["state"] == "new version"
+        and got["doi"] == "10.0/z.200"
+        and got["concept"] == "100"
+        and any(c[1].endswith("/newversion") for c in st.calls)
+        and ("POST", "/api/deposit/depositions", True) not in st.calls,
+    )
+    check(
+        "push: version files and metadata",
+        set(st.uploads) == {"r-1.2.0.tar.gz", "SHA256SUMS"}
+        and (st.meta or {}).get("version") == "v1.2.0"
+        and (st.meta or {}).get("publication_date") == "2026-10-29"
+        and (st.meta or {}).get("title") == "New Title"
+        and not any(c[0] == "PUT" and c[1].endswith("/old.zip") for c in st.calls),
+    )
+    st.calls = []
+    got, err, out = push(FakeGitHub(rel))
+    check(
+        "push: a re-run of the version is a no-op",
+        got and got["state"] == "archived" and only_reads(),
+    )
+    # a version Zenodo already holds (archived by the GitHub integration): no write
+    st.reset()
+    got, err, out = push(FakeGitHub(rel), tag="v1.1.0")
+    check(
+        "push: a version already on the concept is a no-op",
+        err is None and got["state"] == "archived" and got["doi"] == "10.0/z.102" and only_reads(),
+    )
+    # a dry run reads only; --publish without a token is refused
+    st.reset()
+    got, err, out = push(FakeGitHub(rel), publish=False)
+    check("push: dry run", err is None and "would archive as a new version" in out and only_reads())
+    st.reset()
+    got, err, out = push(FakeGitHub(rel), token=None)
+    check("push: no token refused", err and "ZENODO_TOKEN" in err and st.calls == [])
+    # a refusal stops the run (a wrong token: 403), nothing written
+    st.reset()
+    got, err, out = push(FakeGitHub(rel), token="wrong")
+    check("push: a refusal fails", err and "HTTP 403" in err and only_reads())
+    # a missing asset is refused before Zenodo is called
+    st.reset()
+    got, err, out = push(FakeGitHub(rel), files=[os.path.join(tmp, "nope")])
+    check("push: a missing asset is refused", err and "not a file" in err and st.calls == [])
+    # retries: a 429 and a 503 are retried; a 502 on a POST and a 400 are not
+    st.reset()
+    st.fail_next = [429, 503]
+    got, err, out = push(FakeGitHub(rel))
+    check(
+        "push: 429 and 503 retried",
+        err is None and got["state"] == "new version" and "retry 2/4" in out,
+    )
+    st.reset()
+    st.fail_next = [429, 429, 429]
+    got, err, out = push(FakeGitHub(rel), tries=3)
+    check("push: retries run out", err and "HTTP 429" in err and only_reads())
+    st.reset()
+    st.fail_next = [400]
+    got, err, out = push(FakeGitHub(rel))
+    check("push: a 400 is not retried", err and "HTTP 400" in err and len(st.calls) == 1)
+    zen = Zenodo(base, "t0k", 5, 0)
+    st.reset()
+    st.fail_next = [502]
+    try:
+        zen.call("POST", "/deposit/depositions/101/actions/newversion")
+        err = None
+    except Failure as e:
+        err = str(e)
+    check("push: a 502 on a POST is not retried", err and "HTTP 502" in err and len(st.calls) == 1)
+    # a local checkout's files
+    with open(os.path.join(tmp, "CITATION.cff"), "w") as fh:
+        fh.write(NEW)
+    check(
+        "checkout reads local files",
+        Checkout(tmp).file("org/R", "CITATION.cff", ref="v1") == NEW
+        and Checkout(tmp).file("org/R", ".github/org-sync.toml") is None,
     )
     srv.shutdown()
     for f in failures:

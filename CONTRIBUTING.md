@@ -452,6 +452,47 @@ Its Zenodo token (`ZENODO_TOKEN`, scopes `deposit:write` and `deposit:actions`)
 belongs to the maintainer. Without it every run is a dry run. Never type a DOI:
 read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
 
+**The push path** (#232). Zenodo's GitHub integration *pulls*: it fetches
+each release from GitHub as the maintainer's account, and fails when that
+account's quota is spent (below). A repository can instead have its release
+job *push* the release to Zenodo: `reusable-release.yml` with `zenodo: true`
+and the `ZENODO_TOKEN` secret passed in (its header has the caller lines).
+Its `zenodo` job runs after the GitHub release is published, in the
+`release` environment, and runs `zenodo.py publish-release`: it uploads the
+release's own assets (the build's files, `SHA256SUMS`, the SBOM, the
+provenance) with the release commit's `CITATION.cff` metadata, as the first
+version of a new concept for a first release, else as a new version of the
+repository's concept (so the concept DOI never changes). It is idempotent (a
+tag already on Zenodo, archived by the integration or by an earlier run, is
+reported and nothing is written), retries a 429 or 5xx with backoff, writes
+the concept and version DOIs to the job summary, and fails the job when
+Zenodo refuses; the GitHub release stays published either way. It is opt-in
+per caller (`zenodo` defaults to false), so repositories move over one at a
+time:
+1. the caller adds `zenodo: true` and `ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}`;
+2. the maintainer turns **off** Zenodo's GitHub integration for that
+   repository (Zenodo, *GitHub* in the account menu, the repository's
+   switch), before its next release, or that release is archived twice
+   (the integration's copy is a source zip; the push uploads the assets);
+3. the daily `zenodo` run stays the backstop: a release whose `zenodo` job
+   failed is archived by `sync` after the 12-hour grace period, or re-run the
+   job.
+
+`zenodo-sandbox: true` sends the same upload to sandbox.zenodo.org (with a
+sandbox token as `ZENODO_TOKEN`), to prove the path before a real release.
+`release-selftest.yml` runs the command on its dry run's assets against a
+fake Zenodo on every change to the release workflow or `tools/zenodo/`.
+
+**Who can read `ZENODO_TOKEN`.** It is the maintainer's personal Zenodo
+token. Settings as code (`[settings]`, `templates/rulesets/`) do not manage
+secrets, so its scope is the maintainer's to set, in GitHub's settings: as an
+organization secret, its repository access is *Selected repositories*
+(`.github` for the daily run, plus each repository that opted into the push
+path), never *All repositories*. A repository may hold it as a secret of its
+`release` environment instead: the `zenodo` job runs in that environment, so
+the environment's secret takes the place of the passed one, and no job
+outside the environment reads it.
+
 A repository's README shows AntHocNet's three badges through org-sync, each
 only once its target exists: **Release** when a workflow calls
 `reusable-release.yml`, **Cite** when it has a `CITATION.cff`, and **DOI**
@@ -599,8 +640,9 @@ actor), so the bump goes through a PR and the tag follows the merge
    `main` moved while the `release` environment waited for approval
    (ns3-tools v0.1.0). Then the GitHub release is created
    with every asset and notes holding the version's `CHANGELOG.md` section,
-   the checksums and the verify commands. Zenodo then archives it (above). A
-   re-run resumes: a tag already on this commit is kept and the release
+   the checksums and the verify commands. Zenodo then archives it (above:
+   the integration's pull, or, with `zenodo: true`, the `zenodo` job's push).
+   A re-run resumes: a tag already on this commit is kept and the release
    completed; a tag on another commit fails the run.
 
 Mode `dry-run` bumps on the runner only, then builds, signs and verifies, and
