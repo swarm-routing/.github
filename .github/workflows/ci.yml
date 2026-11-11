@@ -21,6 +21,7 @@ jobs:
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,9 +61,18 @@ jobs:
           python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
           python3 -m json.tool labels.json > /dev/null
       - name: actionlint
+        timeout-minutes: 5  # the two downloads (CONTRIBUTING invariant 5)
+        env:
+          # actionlint 1.7.12's own release, checked against its sha256 (the release's
+          # checksums.txt): actionlint-py has no wheel, and its sdist runs a setup script
+          ACTIONLINT_URL: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         run: |
-          pip install --quiet actionlint-py==1.7.7.23 shellcheck-py==0.10.0.1
-          actionlint .github/workflows/*.yml
+          pip install --quiet --only-binary :all: shellcheck-py==0.10.0.1
+          curl --proto =https --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/actionlint.tgz" "$ACTIONLINT_URL"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/*.yml
 
   # The reusable workflows run here from this checkout, so a PR that changes
   # one is tested with its own version.

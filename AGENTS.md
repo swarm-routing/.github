@@ -36,12 +36,13 @@ tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5
 tools/pr-status/pr_status.py    open PRs across repos: `list`, `threads` and `wait` (read-only) print a line per PR (head, CI verdict and counts, required checks missing on the head, workflows that ended in `startup_failure`, mergeable state) and per unresolved review thread (severity · title · path:line · id); a missing required check is never a pass; `merge` writes: it updates a behind PR, waits for green and squash-merges, one PR at a time per repo
 tools/release/fixture/         the release self-test's caller: the minimal Commitizen config (.cz.toml) and a `make dist`
 tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
-tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy and `release` environment as code: `plan`/`check` (read-only diff), `apply` (only the differences)
+tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy (incl. fork-PR approval) and `release` environment as code: `plan`/`check` (read-only diff), `apply` (only the differences)
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
 templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 the org-sync workflow, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
+                                codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
                                 quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
 SECURITY.md                     the org default security policy (repos without their own get it)
 CODE_OF_CONDUCT.md              the org default code of conduct: Contributor Covenant 2.1, reports to the maintainer's GitHub profile (no email)
@@ -60,7 +61,7 @@ LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-
 No build. Before pushing:
 
 ```bash
-pip install actionlint-py shellcheck-py      # once
+pip install actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1   # once, as ci.yml
 actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
@@ -78,7 +79,7 @@ python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker
 python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule; a hinted and an unhinted one for 6 and 7
 python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, a startup_failure run and missing required checks, threads, a CodeRabbit body reduced to its heading, wait), and merge against a simulated one (behind -> update -> merged, sequence, failing check, open thread, conflict, draft, refused, unreported required check, startup failure, already merged)
 python3 -I tools/lit-search/lit_search.py --self-test   # confirm, citing, refs, search, related on recorded responses of each source, a source down or rate-limited, keys never leaked
-python3 -I tools/repo-settings/repo_settings.py --self-test   # plan, check, apply against a fake GitHub (each field's drift, ruleset create/update, unmanaged ruleset left alone, private masked, 403 refused, dry run; merge_queue rule, its table overrides and validation, refused without a merge_group trigger behind each required check; security on in order, own CodeQL kept, private unsupported, Actions policy and an uncovered action refused, 409 org policy, release environment, idempotent)
+python3 -I tools/repo-settings/repo_settings.py --self-test   # plan, check, apply against a fake GitHub (each field's drift, ruleset create/update, unmanaged ruleset left alone, private masked, 403 refused, dry run; merge_queue rule, its table overrides and validation, refused without a merge_group trigger behind each required check; security on in order, own CodeQL kept, private unsupported, Actions policy and an uncovered action refused, fork-PR approval for all outside contributors (a note on a private repository), 409 org policy, release environment, idempotent)
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 python3 -I tools/pr-status/pr_status.py list --repos .github,skills   # read-only, the open PRs and their unresolved threads
