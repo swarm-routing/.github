@@ -220,8 +220,11 @@ that author's own sign-off. The `dco` check (`reusable-dco.yml`, placed in every
 by org-sync as `.github/workflows/dco.yml`) lists any commit without a
 matching sign-off and prints these commands. Commits by the org's members and
 collaborators, the org App (`swarm-routing-bot[bot]`) and Dependabot are
-exempt: maintainer and agent commits are made from the maintainer's own
-account, under the licence grant already recorded in AntHocNet ADR-0028.
+exempt, and so is a merge commit that adds nothing beyond its parents (an
+"Update branch" merge); a merge that resolves a conflict with new text or
+carries a change of its own needs a sign-off like any other commit.
+Maintainer and agent commits are made from the maintainer's own account,
+under the licence grant already recorded in AntHocNet ADR-0028.
 
 The sign-off is the recorded grant AntHocNet
 [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)
