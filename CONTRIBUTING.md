@@ -22,16 +22,25 @@ is the long form.
    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
    // SPDX-License-Identifier: MIT OR GPL-2.0-only   (or GPL-2.0-only)
    ```
-   (`#` comments for Python and shell). The dependency goes one way: GPL code
+   (`#` comments for Python and shell). An outside contributor may add their
+   own `Copyright (c) <year> <Name>` line beneath the org line, never in its
+   place, and signs off every commit ([Outside contributions](#outside-contributions)).
+   The dependency goes one way: GPL code
    may use the dual parts, never the reverse — a `core/` file includes only the
    C++ standard library, other `core/` files and the dual-licensed core of a
    declared dependency (a protocol's `core/` on swarm-core's `core/`, the
-   `core-deps` input of whichever workflow runs the licence check: `licence.yml`
-   calling `reusable-licence-check.yml`, or `ci.yml` calling
-   `reusable-ns3-ci.yml`, which forwards it). CI
+   `core-deps` input of every workflow that runs the licence check: one calling
+   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
+   forwards it; file names differ per repo, and each names the same pin). CI
    (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
-   of it. Contributions are accepted under the licence of the directory they
-   land in. Write clean implementations against public ns-3 interfaces rather
+   of it. Where a protocol's `core/` pins swarm-core, the `swarm-core / pin`
+   check (`reusable-swarm-core-pin.yml`, `tools/checks/check-swarm-core-pin.py`)
+   fails unless `core/CMakeLists.txt`'s `SWARM_CORE_REF`, the `Makefile` and
+   every workflow's swarm-core `core-deps` name one commit (the ns-3 build's
+   swarm-core dependency: `main` or that commit), and unless swarm-core
+   `main`'s `core/` is that commit's `core/`; it checks nothing else about
+   the pin. Contributions are accepted under the licence of the directory they
+   land in (inbound = outbound, below). Write clean implementations against public ns-3 interfaces rather
    than copying from ns-3's `src/aodv`, `src/olsr` & co.; third-party code keeps
    its own licence and lands only with its provenance recorded.
 2. **POD wire messages.** Control headers are simulator-independent POD structs
@@ -180,6 +189,68 @@ starts from the newest open `handoff` issue and closes it when done.
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
 
+## Outside contributions
+
+Contributions from outside the org are welcome in every public repository:
+open an issue first for anything larger than a fix, fork, branch, and open a
+PR to `main` (the [Pull requests](#pull-requests) rules apply; CI runs on a
+fork's PR once a maintainer approves its workflows, which every outside
+contributor's fork PR waits for).
+
+**Inbound = outbound.** A contribution is licensed exactly as the directory it
+lands in, by that repository's `LICENSING.md` row: in `core/` and the
+standalone tooling (`tools/`, Python CLIs, CI and image scripts) under
+`MIT OR GPL-2.0-only`, recipient's choice; everywhere else (ns-3 modules, the
+site, docs, data) under `GPL-2.0-only`. A contribution that cannot be offered
+under its directory's licence belongs elsewhere or is declined; code from
+another project keeps its own licence and lands only where that licence fits,
+with its provenance recorded (invariant 1).
+
+**Developer Certificate of Origin.** Every commit certifies the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/), whose
+full text is in [`DCO`](https://github.com/swarm-routing/.github/blob/main/DCO) at the root of `swarm-routing/.github`, by carrying a
+`Signed-off-by` trailer with the commit author's own name and email:
+
+```text
+Signed-off-by: Ada Lovelace <ada@example.org>
+```
+
+`git commit -s` adds it (name and email must be the commit's author's; case
+and extra spaces do not matter). Missed one? `git commit --amend -s --no-edit`
+for the last commit, `git rebase --signoff HEAD~N` for the last N, then
+`git push --force-with-lease` to your fork's branch. `--signoff` signs as you,
+so it fixes only commits you authored; a commit someone else authored needs
+that author's own sign-off. The `dco` check (`reusable-dco.yml`, placed in every repository
+by org-sync as `.github/workflows/dco.yml`) lists any commit without a
+matching sign-off and prints these commands. Commits by the org's members and
+collaborators, the org App (`swarm-routing-bot[bot]`) and Dependabot are
+exempt, and so is a merge commit that adds nothing beyond its parents (an
+"Update branch" merge); a merge that resolves a conflict with new text or
+carries a change of its own needs a sign-off like any other commit.
+Maintainer and agent commits are made from the maintainer's own account,
+under the licence grant already recorded in AntHocNet ADR-0028.
+
+The sign-off is the recorded grant AntHocNet
+[ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)
+requires before outside code enters a dual-licensed `core/` ("Provenance is a
+gate, not a courtesy"; "A new external contributor to `core/` must agree to
+both licences"): DCO clause (a) or (b) states the contributor has the right to
+submit the work under the licence indicated in the file, which is its SPDX
+line, and clause (d) makes the record public and permanent. No separate
+agreement is needed.
+
+**Copyright lines.** Keep the org's copyright line and the SPDX line as they
+are; to be named, add your own line beneath the org line:
+
+```cpp
+// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+// Copyright (c) 2026 Ada Lovelace
+// SPDX-License-Identifier: MIT OR GPL-2.0-only
+```
+
+`tools/checks/check-headers.py` accepts any number of such lines as long as
+the org line comes first and the SPDX expression is exactly the directory's.
+
 ## Automation
 
 Two scheduled workflows in this repository keep the org current. Both are dry
@@ -189,21 +260,27 @@ runs until their secret is set, and the secrets belong to the maintainer:
 |---|---|---|
 | `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted. The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
-| `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer. The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
+| `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer (where `release_environment = false`, an existing `release` environment's reviewers and wait timer are removed instead). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
 Each adopting repository's `org-sync` check (`reusable-org-sync-check.yml`)
-judges a PR by its own change only (#159): on `pull_request` it runs
-`org_sync.py check --changed-only` against the PR's base, so it fails only when
-the PR changes a managed file (or deletes a seed) or touches a line inside a
-managed section. A template change here therefore never turns red the open PRs
-that touch no managed file; they merge as they are, and org-bot's refresh PR
+judges a PR by its own change only (#159): on `pull_request` and
+`merge_group` it runs `org_sync.py check --changed-only` against the base, so
+an item fails only when it drifts at the PR's head and either did not drift at
+the base (the same templates rendered on the base's tree: a config change
+whose render the PR did not apply) or the PR edited it by hand (changed the
+managed file, deleted a seed, or touched a line inside a managed section).
+Editing `.github/org-sync.toml` alone (a `[settings]` key such as
+`required_checks`) is not a hand edit of every item. Drift a newer template
+left on the base is a `::warning::` annotation per item, naming it, and the
+check passes. A template change here therefore never turns red the open PRs
+of the adopting repositories; they merge as they are, and org-bot's refresh PR
 brings the templates in. A push to `main` keeps the full check, so drift there
 stays visible until the refresh PR merges. A caller that wants the full check on
 PRs too passes `full-check-on-pr: true`.
 
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it (a profile change applies on push here; a `[settings]` change in another repository applies when `repo-settings` is dispatched with mode `apply` after its merge); a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
-A repository's `[settings]` can override what its profile gives it: `features = { has_wiki = true }` (any of `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`), `security = { codeql_default_setup = false }` (false leaves that feature alone; it is never turned off), and `release_environment = true`. `merge_queue = true` adds a merge queue to the `main` ruleset (squash; every PR of a group must pass, `ALLGREEN`; groups of 1 to 5 PRs, checks running for at most 5 queued PRs at once; 120 minutes for the required checks; `MERGE_QUEUE` in the tool); a table such as `merge_queue = { check_response_timeout_minutes = 60 }` overrides any of them, within the API's bounds. It needs `required_checks`, GitHub offers it only on public organization repositories, and every workflow that produces a required check must also run `on: merge_group` (with a path filter or a `changes` job, diff against `github.event.merge_group.base_sha`, since a merge group has no `pull_request`), or the queue waits for a check that never comes: `repo-settings` refuses the repository, before writing anything, while a workflow that runs on `pull_request` and has a job named (or with the id) a required check's first ` / ` segment lacks that trigger (a `${{ … }}` in a job name, as in a matrix, matches any text; reusable `workflow_call`-only workflows are not counted). The daily `check` also lists each check that ran on the head of `main` (check runs not skipped, and commit statuses) but is neither in `required_checks` nor matched by `optional_checks` (fnmatch patterns, e.g. `optional_checks = ["codecov/*", "Analyze (*)"]`), one `<repo>: unrequired check: <name>` line each; it is information, not drift, and the workflow keeps one `[settings] <repo>: …` issue per repository listed (#177). Require a check only if it runs on every PR; mark the rest optional. The Actions policy allows only the actions listed in `templates/rulesets/defaults.json` (`selected_actions.patterns_allowed`, besides GitHub's own and local ones): a workflow that starts using a new third-party action needs its `owner/repo@*` added there in the same change (in another repository: merged here first), or `repo-settings` refuses that repository (the check names the action) rather than switching it to a policy that would break its CI. The `release` environment (required reviewer: the maintainer) is created only where `release_environment = true`; no repository enables it yet: turn it on in a repository when it adopts the reusable release workflow (#116) and that workflow's job names `environment: release`. The `release-tags` ruleset does not restrict who creates a v* tag: the release workflows push tags with `GITHUB_TOKEN`, which cannot be a ruleset bypass actor, so a creation rule would block every release.
+A repository's `[settings]` can override what its profile gives it: `features = { has_wiki = true }` (any of `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`), `security = { codeql_default_setup = false }` (false leaves that feature alone; it is never turned off), and `release_environment = true` (or `false`, below). `merge_queue = true` adds a merge queue to the `main` ruleset (squash; every PR of a group must pass, `ALLGREEN`; groups of 1 to 5 PRs, checks running for at most 5 queued PRs at once; 120 minutes for the required checks; `MERGE_QUEUE` in the tool); a table such as `merge_queue = { check_response_timeout_minutes = 60 }` overrides any of them, within the API's bounds. It needs `required_checks`, GitHub offers it only on public organization repositories, and every workflow that produces a required check must also run `on: merge_group` (with a path filter or a `changes` job, diff against `github.event.merge_group.base_sha`, since a merge group has no `pull_request`), or the queue waits for a check that never comes: `repo-settings` refuses the repository, before writing anything, while a workflow that runs on `pull_request` and has a job named (or with the id) a required check's first ` / ` segment lacks that trigger (a `${{ … }}` in a job name, as in a matrix, matches any text; reusable `workflow_call`-only workflows are not counted). The daily `check` also lists each check that ran on the head of `main` (check runs not skipped, and commit statuses) but is neither in `required_checks` nor matched by `optional_checks` (fnmatch patterns, e.g. `optional_checks = ["codecov/*", "Analyze (*)"]`), one `<repo>: unrequired check: <name>` line each; it is information, not drift, and the workflow keeps one `[settings] <repo>: …` issue per repository listed (#177). Require a check only if it runs on every PR; mark the rest optional. The Actions policy allows only the actions listed in `templates/rulesets/defaults.json` (`selected_actions.patterns_allowed`, besides GitHub's own and local ones): a workflow that starts using a new third-party action needs its `owner/repo@*` added there in the same change (in another repository: merged here first), or `repo-settings` refuses that repository (the check names the action) rather than switching it to a policy that would break its CI. The `release` environment (required reviewer: the maintainer) is created only where `release_environment = true`. **It is off for now, by maintainer decision (2026-11-11):** no repository sets it to `true`, so a release publishes without waiting for an approval. `release_environment = false` turns an existing gate off: `apply` removes the `release` environment's required reviewers and wait timer and keeps its deployment branch policy (an environment is never deleted); with the key absent, an existing environment is left as it is, and a repository without one gets GitHub's unprotected `release` environment the first time a job names it. To turn the gate back on, set `release_environment = true` in the repository's `[settings]` and dispatch `repo-settings` with mode `apply`; the reusable release workflow's publish job already names `environment: release`. The `release-tags` ruleset does not restrict who creates a v* tag: the release workflows push tags with the org App's token or, without it, `GITHUB_TOKEN`, which cannot be a ruleset bypass actor, so a creation rule would block every release.
 
 The bot's PRs are generated content only; merge them when CI is green. You
 still refresh the epic lists in your own PR when you change an epic: the bot
@@ -335,6 +412,21 @@ Its Zenodo token (`ZENODO_TOKEN`, scopes `deposit:write` and `deposit:actions`)
 belongs to the maintainer. Without it every run is a dry run. Never type a DOI:
 read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
 
+A repository's README shows AntHocNet's three badges through org-sync, each
+only once its target exists: **Release** when a workflow calls
+`reusable-release.yml`, **Cite** when it has a `CITATION.cff`, and **DOI**
+when its `.github/org-sync.toml` names the concept as top-level
+`zenodo_concept = "<record id>"`. `citation = true` (also top-level) seeds a
+`CITATION.cff` from `templates/CITATION.cff.in`: title, abstract (the
+`[settings]` description, else `description`), the maintainer's author entry
+as in AntHocNet's, the whole work's licence (GPL-2.0-only unless the whole
+repository is dual: a CFF list reads as a choice), the repository URL and the
+version in the repo's `.cz.toml`; add `"CITATION.cff:^version:"` to its
+`version_files` so each bump keeps it current. The concept exists only after
+the first release is archived: read its id from Zenodo, set `zenodo_concept`,
+then `org_sync.py reseed CITATION.cff` (or add `doi:` by hand) so the daily
+check here covers the repository.
+
 ### Cutting a release
 
 Every org repository releases through `reusable-release.yml` (#20); none
@@ -375,7 +467,12 @@ actor), so the bump goes through a PR and the tag follows the merge
    goes out.
 5. **Publish.** The merged commit is tagged `v<ver>` (tags are outside the
    branch ruleset; the `release-tags` ruleset only stops a tag being moved or
-   deleted, so `GITHUB_TOKEN` pushes it), and the GitHub release is created
+   deleted). The org App's token (else `ORG_BOT_TOKEN`, else `GITHUB_TOKEN`)
+   pushes the tag: GitHub refuses a new ref to `GITHUB_TOKEN`, which can never
+   hold the `workflows` permission, when the tagged commit's
+   `.github/workflows/` differs from the default branch's tip, as it does when
+   `main` moved while the `release` environment waited for approval
+   (ns3-tools v0.1.0). Then the GitHub release is created
    with every asset and notes holding the version's `CHANGELOG.md` section,
    the checksums and the verify commands. Zenodo then archives it (above). A
    re-run resumes: a tag already on this commit is kept and the release
@@ -423,7 +520,8 @@ concurrency:
 jobs:
   release:
     # Saves a runner on ordinary pushes; the workflow itself checks the PR.
-    if: ${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}
+    # Quoted: the expression holds ': ', which YAML reads as a mapping in a plain scalar.
+    if: "${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}"
     permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
     with:
@@ -434,9 +532,11 @@ jobs:
       ORG_BOT_TOKEN: ${{ secrets.ORG_BOT_TOKEN }}
 ```
 
-Run the dry run first. The publish job runs in the `release` environment:
-set `release_environment = true` in the repository's `[settings]`
-(Automation, above) so the maintainer approves it. A repository that ships an
+Run the dry run first. The publish job runs in the `release` environment,
+which is ungated for now (maintainer decision 2026-11-11: set
+`release_environment = false` in the repository's `[settings]`, Automation,
+above); `release_environment = true` would make the maintainer approve each
+publish. A repository that ships an
 ns-3 module adds an `image` job after `release` that calls
 `reusable-ns3-image.yml` with `tag: ${{ needs.release.outputs.tag }}` and
 `if: ${{ needs.release.outputs.mode == 'release' }}` (Images, below; the
@@ -503,6 +603,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed). It uploads the `coverage` artifact, so the CI job needs `coverage` or `sonar` on and the `debug` profile | off; an upload failure, or no artifact, never fails CI |
 | Container lint and scans: hadolint, Trivy config and image reports to code scanning | `ns3-containers` `container-security.yml`, `publish-images.yml` | on there |
 | ruff check + format (org `ruff.toml`) and Python coverage, report-only | `reusable-python-ci.yml` | on in every caller |
+| OpenSSF Scorecard, report-only: score published to the OpenSSF API (badge) and SARIF to code scanning | `reusable-scorecard.yml`, called by org-sync's `.github/workflows/scorecard.yml` (weekly, on push to `main`, on demand) | on in every public repo; a private one lists the workflow in `skip` |
 
 Coverage has no threshold: read it as a map of untested paths (AntHocNet #162).
 A floor, if ever, is chosen from evidence in its own issue. Codecov's statuses
@@ -514,6 +615,19 @@ coverage, and the two cannot run together. Their badges come from org-sync
 (`sonar`, `codecov`, `coderabbit` in `badges`; `[quality] sonar = false` in
 `org-sync.toml` for a repository with no SonarQube Cloud project yet); the org profile shows each
 repository's quality gate and coverage.
+
+OpenSSF Scorecard (#23) runs from the reusable workflow, not a copy per repo:
+the Scorecard API accepts a published result only from a workflow that keeps
+its [restrictions](https://github.com/ossf/scorecard-action#workflow-restrictions),
+and it checks the called workflow (the one holding the `ossf/scorecard-action`
+step), so `reusable-scorecard.yml` keeps them: no top-level `env` or
+`defaults`, no workflow-level write permission, `id-token: write` on the
+Scorecard job only, a literal Ubuntu runner, and only `uses:` steps from the
+approved actions. The caller's job grants `security-events: write` and
+`id-token: write`. The `scorecard` badge (org-sync) appears with the workflow,
+and the first push to `main` after it lands publishes the first score. A low
+score is a finding to triage in an issue, not a build break. Whether a repo
+also fills the CII Best Practices questionnaire is decided per repo on #23.
 
 ## AI agents
 

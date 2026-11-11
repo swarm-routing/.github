@@ -6,16 +6,22 @@
    `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
    `// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)` +
    `// SPDX-License-Identifier: <MIT OR GPL-2.0-only | GPL-2.0-only>` (`#`
-   comments where needed), matching its directory in `LICENSING.md`. CI
-   (`reusable-licence-check.yml`) checks it. A new directory gets its row in
-   `LICENSING.md` in the same PR.
+   comments where needed), matching its directory in `LICENSING.md`; an
+   outside contributor may add their own `Copyright (c) <year> <Name>` line
+   beneath the org line, never replace it, and signs off every commit (DCO,
+   CONTRIBUTING "Outside contributions"). CI (`reusable-licence-check.yml`)
+   checks the SPDX line, and the org line's place when a header names more
+   than one holder; a header with a single, other holder (a replaced org line,
+   or third-party code) passes it, so review catches that. A new directory
+   gets its row in `LICENSING.md` in the same PR.
 2. **The licence boundary only goes one way.** GPL code may use the dual
    parts; dual code never pulls GPL-only code in: a `core/` file includes only
    the C++ standard library, other `core/` files and the dual-licensed `core/`
    of a dependency pinned by commit and declared as the `core-deps` input of
-   whichever workflow runs the licence check (`licence.yml` calling
-   `reusable-licence-check.yml`, or `ci.yml` calling `reusable-ns3-ci.yml`,
-   which forwards it), with `core-roots` naming the repo's own `core/`
+   every workflow that runs the licence check (one calling
+   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
+   forwards it; workflow file names differ per repo), each with the same pin,
+   with `core-roots` naming the repo's own `core/`
    (without it the check skips core includes; a protocol's `core/` on
    swarm-core's; CI checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
    licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its

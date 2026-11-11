@@ -29,7 +29,8 @@ DIR/<repo>/.github/):
                                         # { check_response_timeout_minutes = 60 }
     features = { has_wiki = true }      # overrides the profile's repository features
     security = { codeql_default_setup = false }   # false: leave that feature alone
-    release_environment = true          # create the `release` environment here
+    release_environment = true          # create the `release` environment here; false: strip
+                                        # the gate (reviewers, wait timer) from an existing one
 
 A repository with no org-sync templates carries a settings-only file (no
 `kind`); org-sync and org-bot skip it.
@@ -62,7 +63,11 @@ set to null there or in the profile: that part is not managed):
 - `tag_ruleset`: the `release-tags` ruleset (v* tags: no deletion, no
   force-push, no update);
 - `release_environment`: the `release` environment with required
-  reviewers, only where enabled (the profile, or `[settings]`).
+  reviewers, only where enabled (the profile, or `[settings]`). An explicit
+  `release_environment = false` in `[settings]` turns the gate off: an
+  existing `release` environment keeps its deployment branch policy but loses
+  its required reviewers and wait timer (it is never deleted); absent, an
+  existing environment is left alone.
 
 The `main` ruleset's `code_scanning` and `code_quality` rules are kept only
 with `code_scanning = true` (a repository that never uploads CodeQL results
@@ -451,6 +456,7 @@ def desired(s):
         "security": {},
         "actions": None,
         "environment": None,
+        "environment_off": None,
     }
     if not s.get("ruleset"):
         return want
@@ -466,6 +472,8 @@ def desired(s):
     env = prof["release_environment"]
     if env is not None and s.get("release_environment", env["enabled"]):
         want["environment"] = env
+    elif env is not None and s.get("release_environment") is False:
+        want["environment_off"] = env["name"]
     if prof["ruleset"] is not None:
         want["rulesets"].append(main_ruleset(prof["ruleset"], s))
     if prof["tag_ruleset"] is not None:
@@ -742,6 +750,33 @@ def plan_environment(gh, res, full, env):
     )
 
 
+def plan_environment_off(gh, res, full, name):
+    """`release_environment = false`: an existing environment loses its gate
+    (required reviewers, wait timer), keeps its deployment branch policy, and
+    is never deleted; a missing one stays missing."""
+    what = f"environment {name}"
+    got = probe(gh, res, what, f"repos/{full}/environments/{name}")
+    if got is None or not got[0]:
+        return
+    have = []
+    for r in got[1].get("protection_rules", []):
+        if r.get("type") == "required_reviewers" and r.get("reviewers"):
+            have += [
+                x["reviewer"].get("login", x["reviewer"].get("name", "")) for x in r["reviewers"]
+            ]
+        elif r.get("type") == "wait_timer" and r.get("wait_timer"):
+            have.append(f"wait {r['wait_timer']} min")
+    if not have:
+        return
+    body = {
+        "wait_timer": 0,
+        "prevent_self_review": False,
+        "reviewers": [],
+        "deployment_branch_policy": got[1].get("deployment_branch_policy"),
+    }
+    item(res, what, have, "ungated", ("PUT", f"repos/{full}/environments/{name}", body))
+
+
 def plan_repo(gh, repo, local=None):
     """What differs in one repository: {repo, private, skip, changes, rulesets, items, notes, ...}."""
     if not REPO_NAME.fullmatch(repo) or repo in (".", ".."):
@@ -797,6 +832,8 @@ def plan_repo(gh, repo, local=None):
         plan_security(gh, res, full, meta, want["security"], workflows or {})
     if want["environment"]:
         plan_environment(gh, res, full, want["environment"])
+    elif want["environment_off"]:
+        plan_environment_off(gh, res, full, want["environment_off"])
     if want["rulesets"]:
         plan_rulesets(gh, res, full, want["rulesets"])
     if any(r["name"] == "main" for r in want["rulesets"]):
@@ -1407,10 +1444,9 @@ def self_test():
             m2 = re.match(r"/environments/([^/]+)$", rest)
             if m2:
                 if method == "PUT":
-                    self.envs[(repo, m2.group(1))] = {
-                        "name": m2.group(1),
-                        "protection_rules": [
-                            {"type": "wait_timer", "wait_timer": 0},
+                    rules = [{"type": "wait_timer", "wait_timer": body["wait_timer"]}]
+                    if body["reviewers"]:
+                        rules.append(
                             {
                                 "type": "required_reviewers",
                                 "prevent_self_review": body["prevent_self_review"],
@@ -1418,8 +1454,12 @@ def self_test():
                                     {"type": "User", "reviewer": {"login": "danieljoppi", "id": i}}
                                     for i in (r["id"] for r in body["reviewers"])
                                 ],
-                            },
-                        ],
+                            }
+                        )
+                    self.envs[(repo, m2.group(1))] = {
+                        "name": m2.group(1),
+                        "protection_rules": rules,
+                        "deployment_branch_policy": body["deployment_branch_policy"],
                     }
                     return {}
                 if (repo, m2.group(1)) not in self.envs:
@@ -1767,6 +1807,49 @@ def self_test():
     rc, out = go("check", ["AntHocNet"], gh)
     check("merge_queue table overrides", rc == 1 and "(~merge_queue)" in out)
     toml["AntHocNet"], workflows["AntHocNet"][".github/workflows/ci.yml"] = plain_toml, plain_ci
+    # release_environment: absent leaves an existing gate alone; false strips it, keeps the
+    # branch policy, never deletes the environment; a missing one stays missing
+    gh = FakeGitHub()
+    gate = {"protected_branches": False, "custom_branch_policies": True}
+    gh.envs[("AntHocNet", "release")] = {
+        "name": "release",
+        "protection_rules": [
+            {"type": "wait_timer", "wait_timer": 5},
+            {
+                "type": "required_reviewers",
+                "prevent_self_review": False,
+                "reviewers": [{"type": "User", "reviewer": {"login": "danieljoppi", "id": 42}}],
+            },
+        ],
+        "deployment_branch_policy": gate,
+    }
+    rc, out = go("check", ["AntHocNet"], gh)
+    check("absent release_environment leaves a gate alone", rc == 0 and "environment" not in out)
+    toml["AntHocNet"] = plain_toml + "release_environment = false\n"
+    rc, out = go("check", ["AntHocNet"], gh)
+    check(
+        "release_environment = false: a gate is drift",
+        rc == 1
+        and 'AntHocNet environment release: differs: "wait 5 min,danieljoppi" -> "ungated"' in out,
+    )
+    rc, out = go("apply", ["AntHocNet"], gh)
+    env = gh.envs[("AntHocNet", "release")]
+    check(
+        "release_environment = false strips the gate, keeps the branch policy",
+        rc == 0
+        and [c[0] for c in writes(gh)] == ["PUT"]
+        and env["deployment_branch_policy"] == gate
+        and not any(r["type"] == "required_reviewers" for r in env["protection_rules"])
+        and all(r.get("wait_timer", 0) == 0 for r in env["protection_rules"]),
+    )
+    check("ungated after apply", go("check", ["AntHocNet"], gh)[0] == 0)
+    gh = FakeGitHub()
+    rc, out = go("apply", ["AntHocNet"], gh)
+    check(
+        "release_environment = false creates nothing",
+        rc == 0 and writes(gh) == [] and ("AntHocNet", "release") not in gh.envs,
+    )
+    toml["AntHocNet"] = plain_toml
     one_line = {".github/workflows/t.yml": "on: [pull_request, merge_group]\njobs:\n  title:\n"}
     check(
         "merge_group found in a flow list, job id matched, reusable prefix used",

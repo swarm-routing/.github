@@ -1,0 +1,71 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable Scorecard
+
+# OpenSSF Scorecard for any public swarm-routing repo (#23), as AntHocNet's
+# scorecard.yml: it scores the repository's supply-chain posture (pinned
+# dependencies, token permissions, branch protection, dangerous workflow
+# patterns, ...) and publishes the result to the public OpenSSF API (the README
+# badge) and as SARIF to the repository's code-scanning dashboard. A report,
+# never a gate: a low score is an issue to triage, not a build break.
+#
+# Callers get it from org-sync's templates/workflows/scorecard.yml (weekly, on
+# push to main, on demand). The job that calls this one must grant
+# `security-events: write` and `id-token: write`.
+#
+# publish_results: the Scorecard API checks the workflow that holds the
+# scorecard-action step. From a caller, that is THIS file (the OIDC
+# certificate names the called workflow, which the API fetches at its ref), so
+# it must keep to the API's rules
+# (https://github.com/ossf/scorecard-action#workflow-restrictions):
+# - no top-level `env` or `defaults`, no workflow-level write permission;
+# - only the scorecard job asks for `id-token: write`;
+# - that job has no `env`, `defaults`, `container` or `services`, a literal
+#   Ubuntu runner label (no expression), and only `uses:` steps from
+#   actions/checkout, actions/upload-artifact, github/codeql-action/upload-sarif,
+#   ossf/scorecard-action and step-security/harden-runner (no `run:` step).
+# A rejected publish is a warning annotation on the step, and the run stays green.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write   # upload the SARIF to code scanning
+      id-token: write          # OIDC token for publish_results (badge + public API)
+      contents: read           # checkout
+      actions: read            # read workflow definitions for the workflow checks
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Scorecard only reads the tree; no token left in .git/config.
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Read the tree through git, not the `git archive` tarball: a repo
+          # whose .gitattributes export-ignores /.github would otherwise show
+          # Scorecard no workflows (AntHocNet #784).
+          file_mode: git
+          publish_results: true
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: results.sarif

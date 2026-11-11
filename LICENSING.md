@@ -16,6 +16,7 @@
 | `SUPPORT.md` | docs: the default support policy | `GPL-2.0-only` |
 | `CODE_OF_CONDUCT.md` | the Contributor Covenant 2.1, adapted only by its contact | `CC-BY-4.0` (its own licence) |
 | `profile/`, `CONTRIBUTING.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md` | docs | `GPL-2.0-only` |
+| `DCO` | the Developer Certificate of Origin 1.1, verbatim | its own notice: The Linux Foundation, verbatim copies only |
 | everything else | | `GPL-2.0-only` |
 
 Texts: [`LICENSE`](LICENSE) (GPL-2.0) and [`LICENSE-MIT`](LICENSE-MIT) (the
