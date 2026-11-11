@@ -182,10 +182,14 @@ starts from the newest open `handoff` issue and closes it when done.
   PR-title check skips itself on a merge group (a skipped check passes) and
   the org-sync check judges the group's own change against its base.
 - **`main` takes no direct push** in any repo: the `main` ruleset requires a
-  PR, an up-to-date branch and the required checks. Bots push `bot/<name>`
+  PR and the required checks. It does not require an up-to-date branch
+  (`strict_required_status_checks_policy` is off in every profile, maintainer
+  decision 2026-11-11): a PR behind `main` merges once its checks pass. Bots push `bot/<name>`
   branches and open PRs; releases go through the bump PR (Cutting a release).
-- Where there is no queue yet: when a PR falls behind `main`, update it and
-  merge PRs one at a time, each after its CI on the updated branch.
+- Where there is no queue yet, a PR behind `main` may merge as it is. Update
+  it first when `main` changed what it touches (a template, a workflow, a
+  required check), and then merge PRs one at a time, each after its CI on
+  the updated branch.
   `tools/pr-status/pr_status.py merge
   REPO#N [REPO#N …]` does exactly that: in the order given (repositories
   independently), it updates a PR GitHub reports `behind`
