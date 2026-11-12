@@ -318,6 +318,31 @@ brings the templates in. A push to `main` keeps the full check, so drift there
 stays visible until the refresh PR merges. A caller that wants the full check on
 PRs too passes `full-check-on-pr: true`.
 
+**A change to an org-managed section is a template change here, never a hand
+edit in each repository** (#236). Text between `org-sync:begin/end` markers
+(the AGENTS.md and CLAUDE.md org sections, the README badges, the CodeRabbit
+head and tail, …) and the other managed (non-seed) items come from
+`templates/`. To change them across the org, open one PR here that edits the
+template; after it merges, org-bot opens each adopting repository's
+`bot/org-sync` refresh PR (`org_sync.py apply`), which is the only PR that
+brings the change in. Do not open a hand-edited PR per repository alongside
+it: the check renders the templates of this repository's `main` as they are
+when it runs (`org-ref`), so a hand edit pushed while the template PR is
+still open is drift, red on `check / org-sync`, and it stays red after the
+template merges until the check runs again on that branch; org-bot never
+pushes to a branch it did not open (2026-11-11: ten PRs sat red for about
+2.5 hours after #230 merged, until each branch was updated and re-applied
+by hand). If such a PR exists anyway, close it in favour of org-bot's, or
+update its branch from `main`, run `org_sync.py apply .` on it (from a
+checkout of `swarm-routing/.github` next to the repository:
+`python3 ../.github/tools/org-sync/org_sync.py apply .`) and push. Seeds
+(SECURITY.md, the Makefile, LICENSING.md, CITATION.cff, …) are the
+exception: once written they belong to the repository, a template change
+never reaches them and org-bot's PR does not bring it in, so a seed is
+changed in each repository (or rewritten from the template with
+`org_sync.py reseed FILE`). Text a
+repository owns outside the markers is likewise edited in that repository.
+
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it (a profile change applies on push here; a `[settings]` change in another repository applies when `repo-settings` is dispatched with mode `apply` after its merge); a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
 A repository's `[settings]` can override what its profile gives it: `features = { has_wiki = true }` (any of `has_issues`, `has_projects`, `has_wiki`, `has_discussions`, `allow_auto_merge`, `allow_update_branch`), `security = { codeql_default_setup = false }` (false leaves that feature alone; it is never turned off), and `release_environment = true` (or `false`, below). `merge_queue = true` adds a merge queue to the `main` ruleset (squash; every PR of a group must pass, `ALLGREEN`; groups of 1 to 5 PRs, checks running for at most 5 queued PRs at once; 120 minutes for the required checks; `MERGE_QUEUE` in the tool); a table such as `merge_queue = { check_response_timeout_minutes = 60 }` overrides any of them, within the API's bounds. It needs `required_checks`, GitHub offers it only on public organization repositories, and every workflow that produces a required check must also run `on: merge_group` (with a path filter or a `changes` job, diff against `github.event.merge_group.base_sha`, since a merge group has no `pull_request`), or the queue waits for a check that never comes: `repo-settings` refuses the repository, before writing anything, while a workflow that runs on `pull_request` and has a job named (or with the id) a required check's first ` / ` segment lacks that trigger (a `${{ … }}` in a job name, as in a matrix, matches any text; reusable `workflow_call`-only workflows are not counted). The daily `check` also lists each check that ran on the head of `main` (check runs not skipped, and commit statuses) but is neither in `required_checks` nor matched by `optional_checks` (fnmatch patterns, e.g. `optional_checks = ["codecov/*", "Analyze (*)"]`), one `<repo>: unrequired check: <name>` line each; it is information, not drift, and the workflow keeps one `[settings] <repo>: …` issue per repository listed (#177). Require a check only if it runs on every PR; mark the rest optional. The Actions policy allows only the actions listed in `templates/rulesets/defaults.json` (`selected_actions.patterns_allowed`, besides GitHub's own and local ones): a workflow that starts using a new third-party action needs its `owner/repo@*` added there in the same change (in another repository: merged here first), or `repo-settings` refuses that repository (the check names the action) rather than switching it to a policy that would break its CI. The `release` environment (required reviewer: the maintainer) is created only where `release_environment = true`. **It is off for now, by maintainer decision (2026-11-11):** no repository sets it to `true`, so a release publishes without waiting for an approval. `release_environment = false` turns an existing gate off: `apply` removes the `release` environment's required reviewers and wait timer and keeps its deployment branch policy (an environment is never deleted); with the key absent, an existing environment is left as it is, and a repository without one gets GitHub's unprotected `release` environment the first time a job names it. To turn the gate back on, set `release_environment = true` in the repository's `[settings]` and dispatch `repo-settings` with mode `apply`; the reusable release workflow's publish job already names `environment: release`. The `release-tags` ruleset does not restrict who creates a v* tag: the release workflows push tags with the org App's token or, without it, `GITHUB_TOKEN`, which cannot be a ruleset bypass actor, so a creation rule would block every release.
