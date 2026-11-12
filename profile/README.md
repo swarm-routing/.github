@@ -15,8 +15,8 @@ own citable repository.
 I am [Daniel Joppi](https://github.com/danieljoppi) ([LinkedIn](https://www.linkedin.com/in/danieljoppi)). I have more than 20
 years of experience building high-scale software, delivery pipelines and the
 architecture of new systems. AntHocNet started as my college project: I began
-implementing the protocol in 2008 on NS-2 and saved the code on GitHub more
-than 16 years ago.
+implementing the protocol in 2008 on NS-2 and put the code on GitHub in
+[January 2016](https://github.com/swarm-routing/AntHocNet/commit/b7ac7d0f24).
 
 I came back to it to put AI to a real test. Working with Claude Opus, I
 restructured the code so the algorithm no longer depends on one NS-2 version
