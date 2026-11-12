@@ -1941,7 +1941,7 @@ def self_test():
         rc == 0 and out.startswith("timeout: no CodeRabbit review"),
     )
     rc, out, slept = gate({}, [[]], age=1790)
-    check("gate: sleeps only up to the time-out", slept and slept[0] == 10.0)
+    check("gate: sleeps only up to the time-out", slept and abs(slept[0] - 10.0) < 1e-9)
     rc, out, _ = gate({"draft": True}, [[]])
     check("gate: a draft passes", out.startswith("draft:"))
     rc, out, _ = gate(
