@@ -640,7 +640,7 @@ and Veins stay here. Nothing in this section changes until
 - **No automatic CI on ns-3 releases ns-3 no longer supports.** ns-3 maintains its latest release only; automatic pipelines (images and every repo's CI) follow it, and older releases run on demand (CONTRIBUTING invariant 7).
 - **No `optimized` image in CI**, and no ns-3 `optimized` profile anywhere (`-march=native`).
 - **No copying from ns-3's `src/aodv` or `src/olsr`**, and no GPL code in a dual `core/`.
-- **No paywalled papers in public repositories**; they live in the private `papers` repository.
+- **No paywalled papers in public repositories**; they are kept privately.
 - **AntHocNet keeps its own ladder.** Its `docs/roadmap.md` governs AntHocNet's releases; the org's [release train](#the-release-train) only places them among the other repositories' releases. Issues not migrated (95 audited, 31 moved in three waves) keep their `release:` labels there; a migrated issue takes the target repository's `release:` labels, from that repository's own ladder ([Releases](#releases); decision 2026-11-11). The undecided ones (swarm-routing/AntHocNet#319, #112, #405) stay until the maintainer moves them.
 - **No learned arm without its gates.** The DRL comparator (ns3-tools#20) needs disjoint training and test seeds, one held-out family and a reported training budget, plus frozen, versioned weights; nothing about it is scheduled before those exist.
 - **DTN only where the oracle says so.** The store-carry-forward arm (ns3-tools#21) exists because swarm-routing/AntHocNet#580's trigger fired (the oracle delivers about 81 % on the disaster scene: the rest is partition-bound); it is scoped to the disaster family, not a general comparator.

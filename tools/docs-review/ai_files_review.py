@@ -17,7 +17,7 @@ For each public, non-archived, non-fork org repository (#143):
      changed (nothing when they did not);
    - no findings and an issue: close it as completed, with a comment.
 
-Private repositories (papers) are never listed, so no issue is ever opened in
+Private repositories are never listed, so no issue is ever opened in
 one and their findings never reach a log. The token comes from AI_FILES_TOKEN
 (the org bot's: the GitHub App's installation token, else ORG_BOT_TOKEN), never
 from the command line; it needs Issues: read and write on every repository.
