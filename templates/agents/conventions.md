@@ -8,4 +8,6 @@
   `swarm-routing/.github` `tools/epics/epics.py`.
 
 Before you file, close or re-scope an issue or an epic, read
-[the conventions in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/conventions.md).
+[the conventions in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/conventions.md);
+with `swarm-routing/.github` checked out next to this repository, read
+`../.github/docs/agents/conventions.md`.

@@ -12,10 +12,15 @@
 6. **Comparisons are paired**: per-seed deltas over >= 20 seeds; a
    comparator arm counts only after its three gates.
 7. **Keep bounded structures bounded**: every queue and history has a cap.
-8. **CI hygiene.** Actions pinned by full SHA, a `timeout-minutes` on every
-   job and installer step, artifacts kept <= 7 days.
+8. **CI hygiene.** Actions pinned by full SHA with a `# vX.Y.Z` comment; a
+   `timeout-minutes` on every job and on every apt, npm or installer step;
+   `apt-get update --error-on=any` inside a shell retry; transient artifacts
+   `retention-days` <= 7; a new third-party action goes into
+   `templates/rulesets/defaults.json` `selected_actions` first.
 9. **Nothing shipped depends on `.claude/`**: scripts live in `tools/`.
 
 Before you add a file or a directory, touch a `core/` include, a wire
 format, randomness, a benchmark comparison or a workflow, read that rule in
-full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs/agents/org-rules.md).
+full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs/agents/org-rules.md);
+with `swarm-routing/.github` checked out next to this repository, read
+`../.github/docs/agents/org-rules.md`.

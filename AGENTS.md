@@ -68,13 +68,18 @@ Org-wide (1–9), then this repo's own.
 6. **Comparisons are paired**: per-seed deltas over >= 20 seeds; a
    comparator arm counts only after its three gates.
 7. **Keep bounded structures bounded**: every queue and history has a cap.
-8. **CI hygiene.** Actions pinned by full SHA, a `timeout-minutes` on every
-   job and installer step, artifacts kept <= 7 days.
+8. **CI hygiene.** Actions pinned by full SHA with a `# vX.Y.Z` comment; a
+   `timeout-minutes` on every job and on every apt, npm or installer step;
+   `apt-get update --error-on=any` inside a shell retry; transient artifacts
+   `retention-days` <= 7; a new third-party action goes into
+   `templates/rulesets/defaults.json` `selected_actions` first.
 9. **Nothing shipped depends on `.claude/`**: scripts live in `tools/`.
 
 Before you add a file or a directory, touch a `core/` include, a wire
 format, randomness, a benchmark comparison or a workflow, read that rule in
-full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs/agents/org-rules.md).
+full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs/agents/org-rules.md);
+with `swarm-routing/.github` checked out next to this repository, read
+`../.github/docs/agents/org-rules.md`.
 
 10. **Reusable workflows are a public contract.** Callers pin `@main`: never rename or remove an input, never change a default's meaning; add inputs with backward-compatible defaults. A breaking change needs a new file or a tag, announced in an issue in every caller repo.
 11. **`labels.json` is the taxonomy.** Change it together with `CONTRIBUTING.md` and the issue forms; `sync-labels` never deletes labels, so a rename is a manual migration recorded in an issue.
@@ -92,7 +97,9 @@ full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs
   `swarm-routing/.github` `tools/epics/epics.py`.
 
 Before you file, close or re-scope an issue or an epic, read
-[the conventions in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/conventions.md).
+[the conventions in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/conventions.md);
+with `swarm-routing/.github` checked out next to this repository, read
+`../.github/docs/agents/conventions.md`.
 
 ## Git workflow
 
@@ -105,7 +112,9 @@ Before you file, close or re-scope an issue or an epic, read
   `[settings]` or `templates/rulesets/` in `swarm-routing/.github`.
 
 Before you push, update a PR that is behind `main`, merge, or change a
-setting, read [the git workflow in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/git-workflow.md).
+setting, read [the git workflow in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/git-workflow.md);
+with `swarm-routing/.github` checked out next to this repository, read
+`../.github/docs/agents/git-workflow.md`.
 
 ## Working defaults
 

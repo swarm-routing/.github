@@ -7,4 +7,6 @@
   `[settings]` or `templates/rulesets/` in `swarm-routing/.github`.
 
 Before you push, update a PR that is behind `main`, merge, or change a
-setting, read [the git workflow in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/git-workflow.md).
+setting, read [the git workflow in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/git-workflow.md);
+with `swarm-routing/.github` checked out next to this repository, read
+`../.github/docs/agents/git-workflow.md`.
