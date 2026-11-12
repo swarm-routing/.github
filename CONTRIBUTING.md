@@ -699,8 +699,34 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   is kept.
 - **Fields come from Crossref or Zenodo, never typed.** `fidelity.py bib entry
   DOI --key K --role R` prints Crossref's record as an entry; `zenodo.py bibtex
-  OWNER/REPO --key K --role tool` prints an org release's concept record as
-  `@software`.
+  OWNER/REPO --role tool` prints an org release's concept record as
+  `@software`, keyed as the table below says (`--key K` for a repository it
+  does not list yet), with its concept `doi` and no `url` or `version`.
+- **One key per work across the org.** A key is the fidelity sheets' style,
+  the authors' initials and the year (`G02`, `DDG04`); an org release keeps a
+  short name. A work that more than one repository cites, and every released
+  org repository, has one key everywhere, chosen to need the fewest renames
+  and never to change a fidelity sheet's `[KEY]` citations:
+
+  | Work | DOI | Key |
+  |---|---|---|
+  | AntHocNet (org release) | https://doi.org/10.5281/zenodo.20981979 | `AHN` |
+  | ns3-swarm-core (org release) | https://doi.org/10.5281/zenodo.24138628 | `SwarmCore` |
+  | ns3-tools (org release) | https://doi.org/10.5281/zenodo.24136068 | `ns3tools` |
+  | Riley & Henderson 2010, the ns-3 paper | https://doi.org/10.1007/978-3-642-12331-3_2 | `RH10` |
+  | Di Caro, Ducatelle & Gambardella 2004, AntHocNet (PPSN VIII) | https://doi.org/10.1007/978-3-540-30217-9_47 | `DDG04` |
+  | Di Caro, Ducatelle & Gambardella 2005, AntHocNet (ETT) | https://doi.org/10.1002/ett.1062 | `DDG05` |
+  | Güneş, Sorges & Bouazizi 2002, ARA | https://doi.org/10.1109/icppw.2002.1039715 | `G02` |
+  | Roth 2005, Termite (PhD thesis) | https://hdl.handle.net/1813/240 | `R05` |
+  | Roth & Wicker 2003, Termite (GLOBECOM) | https://doi.org/10.1109/glocom.2003.1258772 | `RW03` |
+  | Schoonderwoerd et al. 1997, ABC | https://doi.org/10.1177/105971239700500203 | `S97` |
+  | Wedde et al. 2005, BeeAdHoc (GECCO) | https://doi.org/10.1145/1068009.1068034 | `W05` |
+  | Farooq & Wedde 2006, PG 460 report | https://doi.org/10.17877/de290r-14312 | `PG460` |
+  | Zhao & Pan 2024, the LENS dataset | https://doi.org/10.1145/3625468.3652170 | `ZP24` |
+
+  A new shared work or a new org release adds its row here, and an org
+  release also its key in `zenodo.py`'s `ORG_KEYS` (its self-test compares the
+  two).
 - **Generated sections.** Once the file has an entry, org-sync renders
   CITATION.cff's `references:` and the README's Releases & citing list from its
   `implemented`, `tool` and `dataset` entries (an entry's `note` is its role
