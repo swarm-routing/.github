@@ -10,6 +10,27 @@ lives here too: its shared infrastructure, comparator arms and benchmark
 tooling are moving into their own repositories so each protocol can be its
 own citable repository.
 
+## Why this exists
+
+I am [Daniel Joppi](https://github.com/danieljoppi). I have more than 20
+years of experience building high-scale software, delivery pipelines and the
+architecture of new systems. AntHocNet started as my college project: I began
+implementing the protocol in 2008 on NS-2 and saved the code on GitHub more
+than 16 years ago.
+
+I came back to it to put AI to a real test. Working with Claude Opus, I
+restructured the code so the algorithm no longer depends on one NS-2 version
+(a simulator-free `core/` behind thin adapters), moved it to ns-3, and grew it
+into an organisation that implements and compares other swarm protocols on the
+same footing. My main motivation is to find out how far a project can be
+structured and organised using only AI, with tests, determinism checks and
+paired benchmarks as the safeguard that the implementation stays correct.
+
+That is why the work lives in tickets and roadmaps rather than in anyone's
+head: every issue carries its context, acceptance criteria and links, so any
+person, with any AI assistant, can take a ticket as their starting context and
+begin an implementation or a new investigation.
+
 The last two columns are live: each repository's SonarQube Cloud quality gate
 and its Codecov line coverage (report-only, uploaded by CI from the repository's
 own code). A dash means not measured yet: no code, or no analysis set up.
@@ -21,8 +42,8 @@ own code). A dash means not measured yet: no code, or no analysis set up.
 | [ns3-tools](https://github.com/swarm-routing/ns3-tools) | Diagnostic probes, comparison arenas, the `ns3-tool` CLI (sweep, compare, diagnose, scaffold) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-tools&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-tools) | [![codecov](https://codecov.io/gh/swarm-routing/ns3-tools/graph/badge.svg)](https://codecov.io/gh/swarm-routing/ns3-tools) |
 | [ARA](https://github.com/swarm-routing/ARA) | Ant-Colony-Based Routing Algorithm (Güneş et al., 2002) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ARA&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ARA) | — |
 | [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | Honeybee routing (Wedde & Farooq, 2005) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_BeeAdHoc&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_BeeAdHoc) | — |
-| [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005). No code yet; Phase 5 pre-work open | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_Termite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_Termite) | — |
-| [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007). No code yet; not scheduled | — | — |
+| [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005). `core/` and ns-3 module in progress (Phase 5) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_Termite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_Termite) | — |
+| [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007). `core/` in progress; ns-3 module next | — | — |
 | [benchmarks](https://github.com/swarm-routing/benchmarks) | Immutable 20-seed datasets, paired verdicts, reproducibility manifests | — | — |
 | [swarm-routing.github.io](https://swarm-routing.github.io) | Colony Arena: interactive docs, visualizers, leaderboard | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_swarm-routing.github.io&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_swarm-routing.github.io) | — |
 | [AntHocNet](https://github.com/swarm-routing/AntHocNet) | The reference AntHocNet implementation, the colony the org grew out of | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_AntHocNet&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_AntHocNet) | [![codecov](https://codecov.io/gh/swarm-routing/AntHocNet/graph/badge.svg)](https://codecov.io/gh/swarm-routing/AntHocNet) |
