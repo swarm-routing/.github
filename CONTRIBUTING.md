@@ -91,12 +91,14 @@ is the long form.
    on 2026-11-11 between 15:03Z and 20:05Z, in several
    repositories at once and sometimes in some jobs of a run but not others:
    an outage on StepSecurity's side. So harden-runner stays, in `audit`,
-   on every job: it costs seconds and never fails a job. Before a job moves
+   on every job: it costs seconds, and a failed registration loses only that
+   job's audit data (the sampled jobs all ran on and passed). Before a job moves
    to `block`, check on one job that `block` still enforces its
    `allowed-endpoints` when the API is unreachable; until then no job
-   relies on it, and an insights page missing for a run is that outage,
-   not a finding. To count it again, search the job logs for
-   `no response from monitor endpoint`.
+   relies on it. An insights page missing for a run is put down to an
+   outage only when that run's job logs show `no response from monitor
+   endpoint`; without that line, look into it. The same search counts it
+   again.
 6. **Comparator arms** (protocols we did not design) clear three gates before
    their numbers count: a fidelity sheet from the paper, the per-PR delivery
    smoke, and an anchor reproducing the paper's own trend.
