@@ -9,8 +9,8 @@
                                        `differ` in year, venue, authors or pages. Every
                                        Crossref container title counts as the venue (a
                                        proceedings book and its series, as LNCS), and one
-                                       that looks like a placeholder ("... on ZZZ") is a
-                                       warning line
+                                       that looks like a placeholder ("... on ZZZ", TBD, no
+                                       letter at all) is a warning line
   lit_search.py confirm --title TEXT [--year Y]
                                        a work without a DOI (a thesis, a tech report):
                                        Crossref's and Semantic Scholar's best matches,
@@ -450,14 +450,18 @@ def _pages_same(a, b):
     return a1.strip() == b1.strip() and (not a2 or not b2 or a2.strip() == b2.strip())
 
 
-# A container title a publisher left unfinished ("Proceedings of the ... on ZZZ")
-PLACEHOLDER = re.compile(r"\b(?:Z{3,}|X{3,}|TBD|TBA|untitled|placeholder)\b|^\W*$", re.I)
+# A container title a publisher left unfinished ("Proceedings of the ... on ZZZ", TBD);
+# one with no letter at all ("12345", "___", "-") is one too
+PLACEHOLDER = re.compile(r"\b(?:Z{3,}|X{3,}|TBD|TBA|untitled|placeholder)\b", re.I)
+LETTER = re.compile(r"[^\W\d_]")
 
 
 def placeholder_venues(venue):
     """The container titles that look like a placeholder, not a venue."""
     return [
-        v for v in (venue if isinstance(venue, list) else [venue]) if v and PLACEHOLDER.search(v)
+        v
+        for v in (venue if isinstance(venue, list) else [venue])
+        if v and (PLACEHOLDER.search(v) or not LETTER.search(v))
     ]
 
 
@@ -1293,6 +1297,9 @@ def _self_test():
         expect(
             "confirm placeholder: only that title",
             placeholder_venues(["Lecture Notes in Computer Science", "on ZZZ"]) == ["on ZZZ"]
+            and placeholder_venues(["12345", "___", "-", "Ad Hoc Networks 2"])
+            == ["12345", "___", "-"]
+            and placeholder_venues("Électronique") == []
             and placeholder_venues("Ad Hoc Networks") == []
             and placeholder_venues(None) == [],
         )
