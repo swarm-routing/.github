@@ -687,7 +687,7 @@ def datacite_entry(attrs, key, role):
     def degree(text):
         if re.search(r"\bmaster|\bm\.?sc\b", text):
             return "mastersthesis"
-        if re.search(r"\b(?:phd|ph\.d\.|doctoral|doctorate)\b", text):
+        if re.search(r"\b(?:phd|doctoral|doctorate)\b|\bph\.\s?d\.", text):
             return "phdthesis"
         return None
 
@@ -1660,6 +1660,12 @@ def bib_self_test():
         "compared",
     )
     expect("datacite: master's evidence wins over 'dissertation'", msd["type"] == "mastersthesis")
+    phd2 = datacite_entry(
+        {"types": {"resourceTypeGeneral": "Dissertation", "resourceType": "Ph.D. thesis"}},
+        "K",
+        "compared",
+    )
+    expect("datacite: a Ph.D. thesis", phd2["type"] == "phdthesis")
     txt = datacite_entry(
         {"types": {"resourceTypeGeneral": "Text", "resourceType": "Master's thesis"}},
         "K",
