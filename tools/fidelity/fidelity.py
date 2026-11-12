@@ -483,7 +483,11 @@ END = "<!-- fidelity:sources:end -->"
 CROSSREF = "https://api.crossref.org/works"
 UA = "swarm-routing-fidelity/1.0"  # generic: no contact address, no personal detail
 FETCH = None  # test hook: callable(url) -> response text, or None for a 404
+# a cited key: [KEY] with a digit anywhere (G02, PG460, R05s), or any sheet key
+# followed by a locator, as a Source cell writes it ([Roth] §4.2)
 CITE = re.compile(r"\[([A-Za-z][A-Za-z_-]*[0-9]+[A-Za-z]?)\](?![(\[:])")
+CITE_LOC = re.compile(r"\[([A-Za-z][A-Za-z0-9_-]*)\]\s+" + LOCATOR)
+SHEET_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")  # what a sheet's REF can cite
 DOI_IN = re.compile(r"\b10\.\d{4,9}/[^\s\"'<>|)\]}]+")
 # the private paper library: a public line never names it or points into it
 # (a phrase may wrap across lines: words are joined by any whitespace)
@@ -548,9 +552,12 @@ def crossref(url):
     if text is None:
         return None
     try:
-        return json.loads(text)["message"]
+        msg = json.loads(text)["message"]
     except (ValueError, KeyError, TypeError):
         raise Failure("Crossref sent a response that is not a works record") from None
+    if not isinstance(msg, dict):
+        raise Failure("Crossref sent a response that is not a works record")
+    return msg
 
 
 def _clean(value, field):
@@ -559,6 +566,10 @@ def _clean(value, field):
     if field in TEXT_FIELDS:
         s = re.sub(r"(?<!\\)([&%#$])", r"\\\1", s)
     return s
+
+
+def cited_keys(text):
+    return set(CITE.findall(text)) | {m.group(1) for m in CITE_LOC.finditer(text)}
 
 
 def crossref_entry(msg, key, role):
@@ -571,6 +582,8 @@ def crossref_entry(msg, key, role):
     f = {}
     names = []
     for a in msg.get("author") or []:
+        if not isinstance(a, dict):
+            continue
         if a.get("family"):
             given = _clean(a.get("given", ""), "author")
             names.append(_clean(a["family"], "author") + (f", {given}" if given else ""))
@@ -619,8 +632,11 @@ def bib_entry(doi, key, role):
     doi = bib.norm_doi(doi)
     if not re.fullmatch(r"10\.\d{4,9}/\S+", doi):
         return 1, f"bib entry: {doi!r} is not a DOI (10.NNNN/...)"
-    if not bib.KEY.fullmatch(key):
-        return 2, f"bib entry: {key!r} is not a key (a letter, then letters, digits, _ - : .)"
+    if not SHEET_KEY.fullmatch(key):
+        return (
+            2,
+            f"bib entry: {key!r} is not a key a sheet can cite (a letter, then letters, digits, _ or -)",
+        )
     try:
         msg = crossref(f"{CROSSREF}/{urllib.parse.quote(doi, safe='/')}")
     except Failure as e:
@@ -630,7 +646,11 @@ def bib_entry(doi, key, role):
         if doi.startswith("10.5281/"):
             why += " (a Zenodo DOI is DataCite's: for an org release use zenodo.py bibtex)"
         return 1, why + "; nothing written (an entry is never guessed)"
-    return 0, bib.format_entry(crossref_entry(msg, key, role)).rstrip("\n")
+    try:
+        entry = crossref_entry(msg, key, role)
+    except (AttributeError, TypeError, KeyError, IndexError):
+        return 2, f"bib entry: Crossref's record of {doi} is not in the works shape"
+    return 0, bib.format_entry(entry).rstrip("\n")
 
 
 def sources_table(entries):
@@ -743,7 +763,10 @@ def crossref_doi_for(entry):
     )
     msg = crossref(f"{CROSSREF}?{q}")
     year = entry["fields"].get("year", "")
-    for item in (msg or {}).get("items", []):
+    items = (msg or {}).get("items")
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
         t = (item.get("title") or [""])[0]
         sub = (item.get("subtitle") or [""])[0]
         if _norm_title(title) not in (_norm_title(t), _norm_title(f"{t} {sub}")):
@@ -777,7 +800,7 @@ def bib_check(repo, online=False):
     # the keys the sheet cites, and every [KEY] anywhere outside the bib and the table
     if sheet is not None:
         for n, line in enumerate(sheet.splitlines(), 1):
-            for key in CITE.findall(line):
+            for key in sorted(cited_keys(line)):
                 if key not in by_key and parsed:
                     findings.append(f"{SHEET}:{n}: [{key}] is cited but not in {BIB}")
     cited = set()
@@ -787,7 +810,7 @@ def bib_check(repo, online=False):
         span = _between(body) if path == SHEET.replace(os.sep, "/") else None
         if span:
             body = body[: span[0]] + body[span[1] :]
-        cited.update(CITE.findall(body))
+        cited.update(cited_keys(body))
 
     cff = files.get("CITATION.cff") or _read(repo, "CITATION.cff")
     mine = own_doi(cff)
@@ -818,8 +841,8 @@ def bib_check(repo, online=False):
             elif online:
                 try:
                     found = crossref_doi_for(e)
-                except Failure as x:
-                    warns.append(f"{where}: Crossref not asked: {x}")
+                except (Failure, AttributeError, TypeError, IndexError) as x:
+                    warns.append(f"{where}: no usable Crossref answer: {x}")
                     found = None
                 if found:
                     warns.append(f"{where}: Crossref has DOI {found} for this title: give it doi")
@@ -839,7 +862,7 @@ def bib_check(repo, online=False):
                 if d not in dois:
                     continue
                 before = line[: m.start()]
-                if before.endswith("/") and not before.lower().endswith("https://doi.org/"):
+                if before.endswith("/") and not re.search(r"(?i)https://doi\.org/$", before):
                     link = re.search(r"\S*$", before).group(0)
                     findings.append(
                         f"{path}:{n}: [{dois[d]}] shown as {link}{m.group(0)}, "
@@ -1132,6 +1155,13 @@ def bib_self_test():
             any(x.startswith(f"{SHEET}:6: [R05] is cited") for x in f),
         )
         expect("check: no markers", any("no Sources markers" in x for x in f))
+        write(SHEET, sheet + "| c | [Roth] §4.2 |\n")
+        f, _ = run()
+        expect(
+            "check: a digitless key with a locator is a citation",
+            any("[Roth] is cited" in x for x in f),
+        )
+        write(SHEET, sheet)
         expect(
             "sources: no markers is exit 1, nothing written",
             bib_sources(d)[0] == 1 and _read(d, SHEET) == sheet,
@@ -1215,6 +1245,7 @@ def bib_self_test():
                     {
                         "message": {
                             "items": [
+                                "not an item",
                                 {"DOI": "10.9/other", "title": ["Something else"]},
                                 {
                                     "DOI": "10.1007/978-3-540-30217-9_47",
@@ -1227,6 +1258,8 @@ def bib_self_test():
                 )
             if url.lower().endswith("/10.1109/icppw.2002.1039715"):
                 return json.dumps(RECORDED_G02)
+            if "odd" in url:
+                return json.dumps({"message": "not an object"})
             if "flaky" in url and len(calls) == 1:
                 raise Failure("Crossref answered HTTP 503")
             return None
@@ -1266,6 +1299,15 @@ def bib_self_test():
                 code == 1 and "no record" in out and "zenodo.py bibtex" in out,
             )
             expect("entry: not a DOI", bib_entry("ICPPW 2002", "G02", "implemented")[0] == 1)
+            expect(
+                "entry: a key no sheet can cite",
+                bib_entry("10.1109/icppw.2002.1039715", "Gunes:2002", "implemented")[0] == 2,
+            )
+            code, out = bib_entry("10.1000/odd", "O1", "background")
+            expect(
+                "entry: a message that is not an object is exit 2",
+                code == 2 and "not a works record" in out,
+            )
             calls.clear()
             code, out = bib_entry("10.1000/flaky", "F", "background")
             expect("entry: one retry", code == 1 and len(calls) == 2)
