@@ -80,14 +80,24 @@ because the issue threads were thorough. Caveman the chat, not the record.
   off; on the maintainer's or an agent's commits it is expected
   (swarm-routing/.github#212). `dco` is not a required check and runs on
   `pull_request` only, so merge an outside contributor's PR, by auto-merge or
-  directly, only after `dco` passed on the head commit that merges, and
-  disable auto-merge before anyone pushes to that PR.
-- Enable auto-merge only after CodeRabbit has reviewed and its threads are
-  resolved: it is not a required check, so auto-merge does not wait for it.
-  `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`
-  (a `swarm-routing/.github` checkout next to the repository) waits for the
-  review and goes on with a warning 30 minutes after the PR opened
-  (swarm-routing/.github#238).
+  directly, only after `dco` passed on the head commit that merges. Never push
+  to an outside contributor's PR: ask them for the change, or make it in a
+  follow-up PR after the merge (swarm-routing/.github#288). If anyone pushes
+  to such a PR, the new head must pass `dco` before it can merge: with
+  auto-merge on but the PR not yet queued, disable auto-merge until it has
+  (GitHub keeps auto-merge on after a push by someone with write access); in
+  a merge queue, remove the PR from the queue (disabling auto-merge does not)
+  and enqueue it again only after `dco` passed.
+- `review / coderabbit` is a required check (the review gate,
+  swarm-routing/.github#294): it passes once CodeRabbit has reviewed the PR,
+  once it says it will not, for a draft, or 30 minutes after the PR opened
+  (then with one comment). So auto-merge may be enabled at once: the merge
+  waits for the gate, and the ruleset holds it while a CodeRabbit thread is
+  unresolved. Still read every thread and fix or answer it before resolving.
+  Where the gate is not required yet (`gh api
+  'repos/{owner}/{repo}/rules/branches/main'` does not list it), wait first
+  with `python3 -I ../.github/tools/pr-status/pr_status.py wait --review
+  REPO#N` (swarm-routing/.github#238).
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").

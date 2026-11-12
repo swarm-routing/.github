@@ -22,10 +22,9 @@
     {"name": "learn-site", "color": "f9d0c4", "description": "Area: the Colony Arena site and games"},
     {"name": "literature", "color": "c2e0c6", "description": "Area: papers, fidelity notes, equation Rosetta Stones"},
 
-    {"name": "model:haiku-4.5", "color": "e4e669", "description": "Recommended model: mechanical / chore"},
-    {"name": "model:sonnet-5", "color": "fef2c0", "description": "Recommended model: well-specified plumbing, tooling, docs"},
-    {"name": "model:opus-4.8", "color": "f7c6c7", "description": "Recommended model: protocol semantics, root cause, CI-validated adapter work"},
-    {"name": "model:fable-5", "color": "d4c5f9", "description": "Recommended model: architectural / greenfield"},
+    {"name": "model:haiku-5.5", "color": "e4e669", "description": "Suggested model (Claude Pro): mechanical / chore"},
+    {"name": "model:sonnet-5.5", "color": "fef2c0", "description": "Suggested model (Claude Pro): well-specified plumbing, tooling, docs"},
+    {"name": "model:opus-5.5", "color": "f7c6c7", "description": "Suggested model (Claude Pro): protocol semantics, root cause, adapter work, architecture"},
 
     {"name": "priority:P1", "color": "b60205", "description": "Fix first: regression or blocker that invalidates numbers"},
     {"name": "priority:P2", "color": "d93f0b", "description": "Gates publishing a result or enabling a gated feature"},

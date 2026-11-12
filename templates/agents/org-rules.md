@@ -34,7 +34,9 @@
    readers/writers, a leading version byte, and deterministic roundtrip + fuzz
    tests. Changing a field or its units bumps the version byte.
 4. **No contrib module named `core`** (collides with ns-3's `src/core`). The
-   shared module is `swarm-core` (`#include "ns3/swarm-core-module.h"`).
+   shared module is `swarm-core` (`#include "ns3/swarm-core-module.h"`), and
+   every protocol builds on it, AntHocNet included: `core/` on its `core/`, the
+   ns-3 adapter on `SwarmRoutingBase` (swarm-routing/ns3-swarm-core#14).
 5. **Determinism.** A fixed `--seed=<N>` gives byte-identical output. All
    randomness through the simulator's seeded streams or an injected RNG port;
    never libc `rand()`, wall-clock time, or unordered-container iteration order

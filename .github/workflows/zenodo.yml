@@ -145,7 +145,7 @@ jobs:
             gh issue comment "$n" --body-file "$body"
           else
             gh issue create --title "$title" --body-file "$body" \
-              --label bug --label packaging --label model:sonnet-5 --label priority:P2
+              --label bug --label packaging --label model:sonnet-5.5 --label priority:P2
           fi
 
   create:
