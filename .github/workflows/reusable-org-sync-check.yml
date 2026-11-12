@@ -4,7 +4,7 @@ name: org-sync check (reusable)
 
 # The org-managed files of the calling repository (its .github/org-sync.toml)
 # must match the templates in swarm-routing/.github@main: the shared AGENTS.md
-# and CLAUDE.md sections, the README badge row, SECURITY.md's reporting
+# sections and CLAUDE.md (only `@AGENTS.md`), the README badge row, SECURITY.md's reporting
 # section, LICENSE, the ADR template, the org-sync workflow, the marketplace
 # keys of .claude/settings.json, and the standard Makefile target names.
 # On pull_request only the PR's own drift fails (swarm-routing/.github#159):

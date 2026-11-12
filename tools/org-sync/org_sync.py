@@ -132,7 +132,10 @@ ADOPT = {
     ("AGENTS.md", "org-rules"): (r"^1\. \*\*Licensing per directory", r"^(10\. |## )"),
     ("AGENTS.md", "conventions"): (r"^- Issues follow the org taxonomy", r"^## "),
     ("AGENTS.md", "git-workflow"): (r"^- Branch from `main`", r"^## "),
-    ("CLAUDE.md", "org"): (r"^\*\*Handoffs are always a ticket\.\*\*", r"\Z"),
+    ("AGENTS.md", "agent-defaults"): (
+        r"^## Working defaults\n",
+        r"^(<!-- org-sync:begin |## Where to look\n)",
+    ),
     ("SECURITY.md", "reporting"): (r"^## Reporting a vulnerability\n", r"^## "),
 }
 # Sections with nothing to adopt: inserted after the first match of the regex.
@@ -143,6 +146,9 @@ INSERT_AFTER = {
     # new in every AGENTS.md: placed before the repository's own table
     # (with or without a blank line before the heading)
     ("AGENTS.md", "skills"): r"\n(?=\n?## Where to look\n)",
+    # after the skills block, before the repository's own table (#277: what
+    # CLAUDE.md held, so CLAUDE.md is only `@AGENTS.md`)
+    ("AGENTS.md", "agent-defaults"): r"\n(?=\n?## Where to look\n)",
     # an existing CODEOWNERS keeps its rules; the org's go last (the last match wins)
     (".github/CODEOWNERS", "codeowners"): r"\Z",
 }
@@ -784,8 +790,10 @@ def items(cfg):
         ("section", "AGENTS.md", "agents/conventions.md", "conventions"),
         ("section", "AGENTS.md", "agents/git-workflow.md", "git-workflow"),
         ("section", "AGENTS.md", "agents/skills.md", "skills"),
-        ("seed", "CLAUDE.md", "claude/CLAUDE.md.in", None),
-        ("section", "CLAUDE.md", "claude/org.md", "org"),
+        ("section", "AGENTS.md", "agents/agent-defaults.md", "agent-defaults"),
+        # CLAUDE.md is the org's whole file: one import, so every agent rule
+        # lives once, in AGENTS.md (#277)
+        ("file", "CLAUDE.md", "claude/CLAUDE.md", None),
         ("seed", "CONTEXT.md", "CONTEXT.md.in", None),
         ("seed", "SECURITY.md", "SECURITY.md.in", None),
         ("section", "SECURITY.md", "security-reporting.md", "reporting"),
@@ -877,7 +885,10 @@ def orphans(cfg, repo_dir):
     known = {(i[1], i[3]) for i in its if i[0] == "section"}
     skip = set(cfg.get("skip", []))
     out = []
-    for path in dict.fromkeys(i[1] for i in its):
+    whole = {i[1] for i in its if i[0] == "file"}
+    # a whole-file item replaces its blocks with the file (CLAUDE.md's old
+    # `org` block, #277): not an orphan to remove on top of that update
+    for path in dict.fromkeys(i[1] for i in its if i[1] not in whole):
         text = read(os.path.join(repo_dir, path))
         if text is None:
             continue

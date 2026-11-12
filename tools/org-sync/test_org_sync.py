@@ -486,7 +486,7 @@ for f in ("AGENTS.md", "CLAUDE.md", "README.md"):
     write(os.path.join(d, f), read(os.path.join(ORG, f)))
 rc, out = run("plan", d)
 check(
-    "adopt     AGENTS.md#org-rules" in out and "adopt     CLAUDE.md#org" in out,
+    "adopt     AGENTS.md#org-rules" in out and "adopt     AGENTS.md#agent-defaults" in out,
     "unmarked org sections identical to the templates are adopted",
 )
 check("adopt     README.md#badges" in out, "the badge row is inserted after the title")
@@ -509,11 +509,12 @@ check(
     and agents.index("## Agent skills") < agents.index("## Where to look"),
     "the skills section is inserted before the repository's own Where-to-look table",
 )
+gw_end = "<!-- org-sync:end git-workflow -->\n"
 edit(
     d,
     "AGENTS.md",
-    agents[agents.index("<!-- org-sync:begin skills -->") :].split("## Where to look")[0],
-    "",
+    gw_end + agents[agents.index(gw_end) + len(gw_end) :].split("## Where to look")[0],
+    gw_end + "\n",
 )
 edit(
     d, "AGENTS.md", "<!-- org-sync:end git-workflow -->\n\n", "<!-- org-sync:end git-workflow -->\n"
@@ -524,7 +525,9 @@ check(
 )
 run("apply", d)
 check(
-    "## Agent skills" in read(os.path.join(d, "AGENTS.md")) and run("check", d)[0] == 0,
+    "## Agent skills" in read(os.path.join(d, "AGENTS.md"))
+    and "<!-- org-sync:begin agent-defaults -->" in read(os.path.join(d, "AGENTS.md"))
+    and run("check", d)[0] == 0,
     "the skills section is inserted when the heading has no blank line before it",
 )
 
@@ -735,8 +738,11 @@ check(
 d2 = fresh()
 run("init", d2, "--kind", "python")
 base = commit(d2, "init")
-text = read(os.path.join(d2, "CLAUDE.md"))
-write(os.path.join(d2, "CLAUDE.md"), re.sub(r"(<!-- org-sync:begin org -->\n)(.*\n)", r"\1", text))
+text = read(os.path.join(d2, "AGENTS.md"))
+write(
+    os.path.join(d2, "AGENTS.md"),
+    re.sub(r"(<!-- org-sync:begin agent-defaults -->\n)(.*\n)", r"\1", text),
+)
 commit(d2, "the PR deletes a line inside a managed section")
 check(
     run("check", "--changed-only", base, d2)[0] == 1,
@@ -1044,5 +1050,24 @@ try:
 except SystemExit as e:
     rc = e.code
 check(rc not in (0, None), "a config with neither kind nor [settings] is an error")
+
+# #277: CLAUDE.md is the org's whole file; an old CLAUDE.md with its own text and
+# an `org` block is replaced by `@AGENTS.md`, not reported or pruned as an orphan
+d5 = fresh()
+run("init", d5, "--kind", "python")
+write(
+    os.path.join(d5, "CLAUDE.md"),
+    "# CLAUDE.md\n\n@AGENTS.md\n\nRepo text.\n\n<!-- org-sync:begin org -->\nold\n"
+    "<!-- org-sync:end org -->\n",
+)
+rc, out = run("plan", d5)
+check(
+    "update    CLAUDE.md" in out and "orphan" not in out, "an old CLAUDE.md is an update, no orphan"
+)
+run("apply", d5, "--prune-orphans")
+check(
+    read(os.path.join(d5, "CLAUDE.md")) == "@AGENTS.md\n" and run("check", d5)[0] == 0,
+    "apply leaves CLAUDE.md as the single import line",
+)
 
 print("org-sync self-test: OK")
