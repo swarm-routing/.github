@@ -458,7 +458,7 @@ BIB = r"""% the header
   title    = {Background only},
   journal  = {J},
   year     = {2005},
-  doi      = {10.1/bg},
+  doi      = {10.1000/bg},
   keywords = {background},
 }
 """
@@ -503,7 +503,9 @@ check(
     and "  - type: software\n" in cff
     and 'zenodo.24136068"\n    notes' in cff
     and "  - type: data\n" in cff
-    and "10.1/bg" not in cff,
+    and '  - type: data\n    title: "Benchmark runs"\n    authors:\n      - name: "swarm-routing"\n'
+    in cff
+    and "10.1000/bg" not in cff,
     "bib only: CITATION.cff references: CFF types, authors, DOI (url only without one), role as notes",
 )
 if yaml:
@@ -544,6 +546,11 @@ write(os.path.join(dr, "docs/references.bib"), seed)
 for bad, why in (
     ("@article{X,\n  title = {unclosed,\n", "unbalanced braces"),
     ("@article{X,\n  title = bare,\n}\n", "macro"),
+    (
+        "@article{X,\n  author = {A, B}, title = {T}, year = {2000}, doi = {not-a-doi},\n"
+        "  keywords = {implemented},\n}\n",
+        "not a DOI",
+    ),
     (
         "@article{X,\n  title = {T}, year = {2000}, doi = {10.1/x}, keywords = {implemented},\n}\n",
         "author",

@@ -35,6 +35,8 @@ Stable API (other tools import this module; extend, never break):
   roles(entry) -> [str]       its `keywords`, split and lower-cased
   split_authors(value) -> [(family, given)]   "Family, Given and ..." or
                               "Given Family"; a {braced} name is one family name
+  corporate(value) -> [bool]  per name of split_authors(value): True for a
+                              {braced} whole name (an organization)
   plain(value) -> str         display text: braces dropped, \\& and friends unescaped
   citation(entry) -> str      a one-line Markdown citation (no link)
 """
@@ -318,6 +320,14 @@ def split_authors(value):
         words = _split_top(name, r"\s+")
         out.append((plain(words[-1]), plain(" ".join(words[:-1]))))
     return out
+
+
+def corporate(value):
+    return [
+        n.startswith("{") and n.endswith("}") and len(_split_top(n, ",")) == 1
+        for n in _split_top(value or "", r"\s+and\s+")
+        if n
+    ]
 
 
 def plain(value):

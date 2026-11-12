@@ -674,7 +674,8 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   it in the same PR. A fidelity sheet's Sources table is `fidelity.py bib
   sources`'s, between its `fidelity:sources` markers.
 - **Checked in CI.** `fidelity.py bib check` runs in the `org-sync` check
-  (`reusable-org-sync-check.yml`) once `docs/references.bib` has an entry: the
+  (`reusable-org-sync-check.yml`) once `docs/references.bib` holds more than
+  `%` comments (an entry, or text that is not one, which fails): the
   keys a sheet cites, the roles, a DOI or url per entry, the doi.org links, the
   repository's own DOI and any public line about where papers are kept. The
   seed alone is not checked, so a repository turns it on with the PR that fills

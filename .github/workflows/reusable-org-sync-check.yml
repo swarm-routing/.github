@@ -21,8 +21,9 @@ name: org-sync check (reusable)
 # event keep the full check, so drift on main stays red and visible;
 # full-check-on-pr: true restores it on PRs too.
 # A second step checks the repository's docs/references.bib with
-# `fidelity.py bib check` (#308) once the file has an entry: the seed org-sync
-# places is a header alone, and checking it would fail a protocol repository
+# `fidelity.py bib check` (#308) once the file holds more than blank and `%`
+# comment lines (stray text is checked, and fails): the seed org-sync places is
+# a header alone, and checking it would fail a protocol repository
 # whose fidelity sheet predates the bib, so a repository is checked from the
 # PR that fills its bibliography on.
 # A public contract (AGENTS.md rule 10): inputs are only ever added.
@@ -79,8 +80,9 @@ jobs:
       - name: references
         run: |
           bib=repo/docs/references.bib
-          if [ ! -f "$bib" ] || ! grep -q '^[[:space:]]*@' "$bib"; then
-            echo "docs/references.bib has no entry yet: bib check skipped (swarm-routing/.github#308)"
+          # skipped only without the file or for the seed: blank and `%` comment lines alone
+          if [ ! -f "$bib" ] || ! grep -Eqv '^[[:space:]]*(%.*)?$' "$bib"; then
+            echo "docs/references.bib is absent or comments only: bib check skipped (swarm-routing/.github#308)"
             exit 0
           fi
           python3 -I org/tools/fidelity/fidelity.py bib check repo || {

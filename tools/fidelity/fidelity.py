@@ -819,6 +819,8 @@ def bib_check(repo, online=False):
         doi = bib.norm_doi(f.get("doi"))
         if not doi and not f.get("url"):
             findings.append(f"{where}: neither doi nor url")
+        if doi and not re.fullmatch(r"10\.\d{4,9}/\S+", doi):
+            findings.append(f"{where}: doi {doi} is not a DOI (10.NNNN/...)")
         rs = bib.roles(e)
         bad = [r for r in rs if r not in bib.ROLES]
         if bad:
@@ -1072,6 +1074,8 @@ def bib_self_test():
         write("CITATION.cff", "cff-version: 1.2.0\n")
         write(BIB, "% header\n@misc{X1, title = {t}, keywords = {tool}}\n")
         expect("check: neither doi nor url", finds("neither doi nor url"))
+        write(BIB, "% header\n@misc{X1, title = {t}, doi = {not-a-doi}, keywords = {tool}}\n")
+        expect("check: a malformed doi", finds("not-a-doi is not a DOI"))
         write(BIB, "@misc{X1, title = {t}, url = {https://e.org}, keywords = {tool, favourite}}\n")
         expect("check: a role outside ROLES", finds("favourite not a role"))
         write(BIB, "@misc{X1, title = {t}, url = {https://e.org}}\n")

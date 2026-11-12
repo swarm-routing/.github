@@ -343,8 +343,12 @@ def bib_references(repo_dir):
         r = {
             "type": kind,
             "title": bib.plain(f["title"]),
+            # an organization ({braced} whole name) is CFF's `name`, a person family/given
             "authors": [
-                fam + (f", {giv}" if giv else "") for fam, giv in bib.split_authors(f["author"])
+                {"name": fam} if org else fam + (f", {giv}" if giv else "")
+                for (fam, giv), org in zip(
+                    bib.split_authors(f["author"]), bib.corporate(f["author"])
+                )
             ],
             "year": int(year),
             "role": bib.plain(f.get("note", "")) or BIB_ROLES[role],
@@ -359,6 +363,8 @@ def bib_references(repo_dir):
         if bib.plain(f.get("pages", "")):
             r["pages"] = re.sub(r"-+", "-", bib.plain(f["pages"]))
         doi = bib.norm_doi(f.get("doi"))
+        if doi and not re.match(r"^10\.\d{4,9}/\S+$", doi):
+            sys.exit(f"{where}: doi {doi} is not a DOI (10.NNNN/...)")
         if doi:
             r["doi"] = doi
         elif f.get("url"):
@@ -419,6 +425,8 @@ def short_authors(authors):
     """`G. Di Caro, F. Ducatelle, L. M. Gambardella`; more than four: the first, et al."""
 
     def one(a):
+        if isinstance(a, dict):  # an organization (docs/references.bib only)
+            return a["name"]
         family, given = split_author(a)
         initials = " ".join(p[0] + "." for p in re.split(r"[\s.]+", given) if p)
         return f"{initials} {family}".strip()
@@ -437,6 +445,9 @@ def cff_references(refs):
         out.append(f"    title: {yq(r['title'])}")
         out.append("    authors:")
         for a in r["authors"]:
+            if isinstance(a, dict):  # an organization (docs/references.bib only)
+                out.append(f"      - name: {yq(a['name'])}")
+                continue
             family, given = split_author(a)
             out.append(f"      - family-names: {yq(family)}")
             if given:
