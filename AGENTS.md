@@ -223,10 +223,11 @@ Condensed from [andrej-karpathy-skills](https://github.com/forrestchang/andrej-k
 
 - **Handoffs are always a ticket.** When a session ends with work in flight, or a
   handoff is asked for, open a GitHub issue from the *Handoff* template (label
-  `handoff`). Never write a handoff file in the repo. A session that continues
-  handed-off work starts from the newest open `handoff` issue for that work; a
-  new task starts from the request. Close the issue when the work it hands off
-  is done ([AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md) item 5).
+  `handoff`); a session that continued a handoff updates that issue instead of
+  opening another. Never write a handoff file in the repo. A session that
+  continues handed-off work starts from the newest open `handoff` issue for
+  that work; a new task starts from the request. Close the issue, and any
+  older one it superseded, when the work it hands off is done ([AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md) item 5).
 - **Attach only the repositories the task needs.** Each attached repository's
   agent files are loaded into every request, whether the task touches it or
   not.
