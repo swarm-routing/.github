@@ -546,7 +546,12 @@ def merged_poll(gh, repo, n, cache):
     failed = [c for c in head_checks(gh, repo, head, required)["failed"] if c in required]
     if failed:
         return "stopped", head, f"required check failed: {', '.join(failed)}"
-    if not pr.get("auto_merge"):
+    # a queued PR reads auto_merge null; its merge group's branch,
+    # gh-readonly-queue/<base>/pr-<n>-<sha>, shows it is still in the queue.
+    # The branch, not queue_runs(): it exists from the moment the group forms,
+    # before any merge_group run does (`queued` reads the runs, #347).
+    queued = gh.get(f"repos/{repo}/git/matching-refs/heads/gh-readonly-queue/{base}/pr-{n}-")
+    if not pr.get("auto_merge") and not queued:
         return "stopped", head, "auto-merge off (never enabled, or dropped from the merge queue)"
     return None
 
@@ -2404,7 +2409,9 @@ def self_test():
         check("gate: a missing PR fails", True)
 
     # wait --merged (#341): merged, closed, a thread, a red required check, auto-merge off, timeout
-    def landed(pr_seq, runs=(OK_RUN,), threads_=(), timeout=100, missing=False, extra=()):
+    def landed(
+        pr_seq, runs=(OK_RUN,), threads_=(), timeout=100, missing=False, extra=(), in_queue=False
+    ):
         sha = "c" * 40
         prs = iter(pr_seq)
         last = {}
@@ -2435,6 +2442,9 @@ def self_test():
             },
         }
         now = [0.0]
+        data["repos/swarm-routing/beta/git/matching-refs/heads/gh-readonly-queue/main/pr-9-"] = (
+            lambda: [{"ref": "refs/heads/gh-readonly-queue/main/pr-9-abc"}] if in_queue else []
+        )
         data["repos/swarm-routing/beta/pulls/10"] = {
             "head": {"sha": sha},
             "state": "open",
@@ -2488,6 +2498,11 @@ def self_test():
     check(
         "wait --merged: the timeout exits 2",
         rc == 2 and "beta#9 timeout: not merged after 60s" in out,
+    )
+    rc, out = landed([{}, {}, {"merged": True}], in_queue=True)
+    check(
+        "wait --merged: in the merge queue (auto_merge reads null there) it keeps waiting",
+        rc == 0 and out.endswith("merged\n"),
     )
     rc, out = landed([queued], missing=True)
     check("wait --merged: a missing PR fails", rc == "failure")
