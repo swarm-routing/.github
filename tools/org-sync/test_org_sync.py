@@ -1251,4 +1251,31 @@ check(
     "apply leaves CLAUDE.md as the single import line",
 )
 
+# #318: `forms = true` manages each org form as a whole file; config.yml and a
+# repository-only form stay the repository's
+d6 = fresh()
+run("init", d6, "--kind", "python")
+forms = os.path.join(d6, ".github/ISSUE_TEMPLATE")
+check(not os.path.exists(os.path.join(forms, "chore.yml")), "without the opt-in no form is managed")
+edit(d6, ".github/org-sync.toml", 'kind = "python"', 'kind = "python"\nforms = true')
+os.makedirs(forms, exist_ok=True)
+write(os.path.join(forms, "config.yml"), "blank_issues_enabled: true\n")
+write(os.path.join(forms, "image-request.yml"), "name: Image request\n")
+run("apply", d6)
+check(
+    read(os.path.join(forms, "chore.yml")) == read(os.path.join(ORG, "ISSUE_TEMPLATE/chore.yml"))
+    and run("check", d6)[0] == 0,
+    "apply copies every org form and check is clean",
+)
+edit(d6, ".github/ISSUE_TEMPLATE/literature.yml", "name:", "name: old")
+rc, out = run("check", d6)
+check(rc == 1 and ".github/ISSUE_TEMPLATE/literature.yml" in out, "a changed org form is drift")
+run("apply", d6)
+check(
+    read(os.path.join(forms, "config.yml")) == "blank_issues_enabled: true\n"
+    and read(os.path.join(forms, "image-request.yml")) == "name: Image request\n"
+    and run("check", d6)[0] == 0,
+    "config.yml and a repository-only form are left alone",
+)
+
 print("org-sync self-test: OK")

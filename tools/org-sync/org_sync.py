@@ -39,6 +39,12 @@ tools/fidelity/bib.py), else from `[[references]]`; with both, the bib wins
 and a warning names `[[references]]` as redundant. Every repository gets the
 bib as a seed: a commented header, no entry (#308).
 
+Issue forms (`forms = true`): a repository with its own
+`.github/ISSUE_TEMPLATE/` loses the org's default forms, so it keeps a copy.
+With the opt-in each org form (every `ISSUE_TEMPLATE/*.yml` here but
+`config.yml`) is a whole file there; `config.yml` and the repository's own
+forms stay its own, and a changed org form is drift (#318).
+
 A `[settings]` table holds the repository's GitHub settings (description,
 homepage, topics, ruleset profile, required checks, and overrides of the
 profile's features, security features and release environment), which
@@ -956,6 +962,15 @@ def items(cfg):
         # opt-in: citation metadata for a repository that releases (Zenodo, cite badge)
         out.append(("seed", "CITATION.cff", "CITATION.cff.in", None))
         out.append(("section", "README.md", None, "citing"))
+    if cfg.get("forms"):
+        # opt-in for a repository with its own .github/ISSUE_TEMPLATE/, which
+        # hides the org's default forms: each org form is a whole file there;
+        # config.yml and the repository's own forms stay its own (#318)
+        for name in sorted(os.listdir(os.path.join(ORG, "ISSUE_TEMPLATE"))):
+            if name.endswith(".yml") and name != "config.yml":
+                out.append(
+                    ("file", f".github/ISSUE_TEMPLATE/{name}", f"../ISSUE_TEMPLATE/{name}", None)
+                )
     skip = set(cfg.get("skip", []))
     return [i for i in out if i[1] not in skip and f"{i[1]}#{i[3]}" not in skip]
 
