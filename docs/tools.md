@@ -71,7 +71,7 @@ python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsig
 python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos (references: the seed, bib only, [[references]] only, both, a malformed bib)
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
-python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo (publish-release: first release, next version, idempotent re-run, refusal, retries; record: unrecorded, written, two concepts refused; bibtex: the entry, roles, unrecorded, unreleased and unarchived)
+python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo (publish-release: first release, next version, idempotent re-run, refusal, retries; record: unrecorded, written, two concepts refused; bibtex: the entry, roles, the key from ORG_KEYS (= CONTRIBUTING's table), unrecorded, unreleased and unarchived)
 python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub (the zenodo task: record, then apply's badge)
 python3 -I tools/docs-review/check_docs.py --self-test   # the docs standard and the AI-files facts, a passing and a failing fixture repo per check; a settings-only repo skips the badge row and the org sections
 python3 -I tools/docs-review/check_docs.py ../AntHocNet --online   # read-only, a real repo's docs and AI files (issue states through gh)
@@ -88,7 +88,7 @@ python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # re
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 python3 -I tools/zenodo/zenodo.py orphans --repos benchmarks,ARA   # read-only, released repos without a concept
 python3 -I tools/zenodo/zenodo.py create --repo swarm-routing/benchmarks --tag v0.1.0   # read-only without --publish and ZENODO_TOKEN: what it would create
-python3 -I tools/zenodo/zenodo.py bibtex swarm-routing/ns3-tools --key ns3tools --role tool   # read-only, no token: the concept record as @software
+python3 -I tools/zenodo/zenodo.py bibtex swarm-routing/ns3-tools --role tool   # read-only, no token: the concept record as @software
 python3 -I tools/pr-status/pr_status.py list --repos .github,skills   # read-only, the open PRs and their unresolved threads
 python3 -I tools/pr-status/pr_status.py merge --dry-run .github#N   # read-only, what merge would do now (would update / would merge / would wait)
 python3 -I tools/lit-search/lit_search.py confirm 10.1613/jair.530   # read-only, free: Crossref, Semantic Scholar, OpenAlex agree
