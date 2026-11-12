@@ -8,6 +8,7 @@ Usage:
   pr_status.py threads REPO#N [--all] [--json]
   pr_status.py wait REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review [--review-timeout S]] [--json]
   pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review-timeout S] [--update] [--dry-run] [--json]
+  pr_status.py queued REPO#N [REPO#N ...] [--json]
   pr_status.py --self-test
   (any command takes --min-rate N, placed before it)
 
@@ -111,13 +112,32 @@ what it would do (`would update`, `would merge`, `would wait: ...`) without
 writing. Exit status: 0 when every PR merged (or was already merged or
 closed), 1 when one stopped, 2 when one timed out.
 
+`queued` says, one line per PR, where it stands in a merge queue. Read-only.
+
+  .github#345 merged 1aed1d1
+  .github#346 queued: gh-readonly-queue/main/pr-346-eff0982 CI=in_progress review=success
+  .github#347 not queued: open, auto-merge squash by alice
+  .github#348 not queued: open, auto-merge none (REST shows none for a queued PR too)
+
+A PR is `queued` when a `merge_group` workflow run exists on a
+`gh-readonly-queue/<base>/pr-<n>-<sha>` branch and was created at or after its
+current head was pushed (the earliest workflow run on the head, else the head
+commit's committer date): a squash queue commit does not name the PR's head,
+so its time is what ties it to the head, and a push after queueing takes the
+PR out of the queue. The line gives that queue branch and, for each workflow,
+its latest run's status, or its conclusion once completed. Only the newest
+100 `merge_group` runs of the repository are read. Otherwise the PR is
+`not queued`: its state and the auto-merge GitHub's REST API reports (merge
+method and who enabled it, or `none`; REST reports none for a PR the queue
+holds, so `none` alone never means "not queued"). Exit status 0.
+
 A REPO is a name in the swarm-routing org or `owner/name`. The org-wide API is
 not available to agent sessions, so `--repos` names the repositories (default:
 the org's public ones, DEFAULT_REPOS). Review threads come from
 `pulls/{n}/ccr/review_threads` (resolved, path, line, comment_ids); where that
 endpoint is missing the count prints as `threads=?` (and `merge` leaves the
 check to the ruleset's thread rule). CodeRabbit's reviews come from
-`pulls/{n}/reviews`. `list`, `threads` and `wait` are read-only
+`pulls/{n}/reviews`. `list`, `threads`, `wait`, `gate` and `queued` are read-only
 (GET only); `merge` writes only the two PUTs above. Every call goes through
 `gh api`, which authenticates with GH_TOKEN or the gh CLI's own login
 (`gh auth token`), so no token is in an argument list. Each read checks the
@@ -954,7 +974,88 @@ def parser():
     m.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     m.add_argument("--dry-run", action="store_true", help="read once, say what it would do")
     m.add_argument("--json", action="store_true")
+    qd = sub.add_parser("queued", help="merged, in the merge queue, or neither (read-only)")
+    qd.add_argument("refs", nargs="+", metavar="REPO#N")
+    qd.add_argument("--json", action="store_true")
     return p
+
+
+def head_pushed_at(gh, repo, sha):
+    """When the head reached GitHub: its earliest workflow run, else its committer date."""
+    runs = gh.get(f"repos/{repo}/actions/runs?head_sha={sha}&per_page=100") or {}
+    times = [r["created_at"] for r in runs.get("workflow_runs") or [] if r.get("created_at")]
+    if times:
+        return min(times)
+    commit = gh.get(f"repos/{repo}/commits/{sha}") or {}
+    return ((commit.get("commit") or {}).get("committer") or {}).get("date") or ""
+
+
+def queue_runs(gh, repo, base, number, since, cache):
+    """The newest queue branch's runs for the PR created at or after `since`, latest per workflow."""
+    if repo not in cache:
+        got = gh.get(f"repos/{repo}/actions/runs?event=merge_group&per_page=100") or {}
+        cache[repo] = got.get("workflow_runs") or []
+    prefix = f"gh-readonly-queue/{base}/pr-{number}-"
+    runs = [
+        r
+        for r in cache[repo]
+        if (r.get("head_branch") or "").startswith(prefix) and (r.get("created_at") or "") >= since
+    ]
+    if not runs:
+        return None, {}
+    newest = max(runs, key=lambda r: (r.get("created_at") or "", r.get("id") or 0))
+    branch, latest = newest["head_branch"], {}
+    for r in sorted(runs, key=lambda r: (r.get("created_at") or "", r.get("id") or 0)):
+        if r["head_branch"] == branch:
+            latest[r.get("name") or str(r.get("workflow_id"))] = r
+    return branch, latest
+
+
+def cmd_queued(args, gh):
+    results, lines, cache = [], [], {}
+    for ref in args.refs:
+        repo, n = parse_ref(ref)
+        name = f"{short_repo(repo)}#{n}"
+        pr = gh.get(f"repos/{repo}/pulls/{n}")
+        if pr is None:
+            raise Failure(f"pr_status: {name} not found")
+        res = {"pr": name, "state": pr.get("state")}
+        if pr.get("merged") or pr.get("merged_at"):
+            sha = (pr.get("merge_commit_sha") or "")[:7]
+            res.update(status="merged", merge_commit=pr.get("merge_commit_sha"))
+            lines.append(f"{name} merged {sha}".rstrip())
+            results.append(res)
+            continue
+        base, head = pr["base"]["ref"], pr["head"]["sha"]
+        branch, runs = (None, {})
+        if pr.get("state") == "open":
+            since = head_pushed_at(gh, repo, head)
+            branch, runs = queue_runs(gh, repo, base, n, since, cache)
+        if branch:
+            states = {
+                k: (r.get("conclusion") or "?")
+                if r.get("status") == "completed"
+                else r.get("status")
+                for k, r in sorted(runs.items())
+            }
+            short = branch.rsplit("-", 1)
+            shown = f"{short[0]}-{short[1][:7]}" if len(short) == 2 else branch
+            res.update(status="queued", branch=branch, runs=states)
+            lines.append(
+                f"{name} queued: {shown} " + " ".join(f"{k}={v}" for k, v in states.items())
+            )
+        else:
+            am = pr.get("auto_merge")
+            if am:
+                who = (am.get("enabled_by") or {}).get("login") or "?"
+                auto = f"auto-merge {(am.get('merge_method') or '?').lower()} by {who}"
+            else:
+                auto = "auto-merge none (REST shows none for a queued PR too)"
+            res.update(status="not queued", auto_merge=am)
+            lines.append(f"{name} not queued: {pr.get('state')}, {auto}")
+        results.append(res)
+    emit(results, lines, args.json)
+    return 0
 
 
 def main(argv=None, gh=None):
@@ -972,6 +1073,7 @@ def main(argv=None, gh=None):
         "wait": cmd_wait,
         "gate": cmd_gate,
         "merge": cmd_merge,
+        "queued": cmd_queued,
     }
     return cmds[args.cmd](args, gh)
 
@@ -1229,6 +1331,98 @@ def self_test():
         heading("\nPlease rename this.\nMore.", "carol") == ("@carol", "Please rename this."),
     )
     check("long title cut", len(heading("x" * 500, "dave")[1]) == TITLE_MAX)
+
+    # queued: merged, in the queue for the current head, a stale queue run, auto-merge
+    q = "repos/swarm-routing/alpha"
+    qpr = {"state": "open", "merged": False, "base": {"ref": "main"}, "auto_merge": None}
+    qrun = {"event": "merge_group", "status": "completed", "conclusion": "success"}
+    qdata = {
+        f"{q}/pulls/7": dict(qpr, state="closed", merged=True, merge_commit_sha="c" * 40),
+        f"{q}/pulls/8": dict(qpr, head={"sha": "8" * 40}),
+        f"{q}/pulls/9": dict(qpr, head={"sha": "9" * 40}),
+        f"{q}/pulls/10": dict(
+            qpr,
+            head={"sha": "a1" * 20},
+            auto_merge={"merge_method": "squash", "enabled_by": {"login": "alice"}},
+        ),
+        f"{q}/actions/runs?head_sha={'8' * 40}&per_page=100": {
+            "workflow_runs": [{"created_at": "2026-11-12T10:05:00Z"}]
+        },
+        f"{q}/actions/runs?head_sha={'9' * 40}&per_page=100": {
+            "workflow_runs": [{"created_at": "2026-11-12T11:00:00Z"}]
+        },
+        f"{q}/actions/runs?head_sha={'a1' * 20}&per_page=100": {"workflow_runs": []},
+        f"{q}/commits/{'a1' * 20}": {"commit": {"committer": {"date": "2026-11-12T09:00:00Z"}}},
+        f"{q}/actions/runs?event=merge_group&per_page=100": {
+            "workflow_runs": [
+                # pr-8: an older queue entry (failed), then the current one
+                dict(
+                    qrun,
+                    id=1,
+                    name="CI",
+                    conclusion="failure",
+                    created_at="2026-11-12T10:10:00Z",
+                    head_branch="gh-readonly-queue/main/pr-8-" + "1" * 40,
+                ),
+                dict(
+                    qrun,
+                    id=2,
+                    name="CI",
+                    status="in_progress",
+                    conclusion=None,
+                    created_at="2026-11-12T10:20:00Z",
+                    head_branch="gh-readonly-queue/main/pr-8-" + "2" * 40,
+                ),
+                dict(
+                    qrun,
+                    id=3,
+                    name="review",
+                    created_at="2026-11-12T10:20:01Z",
+                    head_branch="gh-readonly-queue/main/pr-8-" + "2" * 40,
+                ),
+                # pr-9: queued before its head was pushed, so not for this head
+                dict(
+                    qrun,
+                    id=4,
+                    name="CI",
+                    created_at="2026-11-12T10:30:00Z",
+                    head_branch="gh-readonly-queue/main/pr-9-" + "3" * 40,
+                ),
+                # pr-80 shares the prefix digits, never pr-8's
+                dict(
+                    qrun,
+                    id=5,
+                    name="CI",
+                    created_at="2026-11-12T10:40:00Z",
+                    head_branch="gh-readonly-queue/main/pr-80-" + "4" * 40,
+                ),
+            ]
+        },
+    }
+    rc, out, gh = run(["queued", "alpha#7", "alpha#8", "alpha#9", "alpha#10"], qdata)
+    check(
+        "queued: one line per PR",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#7 merged ccccccc",
+            "alpha#8 queued: gh-readonly-queue/main/pr-8-2222222 CI=in_progress review=success",
+            "alpha#9 not queued: open, auto-merge none (REST shows none for a queued PR too)",
+            "alpha#10 not queued: open, auto-merge squash by alice",
+        ],
+    )
+    check(
+        "queued: read only, the queue runs read once",
+        all(not c.startswith("-") for c in gh.calls)
+        and gh.calls.count(f"{q}/actions/runs?event=merge_group&per_page=100") == 1,
+    )
+    rc, out, gh = run(["queued", "alpha#8", "--json"], qdata)
+    got = json.loads(out)
+    check(
+        "queued --json",
+        got[0]["status"] == "queued"
+        and got[0]["runs"] == {"CI": "in_progress", "review": "success"},
+    )
 
     # list: CI states, a resolved and an unresolved thread, the 404 endpoint
     rc, out, gh = run(["list", "--repos", "alpha"])
