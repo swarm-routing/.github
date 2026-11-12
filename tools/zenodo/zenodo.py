@@ -96,10 +96,11 @@ AntHocNet's v2.6.1 was):
   repository names (CITATION.cff, else `zenodo_concept`), else a Zenodo record
   linking one of its release tags. author (each creator's name as Zenodo
   holds it, "Family, Given", joined by " and "; a name with a bare `and`
-  braced whole), title, year (the newest version's publication date),
-  version and doi (the CONCEPT DOI) all come from the record Zenodo returns;
-  publisher is Zenodo, url the repository's github.com page, keywords the
-  role (--role, default `tool`; one of BIB_ROLES). A repository with no
+  braced whole), title, year (the newest version's publication date) and doi
+  (the CONCEPT DOI) all come from the record Zenodo returns; publisher is
+  Zenodo, keywords the role (--role, default `tool`; one of BIB_ROLES). No
+  `url` (CONTRIBUTING: a url only for a work with no DOI) and no `version`
+  (it goes stale behind a concept DOI, which resolves to the newest one). A repository with no
   release, or with releases none of which is on Zenodo, is exit 1 with the
   reason: a DOI is never composed or guessed. Reads only; it needs no token;
   retry notes go to stderr, so stdout is the entry alone.
@@ -1021,7 +1022,6 @@ def cmd_bibtex(args, gh, zen, now):
     if not BIB_KEY.match(args.key or ""):
         raise Failure(f"bibtex: key {args.key!r} is not a BibTeX key (letters, digits, _:.+-)")
     repo = args.repo if "/" in args.repo else f"{args.org}/{args.repo}"
-    owner, name = repo.split("/", 1)
     concept, why = recorded_concept(gh, repo)
     if not concept:
         tags = [r["tag"] for r in reversed(gh.releases(repo))]  # newest first
@@ -1047,9 +1047,7 @@ def cmd_bibtex(args, gh, zen, now):
         "title": meta.get("title", ""),
         "year": str(meta.get("publication_date", ""))[:4],
         "publisher": "Zenodo",
-        "version": meta.get("version", ""),
         "doi": rec.get("conceptdoi", ""),
-        "url": f"https://github.com/{owner}/{name}",
         "keywords": args.role,
     }
     empty = [k for k, v in fields.items() if not v]
@@ -1057,9 +1055,8 @@ def cmd_bibtex(args, gh, zen, now):
         raise Failure(f"{repo}: Zenodo concept {concept} has no {', '.join(empty)}; no entry")
     if fields["doi"] != f"10.5281/zenodo.{concept}":
         raise Failure(f"{repo}: concept {concept}'s DOI is {fields['doi']}, not its own; no entry")
-    body = ",\n".join(  # author is escaped per name; a DOI or a URL is written as it is
-        f"  {k} = {{{v if k in ('author', 'doi', 'url') else bib_value(v)}}}"
-        for k, v in fields.items()
+    body = ",\n".join(  # author is escaped per name; a DOI is written as it is
+        f"  {k} = {{{v if k in ('author', 'doi') else bib_value(v)}}}" for k, v in fields.items()
     )
     text = f"@software{{{args.key},\n{body}\n}}\n"
     sys.stdout.write(text)
@@ -2181,9 +2178,7 @@ def self_test():
             "  title = {R: a routing protocol},\n"
             "  year = {2026},\n"
             "  publisher = {Zenodo},\n"
-            "  version = {v1.1.0},\n"
             "  doi = {10.5281/zenodo.100},\n"
-            "  url = {https://github.com/org/R},\n"
             "  keywords = {tool}\n"
             "}\n"
         )
