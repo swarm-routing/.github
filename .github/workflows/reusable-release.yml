@@ -60,8 +60,15 @@ name: Reusable release
 #               release, else a new version of the repository's concept, so
 #               the concept DOI is kept. Idempotent (a tag already on Zenodo
 #               is reported, not archived again), retried with backoff on 429
-#               and 5xx; the concept and version DOIs go to the job summary,
-#               and a refusal fails the job. It needs the ZENODO_TOKEN secret
+#               and 5xx; the concept and version DOIs go to the job summary
+#               and to the outputs `zenodo-concept` and `zenodo-doi`, and a
+#               refusal fails the job. Then `zenodo.py record` checks the
+#               commit's CITATION.cff `doi:`, `zenodo_concept` and README
+#               DOI badge against the concept Zenodo returned: a missing one
+#               (a first release made the concept) is a notice, and
+#               org-bot's `zenodo` task opens the PR that writes it; a
+#               different concept fails the job (the release and the
+#               archive stand). It needs the ZENODO_TOKEN secret
 #               (a Zenodo token with deposit:write and deposit:actions) and
 #               runs in the `release` environment, so the token can live
 #               there as an environment secret. Once a repository opts in,
@@ -211,6 +218,12 @@ on:
       pull-request:
         description: "In bump mode, the URL of the bump PR"
         value: ${{ jobs.propose.outputs.url }}
+      zenodo-concept:
+        description: "With zenodo: the Zenodo concept record id the release was archived in"
+        value: ${{ jobs.zenodo.outputs.concept }}
+      zenodo-doi:
+        description: "With zenodo: the release's version DOI on Zenodo"
+        value: ${{ jobs.zenodo.outputs.doi }}
 
 jobs:
   # Which mode this run is, and, for a release, that the commit is the merge
@@ -801,6 +814,9 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+    outputs:
+      concept: ${{ steps.push.outputs.concept }}
+      doi: ${{ steps.push.outputs.doi }}
     env:
       TAG: ${{ needs.build.outputs.tag }}
       SANDBOX: ${{ inputs.zenodo-sandbox }}
@@ -830,6 +846,7 @@ jobs:
           name: ${{ needs.build.outputs.artifact }}
           path: ${{ runner.temp }}/rel
       - name: Archive on Zenodo
+        id: push
         timeout-minutes: 20
         env:
           GH_TOKEN: ${{ github.token }}
@@ -848,6 +865,28 @@ jobs:
             echo "::error::Zenodo did not archive ${TAG} (the reason is above). The GitHub release is published; re-run this job, or the daily zenodo workflow archives it after its grace period."
             exit 1
           fi
+      # #232 item 5: the repository names the concept Zenodo returned. A
+      # missing name is written by org-bot's `zenodo` task (a PR, never by
+      # hand); two concepts are the maintainer's to settle. Not on the
+      # sandbox, whose concept is a test one.
+      - name: Check CITATION.cff and the DOI badge against the concept
+        if: ${{ !inputs.zenodo-sandbox && steps.push.outputs.concept != '' }}
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONCEPT: ${{ steps.push.outputs.concept }}
+        run: |
+          if ! out=$(python3 -I org-tools/tools/zenodo/zenodo.py record --repo "$GITHUB_REPOSITORY" \
+              --checkout caller --concept "$CONCEPT" 2>&1); then
+            echo "$out"
+            echo "::error::${TAG} is archived in Zenodo concept ${CONCEPT}, but the repository names another (above); the maintainer decides which is right (CONTRIBUTING \"Releases and DOIs\")."
+            exit 1
+          fi
+          echo "$out"
+          case "$out" in
+            *"missing from"*) echo "::notice::concept ${CONCEPT} is not recorded in the repository yet; org-bot's zenodo task opens the PR that writes it (or dispatch org-bot with task zenodo)." ;;
+          esac
+          printf '\n%s\n' "$out" >> "$GITHUB_STEP_SUMMARY"
 
   # mode bump: the bump commit as the PR `chore(release): bump version A to
   # B` from bot/release. It runs no code of the caller's (the build job ran

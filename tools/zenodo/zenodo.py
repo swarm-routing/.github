@@ -11,6 +11,7 @@ Usage:
   zenodo.py create --repo OWNER/NAME --tag vX.Y.Z [--publish] [--sandbox]
   zenodo.py publish-release --repo OWNER/NAME --tag vX.Y.Z --files F... [--checkout DIR]
             [--concept ID] [--date YYYY-MM-DD] [--publish] [--sandbox]
+  zenodo.py record --repo OWNER/NAME --checkout DIR [--concept ID] [--write]
   zenodo.py fake-zenodo --port-file F           the self-test's fake Zenodo, for release-selftest.yml
   zenodo.py --self-test
 
@@ -73,6 +74,19 @@ AntHocNet's v2.6.1 was):
   holds is refused (as `sync` leaves a stranded release to the maintainer).
   With --sandbox the recorded concept (the real Zenodo's) is ignored: only a
   sandbox record linking a release tag counts, else a test concept is made.
+  With GITHUB_OUTPUT set, it writes `concept`, `conceptdoi` and `doi` there.
+- `record` checks a repository's checkout against its concept on Zenodo
+  (#232 item 5): the concept Zenodo returned (--concept, the release job
+  passes publish-release's), else a Zenodo record linking the newest release
+  tag (any tag while the repository names none). CITATION.cff's `doi:`,
+  .github/org-sync.toml's `zenodo_concept` (which renders the README DOI
+  badge and the citing section) and any README DOI badge must name that one
+  concept; two different concepts are refused, for the maintainer to decide.
+  One missing (a first release just made the concept) is reported, and with
+  --write it is written into the checkout: the `doi:` and `identifiers:`
+  block where the org's CITATION.cff template puts it, and `zenodo_concept`
+  as a top-level key. org-bot's `zenodo` task runs it with --write, then
+  `org_sync.py apply`, and opens the PR. Reads only; it needs no token.
 
 Every Zenodo call is retried with exponential backoff (5 s, doubling, 5
 tries; Retry-After honoured, as seconds or a date, up to 300 s): a 429
@@ -624,8 +638,8 @@ def cmd_create(args, gh, zen, now):
         f"version {got['doi']} (record {got['id']}; {got['note']})"
     )
     print(
-        f'next: zenodo_concept = "{got["concept"]}" in {repo}\'s .github/org-sync.toml, then '
-        "`org_sync.py reseed CITATION.cff` (keep its `type:`)"
+        f"next: org-bot's `zenodo` task opens the PR that records concept {got['concept']} "
+        "(`zenodo.py record --write`, then `org_sync.py apply`)"
     )
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if path:
@@ -673,6 +687,13 @@ def release_files(paths):
 
 
 def summarize(repo, tag, state, got):
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:  # the release job's next step checks the repository against the concept
+        with open(out, "a") as fh:
+            fh.write(
+                f"concept={got.get('concept') or ''}\nconceptdoi={got.get('conceptdoi') or ''}\n"
+                f"doi={got.get('doi') or ''}\n"
+            )
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
@@ -767,11 +788,116 @@ def cmd_publish_release(args, gh, zen, now):
     )
     if state == "new concept":
         print(
-            f'next: zenodo_concept = "{got["concept"]}" in {repo}\'s .github/org-sync.toml, then '
-            "`org_sync.py reseed CITATION.cff` (keep its `type:`)"
+            f"next: org-bot's `zenodo` task opens the PR that records concept {got['concept']} "
+            "(`zenodo.py record --write`: zenodo_concept and CITATION.cff's doi, then "
+            "`org_sync.py apply` for the README badge)"
         )
     summarize(repo, tag, state, got)
     return {"state": state, **got}
+
+
+TOML_CONCEPT = re.compile(r"^[ \t]*zenodo_concept[ \t]*=[ \t]*[\"']?(\d*)[\"']?[ \t]*$", re.M)
+BADGE = re.compile(r"zenodo\.org/badge/DOI/10\.5281/zenodo\.(\d+)")
+
+
+def cff_with_doi(cff, concept):
+    """CITATION.cff with the concept DOI added where the org template puts it."""
+    own = re.split(r"^references:", cff, maxsplit=1, flags=re.M)[0]
+    if re.search(r"^doi:", own, re.M):
+        raise Failure("CITATION.cff: its `doi:` is not a Zenodo concept DOI; not changed")
+    d = f"10.5281/zenodo.{concept}"
+    block = f'doi: "{d}"\n'
+    if not re.search(r"^identifiers:", own, re.M):
+        block += (
+            f'identifiers:\n  - type: doi\n    value: "{d}"\n'
+            '    description: "Concept DOI: always resolves to the latest released version."\n'
+        )
+    cff = cff if cff.endswith("\n") else cff + "\n"
+    m = re.search(r"^url:.*\n", own, re.M) or re.search(r"^repository-code:.*\n", own, re.M)
+    if m:
+        return cff[: m.end()] + block + cff[m.end() :]
+    m = re.search(r"^references:", cff, re.M)
+    return cff[: m.start()] + block + cff[m.start() :] if m else cff + block
+
+
+def toml_with_concept(toml, concept):
+    """.github/org-sync.toml with `zenodo_concept` set: a top-level key, before any table."""
+    line = f'zenodo_concept = "{concept}"'
+    if TOML_CONCEPT.search(toml):  # an empty placeholder
+        return TOML_CONCEPT.sub(line, toml, count=1)
+    text = (
+        "# the Zenodo concept record, read from Zenodo by swarm-routing/.github "
+        f"tools/zenodo/zenodo.py record (#232)\n{line}\n"
+    )
+    m = re.search(r"^kind[ \t]*=.*\n", toml, re.M)
+    if m:
+        return toml[: m.end()] + text + toml[m.end() :]
+    m = re.search(r"^\[", toml, re.M)
+    if m:
+        return toml[: m.start()] + text + toml[m.start() :]
+    return (toml if toml.endswith("\n") or not toml else toml + "\n") + text
+
+
+def cmd_record(args, gh, zen, now):
+    """Whether the repository names its Zenodo concept everywhere: (state, concept).
+
+    The concept is the one Zenodo returned (--concept, from `publish-release`)
+    or a Zenodo record linking a release tag; CITATION.cff's `doi:`,
+    org-sync's `zenodo_concept` (which renders the README badge) and the
+    README's DOI badge must all name it (#232 item 5).
+    """
+    repo, root = args.repo, args.checkout
+    cff = gh.file(repo, "CITATION.cff")
+    if cff is None:
+        print(f"{repo}: no CITATION.cff; nothing to record")
+        return "no citation", None
+    toml = gh.file(repo, ".github/org-sync.toml")
+    have = {"CITATION.cff doi": concept_from(cff)}
+    if toml is not None:
+        m = TOML_CONCEPT.search(toml) or re.search(
+            r"^\s*zenodo_concept\s*=\s*[\"']?(\d+)", toml, re.M
+        )
+        have["zenodo_concept"] = m.group(1) if m and m.group(1) else None
+    names = {k: v for k, v in have.items() if v}
+    for i, b in enumerate(sorted(set(BADGE.findall(gh.file(repo, "README.md") or "")))):
+        names["README badge" + (f" {i + 1}" if i else "")] = b
+    if len(set(names.values())) > 1:
+        said = ", ".join(f"{k} {v}" for k, v in names.items())
+        raise Failure(f"{repo}: the concept is named two ways ({said}); the maintainer decides")
+    recorded = next(iter(names.values()), None)
+    if args.concept:
+        found, why = str(args.concept), "the concept Zenodo returned"
+    else:
+        tags = [r["tag"] for r in reversed(gh.releases(repo))]  # newest first
+        found, why = zenodo_concept_for(zen, repo, tags[:1] if recorded else tags)
+    if recorded and found and recorded != found:
+        said = ", ".join(names)
+        raise Failure(
+            f"{repo}: {said} name concept {recorded}, but {why} is concept {found}; "
+            "the maintainer decides"
+        )
+    concept = found or recorded
+    if not concept:
+        print(f"{repo}: no concept on Zenodo yet; nothing to record")
+        return "none", None
+    missing = [k for k, v in have.items() if not v]
+    if not missing:
+        print(f"{repo}: concept {concept} recorded ({', '.join(have)})")
+        return "recorded", concept
+    if not args.write:
+        print(
+            f"{repo}: concept {concept} ({why or 'recorded'}) missing from {', '.join(missing)}: "
+            "org-bot's `zenodo` task opens the PR that writes it"
+        )
+        return "unrecorded", concept
+    if "CITATION.cff doi" in missing:
+        with open(os.path.join(root, "CITATION.cff"), "w", encoding="utf-8") as fh:
+            fh.write(cff_with_doi(cff, concept))
+    if "zenodo_concept" in missing:
+        with open(os.path.join(root, ".github", "org-sync.toml"), "w", encoding="utf-8") as fh:
+            fh.write(toml_with_concept(toml, concept))
+    print(f"{repo}: concept {concept} ({why or 'recorded'}) written to {', '.join(missing)}")
+    return "written", concept
 
 
 def cmd_orphans(args, gh, zen, now):
@@ -791,7 +917,7 @@ def cmd_orphans(args, gh, zen, now):
         age = round((now - first).total_seconds() / 3600, 1)
         if concept:
             state = "unrecorded"
-            detail = f"concept {concept} ({why}): set zenodo_concept and reseed CITATION.cff"
+            detail = f"concept {concept} ({why}): org-bot's `zenodo` task records it"
         elif age < args.grace_hours:
             state, detail = "pending", f"{tags[0]} is {age} h old"
         else:
@@ -871,6 +997,19 @@ def main(argv=None):
     pr.add_argument("--api", help=argparse.SUPPRESS)  # another Zenodo API base (the fake)
     # release-selftest.yml: its dry run's tag is no GitHub release
     pr.add_argument("--allow-unreleased", action="store_true", help=argparse.SUPPRESS)
+    rc = sub.add_parser("record")
+    rc.add_argument("--repo", required=True)
+    rc.add_argument(
+        "--checkout", required=True, help="the repository's checkout (written with --write)"
+    )
+    rc.add_argument(
+        "--concept", help="the concept Zenodo returned (default: a record linking a release tag)"
+    )
+    rc.add_argument(
+        "--write", action="store_true", help="write a missing zenodo_concept or CITATION.cff doi"
+    )
+    rc.add_argument("--sandbox", action="store_true", help=argparse.SUPPRESS)
+    rc.add_argument("--api", help=argparse.SUPPRESS)
     f = sub.add_parser("fake-zenodo")
     f.add_argument("--port-file", required=True)
     args = p.parse_args(argv)
@@ -903,6 +1042,7 @@ def main(argv=None):
         "sync": cmd_sync,
         "create": cmd_create,
         "publish-release": cmd_publish_release,
+        "record": cmd_record,
     }
     cmds[args.cmd](args, gh, zen, now)
     return 0
@@ -1646,6 +1786,189 @@ def self_test():
     check(
         "push: sandbox makes its own concept",
         err is None and got["state"] == "new concept" and got["concept"] == "500",
+    )
+    check(
+        "push: the concept to GITHUB_OUTPUT",
+        "concept=" not in open(summary).read(),  # the summary keeps its table only
+    )
+    outp = os.path.join(tmp, "output")
+    os.environ["GITHUB_OUTPUT"] = outp
+    try:
+        st.reset()
+        got, err, out = push(FakeGitHub(rel, NEW))
+    finally:
+        os.environ.pop("GITHUB_OUTPUT")
+    with open(outp) as fh:
+        check(
+            "push: concept and DOIs in the step output",
+            fh.read() == "concept=500\nconceptdoi=10.0/z.500\ndoi=10.0/z.200\n"
+            and "org-bot's `zenodo` task" in out,
+        )
+
+    # record (#232 item 5): the checkout's CITATION.cff, zenodo_concept and README badge
+    TOML = (
+        'kind = "data"\ntitle = "R"\ncitation = true\n\n[[references]]\ndoi = "10.5281/zenodo.7"\n'
+    )
+    CFF0 = NEW + 'repository-code: "https://github.com/org/R"\nurl: "https://github.com/org/R"\n'
+    CFF0 += 'references:\n  - type: software\n    doi: "10.5281/zenodo.7"\n'
+
+    class Repo(Checkout):
+        def __init__(self, root, releases):
+            super().__init__(root)
+            self.rel = releases
+
+        def releases(self, repo):
+            return sorted(self.rel, key=lambda r: r["published"])
+
+    def repo_dir(cff=CFF0, toml=TOML, readme="# R\n"):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, ".github"))
+        for name, text in (
+            ("CITATION.cff", cff),
+            (".github/org-sync.toml", toml),
+            ("README.md", readme),
+        ):
+            if text is not None:
+                with open(os.path.join(d, name), "w") as fh:
+                    fh.write(text)
+        return d
+
+    def record(d, write=True, concept=None, releases=rel):
+        ns = argparse.Namespace(repo="org/R", checkout=d, concept=concept, write=write)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                got, err = cmd_record(ns, Repo(d, releases), Zenodo(base), now), None
+            except Failure as e:
+                got, err = None, str(e)
+        return got, err, out.getvalue()
+
+    def text(d, name):
+        with open(os.path.join(d, name)) as fh:
+            return fh.read()
+
+    linked = [
+        {
+            "id": 201,
+            "conceptrecid": "500",
+            "metadata": {
+                "related_identifiers": [{"identifier": "https://github.com/org/R/tree/v1.2.0"}]
+            },
+        }
+    ]
+    # a first release made concept 500: Zenodo's record links the tag, the repo names none
+    st.reset()
+    st.search = linked
+    d = repo_dir()
+    got, err, out = record(d, write=False)
+    check(
+        "record: unrecorded, reported, nothing written",
+        err is None
+        and got == ("unrecorded", "500")
+        and text(d, "CITATION.cff") == CFF0
+        and text(d, ".github/org-sync.toml") == TOML,
+    )
+    got, err, out = record(d)
+    cff1, toml1 = text(d, "CITATION.cff"), text(d, ".github/org-sync.toml")
+    check(
+        "record: --write sets zenodo_concept and CITATION.cff's doi",
+        err is None
+        and got == ("written", "500")
+        and toml1.startswith('kind = "data"\n# the Zenodo concept record')
+        and 'zenodo_concept = "500"\ntitle = "R"' in toml1
+        and concept_from(cff1) == "500"
+        and 'url: "https://github.com/org/R"\ndoi: "10.5281/zenodo.500"\nidentifiers:\n' in cff1
+        and cff1.endswith(CFF0[CFF0.index("references:") :]),
+    )
+    try:
+        import tomllib
+
+        check(
+            "record: the toml still parses",
+            tomllib.loads(toml1)["zenodo_concept"] == "500"
+            and tomllib.loads(toml1)["references"][0]["doi"] == "10.5281/zenodo.7",
+        )
+    except ImportError:  # Python < 3.11
+        pass
+    # recorded everywhere: nothing to do; the search asks for the newest tag only
+    st.calls = []
+    got, err, out = record(d)
+    check(
+        "record: recorded is a no-op",
+        got == ("recorded", "500")
+        and text(d, "CITATION.cff") == cff1
+        and len([c for c in st.calls if c[1] == "/api/records"]) == 1,
+    )
+    # the concept the release job got back, with no search at all
+    st.reset()
+    d = repo_dir()
+    got, err, out = record(d, concept="500", write=False)
+    check(
+        "record: --concept needs no search",
+        got == ("unrecorded", "500") and st.calls == [] and "zenodo` task" in out,
+    )
+    # an empty zenodo_concept placeholder is filled in place
+    d = repo_dir(toml='kind = "data"\nzenodo_concept = ""\n')
+    got, err, out = record(d, concept="500")
+    check(
+        "record: an empty placeholder filled",
+        text(d, ".github/org-sync.toml") == 'kind = "data"\nzenodo_concept = "500"\n',
+    )
+    # one of the two recorded: the other follows it, even before Zenodo's search sees the tag
+    st.reset()
+    d = repo_dir(
+        toml=TOML.replace("citation = true\n", 'citation = true\nzenodo_concept = "500"\n')
+    )
+    got, err, out = record(d)
+    check(
+        "record: CITATION.cff follows zenodo_concept",
+        got == ("written", "500") and concept_from(text(d, "CITATION.cff")) == "500",
+    )
+    # a concept named two ways, or not the one Zenodo holds: refused, nothing written
+    st.reset()
+    st.search = linked
+    badge = "[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.42.svg)](x)\n"
+    for name, kw in (
+        ("record: a README badge of another concept refused", {"readme": badge}),
+        (
+            "record: another concept than Zenodo's refused",
+            {"cff": NEW + 'doi: "10.5281/zenodo.42"\n'},
+        ),
+        (
+            "record: two concepts in the repo refused",
+            {"cff": NEW + 'doi: "10.5281/zenodo.43"\n', "readme": badge},
+        ),
+    ):
+        d = repo_dir(**kw)
+        before = text(d, "CITATION.cff"), text(d, ".github/org-sync.toml")
+        got, err, out = record(d)
+        check(
+            name,
+            got is None
+            and err
+            and "the maintainer decides" in err
+            and "42" in err
+            and before == (text(d, "CITATION.cff"), text(d, ".github/org-sync.toml")),
+        )
+    # a non-Zenodo doi is never overwritten
+    d = repo_dir(cff=NEW + 'doi: "10.1000/other"\n')
+    got, err, out = record(d, concept="500")
+    check("record: a foreign doi refused", err and "not a Zenodo concept DOI" in err)
+    # no concept on Zenodo yet, or no CITATION.cff: nothing
+    st.reset()
+    d = repo_dir()
+    got, err, out = record(d)
+    check("record: no concept yet", got == ("none", None) and text(d, "CITATION.cff") == CFF0)
+    d = repo_dir(cff=None)
+    got, err, out = record(d)
+    check("record: no CITATION.cff", got == ("no citation", None))
+    # without org-sync.toml only CITATION.cff is written
+    d = repo_dir(toml=None)
+    got, err, out = record(d, concept="500")
+    check(
+        "record: no org-sync.toml",
+        got == ("written", "500")
+        and not os.path.exists(os.path.join(d, ".github", "org-sync.toml")),
     )
     # a local checkout's files
     with open(os.path.join(tmp, "CITATION.cff"), "w") as fh:

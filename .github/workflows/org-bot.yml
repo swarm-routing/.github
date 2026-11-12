@@ -8,7 +8,11 @@ name: org-bot
 #   profile here, regenerated from the issues;
 # - org-sync: `org_sync.py apply` in each repository with a
 #   .github/org-sync.toml, so a template change here reaches every adopting
-#   repository the same day instead of turning its check red.
+#   repository the same day instead of turning its check red;
+# - zenodo: `zenodo.py record --write` then `org_sync.py apply` in each
+#   repository with a CITATION.cff whose concept Zenodo holds but the
+#   repository does not name yet (a first release), so CITATION.cff's doi,
+#   zenodo_concept and the README DOI badge are never typed by hand (#232).
 # Daily, on every push to main that changes the templates or the generators,
 # and on demand. One PR per repository and task; the same change is never
 # proposed twice, and an older bot PR is closed as superseded. Where the
@@ -36,12 +40,13 @@ on:
       - 'tools/org-sync/**'
       - 'tools/epics/**'
       - 'tools/org-bot/**'
+      - 'tools/zenodo/**'
   workflow_dispatch:
     inputs:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync]
+        options: [all, epics, org-sync, zenodo]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
