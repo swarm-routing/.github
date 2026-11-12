@@ -83,7 +83,9 @@ AntHocNet's v2.6.1 was):
   badge and the citing section) and any README DOI badge must name that one
   concept; two different concepts are refused, for the maintainer to decide.
   One missing (a first release just made the concept) is reported, and with
-  --write it is written into the checkout: the `doi:` and `identifiers:`
+  --write it is written into the checkout, only ever with a concept Zenodo
+  confirms (never one the repository alone names; a top-level `doi:` that is
+  not a Zenodo DOI, or a `zenodo_concept` that is no record id, is refused): the `doi:` and `identifiers:`
   block where the org's CITATION.cff template puts it, and `zenodo_concept`
   as a top-level key. org-bot's `zenodo` task runs it with --write, then
   `org_sync.py apply`, and opens the PR. Reads only; it needs no token.
@@ -796,7 +798,6 @@ def cmd_publish_release(args, gh, zen, now):
     return {"state": state, **got}
 
 
-TOML_CONCEPT = re.compile(r"^[ \t]*zenodo_concept[ \t]*=[ \t]*[\"']?(\d*)[\"']?[ \t]*$", re.M)
 BADGE = re.compile(r"zenodo\.org/badge/DOI/10\.5281/zenodo\.(\d+)")
 
 
@@ -820,21 +821,39 @@ def cff_with_doi(cff, concept):
     return cff[: m.start()] + block + cff[m.start() :] if m else cff + block
 
 
+def top_concept(toml):
+    """The top-level `zenodo_concept` (never a table's) as (value, start, end) of its
+    line: value '' for an empty placeholder, None when there is none. Another
+    value is refused, so the key is never written twice."""
+    head = re.split(r"^\[", toml, maxsplit=1, flags=re.M)[0]
+    m = re.search(r"^[ \t]*zenodo_concept[ \t]*=([^\n]*)", head, re.M)
+    if not m:
+        return None, 0, 0
+    value = m.group(1).split("#", 1)[0].strip().strip("\"'")
+    if value and not value.isdigit():
+        raise Failure(
+            f".github/org-sync.toml: zenodo_concept = {m.group(1).strip()} is not a "
+            "Zenodo record id; not changed"
+        )
+    return value, m.start(), m.end()
+
+
 def toml_with_concept(toml, concept):
     """.github/org-sync.toml with `zenodo_concept` set: a top-level key, before any table."""
     line = f'zenodo_concept = "{concept}"'
-    if TOML_CONCEPT.search(toml):  # an empty placeholder
-        return TOML_CONCEPT.sub(line, toml, count=1)
+    value, start, end = top_concept(toml)
+    if value == "":  # an empty placeholder
+        return toml[:start] + line + toml[end:]
     text = (
         "# the Zenodo concept record, read from Zenodo by swarm-routing/.github "
         f"tools/zenodo/zenodo.py record (#232)\n{line}\n"
     )
-    m = re.search(r"^kind[ \t]*=.*\n", toml, re.M)
+    head = re.split(r"^\[", toml, maxsplit=1, flags=re.M)[0]
+    m = re.search(r"^kind[ \t]*=[^\n]*\n", head, re.M)
     if m:
         return toml[: m.end()] + text + toml[m.end() :]
-    m = re.search(r"^\[", toml, re.M)
-    if m:
-        return toml[: m.start()] + text + toml[m.start() :]
+    if len(head) < len(toml):
+        return head + text + toml[len(head) :]
     return (toml if toml.endswith("\n") or not toml else toml + "\n") + text
 
 
@@ -852,12 +871,13 @@ def cmd_record(args, gh, zen, now):
         print(f"{repo}: no CITATION.cff; nothing to record")
         return "no citation", None
     toml = gh.file(repo, ".github/org-sync.toml")
+    own = re.split(r"^references:", cff, maxsplit=1, flags=re.M)[0]
+    doi = re.search(r"^doi:[ \t]*([^\n]*)", own, re.M)
+    if doi and not DOI_RE.search(doi.group(1)):
+        raise Failure(f"{repo}: CITATION.cff's doi: {doi.group(1)} is not a Zenodo DOI")
     have = {"CITATION.cff doi": concept_from(cff)}
     if toml is not None:
-        m = TOML_CONCEPT.search(toml) or re.search(
-            r"^\s*zenodo_concept\s*=\s*[\"']?(\d+)", toml, re.M
-        )
-        have["zenodo_concept"] = m.group(1) if m and m.group(1) else None
+        have["zenodo_concept"] = top_concept(toml)[0] or None
     names = {k: v for k, v in have.items() if v}
     for i, b in enumerate(sorted(set(BADGE.findall(gh.file(repo, "README.md") or "")))):
         names["README badge" + (f" {i + 1}" if i else "")] = b
@@ -865,28 +885,35 @@ def cmd_record(args, gh, zen, now):
         said = ", ".join(f"{k} {v}" for k, v in names.items())
         raise Failure(f"{repo}: the concept is named two ways ({said}); the maintainer decides")
     recorded = next(iter(names.values()), None)
+    missing = [k for k, v in have.items() if not v]
     if args.concept:
         found, why = str(args.concept), "the concept Zenodo returned"
     else:
         tags = [r["tag"] for r in reversed(gh.releases(repo))]  # newest first
-        found, why = zenodo_concept_for(zen, repo, tags[:1] if recorded else tags)
+        found, why = zenodo_concept_for(zen, repo, tags if missing else tags[:1])
     if recorded and found and recorded != found:
         said = ", ".join(names)
         raise Failure(
             f"{repo}: {said} name concept {recorded}, but {why} is concept {found}; "
             "the maintainer decides"
         )
-    concept = found or recorded
-    if not concept:
+    if not missing:
+        print(f"{repo}: concept {recorded} recorded ({', '.join(have)})")
+        return "recorded", recorded
+    if not found:
+        # only a concept Zenodo confirms is written, never one the repository names alone
+        if recorded:
+            print(
+                f"{repo}: {', '.join(names)} name concept {recorded}, but no Zenodo record "
+                "links a release tag yet; nothing written"
+            )
+            return "unconfirmed", recorded
         print(f"{repo}: no concept on Zenodo yet; nothing to record")
         return "none", None
-    missing = [k for k, v in have.items() if not v]
-    if not missing:
-        print(f"{repo}: concept {concept} recorded ({', '.join(have)})")
-        return "recorded", concept
+    concept = found
     if not args.write:
         print(
-            f"{repo}: concept {concept} ({why or 'recorded'}) missing from {', '.join(missing)}: "
+            f"{repo}: concept {concept} ({why}) missing from {', '.join(missing)}: "
             "org-bot's `zenodo` task opens the PR that writes it"
         )
         return "unrecorded", concept
@@ -896,7 +923,7 @@ def cmd_record(args, gh, zen, now):
     if "zenodo_concept" in missing:
         with open(os.path.join(root, ".github", "org-sync.toml"), "w", encoding="utf-8") as fh:
             fh.write(toml_with_concept(toml, concept))
-    print(f"{repo}: concept {concept} ({why or 'recorded'}) written to {', '.join(missing)}")
+    print(f"{repo}: concept {concept} ({why}) written to {', '.join(missing)}")
     return "written", concept
 
 
@@ -1914,16 +1941,49 @@ def self_test():
         "record: an empty placeholder filled",
         text(d, ".github/org-sync.toml") == 'kind = "data"\nzenodo_concept = "500"\n',
     )
-    # one of the two recorded: the other follows it, even before Zenodo's search sees the tag
+    # one of the two recorded: the other is written only once Zenodo confirms the concept
     st.reset()
     d = repo_dir(
         toml=TOML.replace("citation = true\n", 'citation = true\nzenodo_concept = "500"\n')
     )
     got, err, out = record(d)
     check(
-        "record: CITATION.cff follows zenodo_concept",
+        "record: a concept Zenodo does not confirm is not written",
+        got == ("unconfirmed", "500") and text(d, "CITATION.cff") == CFF0,
+    )
+    st.search = linked
+    got, err, out = record(d)
+    check(
+        "record: CITATION.cff follows a confirmed zenodo_concept",
         got == ("written", "500") and concept_from(text(d, "CITATION.cff")) == "500",
     )
+    # only the top-level key counts: a table's placeholder is left, the key goes above it
+    st.reset()
+    d = repo_dir(toml='kind = "data"\n\n[settings]\nzenodo_concept = ""\n')
+    got, err, out = record(d, concept="500")
+    check(
+        "record: a table's zenodo_concept is not the top-level one",
+        got == ("written", "500")
+        and text(d, ".github/org-sync.toml").endswith(
+            'zenodo_concept = "500"\n\n[settings]\nzenodo_concept = ""\n'
+        ),
+    )
+    # a top-level value that is no record id is refused, never written twice
+    d = repo_dir(toml='kind = "data"\nzenodo_concept = "unknown"\n')
+    got, err, out = record(d, concept="500")
+    check(
+        "record: a non-numeric zenodo_concept refused",
+        err
+        and "not a Zenodo record id" in err
+        and text(d, ".github/org-sync.toml").count("zenodo_concept") == 1,
+    )
+    # a foreign top-level doi: refused even when identifiers: name the concept
+    foreign = (
+        NEW + 'doi: "10.1000/other"\nidentifiers:\n  - type: doi\n    value: "10.5281/zenodo.500"\n'
+    )
+    d = repo_dir(cff=foreign, toml='kind = "data"\nzenodo_concept = "500"\n')
+    got, err, out = record(d, concept="500", write=False)
+    check("record: a foreign doi refused before concept_from", err and "not a Zenodo DOI" in err)
     # a concept named two ways, or not the one Zenodo holds: refused, nothing written
     st.reset()
     st.search = linked
@@ -1953,7 +2013,7 @@ def self_test():
     # a non-Zenodo doi is never overwritten
     d = repo_dir(cff=NEW + 'doi: "10.1000/other"\n')
     got, err, out = record(d, concept="500")
-    check("record: a foreign doi refused", err and "not a Zenodo concept DOI" in err)
+    check("record: a foreign doi refused", err and "not a Zenodo DOI" in err)
     # no concept on Zenodo yet, or no CITATION.cff: nothing
     st.reset()
     d = repo_dir()
