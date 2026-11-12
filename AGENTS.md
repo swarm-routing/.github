@@ -295,12 +295,16 @@ because the issue threads were thorough. Caveman the chat, not the record.
   (GitHub keeps auto-merge on after a push by someone with write access); in
   a merge queue, remove the PR from the queue (disabling auto-merge does not)
   and enqueue it again only after `dco` passed.
-- Enable auto-merge only after CodeRabbit has reviewed and its threads are
-  resolved: it is not a required check, so auto-merge does not wait for it.
-  `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`
-  (a `swarm-routing/.github` checkout next to the repository) waits for the
-  review and goes on with a warning 30 minutes after the PR opened
-  (swarm-routing/.github#238).
+- `review / coderabbit` is a required check (the review gate,
+  swarm-routing/.github#294): it passes once CodeRabbit has reviewed the PR,
+  once it says it will not, for a draft, or 30 minutes after the PR opened
+  (then with one comment). So auto-merge may be enabled at once: the merge
+  waits for the gate, and the ruleset holds it while a CodeRabbit thread is
+  unresolved. Still read every thread and fix or answer it before resolving.
+  Where the gate is not required yet (`gh api
+  'repos/{owner}/{repo}/rules/branches/main'` does not list it), wait first
+  with `python3 -I ../.github/tools/pr-status/pr_status.py wait --review
+  REPO#N` (swarm-routing/.github#238).
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").

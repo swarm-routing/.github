@@ -264,8 +264,10 @@ defaults in `templates/agents/agent-defaults.md`).
   minutes after the PR opened, leaving one comment then (maintainer
   decisions on #294); in a merge group it passes at once. Where
   `review / coderabbit` is in `[settings]` `required_checks`, auto-merge and
-  the queue wait for the review by themselves, org-bot's PRs included; until
-  then the rule above still holds.
+  the queue wait for the review by themselves, org-bot's PRs included. Since
+  2026-11-12 it is required in every adopting repository (applied by
+  `repo-settings`), so there auto-merge may be enabled when the PR opens;
+  where it is not listed in the live rules yet, the rule above still holds.
 - **Only the required checks gate a merge.** They are the ones in the
   repository's `[settings]` `required_checks` (live:
   `gh api 'repos/{owner}/{repo}/rules/branches/main'`). A red or pending
