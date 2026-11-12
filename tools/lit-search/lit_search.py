@@ -6,7 +6,11 @@
   lit_search.py confirm DOI            Crossref's record, field by field (title, authors,
                                        year, venue, volume, issue, pages, type) against
                                        Semantic Scholar's and OpenAlex's; exit 1 on a
-                                       `differ` in year, venue, authors or pages
+                                       `differ` in year, venue, authors or pages. Every
+                                       Crossref container title counts as the venue (a
+                                       proceedings book and its series, as LNCS), and one
+                                       that looks like a placeholder ("... on ZZZ") is a
+                                       warning line
   lit_search.py confirm --title TEXT [--year Y]
                                        a work without a DOI (a thesis, a tech report):
                                        Crossref's and Semantic Scholar's best matches,
@@ -446,13 +450,27 @@ def _pages_same(a, b):
     return a1.strip() == b1.strip() and (not a2 or not b2 or a2.strip() == b2.strip())
 
 
+# A container title a publisher left unfinished ("Proceedings of the ... on ZZZ")
+PLACEHOLDER = re.compile(r"\b(?:Z{3,}|X{3,}|TBD|TBA|untitled|placeholder)\b|^\W*$", re.I)
+
+
+def placeholder_venues(venue):
+    """The container titles that look like a placeholder, not a venue."""
+    return [
+        v for v in (venue if isinstance(venue, list) else [venue]) if v and PLACEHOLDER.search(v)
+    ]
+
+
 def fields_crossref(m):
     fams = [a.get("family") or a.get("name") or "" for a in m.get("author", [])]
+    venues = [" ".join(t.split()) for t in m.get("container-title") or [] if t]
     return {
         "title": " ".join(((m.get("title") or [""])[0]).split()),
         "authors": fams,
         "year": _cr_year(m),
-        "venue": (m.get("container-title") or [None])[0],
+        # every container title: a chapter's book and its series ("Parallel Problem Solving
+        # from Nature - PPSN VIII" and "Lecture Notes in Computer Science") are both venues
+        "venue": venues if len(venues) > 1 else (venues or [None])[0],
         "volume": m.get("volume"),
         "issue": m.get("issue"),
         "pages": m.get("page"),
@@ -501,7 +519,9 @@ def agrees(field, ref, other):
     if field == "authors":
         return _authors_same(ref, other)
     if field == "venue":
-        return any(same_venue(ref, v) for v in (other if isinstance(other, list) else [other]))
+        refs = ref if isinstance(ref, list) else [ref]
+        others = other if isinstance(other, list) else [other]
+        return any(same_venue(r, v) for r in refs for v in others)
     if field == "pages":
         return _pages_same(ref, other)
     if field == "type":
@@ -585,6 +605,11 @@ def confirm_doi(doi):
         else:
             verdict = "neither"
         out.append(f"  {field:8} {verdict:22} " + " | ".join(cells))
+    for v in placeholder_venues(ref.get("venue")):
+        out.append(
+            f"  warning: Crossref's venue {v!r} looks like a placeholder, not a venue; take "
+            "the venue from the publisher's page"
+        )
     if bad:
         out.append(
             f"confirm: {', '.join(differ)} differ; resolve {', '.join(bad)} with the "
@@ -989,6 +1014,47 @@ def _fixtures():
     s2_bad["journal"] = dict(s2_seed["journal"], pages="445-455")
     cr_bad = {"message": dict(cr_seed["message"], DOI="10.1000/bad.2")}
     oa_bad = dict(oa_seed, doi="https://doi.org/10.1000/bad.2")
+    # a proceedings chapter: Crossref names the book and its series, Semantic Scholar the
+    # book, OpenAlex the series; and one whose Crossref container title is a placeholder
+    cr_ch = {
+        "message": dict(
+            cr_seed["message"],
+            DOI="10.1000/ch.3",
+            type="book-chapter",
+            volume=None,
+            issue=None,
+            page="461-470",
+            **{
+                "container-title": [
+                    "Lecture Notes in Computer Science",
+                    "Parallel Problem Solving from Nature - PPSN VIII",
+                ]
+            },
+        )
+    }
+    s2_ch = dict(
+        s2_seed,
+        externalIds={"DOI": "10.1000/ch.3"},
+        venue="Parallel Problem Solving from Nature",
+        journal={"pages": "461-470"},
+        publicationTypes=["BookSection"],
+    )
+    oa_ch = dict(
+        oa_seed,
+        doi="https://doi.org/10.1000/ch.3",
+        type="book-chapter",
+        primary_location={"source": {"display_name": "Lecture notes in computer science"}},
+        biblio={"first_page": "461", "last_page": "470"},
+    )
+    cr_ph = {
+        "message": dict(
+            cr_seed["message"],
+            DOI="10.1000/ph.4",
+            **{"container-title": ["Proceedings of the 2nd ACM international workshop on ZZZ"]},
+        )
+    }
+    s2_ph = dict(s2_seed, externalIds={"DOI": "10.1000/ph.4"})
+    oa_ph = dict(oa_seed, doi="https://doi.org/10.1000/ph.4")
 
     def s2w(pid, year, title, doi=None, cited=0, venue="Ad Hoc Networks", status="CLOSED", ab=None):
         return {
@@ -1073,6 +1139,12 @@ def _fixtures():
         "s2:DOI:10.1000/bad.2": s2_bad,
         "openalex:10.1000/seed.1": oa_seed,
         "openalex:10.1000/bad.2": oa_bad,
+        "crossref:10.1000/ch.3": cr_ch,
+        "s2:DOI:10.1000/ch.3": s2_ch,
+        "openalex:10.1000/ch.3": oa_ch,
+        "crossref:10.1000/ph.4": cr_ph,
+        "s2:DOI:10.1000/ph.4": s2_ph,
+        "openalex:10.1000/ph.4": oa_ph,
         "oc:citations": oc_citations,
         "oc:references": oc_refs,
         "s2:batch:citing": batch,
@@ -1191,6 +1263,38 @@ def _self_test():
         expect(
             "confirm differ: says what to do",
             "resolve year, pages with the publisher's page" in out,
+        )
+
+        # confirm DOI: a chapter's book title and series both count as its venue
+        out, code = go("confirm", "10.1000/ch.3")
+        expect("confirm chapter: exit 0", code == 0)
+        expect(
+            "confirm chapter: book and series agree",
+            re.search(
+                r"venue +agree +Crossref: Lecture Notes in Computer Science / Parallel Problem "
+                r"Solving from Nature - PPSN VIII \| Semantic Scholar: Parallel Problem Solving "
+                r"from Nature \| OpenAlex: Lecture notes in computer science\n",
+                out,
+            )
+            is not None,
+        )
+        expect("confirm chapter: no warning", "warning" not in out)
+        expect("confirm chapter: summary", out.endswith("confirm: no field differs"))
+
+        # confirm DOI: a placeholder container title is a warning line, then the verdict
+        out, code = go("confirm", "10.1000/ph.4")
+        expect("confirm placeholder: venue differs, exit 1", code == 1)
+        expect(
+            "confirm placeholder: warned",
+            "  warning: Crossref's venue 'Proceedings of the 2nd ACM international workshop on "
+            "ZZZ' looks like a placeholder, not a venue; take the venue from the publisher's "
+            "page\n" in out,
+        )
+        expect(
+            "confirm placeholder: only that title",
+            placeholder_venues(["Lecture Notes in Computer Science", "on ZZZ"]) == ["on ZZZ"]
+            and placeholder_venues("Ad Hoc Networks") == []
+            and placeholder_venues(None) == [],
         )
 
         # confirm DOI: Semantic Scholar rate-limited and OpenAlex down: unavailable, not fatal
