@@ -65,6 +65,11 @@ because the issue threads were thorough. Caveman the chat, not the record.
   triaged, not waited on. A red `dco` on an outside contributor's commit
   still holds the PR until that author signs off; on the maintainer's or an
   agent's commits it is expected (swarm-routing/.github#212).
+- Enable auto-merge only after CodeRabbit has reviewed and its threads are
+  resolved: it is not a required check, so auto-merge does not wait for it.
+  `pr_status.py wait --review REPO#N` (swarm-routing/.github `tools/pr-status/`)
+  waits for the review and goes on with a warning after 30 minutes
+  (swarm-routing/.github#238).
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").
