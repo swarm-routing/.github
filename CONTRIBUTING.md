@@ -339,7 +339,7 @@ runs until their secret is set, and the secrets belong to the maintainer:
 
 | Workflow | What it does | Secret |
 |---|---|---|
-| `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted. The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write |
+| `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted, or when Zenodo holds a concept its CITATION.cff and `zenodo_concept` do not name yet (task `zenodo`, #232). The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer (where `release_environment = false`, an existing `release` environment's reviewers and wait timer are removed instead). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
@@ -549,6 +549,22 @@ time:
    -f repo=<repo> -f tag=<tag>` (a dry run first with `-f dry-run=true`;
    "When Zenodo fails a release", below).
 
+**After the upload** (#232). The job writes the concept to its outputs
+(`zenodo-concept`, `zenodo-doi`) and checks the release commit against it with
+`zenodo.py record`: the `doi:` of `CITATION.cff`, `zenodo_concept` in
+`.github/org-sync.toml` (which renders the README's DOI badge and citing
+section) and any DOI badge in the README must all name the concept Zenodo
+returned. A missing one, as after a first release, which makes the concept,
+is a notice: org-bot's `zenodo` task (daily, or dispatch `org-bot` with task
+`zenodo` and the repository) runs `zenodo.py record --write`, which writes
+`zenodo_concept` and the `doi:` and `identifiers:` lines of CITATION.cff from
+the Zenodo record that links the release tag, then `org_sync.py apply` for the
+badge and the citing section, and opens the PR; nobody types the DOI. A
+different concept fails the job (the release and the archive stand) and fails
+org-bot's run for that repository, until the maintainer decides which is
+right. The task only reads Zenodo, and also covers a repository still on the
+integration.
+
 `zenodo-sandbox: true` sends the same upload to sandbox.zenodo.org (with a
 sandbox token as `ZENODO_TOKEN`), to prove the path before a real release.
 `release-selftest.yml` runs the command on its dry run's assets against a
@@ -575,9 +591,9 @@ as in AntHocNet's, the whole work's licence (GPL-2.0-only unless the whole
 repository is dual: a CFF list reads as a choice), the repository URL and the
 version in the repo's `.cz.toml`; add `"CITATION.cff:^version:"` to its
 `version_files` so each bump keeps it current. The concept exists only after
-the first release is archived: read its id from Zenodo, set `zenodo_concept`,
-then `org_sync.py reseed CITATION.cff` (or add `doi:` by hand) so the daily
-check here covers the repository.
+the first release is archived; org-bot's `zenodo` task then opens the PR that
+sets `zenodo_concept` and CITATION.cff's `doi:` from Zenodo's record (above),
+so the daily check here covers the repository.
 
 A repository is cited as AntHocNet is. `citation = true` also manages the
 README's **Releases & citing** section (`<!-- org-sync:begin citing -->`):
@@ -617,8 +633,8 @@ workflow with mode `create`, the repository and the tag (`zenodo.py create
 --repo OWNER/NAME --tag vX.Y.Z --publish`; a dry run first, with `dry-run`).
 It archives the tag as the first version of a new concept, with its
 CITATION.cff metadata (a dataset stays a dataset), refuses when the repository
-already has a concept, and prints the concept and version DOIs; then set
-`zenodo_concept` and reseed CITATION.cff. The daily `zenodo` run lists every
+already has a concept, and prints the concept and version DOIs; org-bot's
+`zenodo` task then records the concept (above). The daily `zenodo` run lists every
 released repository without a concept (`zenodo.py orphans`) and opens an issue
 once its first release is past the 12-hour grace period (#226).
 

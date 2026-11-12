@@ -4,10 +4,10 @@
 """Open the refresh PRs that keep every org repository in step with this one.
 
 Usage:
-  org_bot.py run [--task epics|org-sync|all] [--repos A,B] [--dry-run]
+  org_bot.py run [--task epics|org-sync|zenodo|all] [--repos A,B] [--dry-run]
   org_bot.py --self-test
 
-Two tasks, each a generator this repository already has, run on a fresh clone
+Three tasks, each a generator this repository already has, run on a fresh clone
 of each public repository (listed by `epics.py fetch`: the org listing, or
 ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
@@ -18,6 +18,14 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             (`org_sync.py conflicts`) are never forced; the PR lists them,
             and the seeds that differ from today's render (`org_sync.py
             seeds`), for information: the bot never changes a seed.
+  zenodo    tools/zenodo/zenodo.py record --write, in each repository with a
+            CITATION.cff: when Zenodo holds a concept for its releases (a
+            record linking the newest tag) and CITATION.cff's `doi:` or
+            org-sync's `zenodo_concept` does not name it yet (a first
+            release made it), it writes them, then `org_sync.py apply`
+            renders the README DOI badge and the citing section, so no DOI
+            is typed by hand (#232). A concept named two ways fails that
+            repository, for the maintainer. Zenodo is only read.
 
 When a run changes files, the bot opens one PR per repository and task:
 - the branch is `org-bot/<task>-<hash of the change>`;
@@ -65,6 +73,7 @@ import urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EPICS = os.path.join(ROOT, "tools", "epics", "epics.py")
 ORG_SYNC = os.path.join(ROOT, "tools", "org-sync", "org_sync.py")
+ZENODO = os.path.join(ROOT, "tools", "zenodo", "zenodo.py")
 ORG = "swarm-routing"
 BOT = ("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
 AUTO_MERGE = (
@@ -84,6 +93,14 @@ TASKS = {
         "what": "The org-managed files drifted from swarm-routing/.github `templates/`. "
         "Rendered with `tools/org-sync/org_sync.py apply`, which never overwrites a "
         "section this repository owns.",
+    },
+    "zenodo": {
+        "title": "docs: record the zenodo concept doi (org-bot)",
+        "what": "Zenodo holds a concept for this repository's releases that CITATION.cff "
+        "or `.github/org-sync.toml` does not name yet. Written by swarm-routing/.github "
+        "`tools/zenodo/zenodo.py record --write` from the record Zenodo returned (never "
+        "typed), then `tools/org-sync/org_sync.py apply` rendered the README DOI badge; "
+        "the apply also carries any other template drift of this repository.",
     },
 }
 
@@ -192,6 +209,21 @@ def generate(task, repo, clone, data, out):
                     data,
                 ],
             ]
+    elif task == "zenodo":
+        if not os.path.exists(os.path.join(clone, "CITATION.cff")):
+            return None
+        r = sh(
+            [sys.executable, "-I", ZENODO, "record", "--repo", f"{ORG}/{repo}"]
+            + ["--checkout", clone, "--write"],
+            check=False,
+        )
+        if r.returncode:
+            raise Failure(f"zenodo.py record: {r.stderr.strip() or r.stdout.strip()}")
+        out.append(r.stdout.strip())
+        changed = sh(["git", "-C", clone, "status", "--porcelain"]).stdout.strip()
+        if not changed or not os.path.exists(os.path.join(clone, ".github", "org-sync.toml")):
+            return out
+        cmds = [[sys.executable, "-I", ORG_SYNC, "apply", clone]]  # the badge, the citing section
     else:
         if not os.path.exists(os.path.join(clone, ".github", "org-sync.toml")):
             return None
@@ -200,8 +232,8 @@ def generate(task, repo, clone, data, out):
     for c in cmds:
         # org_sync.py apply exits 1 when sections the repository owns differ (it
         # leaves them and lists them on stdout); only a crash writes to stderr.
-        r = sh(c, check=task != "org-sync")
-        if task == "org-sync" and apply_failed(r.returncode, r.stderr):
+        r = sh(c, check=task == "epics")
+        if task != "epics" and apply_failed(r.returncode, r.stderr):
             raise Failure(f"org_sync.py apply: {r.stderr.strip() or r.stdout.strip()}")
         out.append(r.stdout.strip())
     if task == "org-sync":
@@ -332,7 +364,7 @@ def run(args, gh=None, clone_url=None):
         print("org-bot: ORG_BOT_TOKEN is not set; dry run")
     gh = gh or GitHub(token)
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
-    tasks = ["epics", "org-sync"] if args.task == "all" else [args.task]
+    tasks = ["epics", "org-sync", "zenodo"] if args.task == "all" else [args.task]
     run_url = ""
     if os.environ.get("GITHUB_RUN_ID"):
         run_url = (
@@ -399,7 +431,7 @@ def main(argv=None):
     p.add_argument("--self-test", action="store_true")
     sub = p.add_subparsers(dest="cmd")
     r = sub.add_parser("run")
-    r.add_argument("--task", choices=["epics", "org-sync", "all"], default="all")
+    r.add_argument("--task", choices=["epics", "org-sync", "zenodo", "all"], default="all")
     r.add_argument("--repos", default="", help="comma-separated names (default: every public repo)")
     r.add_argument("--data", default="", help="saved `epics.py fetch` output instead of the API")
     r.add_argument("--dry-run", action="store_true")
@@ -854,6 +886,76 @@ def self_test():
         "org-sync notes list differing seeds, unchanged",
         any("differs   SECURITY.md (2 lines)" in n for n in notes) and before == after,
     )
+    # zenodo (#232): record writes the concept Zenodo holds, apply renders the badge; a
+    # repository without CITATION.cff is skipped, and a refused record fails that repository
+    src = os.path.join(work, "src", "gamma")
+    os.makedirs(src)
+    sh(["git", "init", "-q", "-b", "main", src], env=env)
+    sh([sys.executable, "-I", ORG_SYNC, "init", src, "--kind", "data", "--title", "gamma"])
+    cfg = os.path.join(src, ".github", "org-sync.toml")
+    with open(cfg) as fh:
+        text = fh.read()
+    with open(cfg, "w") as fh:
+        fh.write(text.replace('kind = "data"\n', 'kind = "data"\ncitation = true\n'))
+    sh([sys.executable, "-I", ORG_SYNC, "apply", src], check=False)
+    sh(["git", "-C", src, "add", "-A"], env=env)
+    sh(["git", "-C", src, "commit", "-q", "-m", "init"], env=env)
+    sh(["git", "clone", "-q", "--bare", src, os.path.join(remotes, ORG, "gamma.git")], env=env)
+    zdata = os.path.join(work, "zdata.json")
+    with open(zdata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": n, "epics": []} for n in ("alpha", "gamma")]}, fh)
+    records = []
+
+    def zenodo_sh(answer):
+        def fake(cmd, cwd=None, env=None, check=True):
+            if len(cmd) > 3 and cmd[2] == ZENODO:
+                records.append(cmd)
+                clone = cmd[cmd.index("--checkout") + 1]
+                if answer:
+                    return subprocess.CompletedProcess(cmd, 1, "", answer)
+                p = os.path.join(clone, ".github", "org-sync.toml")
+                with open(p) as fh:
+                    t = fh.read()
+                with open(p, "w") as fh:
+                    fh.write(
+                        t.replace('kind = "data"\n', 'kind = "data"\nzenodo_concept = "500"\n')
+                    )
+                with open(os.path.join(clone, "CITATION.cff"), "a") as fh:
+                    fh.write('doi: "10.5281/zenodo.500"\n')
+                return subprocess.CompletedProcess(cmd, 0, "R: concept 500 written", "")
+            return real_sh(cmd, cwd=cwd, env=env, check=check)
+
+        return fake
+
+    globals()["sh"] = zenodo_sh("")
+    try:
+        gh = FakeGitHub()
+        res, out = go(gh, task="zenodo", data=zdata)
+    finally:
+        globals()["sh"] = real_sh
+    zbranch = res[0][2]["branch"] if res else ""
+    git_dir = os.path.join(remotes, ORG, "gamma.git")
+    readme = sh(["git", "--git-dir", git_dir, "show", f"{zbranch}:README.md"], check=False).stdout
+    post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    check(
+        "zenodo: record, then apply renders the badge, one PR",
+        [r[0] for r in res] == ["gamma"]
+        and len(records) == 1
+        and records[0][-5:] == ["--repo", f"{ORG}/gamma", "--checkout", records[0][-2], "--write"]
+        and "zenodo.org/badge/DOI/10.5281/zenodo.500.svg" in readme
+        and post
+        and post[0][2]["title"] == "docs: record the zenodo concept doi (org-bot)"
+        and "concept 500 written" in post[0][2]["body"],
+    )
+    globals()["sh"] = zenodo_sh("org/gamma: the concept is named two ways")
+    try:
+        go(FakeGitHub(), task="zenodo", data=zdata)
+        refused = None
+    except Failure as e:
+        refused = str(e)
+    finally:
+        globals()["sh"] = real_sh
+    check("zenodo: a refused record fails the repository", refused and "gamma" in refused)
     # org_sync.py apply: exit 1 with only stdout is owned sections left alone; anything else fails
     check(
         "apply exit codes",
