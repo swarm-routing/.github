@@ -25,7 +25,11 @@ name: org-sync check (reusable)
 # comment lines (stray text is checked, and fails): the seed org-sync places is
 # a header alone, and checking it would fail a protocol repository
 # whose fidelity sheet predates the bib, so a repository is checked from the
-# PR that fills its bibliography on.
+# PR that fills its bibliography on. When the bib has an entry (an `@` line)
+# and CITATION.cff exists, the same step also runs `org_sync.py citation-refs
+# --check`: CITATION.cff's `references:` must be the bib's render, with or
+# without `citation = true` (CITATION.cff is a seed, so nothing else keeps it
+# in step with the bib).
 # A public contract (AGENTS.md rule 10): inputs are only ever added.
 on:
   workflow_call:
@@ -87,5 +91,14 @@ jobs:
           fi
           python3 -I org/tools/fidelity/fidelity.py bib check repo || {
             echo "::error::docs/references.bib breaks a references rule (swarm-routing/.github CONTRIBUTING \"References\"). Run locally: python3 -I tools/fidelity/fidelity.py bib check REPO"
+            exit 1
+          }
+          # CITATION.cff references: from the bib, once the bib has an entry
+          if [ ! -f repo/CITATION.cff ] || ! grep -Eq '^[[:space:]]*@' "$bib"; then
+            echo "no CITATION.cff, or no entry in docs/references.bib: citation-refs check skipped"
+            exit 0
+          fi
+          python3 -I org/tools/org-sync/org_sync.py citation-refs repo --check || {
+            echo "::error::CITATION.cff references: are not the render of docs/references.bib (swarm-routing/.github CONTRIBUTING \"References\"). Run locally: python3 -I tools/org-sync/org_sync.py citation-refs REPO (in a swarm-routing/.github checkout), and commit CITATION.cff"
             exit 1
           }

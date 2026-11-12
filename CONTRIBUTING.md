@@ -705,15 +705,26 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   CITATION.cff's `references:` and the README's Releases & citing list from its
   `implemented`, `tool` and `dataset` entries (an entry's `note` is its role
   line), in place of `[[references]]`, which it then reports as redundant: remove
-  it in the same PR. A fidelity sheet's Sources table is `fidelity.py bib
+  it in the same PR. An `@incollection` whose `booktitle` names proceedings, a
+  conference, workshop or symposium, or whose `series` is a proceedings series
+  (Lecture Notes in Computer Science: Crossref registers each LNCS paper as a
+  book chapter), is a CFF `conference-paper` with `collection-type:
+  proceedings`; any other stays `book` (#331). CITATION.cff is a seed, so a bib
+  change reaches it through `python3 -I tools/org-sync/org_sync.py
+  citation-refs REPO`, which rewrites only its `references:` block and leaves
+  every other byte (`--check` reports drift and changes nothing); it works with
+  or without `citation = true`, so a repository whose CITATION.cff is its own
+  (AntHocNet) uses it too. A fidelity sheet's Sources table is `fidelity.py bib
   sources`'s, between its `fidelity:sources` markers.
 - **Checked in CI.** `fidelity.py bib check` runs in the `org-sync` check
   (`reusable-org-sync-check.yml`) once `docs/references.bib` holds more than
   `%` comments (an entry, or text that is not one, which fails): the
   keys a sheet cites, the roles, a DOI or url per entry, the doi.org links, the
-  repository's own DOI and any public line about where papers are kept. The
-  seed alone is not checked, so a repository turns it on with the PR that fills
-  it.
+  repository's own DOI and any public line about where papers are kept. Once
+  the bib has an entry and CITATION.cff exists, the same step runs
+  `org_sync.py citation-refs --check`: CITATION.cff's `references:` that is not
+  the bib's render fails it. The seed alone is not checked, so a repository
+  turns it on with the PR that fills it.
 
 ### Archived releases
 

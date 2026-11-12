@@ -5,6 +5,7 @@
 
 Usage: org_sync.py {init,plan,apply,conflicts,check,seeds,settings} [REPO_DIR] [options]
        org_sync.py reseed FILE [REPO_DIR]
+       org_sync.py citation-refs [REPO_DIR] [--check]
 
 The repository describes itself in `.github/org-sync.toml` (`init` writes it).
 Each managed item is one of:
@@ -37,7 +38,17 @@ Releases & citing list come from `docs/references.bib` once it has an entry
 (its `implemented`, `tool` and `dataset` entries, read with
 tools/fidelity/bib.py), else from `[[references]]`; with both, the bib wins
 and a warning names `[[references]]` as redundant. Every repository gets the
-bib as a seed: a commented header, no entry (#308).
+bib as a seed: a commented header, no entry (#308). An @incollection whose
+booktitle names proceedings, a conference, workshop or symposium, or whose
+series is a proceedings series (Lecture Notes in Computer Science), is a CFF
+`conference-paper` (#331).
+
+`citation-refs [REPO] [--check]` rewrites only CITATION.cff's `references:`
+block from docs/references.bib, every other byte of the file as it was, for
+any repository with both files, `citation = true` or not (CITATION.cff is a
+seed, so a bib change never reaches it otherwise); `--check` changes nothing
+and exits 1 on drift. Without CITATION.cff, or with a bib that has no entry,
+it does nothing (exit 0). It reads no `.github/org-sync.toml`.
 
 Issue forms (`forms = true`): a repository with its own
 `.github/ISSUE_TEMPLATE/` loses the org's default forms, so it keeps a copy.
@@ -315,6 +326,26 @@ BIB_TYPES = {
     "software": ("software", None),
     "misc": ("generic", None),
 }
+# an @incollection that is a conference paper (Crossref types every LNCS paper as a
+# `book-chapter`, so `fidelity.py bib entry` writes @incollection): its booktitle names
+# proceedings, a conference, workshop or symposium, or its series is a proceedings
+# series; it renders as a conference-paper in proceedings (#331), any other stays a book
+PROCEEDINGS_BOOK = re.compile(r"proceedings|conference|workshop|symposium", re.I)
+PROCEEDINGS_SERIES = re.compile(
+    r"lecture\s+notes|\bLNCS\b|\bLNICST\b|communications\s+in\s+computer", re.I
+)
+
+
+def bib_kind(entry):
+    """The CFF type and venue field of a bib entry."""
+    kind, venue = BIB_TYPES[entry["type"]]
+    f = entry["fields"]
+    if entry["type"] == "incollection" and (
+        PROCEEDINGS_BOOK.search(bib.plain(f.get("booktitle", "")))
+        or PROCEEDINGS_SERIES.search(bib.plain(f.get("series", "")))
+    ):
+        kind = "conference-paper"
+    return kind, venue
 
 
 def bib_references(repo_dir):
@@ -343,7 +374,7 @@ def bib_references(repo_dir):
         year = bib.plain(f["year"])
         if not year.isdigit():
             sys.exit(f"{where}: year is a number")
-        kind, venue = BIB_TYPES[e["type"]]
+        kind, venue = bib_kind(e)
         if kind == "generic" and role == "dataset":
             kind = "data"
         r = {
@@ -1591,6 +1622,77 @@ def cmd_reseed(a):
     return 0
 
 
+CITATION = "CITATION.cff"
+
+
+def references_block(text):
+    """(start, end) of CITATION.cff's top-level `references:` block (its key line,
+    then every indented, list or blank line up to the next top-level key or
+    comment; trailing blank lines stay outside), or None."""
+    m = re.search(r"^references:[ \t]*(?:#.*)?$", text, re.M)
+    if not m:
+        return None
+    end = pos = m.end() + 1 if m.end() < len(text) else len(text)
+    while pos < len(text):
+        nl = text.find("\n", pos)
+        nxt = len(text) if nl < 0 else nl + 1
+        line = text[pos:nxt]
+        if line.strip() and line[0] not in " \t-":
+            break
+        if line.strip():
+            end = nxt
+        pos = nxt
+    return m.start(), end
+
+
+def citation_refs(repo_dir):
+    """(new CITATION.cff text or None when nothing applies, why): CITATION.cff with
+    only its `references:` block rendered from docs/references.bib."""
+    path = os.path.join(repo_dir, CITATION)
+    root = os.path.realpath(repo_dir)
+    if os.path.commonpath([root, os.path.realpath(path)]) != root:
+        sys.exit(f"org-sync: {CITATION} resolves outside the repository; not touched")
+    cur = read(path)
+    if cur is None:
+        return None, f"no {CITATION}: nothing to render"
+    refs = bib_references(repo_dir)
+    if refs is None:
+        return None, f"{BIB} is absent or has no entry: {CITATION} left as it is"
+    block = cff_references(refs)
+    span = references_block(cur)
+    if span:
+        return cur[: span[0]] + block + cur[span[1] :], None
+    if not block:
+        return cur, None
+    return cur + ("" if cur.endswith("\n") or not cur else "\n") + block, None
+
+
+def cmd_citation_refs(a):
+    new, why = citation_refs(a.repo)
+    if new is None:
+        print(f"org-sync citation-refs: {why}")
+        return 0
+    cur = read(os.path.join(a.repo, CITATION))
+    if new == cur:
+        print(f"org-sync citation-refs: {CITATION} references: up to date with {BIB}")
+        return 0
+    if a.check:
+        sys.stdout.writelines(
+            line + "\n"
+            for line in difflib.unified_diff(
+                cur.splitlines(), new.splitlines(), CITATION, f"{BIB} render", lineterm="", n=1
+            )
+        )
+        print(
+            f"org-sync citation-refs: {CITATION} references: drifted from {BIB}; "
+            "run `org_sync.py citation-refs REPO` and commit the result"
+        )
+        return 1
+    write(a.repo, CITATION, new)
+    print(f"org-sync citation-refs: {CITATION} references: rewritten from {BIB}")
+    return 0
+
+
 def cmd_settings(a):
     cfg = load_config(a.repo)
     repo = cfg["repo"]
@@ -1629,7 +1731,17 @@ def cmd_settings(a):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="org_sync.py", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "plan", "apply", "conflicts", "check", "seeds", "reseed", "settings"):
+    for name in (
+        "init",
+        "plan",
+        "apply",
+        "conflicts",
+        "check",
+        "seeds",
+        "reseed",
+        "settings",
+        "citation-refs",
+    ):
         s = sub.add_parser(name)
         if name == "reseed":
             s.add_argument("file", help="the seed to re-render, as `seeds` prints it")
@@ -1651,6 +1763,12 @@ def main(argv=None):
                 "--dual",
                 nargs="*",
                 help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)",
+            )
+        if name == "citation-refs":
+            s.add_argument(
+                "--check",
+                action="store_true",
+                help="change nothing; exit 1 when the references: block is not the bib's",
             )
         if name == "check":
             s.add_argument(
@@ -1679,7 +1797,7 @@ def main(argv=None):
             )
     a = p.parse_args(argv)
     try:
-        return globals()[f"cmd_{a.cmd}"](a)
+        return globals()[f"cmd_{a.cmd.replace('-', '_')}"](a)
     except SettingsOnly:
         if getattr(a, "json", False):
             print(SETTINGS_ONLY_JSON[a.cmd])
