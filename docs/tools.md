@@ -33,7 +33,7 @@ tools/release/fixture/         the release self-test's caller: the minimal Commi
 tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
 tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy (incl. fork-PR approval) and `release` environment as code: `plan`/`check` (read-only diff), `apply` (only the differences)
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
-templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
+templates/                      what org-sync renders: AGENTS.md org sections (incl. Agent skills, agent defaults), CLAUDE.md, README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 CITATION.cff and the README's Releases & citing section (`citation = true`, `[[references]]`),
                                 the org-sync, dco and Scorecard workflows, the marketplace keys of .claude/settings.json,

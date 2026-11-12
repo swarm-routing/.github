@@ -361,8 +361,8 @@ PRs too passes `full-check-on-pr: true`.
 
 **A change to an org-managed section is a template change here, never a hand
 edit in each repository** (#236). Text between `org-sync:begin/end` markers
-(the AGENTS.md and CLAUDE.md org sections, the README badges, the CodeRabbit
-head and tail, …) and the other managed (non-seed) items come from
+(the AGENTS.md org sections, the README badges, the CodeRabbit head and
+tail, …) and the other managed (non-seed) items come from
 `templates/`. To change them across the org, open one PR here that edits the
 template; after it merges, org-bot opens each adopting repository's
 `bot/org-sync` refresh PR (`org_sync.py apply`), which is the only PR that
@@ -899,7 +899,10 @@ also fills the CII Best Practices questionnaire is decided per repo on #23.
 
 ## AI agents
 
-Every repo carries a `CLAUDE.md` (imports `AGENTS.md`; working defaults,
-response style, handoffs as issues) and an `AGENTS.md` (what the repo is,
-build & verify, golden rules, conventions, where to look), in the shape of
-AntHocNet's. Change a convention here and in each repo's `AGENTS.md` together.
+Every repo carries an `AGENTS.md` (what the repo is, build & verify, golden
+rules, conventions, the org's working defaults, session habits, response style
+and agent pitfalls, where to look), in the shape of AntHocNet's, and a
+`CLAUDE.md` that is the single line `@AGENTS.md` and nothing else (#277): Claude
+Code reads `CLAUDE.md`, every other agent reads `AGENTS.md`, and each rule is
+written once. `CLAUDE.md` is an org-managed file, so text added to it is drift;
+anything a repository wants an agent to know goes in its `AGENTS.md`. Change a convention here and in each repo's `AGENTS.md` together.
