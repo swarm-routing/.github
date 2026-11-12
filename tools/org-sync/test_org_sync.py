@@ -584,6 +584,20 @@ if yaml:
         and yaml.safe_load(cff2)["keywords"] == ["ants"],
         "citation-refs: the result parses as YAML, the keys after it intact",
     )
+inner = 'references:\n  - type: book\n    title: "Old A"\n# between items\n  - type: book\n    title: "Old B"\n\n'
+write(os.path.join(cr, "CITATION.cff"), HEAD + inner + TAIL)
+run("citation-refs", cr)
+check(
+    read(os.path.join(cr, "CITATION.cff")) == HEAD + block + "\n" + TAIL,
+    "citation-refs: a comment between items is inside the block, the one before a key outside",
+)
+for flow in ("references: []\n", 'references: [{type: book, title: "x"}]\n'):
+    write(os.path.join(cr, "CITATION.cff"), HEAD + flow + TAIL)
+    run("citation-refs", cr)
+    check(
+        read(os.path.join(cr, "CITATION.cff")) == HEAD + block + TAIL,
+        f"citation-refs: a one-line flow value is replaced, not duplicated ({flow.strip()})",
+    )
 write(os.path.join(cr, "CITATION.cff"), HEAD)
 run("citation-refs", cr)
 check(

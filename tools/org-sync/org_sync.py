@@ -1626,22 +1626,23 @@ CITATION = "CITATION.cff"
 
 
 def references_block(text):
-    """(start, end) of CITATION.cff's top-level `references:` block (its key line,
-    then every indented, list or blank line up to the next top-level key or
-    comment; trailing blank lines stay outside), or None."""
-    m = re.search(r"^references:[ \t]*(?:#.*)?$", text, re.M)
+    """(start, end) of CITATION.cff's top-level `references:` block, or None: its
+    key line (a one-line flow value such as `[]` included), then every indented
+    or list line, with the blank and top-level comment lines between them; it
+    ends at the next top-level key, and trailing blank and comment lines stay
+    outside."""
+    m = re.search(r"^references:[ \t]*(?:\[.*\][ \t]*)?(?:#.*)?$", text, re.M)
     if not m:
         return None
-    end = pos = m.end() + 1 if m.end() < len(text) else len(text)
-    while pos < len(text):
-        nl = text.find("\n", pos)
-        nxt = len(text) if nl < 0 else nl + 1
-        line = text[pos:nxt]
-        if line.strip() and line[0] not in " \t-":
+    lines = text[m.end() + 1 :].splitlines(keepends=True) if m.end() < len(text) else []
+    end = pos = min(m.end() + 1, len(text))
+    for line in lines:
+        pos += len(line)
+        if not line.strip() or line.startswith("#"):
+            continue  # inside the block only when an indented or list line follows
+        if line[0] not in " \t-":
             break
-        if line.strip():
-            end = nxt
-        pos = nxt
+        end = pos
     return m.start(), end
 
 
