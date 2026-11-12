@@ -84,7 +84,10 @@ jobs:
           MINUTES: ${{ inputs.timeout-minutes }}
           FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
-          result=$(python3 -I org/tools/pr-status/pr_status.py --min-rate 50 gate "$REF" --timeout $((MINUTES * 60)) --interval 30)
+          # seconds from the input, which may be fractional (2.5 minutes is 150 s)
+          secs=$(awk -v m="$MINUTES" 'BEGIN { if (m + 0 <= 0) exit 1; printf "%d", m * 60 }') || {
+            echo "::error::timeout-minutes must be a positive number, got '$MINUTES'"; exit 1; }
+          result=$(python3 -I org/tools/pr-status/pr_status.py --min-rate 50 gate "$REF" --timeout "$secs" --interval 30)
           echo "$result"
           echo "review gate: $result" >> "$GITHUB_STEP_SUMMARY"
           case "$result" in
@@ -93,10 +96,16 @@ jobs:
               marker='<!-- review-gate: timeout -->'
               if [ "$FORK" = true ]; then
                 echo "a fork's PR: the token cannot comment; the summary records it"
-              elif ! gh api "repos/$REPO/issues/$N/comments?per_page=100" --paginate --jq '.[].body' | grep -qF "$marker"; then
+              # only this gate's own earlier notice counts (the Actions token posts as github-actions[bot])
+              elif ! posted=$(gh api "repos/$REPO/issues/$N/comments?per_page=100" --paginate \
+                    --jq '.[] | select(.user.login == "github-actions[bot]") | .body'); then
+                echo "::warning::could not read the PR's comments; the time-out is recorded in the summary only"
+              elif ! grep -qF "$marker" <<< "$posted"; then
                 body="$marker
           CodeRabbit had not reviewed this PR ${MINUTES} minutes after it opened, so the review gate passed without it (swarm-routing/.github#294). Ask for the review with \`@coderabbitai review\`; if the PR has merged, fix what it finds in a follow-up PR."
-                gh api -X POST "repos/$REPO/issues/$N/comments" -f body="$body" > /dev/null
+                # a failed post (a 502) is a warning: the gate itself has passed
+                gh api -X POST "repos/$REPO/issues/$N/comments" -f body="$body" > /dev/null \
+                  || echo "::warning::could not post the time-out comment; the summary records the time-out"
               fi
               ;;
           esac

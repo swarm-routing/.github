@@ -632,10 +632,24 @@ DECLINED = re.compile(
 )
 
 
-def coderabbit_declined(gh, repo, number):
-    """CodeRabbit's own words for not reviewing the PR, or "" (#294)."""
+def last_ready(gh, repo, number):
+    """When the PR last became ready for review ("" if never): a decline from
+    before it belongs to the draft, not to the current review attempt."""
+    times = [
+        e.get("created_at") or ""
+        for e in gh.paged(f"repos/{repo}/issues/{number}/events")
+        if e.get("event") == "ready_for_review"
+    ]
+    return max(times, default="")
+
+
+def coderabbit_declined(gh, repo, number, since=""):
+    """CodeRabbit's own words for not reviewing the PR, or "" (#294). Only a
+    comment written or edited at or after `since` (ISO time) counts."""
     for c in gh.paged(f"repos/{repo}/issues/{number}/comments"):
         if not ((c.get("user") or {}).get("login") or "").startswith("coderabbitai"):
+            continue
+        if (c.get("updated_at") or c.get("created_at") or "") < since:
             continue
         m = DECLINED.search(plain(strip_html(c.get("body") or "")))
         if m:
@@ -643,27 +657,47 @@ def coderabbit_declined(gh, repo, number):
     return ""
 
 
+def gate_poll(gh, repo, n, args, wall, elapsed):
+    """One look at the PR: (the line to print, or None to poll again; the PR's
+    age). Raises Failure when a read fails (the caller retries), LookupError
+    when the PR is missing."""
+    pr = gh.get(f"repos/{repo}/pulls/{n}")
+    if pr is None:
+        raise LookupError(f"pr_status: {short_repo(repo)}#{n} not found")
+    if pr.get("draft"):
+        return "draft: CodeRabbit does not review drafts; the gate runs again when it is ready", 0
+    if coderabbit_review(gh, repo, n, pr["head"]["sha"]) == "reviewed":
+        return "reviewed: CodeRabbit reviewed", 0
+    why = coderabbit_declined(gh, repo, n, last_ready(gh, repo, n))
+    if why:
+        return f"declined: {why}", 0
+    age = pr_age(pr, wall, elapsed)
+    if age >= args.timeout:
+        return f"timeout: no CodeRabbit review {age:.0f}s after the PR opened", age
+    return None, age
+
+
 def cmd_gate(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
-    """Wait for CodeRabbit on one PR, then print one line and exit 0 (#294)."""
+    """Wait for CodeRabbit on one PR, then print one line and exit 0 (#294).
+
+    A failed GitHub read (a 502, a rate limit) is retried at the next poll, so a
+    passing blip never turns the required check red; if reads keep failing
+    until the time-out, the gate passes as a timeout. A missing PR fails."""
     repo, n = parse_ref(args.ref)
     repo, start = full_repo(repo), clock()
     while True:
-        pr = gh.get(f"repos/{repo}/pulls/{n}")
-        if pr is None:
-            raise Failure(f"pr_status: {short_repo(repo)}#{n} not found")
-        if pr.get("draft"):
-            print("draft: CodeRabbit does not review drafts; the gate runs again when it is ready")
-            return 0
-        if coderabbit_review(gh, repo, n, pr["head"]["sha"]) == "reviewed":
-            print("reviewed: CodeRabbit reviewed")
-            return 0
-        why = coderabbit_declined(gh, repo, n)
-        if why:
-            print(f"declined: {why}")
-            return 0
-        age = pr_age(pr, wall, clock() - start)
-        if age >= args.timeout:
-            print(f"timeout: no CodeRabbit review {age:.0f}s after the PR opened")
+        elapsed = clock() - start
+        try:
+            line, age = gate_poll(gh, repo, n, args, wall, elapsed)
+        except LookupError as e:
+            raise Failure(str(e)) from None
+        except Failure as e:
+            print(f"retrying after a failed read: {e}", file=sys.stderr)
+            line, age = None, elapsed
+            if elapsed >= args.timeout:
+                line = f"timeout: GitHub reads kept failing for {elapsed:.0f}s"
+        if line:
+            print(line)
             return 0
         sleep(max(1.0, min(args.interval, args.timeout - age)))
 
@@ -1884,7 +1918,7 @@ def self_test():
                 return None, gh.slept, str(e)
 
     # gate (#294): reviewed, declined, draft, timeout, and waiting until the review lands
-    def gate(prfields, reviews, comments=(), checks=None, age=0, timeout=1800):
+    def gate(prfields, reviews, comments=(), checks=None, age=0, timeout=1800, events=()):
         data = {}
         pr = {"number": 7, "head": {"sha": "a" * 40}, "created_at": "2026-11-12T00:00:00Z"}
         pr.update(prfields)
@@ -1897,6 +1931,7 @@ def self_test():
             "check_runs": checks or []
         }
         data["repos/swarm-routing/ARA/issues/7/comments?per_page=100&page=1"] = list(comments)
+        data["repos/swarm-routing/ARA/issues/7/events?per_page=100&page=1"] = list(events)
         gh, slept = FakeGitHub(data), []
         t0 = datetime.datetime(2026, 11, 12, tzinfo=datetime.timezone.utc).timestamp()
         out = io.StringIO()
@@ -1942,12 +1977,56 @@ def self_test():
     )
     rc, out, slept = gate({}, [[]], age=1790)
     check("gate: sleeps only up to the time-out", slept and abs(slept[0] - 10.0) < 1e-9)
+    stale = dict(
+        cr_comment, body="## Review skipped\nDraft detected.", updated_at="2026-11-12T00:01:00Z"
+    )
+    ready = [{"event": "ready_for_review", "created_at": "2026-11-12T00:05:00Z"}]
+    rc, out, _ = gate({}, [[]], comments=[stale], events=ready, age=2000)
+    check("gate: a decline from before ready_for_review does not count", out.startswith("timeout"))
+    rc, out, _ = gate({}, [[]], comments=[stale])
+    check("gate: a decline with no ready_for_review after it counts", out.startswith("declined"))
     rc, out, _ = gate({"draft": True}, [[]])
     check("gate: a draft passes", out.startswith("draft:"))
     rc, out, _ = gate(
         {}, [[]], checks=[{"name": "CodeRabbit", "status": "completed", "conclusion": "skipped"}]
     )
     check("gate: CodeRabbit's completed check counts as reviewed", out.startswith("reviewed"))
+
+    class FlakyGitHub(FakeGitHub):
+        def __init__(self, data, fails):
+            super().__init__(data)
+            self.fails = fails
+
+        def get(self, path):
+            if self.fails:
+                self.fails -= 1
+                raise Failure("gh api: HTTP 502")
+            return super().get(path)
+
+    def gate_flaky(fails, timeout):
+        data = {
+            "repos/swarm-routing/ARA/pulls/7": {"number": 7, "head": {"sha": "b" * 40}},
+            "repos/swarm-routing/ARA/pulls/7/reviews?per_page=100&page=1": [CR_REVIEW],
+        }
+        slept, out, err = [], io.StringIO(), io.StringIO()
+        clock = iter(range(0, 100000, 30))
+        args = parser().parse_args(["gate", "ARA#7", "--timeout", str(timeout)])
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cmd_gate(
+                args, FlakyGitHub(data, fails), sleep=slept.append, clock=lambda: next(clock)
+            )
+        return rc, out.getvalue().strip(), len(slept)
+
+    rc, out, polls = gate_flaky(2, 1800)
+    check(
+        "gate: a failed read is retried, not a red check",
+        rc == 0 and out.startswith("reviewed") and polls == 2,
+    )
+    rc, out, _ = gate_flaky(10**6, 60)
+    check(
+        "gate: reads failing until the time-out pass as a timeout",
+        rc == 0 and out.startswith("timeout: GitHub reads kept failing"),
+    )
     gh_missing = FakeGitHub({})
     try:
         cmd_gate(parser().parse_args(["gate", "ARA#7"]), gh_missing, sleep=lambda s: None)
