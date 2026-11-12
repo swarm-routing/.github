@@ -39,7 +39,12 @@ ones, marked). `wait` polls the PRs until no check is pending, then prints
 their `list` lines; it exits 2 if `--timeout` passes first. At the timeout a
 PR missing a required check is reported `ci=fail` only when nothing else is
 pending on its head; while other checks still run it stays `ci=pending`
-(#319). With
+(#319). `wait --merged` instead polls until each PR has merged, or stops
+at the first that needs a hand: closed unmerged, an unresolved review
+thread, a failed required check, auto-merge off (never enabled, or dropped
+from the merge queue). One line per PR (`merged`, or `stopped: <reason>`);
+exit 0 when all merged, 1 when one needs a hand, 2 at the timeout; a failed
+read is retried at the next poll (#341). With
 `--review` it also waits for CodeRabbit's review (below) and adds a line per
 PR, `review: CodeRabbit reviewed` or `warning: no CodeRabbit review yet ...`;
 the warning does not change the exit status. Run it before enabling
@@ -493,8 +498,62 @@ def cmd_threads(args, gh):
     return 0
 
 
+def merged_poll(gh, repo, n, cache):
+    """None while a PR is on its way to merging, else its final line (#341)."""
+    pr = gh.get(f"repos/{repo}/pulls/{n}")
+    if pr is None:
+        raise LookupError(f"pr_status: {short_repo(repo)}#{n} not found")
+    ref = f"{short_repo(repo)}#{n} {pr['head']['sha'][:7]}"
+    if pr.get("merged") or pr.get("merged_at"):
+        return f"{ref} merged"
+    if pr.get("state") == "closed":
+        return f"{ref} stopped: closed unmerged"
+    ts = threads(gh, repo, n)
+    if ts:
+        return f"{ref} stopped: {len(ts)} unresolved thread(s), first: {thread_line(ts[0]).strip()}"
+    base = (pr.get("base") or {}).get("ref") or "main"
+    required = required_checks(gh, repo, base, cache)
+    failed = [
+        c for c in head_checks(gh, repo, pr["head"]["sha"], required)["failed"] if c in required
+    ]
+    if failed:
+        return f"{ref} stopped: required check failed: {', '.join(failed)}"
+    if not pr.get("auto_merge"):
+        return f"{ref} stopped: auto-merge off (never enabled, or dropped from the merge queue)"
+    return None
+
+
+def cmd_wait_merged(args, gh, sleep=time.sleep, clock=time.monotonic):
+    refs = [(full_repo(r), n) for r, n in (parse_ref(x) for x in args.refs)]
+    done, cache, start = {}, {}, clock()
+    while True:
+        for repo, n in refs:
+            if (repo, n) in done:
+                continue
+            try:
+                line = merged_poll(gh, repo, n, cache)
+            except LookupError as e:
+                raise Failure(str(e)) from None
+            except Failure as e:  # a 502 or a rate limit: read again next poll
+                print(f"retrying after a failed read: {e}", file=sys.stderr)
+                line = None
+            if line:
+                done[(repo, n)] = line
+                print(line, flush=True)
+        if len(done) == len(refs):
+            return 0 if all(v.endswith(" merged") for v in done.values()) else 1
+        if clock() - start >= args.timeout:
+            for repo, n in refs:
+                if (repo, n) not in done:
+                    print(f"{short_repo(repo)}#{n} timeout: not merged after {args.timeout:g}s")
+            return 2
+        sleep(args.interval)
+
+
 def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
     refs = [parse_ref(r) for r in args.refs]
+    if getattr(args, "merged", False):
+        return cmd_wait_merged(args, gh, sleep=sleep, clock=clock)
     review_wait = getattr(args, "review_timeout", 0) if getattr(args, "review", False) else 0
     start, cache = clock(), {}
     while True:
@@ -933,6 +992,11 @@ def parser():
     )
     w.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     w.add_argument("--json", action="store_true")
+    w.add_argument(
+        "--merged",
+        action="store_true",
+        help="poll until each PR merged, or stop when one needs a hand (#341)",
+    )
     g = sub.add_parser("gate", help="wait for CodeRabbit on one PR (the review-gate check)")
     g.add_argument("ref", metavar="REPO#N")
     g.add_argument("--interval", type=float, default=30)
@@ -2074,6 +2138,89 @@ def self_test():
         check("gate: a missing PR fails", False)
     except Failure:
         check("gate: a missing PR fails", True)
+
+    # wait --merged (#341): merged, closed, a thread, a red required check, auto-merge off, timeout
+    def landed(pr_seq, runs=(OK_RUN,), threads_=(), timeout=100, missing=False):
+        sha = "c" * 40
+        prs = iter(pr_seq)
+        last = {}
+
+        def next_pr():
+            last["pr"] = next(prs, last.get("pr"))
+            return None if missing else dict({"head": {"sha": sha}, "state": "open"}, **last["pr"])
+
+        data = {
+            "repos/swarm-routing/beta/pulls/9": next_pr,
+            "repos/swarm-routing/beta/pulls/9/ccr/review_threads": list(threads_),
+            "repos/swarm-routing/beta/pulls/comments/700": {
+                "user": {"login": "coderabbitai[bot]"},
+                "body": CR_BODY,
+            },
+            "repos/swarm-routing/beta/rules/branches/main": [
+                {
+                    "type": "required_status_checks",
+                    "parameters": {"required_status_checks": [{"context": "ci"}]},
+                }
+            ],
+            f"repos/swarm-routing/beta/commits/{sha}/check-runs?per_page=100&page=1": {
+                "check_runs": list(runs)
+            },
+            f"repos/swarm-routing/beta/commits/{sha}/status": {"statuses": []},
+            f"repos/swarm-routing/beta/actions/runs?head_sha={sha}&per_page=100&page=1": {
+                "workflow_runs": []
+            },
+        }
+        now = [0.0]
+        ns = parser().parse_args(["wait", "--merged", "beta#9", "--timeout", str(timeout)])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                rc = cmd_wait(
+                    ns,
+                    FakeGitHub(data),
+                    sleep=lambda x: now.__setitem__(0, now[0] + x),
+                    clock=lambda: now[0],
+                )
+            except Failure:
+                rc = "failure"
+        return rc, out.getvalue()
+
+    queued = {"auto_merge": {"merge_method": "squash"}}
+    rc, out = landed([queued, queued, dict(queued, merged=True)])
+    check(
+        "wait --merged: waits while queued, then merged",
+        rc == 0 and out == "beta#9 ccccccc merged\n",
+    )
+    rc, out = landed([{"state": "closed"}])
+    check("wait --merged: closed unmerged stops", rc == 1 and "stopped: closed unmerged" in out)
+    rc, out = landed(
+        [queued], threads_=[{"resolved": False, "path": "b.py", "line": 58, "comment_ids": [700]}]
+    )
+    check(
+        "wait --merged: an unresolved thread stops, naming it",
+        rc == 1
+        and "1 unresolved thread(s), first: Minor · Add the missing failing fixtures." in out,
+    )
+    rc, out = landed([queued], runs=[dict(OK_RUN, conclusion="failure")])
+    check(
+        "wait --merged: a red required check stops", rc == 1 and "required check failed: ci" in out
+    )
+    rc, out = landed(
+        [queued], runs=[OK_RUN, {"name": "sonar", "status": "completed", "conclusion": "failure"}]
+    )
+    check("…a red report-only check does not", rc == 2 and "timeout: not merged" in out)
+    rc, out = landed([queued, {}])
+    check(
+        "wait --merged: auto-merge off (dropped from the queue) stops",
+        rc == 1 and "auto-merge off" in out,
+    )
+    rc, out = landed([queued], timeout=60)
+    check(
+        "wait --merged: the timeout exits 2",
+        rc == 2 and "beta#9 timeout: not merged after 60s" in out,
+    )
+    rc, out = landed([queued], missing=True)
+    check("wait --merged: a missing PR fails", rc == "failure")
 
     got, slept, err = rate_get(4000, 1100)
     check("rate: plenty left, no wait", got == [1] and slept == [] and err is None)
