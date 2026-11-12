@@ -825,7 +825,7 @@ def top_concept(toml):
     """The top-level `zenodo_concept` (never a table's) as (value, start, end) of its
     line: value '' for an empty placeholder, None when there is none. Another
     value is refused, so the key is never written twice."""
-    head = re.split(r"^\[", toml, maxsplit=1, flags=re.M)[0]
+    head = re.split(r"^[ \t]*\[", toml, maxsplit=1, flags=re.M)[0]  # tables may be indented
     m = re.search(r"^[ \t]*zenodo_concept[ \t]*=([^\n]*)", head, re.M)
     if not m:
         return None, 0, 0
@@ -848,7 +848,7 @@ def toml_with_concept(toml, concept):
         "# the Zenodo concept record, read from Zenodo by swarm-routing/.github "
         f"tools/zenodo/zenodo.py record (#232)\n{line}\n"
     )
-    head = re.split(r"^\[", toml, maxsplit=1, flags=re.M)[0]
+    head = re.split(r"^[ \t]*\[", toml, maxsplit=1, flags=re.M)[0]  # tables may be indented
     m = re.search(r"^kind[ \t]*=[^\n]*\n", head, re.M)
     if m:
         return toml[: m.end()] + text + toml[m.end() :]
@@ -1966,6 +1966,14 @@ def self_test():
         got == ("written", "500")
         and text(d, ".github/org-sync.toml").endswith(
             'zenodo_concept = "500"\n\n[settings]\nzenodo_concept = ""\n'
+        ),
+    )
+    d = repo_dir(toml='kind = "data"\n  [settings]\nzenodo_concept = ""\n')
+    got, err, out = record(d, concept="500")
+    check(
+        "record: an indented table header ends the top level too",
+        text(d, ".github/org-sync.toml").endswith(
+            'zenodo_concept = "500"\n  [settings]\nzenodo_concept = ""\n'
         ),
     )
     # a top-level value that is no record id is refused, never written twice
