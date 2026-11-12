@@ -181,8 +181,13 @@ its body starts with *Migrated from `danieljoppi/AntHocNet#N`*. It takes the
 `release:` label of the target repository's ladder, not AntHocNet's (ROADMAP
 "Releases"; decision 2026-11-11).
 
-**Handoffs are issues** (template *Handoff*, label `handoff`). A new session
-starts from the newest open `handoff` issue and closes it when done.
+**Handoffs are issues** (template *Handoff*, label `handoff`). A session that
+continues handed-off work starts from the newest open `handoff` issue for that
+work; a new task starts from the request. A session that continued a handoff
+and ends with work in flight updates that issue instead of opening another;
+the session that completes the work closes it, and any older handoff it
+superseded (AntHocNet ADR-0013 item 5 and its 2026-11-12 amendment; the agent
+defaults in `templates/agents/agent-defaults.md`).
 
 ## Pull requests
 
