@@ -23,7 +23,7 @@ DCO                             the Developer Certificate of Origin 1.1, verbati
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: only a PR's own drift fails, the base's warns); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
 tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
 tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py), templates (org_sync.py apply) and a new Zenodo concept's DOI (zenodo.py record)
-tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones; `orphans`: released repos with no concept; `create`: a first concept from a tag (a failed first release, #226); `publish-release`: the release job's push of a release's own assets (opt-in `zenodo: true` of reusable-release.yml, #232); `record`: a repo's CITATION.cff doi, `zenodo_concept` and README DOI badge against its concept on Zenodo (`--write`: org-bot's `zenodo` task)
+tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones; `orphans`: released repos with no concept; `create`: a first concept from a tag (a failed first release, #226); `publish-release`: the release job's push of a release's own assets (opt-in `zenodo: true` of reusable-release.yml, #232); `record`: a repo's CITATION.cff doi, `zenodo_concept` and README DOI badge against its concept on Zenodo (`--write`: org-bot's `zenodo` task); `bibtex`: a repo's concept record as a BibTeX `@software` entry for `docs/references.bib`, every field read from Zenodo (#308)
 tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against the org standard (AntHocNet's): badges, explanation, site page, ns-3 image, layout, sections, links, citing (a released repo: DOI badge, CITATION.cff doi, citing section, references); the AI files' facts (paths, planned paths, open issues with --online, org-rule contradictions, required checks)
 tools/docs-review/ai_files_review.py   the weekly AI-files review: check_docs.py's AI-files pass on every public repo, one `[docs] AI files: N finding(s)` issue per repo, opened, updated in place, closed when clean
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
@@ -68,7 +68,7 @@ python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsig
 python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
-python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo (publish-release: first release, next version, idempotent re-run, refusal, retries; record: unrecorded, written, two concepts refused)
+python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo (publish-release: first release, next version, idempotent re-run, refusal, retries; record: unrecorded, written, two concepts refused; bibtex: the entry, roles, unrecorded, unreleased and unarchived)
 python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub (the zenodo task: record, then apply's badge)
 python3 -I tools/docs-review/check_docs.py --self-test   # the docs standard and the AI-files facts, a passing and a failing fixture repo per check
 python3 -I tools/docs-review/check_docs.py ../AntHocNet --online   # read-only, a real repo's docs and AI files (issue states through gh)
@@ -83,6 +83,7 @@ python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # re
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 python3 -I tools/zenodo/zenodo.py orphans --repos benchmarks,ARA   # read-only, released repos without a concept
 python3 -I tools/zenodo/zenodo.py create --repo swarm-routing/benchmarks --tag v0.1.0   # read-only without --publish and ZENODO_TOKEN: what it would create
+python3 -I tools/zenodo/zenodo.py bibtex swarm-routing/ns3-tools --key ns3tools --role tool   # read-only, no token: the concept record as @software
 python3 -I tools/pr-status/pr_status.py list --repos .github,skills   # read-only, the open PRs and their unresolved threads
 python3 -I tools/pr-status/pr_status.py merge --dry-run .github#N   # read-only, what merge would do now (would update / would merge / would wait)
 python3 -I tools/lit-search/lit_search.py confirm 10.1613/jair.530   # read-only, free: Crossref, Semantic Scholar, OpenAlex agree
