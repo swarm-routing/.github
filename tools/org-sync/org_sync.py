@@ -32,6 +32,13 @@ not enabled), e.g. rendered by a refresh that branched before the skip landed
 so the removal is proposed in a reviewed PR), otherwise leaves it, reports it
 and exits 1, like a conflict.
 
+Citations (`citation = true`): CITATION.cff's `references:` and the README's
+Releases & citing list come from `docs/references.bib` once it has an entry
+(its `implemented`, `tool` and `dataset` entries, read with
+tools/fidelity/bib.py), else from `[[references]]`; with both, the bib wins
+and a warning names `[[references]]` as redundant. Every repository gets the
+bib as a seed: a commented header, no entry (#308).
+
 A `[settings]` table holds the repository's GitHub settings (description,
 homepage, topics, ruleset profile, required checks, and overrides of the
 profile's features, security features and release environment), which
@@ -72,6 +79,9 @@ from urllib.parse import quote
 
 ORG = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TEMPLATES = os.path.join(ORG, "templates")
+sys.path.insert(0, os.path.join(ORG, "tools", "fidelity"))
+import bib  # noqa: E402  (tools/fidelity/bib.py: the docs/references.bib reader, #308)
+
 CONFIG = ".github/org-sync.toml"
 KINDS = ("protocol", "c-cpp", "python", "container", "data", "site", "skills")
 CXX_KINDS = ("protocol", "c-cpp")
@@ -236,6 +246,12 @@ def load_config(repo_dir, slug=None):
             "without double quotes or backslashes"
         )
     cfg["references"] = check_references(cfg.get("references", []))
+    if cfg["references"] and bib_references(repo_dir) is not None:
+        print(
+            f"org-sync: warning: {BIB} gives the references (its implemented, tool and dataset "
+            f"entries); [[references]] in {CONFIG} is now redundant: remove it",
+            file=sys.stderr,
+        )
     return cfg
 
 
@@ -267,6 +283,96 @@ REF_VENUE = {
     "report": "institution",
     "software": None,
 }
+
+
+# `docs/references.bib` (#308), the repository's one bibliography, wins over
+# `[[references]]` once it has an entry (the seed, a header alone, leaves
+# `[[references]]` in charge until the repository fills it): its entries whose `keywords` hold `implemented`,
+# `tool` or `dataset` become the same reference tables, in file order, so both
+# render through cff_references() and reference_line(). An entry's `note` is its
+# role line; without one, the role's line below. A url-only entry is rendered
+# with "no DOI: none registered" (`fidelity.py bib check --online` asks Crossref).
+BIB = "docs/references.bib"
+BIB_ROLES = {
+    "implemented": "The work this repository implements.",
+    "tool": "A tool this repository uses.",
+    "dataset": "Data this repository uses.",
+}
+BIB_TYPES = {
+    "article": ("article", "journal"),
+    "inproceedings": ("conference-paper", "booktitle"),
+    "incollection": ("book", "booktitle"),
+    "book": ("book", None),
+    "phdthesis": ("thesis", "school"),
+    "mastersthesis": ("thesis", "school"),
+    "techreport": ("report", "institution"),
+    "software": ("software", None),
+    "misc": ("generic", None),
+}
+
+
+def bib_references(repo_dir):
+    """The reference tables from docs/references.bib; None without the file or
+    without an entry (the seed). A malformed file exits with the line."""
+    path = os.path.join(repo_dir, BIB)
+    if not os.path.exists(path):
+        return None
+    try:
+        entries = bib.load(path)
+    except bib.BibError as e:
+        sys.exit(f"org-sync: {BIB}: {e} (`fidelity.py bib check` lists every rule)")
+    except (OSError, UnicodeDecodeError) as e:
+        sys.exit(f"org-sync: {BIB}: cannot read it: {e}")
+    if not entries:
+        return None
+    refs = []
+    for e in entries:
+        role = next((r for r in bib.roles(e) if r in BIB_ROLES), None)
+        if role is None:
+            continue
+        f, where = e["fields"], f"org-sync: {BIB}: line {e['line']}: {e['key']}"
+        for key in ("title", "author", "year"):
+            if not bib.plain(f.get(key, "")):
+                sys.exit(f"{where}: needs {key} to be cited (role {role})")
+        year = bib.plain(f["year"])
+        if not year.isdigit():
+            sys.exit(f"{where}: year is a number")
+        kind, venue = BIB_TYPES[e["type"]]
+        if kind == "generic" and role == "dataset":
+            kind = "data"
+        r = {
+            "type": kind,
+            "title": bib.plain(f["title"]),
+            "authors": [
+                fam + (f", {giv}" if giv else "") for fam, giv in bib.split_authors(f["author"])
+            ],
+            "year": int(year),
+            "role": bib.plain(f.get("note", "")) or BIB_ROLES[role],
+        }
+        if venue and bib.plain(f.get(venue, "")):
+            r["venue"] = bib.plain(f[venue])
+        if e["type"] in ("phdthesis", "mastersthesis"):
+            r["thesis_type"] = "PhD thesis" if e["type"] == "phdthesis" else "Master's thesis"
+        for src, dst in (("volume", "volume"), ("number", "issue"), ("publisher", "publisher")):
+            if bib.plain(f.get(src, "")):
+                r[dst] = bib.plain(f[src])
+        if bib.plain(f.get("pages", "")):
+            r["pages"] = re.sub(r"-+", "-", bib.plain(f["pages"]))
+        doi = bib.norm_doi(f.get("doi"))
+        if doi:
+            r["doi"] = doi
+        elif f.get("url"):
+            r["url"], r["no_doi"] = f["url"], "none registered"
+        else:
+            sys.exit(f"{where}: needs a doi, or a url")
+        refs.append(r)
+    return refs
+
+
+def references(cfg, repo_dir):
+    """What the citing section and CITATION.cff cite: the bib's, else `[[references]]`."""
+    refs = bib_references(repo_dir)
+    return cfg["references"] if refs is None else refs
 
 
 def check_references(refs):
@@ -335,7 +441,7 @@ def cff_references(refs):
             out.append(f"      - family-names: {yq(family)}")
             if given:
                 out.append(f"        given-names: {yq(given)}")
-        venue = REF_VENUE[r["type"]]
+        venue = REF_VENUE.get(r["type"])
         if r.get("venue") and venue == "institution":
             out.append(f"    institution:\n      name: {yq(r['venue'])}")
         elif r.get("venue") and venue:
@@ -426,7 +532,7 @@ def citing_section(cfg, repo_dir):
             cite + ". It has no DOI yet: the concept DOI appears here and in the badge above"
             " once Zenodo archives its first release.",
         ]
-    refs = cfg["references"]
+    refs = references(cfg, repo_dir)
     if refs:
         out += ["", "Please also cite the work it builds on:", ""]
         out += [reference_line(r) for r in refs]
@@ -718,7 +824,7 @@ def render_citation(cfg, repo_dir):
     }
     # one pass over the template, so a value that contains @NAME@ stays as
     # written; @DOI@ fills its whole line, or drops it
-    refs = cff_references(cfg["references"])
+    refs = cff_references(references(cfg, repo_dir))
     whole = {"@DOI@\n": doi, "@REFERENCES@\n": refs}
     return re.sub(
         r"@DOI@\n|@REFERENCES@\n|@([A-Z]+)@",
@@ -820,6 +926,8 @@ def items(cfg):
         # so it wins over the repository's own lines above it.
         ("seed", ".github/CODEOWNERS", "codeowners/CODEOWNERS.in", None),
         ("section", ".github/CODEOWNERS", f"codeowners/{cfg['kind']}", "codeowners"),
+        # the repository's one bibliography (#308): a commented header, no entries
+        ("seed", BIB, "references.bib.in", None),
     ]
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))

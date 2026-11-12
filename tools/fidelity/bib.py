@@ -4,7 +4,7 @@
 
 A reader and a deterministic writer for the subset the org writes; no LaTeX,
 no macros. Stdlib only. fidelity.py (`bib check|entry|sources`) uses it, and
-tools/org-sync will (CITATION.cff references, the README's citing section).
+tools/org-sync does (CITATION.cff references, the README's citing section).
 
 Accepted input:
   - entry types: @article, @inproceedings, @incollection, @book, @phdthesis,
