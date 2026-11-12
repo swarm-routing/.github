@@ -12,6 +12,7 @@ Usage:
   zenodo.py publish-release --repo OWNER/NAME --tag vX.Y.Z --files F... [--checkout DIR]
             [--concept ID] [--date YYYY-MM-DD] [--publish] [--sandbox]
   zenodo.py record --repo OWNER/NAME --checkout DIR [--concept ID] [--write]
+  zenodo.py bibtex REPO --key K [--role R]      a release's concept record as a BibTeX @software
   zenodo.py fake-zenodo --port-file F           the self-test's fake Zenodo, for release-selftest.yml
   zenodo.py --self-test
 
@@ -89,6 +90,17 @@ AntHocNet's v2.6.1 was):
   block where the org's CITATION.cff template puts it, and `zenodo_concept`
   as a top-level key. org-bot's `zenodo` task runs it with --write, then
   `org_sync.py apply`, and opens the PR. Reads only; it needs no token.
+- `bibtex` prints an org repository's concept record as one BibTeX
+  `@software` entry for a `docs/references.bib` (swarm-routing/.github#308):
+  REPO is `swarm-routing/<name>` or `<name>`; the concept is the one the
+  repository names (CITATION.cff, else `zenodo_concept`), else a Zenodo record
+  linking one of its release tags. author (each creator's name as Zenodo
+  holds it, "Family, Given", joined by " and "), title, year (the newest version's publication date),
+  version and doi (the CONCEPT DOI) all come from the record Zenodo returns;
+  publisher is Zenodo, url the repository's github.com page, keywords the
+  role (--role, default `tool`; one of BIB_ROLES). A repository with no
+  release, or with releases none of which is on Zenodo, is exit 1 with the
+  reason: a DOI is never composed or guessed. Reads only; it needs no token.
 
 Every Zenodo call is retried with exponential backoff (5 s, doubling, 5
 tries; Retry-After honoured, as seconds or a date, up to 300 s): a 429
@@ -976,6 +988,68 @@ def cmd_repos(args, gh):
     return found
 
 
+BIB_ROLES = ("implemented", "restates", "compared", "dataset", "tool", "background")
+BIB_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:.+-]*$")
+
+
+def bib_value(text):
+    """A BibTeX field value: whitespace collapsed, braces dropped, & % $ # _ escaped."""
+    text = " ".join(str(text).split()).replace("{", "").replace("}", "")
+    return re.sub(r"(?<!\\)([&%$#_])", r"\\\1", text)
+
+
+def cmd_bibtex(args, gh, zen, now):
+    """The repository's concept record as a BibTeX @software entry (the text printed)."""
+    if args.role not in BIB_ROLES:
+        raise Failure(f"bibtex: role {args.role!r} is not one of {', '.join(BIB_ROLES)}")
+    if not BIB_KEY.match(args.key or ""):
+        raise Failure(f"bibtex: key {args.key!r} is not a BibTeX key (letters, digits, _:.+-)")
+    repo = args.repo if "/" in args.repo else f"{args.org}/{args.repo}"
+    owner, name = repo.split("/", 1)
+    concept, why = recorded_concept(gh, repo)
+    if not concept:
+        tags = [r["tag"] for r in reversed(gh.releases(repo))]  # newest first
+        if not tags:
+            raise Failure(f"{repo}: no published release, so no Zenodo record; no entry")
+        concept, why = zenodo_concept_for(zen, repo, tags)
+        if not concept:
+            raise Failure(
+                f"{repo}: {len(tags)} release(s), none archived on Zenodo (no concept in "
+                "CITATION.cff or zenodo_concept, no record links a release tag); no entry"
+            )
+    rec = zen.call("GET", f"/records/{concept}")  # the concept redirects to its newest version
+    if str(rec.get("conceptrecid", "")) != str(concept):
+        raise Failure(
+            f"{repo}: Zenodo {concept} ({why}) is not a concept record "
+            f"(it belongs to concept {rec.get('conceptrecid')}); no entry"
+        )
+    meta = rec.get("metadata") or {}
+    fields = {
+        "author": " and ".join(
+            bib_value(c["name"]) for c in meta.get("creators") or [] if c.get("name")
+        ),
+        "title": meta.get("title", ""),
+        "year": str(meta.get("publication_date", ""))[:4],
+        "publisher": "Zenodo",
+        "version": meta.get("version", ""),
+        "doi": rec.get("conceptdoi", ""),
+        "url": f"https://github.com/{owner}/{name}",
+        "keywords": args.role,
+    }
+    empty = [k for k, v in fields.items() if not v]
+    if empty:
+        raise Failure(f"{repo}: Zenodo concept {concept} has no {', '.join(empty)}; no entry")
+    if fields["doi"] != f"10.5281/zenodo.{concept}":
+        raise Failure(f"{repo}: concept {concept}'s DOI is {fields['doi']}, not its own; no entry")
+    body = ",\n".join(  # author is escaped per name; a DOI or a URL is written as it is
+        f"  {k} = {{{v if k in ('author', 'doi', 'url') else bib_value(v)}}}"
+        for k, v in fields.items()
+    )
+    text = f"@software{{{args.key},\n{body}\n}}\n"
+    sys.stdout.write(text)
+    return text
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true")
@@ -1037,6 +1111,12 @@ def main(argv=None):
     )
     rc.add_argument("--sandbox", action="store_true", help=argparse.SUPPRESS)
     rc.add_argument("--api", help=argparse.SUPPRESS)
+    b = sub.add_parser("bibtex")
+    b.add_argument("repo", help="swarm-routing/<name> or <name>")
+    b.add_argument("--key", required=True, help="the entry's BibTeX key")
+    b.add_argument("--role", default="tool", help=f"keywords: one of {', '.join(BIB_ROLES)}")
+    b.add_argument("--org", default="swarm-routing", help=argparse.SUPPRESS)
+    b.add_argument("--api", help=argparse.SUPPRESS)
     f = sub.add_parser("fake-zenodo")
     f.add_argument("--port-file", required=True)
     args = p.parse_args(argv)
@@ -1056,6 +1136,9 @@ def main(argv=None):
         found = cmd_repos(args, gh)
         if args.json:
             print(json.dumps(found))
+        return 0
+    if args.cmd == "bibtex":  # public records only: never sends the token
+        cmd_bibtex(args, gh, Zenodo(args.api or ZENODO[False]), None)
         return 0
     zen = Zenodo(
         getattr(args, "api", None) or ZENODO[args.sandbox], os.environ.get("ZENODO_TOKEN") or None
@@ -1123,7 +1206,25 @@ def fake_zenodo():
             base = f"http://127.0.0.1:{self.server.server_port}/api"
             newest = st.versions[-1]
             if method == "GET" and path == f"/api/records/{st.concept}":
-                return self.send(200, {"id": int(newest["id"]), "conceptrecid": st.concept})
+                return self.send(
+                    200,
+                    {
+                        "id": int(newest["id"]),
+                        "conceptrecid": st.concept,
+                        "doi": newest["doi"],
+                        "conceptdoi": f"10.5281/zenodo.{st.concept}",
+                        "metadata": {
+                            "title": "R: a routing protocol",
+                            "version": newest["metadata"]["version"],
+                            "publication_date": "2026-10-10",
+                            "creators": [
+                                {"name": "Doe, Jane", "orcid": "0000-0001"},
+                                {"name": "Roe,  Rich"},
+                                {"name": "Swarm & Co"},
+                            ],
+                        },
+                    },
+                )
             if method == "GET" and path == "/api/records/101":
                 return self.send(200, {"id": 101, "conceptrecid": st.concept})
             if method == "GET" and path.endswith("/versions"):
@@ -2038,6 +2139,71 @@ def self_test():
         got == ("written", "500")
         and not os.path.exists(os.path.join(d, ".github", "org-sync.toml")),
     )
+
+    # bibtex: the concept record as @software, read-only, never a DOI it did not read
+    def bib(gh, repo="R", key="r2026", role="tool"):
+        ns = argparse.Namespace(repo=repo, key=key, role=role, org="org")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                got, err = cmd_bibtex(ns, gh, Zenodo(base), now), None
+            except Failure as e:
+                got, err = None, str(e)
+        return got, err, out.getvalue()
+
+    st.reset()
+    got, err, out = bib(FakeGitHub(rel), repo="org/R")
+    check(
+        "bibtex: the concept record, fields in order",
+        err is None
+        and out == got
+        and got
+        == (
+            "@software{r2026,\n"
+            "  author = {Doe, Jane and Roe, Rich and Swarm \\& Co},\n"
+            "  title = {R: a routing protocol},\n"
+            "  year = {2026},\n"
+            "  publisher = {Zenodo},\n"
+            "  version = {v1.1.0},\n"
+            "  doi = {10.5281/zenodo.100},\n"
+            "  url = {https://github.com/org/R},\n"
+            "  keywords = {tool}\n"
+            "}\n"
+        )
+        and only_reads()
+        and not any(c[2] for c in st.calls),
+    )
+    got, err, out = bib(FakeGitHub(rel), role="dataset")
+    check("bibtex: a bare name, another role", err is None and "keywords = {dataset}" in got)
+    st.reset()
+    got, err, out = bib(FakeGitHub(rel), role="cited")
+    check("bibtex: an unknown role refused", got is None and "not one of" in err and not st.calls)
+    got, err, out = bib(FakeGitHub(rel), key="a key")
+    check("bibtex: a bad key refused", got is None and "not a BibTeX key" in err)
+    # no concept named: a Zenodo record linking a release tag, else exit 1 with the reason
+    st.reset()
+    st.search = [
+        {
+            "id": 102,
+            "conceptrecid": "100",
+            "metadata": {
+                "related_identifiers": [{"identifier": "https://github.com/org/R/tree/v1.2.0"}]
+            },
+        }
+    ]
+    got, err, out = bib(FakeGitHub(rel, NEW))
+    check("bibtex: an unrecorded concept found on Zenodo", err is None and "zenodo.100}" in got)
+    st.search = []
+    got, err, out = bib(FakeGitHub(rel, NEW))
+    check(
+        "bibtex: released, not archived",
+        got is None and "none archived on Zenodo" in err and out == "",
+    )
+    got, err, out = bib(FakeGitHub([], NEW))
+    check("bibtex: no release", got is None and "no published release" in err and out == "")
+    st.reset()
+    got, err, out = bib(FakeGitHub(rel, NEW + 'doi: "10.5281/zenodo.101"\n'))
+    check("bibtex: a version, not a concept, refused", got is None and "not a concept" in err)
     # a local checkout's files
     with open(os.path.join(tmp, "CITATION.cff"), "w") as fh:
         fh.write(NEW)
