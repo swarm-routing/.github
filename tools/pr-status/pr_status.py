@@ -591,18 +591,25 @@ def is_coderabbit(run):
     return run.get("name") == "CodeRabbit" or slug.startswith("coderabbit")
 
 
-def coderabbit_review(gh, repo, number, sha):
+def coderabbit_review(gh, repo, number, sha, since=""):
     """`reviewed`, `reviewing` or `none`: whether CodeRabbit has had its say on the PR.
 
     `reviewed` when it posted a review (on any commit: it reviews once when the
     PR opens, #37) or its check run on the head completed (`success`,
     `neutral`, `skipped`: done, or nothing to review by its settings);
     `reviewing` while that check run is queued or in progress; `none` before
-    it has started, or where CodeRabbit is not installed or is down."""
+    it has started, or where CodeRabbit is not installed or is down. With
+    `since` (ISO time, the gate's last `ready_for_review`), a check run that
+    started before it is left out: a run skipped while the PR was a draft is
+    not the review (#294)."""
     for r in gh.paged(f"repos/{repo}/pulls/{number}/reviews"):
         if ((r.get("user") or {}).get("login") or "").startswith("coderabbitai"):
             return "reviewed"
-    runs = [r for r in gh.paged(f"repos/{repo}/commits/{sha}/check-runs") if is_coderabbit(r)]
+    runs = [
+        r
+        for r in gh.paged(f"repos/{repo}/commits/{sha}/check-runs")
+        if is_coderabbit(r) and (r.get("started_at") or "") >= since
+    ]
     if any(r.get("status") != "completed" for r in runs):
         return "reviewing"
     if any(r.get("conclusion") in ("success", "neutral", "skipped") for r in runs):
@@ -666,9 +673,10 @@ def gate_poll(gh, repo, n, args, wall, elapsed):
         raise LookupError(f"pr_status: {short_repo(repo)}#{n} not found")
     if pr.get("draft"):
         return "draft: CodeRabbit does not review drafts; the gate runs again when it is ready", 0
-    if coderabbit_review(gh, repo, n, pr["head"]["sha"]) == "reviewed":
+    ready = last_ready(gh, repo, n)
+    if coderabbit_review(gh, repo, n, pr["head"]["sha"], ready) == "reviewed":
         return "reviewed: CodeRabbit reviewed", 0
-    why = coderabbit_declined(gh, repo, n, last_ready(gh, repo, n))
+    why = coderabbit_declined(gh, repo, n, ready)
     if why:
         return f"declined: {why}", 0
     age = pr_age(pr, wall, elapsed)
@@ -1985,6 +1993,17 @@ def self_test():
     check("gate: a decline from before ready_for_review does not count", out.startswith("timeout"))
     rc, out, _ = gate({}, [[]], comments=[stale])
     check("gate: a decline with no ready_for_review after it counts", out.startswith("declined"))
+    draft_run = {"name": "CodeRabbit", "status": "completed", "conclusion": "skipped"}
+    draft_run["started_at"] = "2026-11-12T00:01:00Z"
+    rc, out, _ = gate({}, [[]], checks=[draft_run], events=ready, age=2000)
+    check(
+        "gate: a check run from before ready_for_review is not the review",
+        out.startswith("timeout"),
+    )
+    rc, out, _ = gate(
+        {}, [[]], checks=[dict(draft_run, started_at="2026-11-12T00:06:00Z")], events=ready
+    )
+    check("gate: a check run after ready_for_review counts", out.startswith("reviewed"))
     rc, out, _ = gate({"draft": True}, [[]])
     check("gate: a draft passes", out.startswith("draft:"))
     rc, out, _ = gate(
