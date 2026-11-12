@@ -51,6 +51,17 @@ most `--review-timeout` seconds after the PR opened (default 1800; 0: not at
 all), then the run goes on with a warning: CodeRabbit is not a required
 check, and an absent or failing CodeRabbit never holds a PR.
 
+`gate REPO#N` is that wait as a check of its own (#294): the reusable
+`reusable-review-gate.yml` runs it on every PR, so auto-merge and the merge
+queue wait for CodeRabbit too. It polls one PR every `--interval` seconds and
+prints one line, then exits 0: `reviewed` (as above), `declined: <reason>`
+(CodeRabbit said in a comment that it will not review: a skipped review, a
+rate limit, a used-up review quota), `draft` (CodeRabbit does not review
+drafts; the gate runs again when the PR is marked ready) or `timeout: ...`
+once `--timeout` seconds (default 1800) have passed since the PR opened. It
+exits non-zero only when it cannot read the PR. It is read-only; the caller
+comments on the PR after a `timeout`.
+
 `merge` squash-merges PRs one at a time per repository, in the order given;
 repositories run independently of each other. For each PR it polls every
 `--interval` seconds, for up to `--timeout` seconds per PR:
@@ -610,6 +621,52 @@ def pr_age(pr, wall, elapsed):
 
 REVIEW_WAIT = {"reviewing": "CodeRabbit review in progress", "none": "no CodeRabbit review yet"}
 
+# What CodeRabbit writes when it will not review a PR (#294): a skipped review
+# (draft, ignored paths or branches, auto review off), a rate limit, a used-up
+# review allowance. Matched on its comments' visible text only.
+DECLINED = re.compile(
+    r"review(?:s)? (?:skipped|paused)|rate limit(?:ed| exceeded)?\b"
+    r"|used (?:up )?all (?:of )?(?:the |your |its )?(?:\d+ )?(?:included )?reviews"
+    r"|auto reviews? (?:is |are )?disabled",
+    re.I,
+)
+
+
+def coderabbit_declined(gh, repo, number):
+    """CodeRabbit's own words for not reviewing the PR, or "" (#294)."""
+    for c in gh.paged(f"repos/{repo}/issues/{number}/comments"):
+        if not ((c.get("user") or {}).get("login") or "").startswith("coderabbitai"):
+            continue
+        m = DECLINED.search(plain(strip_html(c.get("body") or "")))
+        if m:
+            return clean(m.group(0))
+    return ""
+
+
+def cmd_gate(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
+    """Wait for CodeRabbit on one PR, then print one line and exit 0 (#294)."""
+    repo, n = parse_ref(args.ref)
+    repo, start = full_repo(repo), clock()
+    while True:
+        pr = gh.get(f"repos/{repo}/pulls/{n}")
+        if pr is None:
+            raise Failure(f"pr_status: {short_repo(repo)}#{n} not found")
+        if pr.get("draft"):
+            print("draft: CodeRabbit does not review drafts; the gate runs again when it is ready")
+            return 0
+        if coderabbit_review(gh, repo, n, pr["head"]["sha"]) == "reviewed":
+            print("reviewed: CodeRabbit reviewed")
+            return 0
+        why = coderabbit_declined(gh, repo, n)
+        if why:
+            print(f"declined: {why}")
+            return 0
+        age = pr_age(pr, wall, clock() - start)
+        if age >= args.timeout:
+            print(f"timeout: no CodeRabbit review {age:.0f}s after the PR opened")
+            return 0
+        sleep(max(1.0, min(args.interval, args.timeout - age)))
+
 
 class Job:
     """One PR's progress through `merge`."""
@@ -831,6 +888,15 @@ def parser():
     )
     w.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     w.add_argument("--json", action="store_true")
+    g = sub.add_parser("gate", help="wait for CodeRabbit on one PR (the review-gate check)")
+    g.add_argument("ref", metavar="REPO#N")
+    g.add_argument("--interval", type=float, default=30)
+    g.add_argument(
+        "--timeout",
+        type=float,
+        default=1800,
+        help="seconds after the PR opened to wait (default %(default)s)",
+    )
     m = sub.add_parser("merge", help="wait for green, squash-merge in order")
     m.add_argument("refs", nargs="+", metavar="REPO#N")
     m.add_argument(
@@ -855,7 +921,13 @@ def main(argv=None, gh=None):
         p.error("a command is required")
     gh = gh or GitHub()
     gh.min_remaining = args.min_rate
-    cmds = {"list": cmd_list, "threads": cmd_threads, "wait": cmd_wait, "merge": cmd_merge}
+    cmds = {
+        "list": cmd_list,
+        "threads": cmd_threads,
+        "wait": cmd_wait,
+        "gate": cmd_gate,
+        "merge": cmd_merge,
+    }
     return cmds[args.cmd](args, gh)
 
 
@@ -1810,6 +1882,78 @@ def self_test():
                 return gh.get("x"), gh.slept, None
             except Failure as e:
                 return None, gh.slept, str(e)
+
+    # gate (#294): reviewed, declined, draft, timeout, and waiting until the review lands
+    def gate(prfields, reviews, comments=(), checks=None, age=0, timeout=1800):
+        data = {}
+        pr = {"number": 7, "head": {"sha": "a" * 40}, "created_at": "2026-11-12T00:00:00Z"}
+        pr.update(prfields)
+        data["repos/swarm-routing/ARA/pulls/7"] = pr
+        rv = list(reviews)
+        data["repos/swarm-routing/ARA/pulls/7/reviews?per_page=100&page=1"] = lambda: (
+            rv.pop(0) if len(rv) > 1 else rv[0]
+        )
+        data["repos/swarm-routing/ARA/commits/" + "a" * 40 + "/check-runs?per_page=100&page=1"] = {
+            "check_runs": checks or []
+        }
+        data["repos/swarm-routing/ARA/issues/7/comments?per_page=100&page=1"] = list(comments)
+        gh, slept = FakeGitHub(data), []
+        t0 = datetime.datetime(2026, 11, 12, tzinfo=datetime.timezone.utc).timestamp()
+        out = io.StringIO()
+        args = parser().parse_args(["gate", "ARA#7", "--timeout", str(timeout), "--interval", "30"])
+        clock = iter(range(0, 100000, 30))
+        with contextlib.redirect_stdout(out):
+            rc = cmd_gate(
+                args, gh, sleep=slept.append, clock=lambda: next(clock), wall=lambda: t0 + age
+            )
+        return rc, out.getvalue().strip(), slept
+
+    cr_comment = {"user": {"login": "coderabbitai[bot]"}, "body": ""}
+    rc, out, slept = gate({}, [[CR_REVIEW]])
+    check(
+        "gate: reviewed passes at once",
+        rc == 0 and out == "reviewed: CodeRabbit reviewed" and slept == [],
+    )
+    rc, out, slept = gate({}, [[], [], [CR_REVIEW]])
+    check("gate: waits until the review lands", out.startswith("reviewed") and len(slept) == 2)
+    rc, out, _ = gate(
+        {},
+        [[]],
+        comments=[dict(cr_comment, body="> [!IMPORTANT]\n> ## Review skipped\n> Draft detected.")],
+    )
+    check("gate: a skipped review passes with the reason", out == "declined: Review skipped")
+    rc, out, _ = gate(
+        {},
+        [[]],
+        comments=[dict(cr_comment, body="You have used all 10 included reviews this month.")],
+    )
+    check(
+        "gate: a used-up quota passes with the reason",
+        out.startswith("declined: used all 10 included reviews"),
+    )
+    rc, out, _ = gate(
+        {}, [[]], comments=[{"user": {"login": "dave"}, "body": "rate limit exceeded"}], age=2000
+    )
+    check("gate: another author's words do not count", out.startswith("timeout"))
+    rc, out, _ = gate({}, [[]], age=2000)
+    check(
+        "gate: past the time-out passes with timeout",
+        rc == 0 and out.startswith("timeout: no CodeRabbit review"),
+    )
+    rc, out, slept = gate({}, [[]], age=1790)
+    check("gate: sleeps only up to the time-out", slept and slept[0] == 10.0)
+    rc, out, _ = gate({"draft": True}, [[]])
+    check("gate: a draft passes", out.startswith("draft:"))
+    rc, out, _ = gate(
+        {}, [[]], checks=[{"name": "CodeRabbit", "status": "completed", "conclusion": "skipped"}]
+    )
+    check("gate: CodeRabbit's completed check counts as reviewed", out.startswith("reviewed"))
+    gh_missing = FakeGitHub({})
+    try:
+        cmd_gate(parser().parse_args(["gate", "ARA#7"]), gh_missing, sleep=lambda s: None)
+        check("gate: a missing PR fails", False)
+    except Failure:
+        check("gate: a missing PR fails", True)
 
     got, slept, err = rate_get(4000, 1100)
     check("rate: plenty left, no wait", got == [1] and slept == [] and err is None)

@@ -246,7 +246,17 @@ starts from the newest open `handoff` issue and closes it when done.
   before its review is reviewed after the fact: comment
   `@coderabbitai review` on it, and fix what it finds in a follow-up PR.
   Making CodeRabbit's check required was not chosen: a required check has
-  no time-out, so a CodeRabbit outage would stop every merge.
+  no time-out, so a CodeRabbit outage would stop every merge. Instead, the
+  org's own **review gate** (#294) is the check that waits: the
+  `review / coderabbit` job (`templates/workflows/review-gate.yml` in every
+  adopting repository, on `reusable-review-gate.yml` and `pr_status.py
+  gate`) passes once CodeRabbit has reviewed the PR, once it says it will not
+  (a skipped review, a rate limit, a used-up quota), for a draft, or 30
+  minutes after the PR opened, leaving one comment then (maintainer
+  decisions on #294); in a merge group it passes at once. Where
+  `review / coderabbit` is in `[settings]` `required_checks`, auto-merge and
+  the queue wait for the review by themselves, org-bot's PRs included; until
+  then the rule above still holds.
 - **Only the required checks gate a merge.** They are the ones in the
   repository's `[settings]` `required_checks` (live:
   `gh api 'repos/{owner}/{repo}/rules/branches/main'`). A red or pending

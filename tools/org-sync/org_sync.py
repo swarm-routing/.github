@@ -811,6 +811,7 @@ def items(cfg):
         ("targets", "Makefile", None, "targets"),
         ("file", ".github/workflows/org-sync.yml", "workflows/org-sync.yml", None),
         ("file", ".github/workflows/dco.yml", "workflows/dco.yml", None),
+        ("file", ".github/workflows/review-gate.yml", "workflows/review-gate.yml", None),
         ("file", ".github/workflows/scorecard.yml", "workflows/scorecard.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
