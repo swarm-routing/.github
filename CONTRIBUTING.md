@@ -321,19 +321,27 @@ PRs too passes `full-check-on-pr: true`.
 **A change to an org-managed section is a template change here, never a hand
 edit in each repository** (#236). Text between `org-sync:begin/end` markers
 (the AGENTS.md and CLAUDE.md org sections, the README badges, the CodeRabbit
-head and tail, …) and every other managed item comes from `templates/`. To
-change it across the org, open one PR here that edits the template; after it
-merges, org-bot opens each adopting repository's `bot/org-sync` refresh PR
-(`org_sync.py apply`), which is the only PR that brings the change in. Do not
-open a hand-edited PR per repository alongside it: the check judges a hand
-edit inside a managed section against the templates on that PR's own base, so
-a branch pushed before the template merged stays red on `check / org-sync`
-(2026-11-11: ten PRs sat red for about 2.5 hours after #230 merged, until
-each branch was updated and re-applied by hand), and org-bot never pushes to
-a branch it did not open. If such a PR exists anyway, close it in favour of
-org-bot's, or update its branch from `main` and run
-`python3 ../.github/tools/org-sync/org_sync.py apply .` on it. Text a
-repository owns (outside the markers) is still edited in that repository.
+head and tail, …) and the other managed (non-seed) items come from
+`templates/`. To change them across the org, open one PR here that edits the
+template; after it merges, org-bot opens each adopting repository's
+`bot/org-sync` refresh PR (`org_sync.py apply`), which is the only PR that
+brings the change in. Do not open a hand-edited PR per repository alongside
+it: the check renders the templates of this repository's `main` as they are
+when it runs (`org-ref`), so a hand edit pushed while the template PR is
+still open is drift, red on `check / org-sync`, and it stays red after the
+template merges until the check runs again on that branch; org-bot never
+pushes to a branch it did not open (2026-11-11: ten PRs sat red for about
+2.5 hours after #230 merged, until each branch was updated and re-applied
+by hand). If such a PR exists anyway, close it in favour of org-bot's, or
+update its branch from `main`, run `org_sync.py apply .` on it (from a
+checkout of `swarm-routing/.github` next to the repository:
+`python3 ../.github/tools/org-sync/org_sync.py apply .`) and push. Seeds
+(SECURITY.md, the Makefile, LICENSING.md, CITATION.cff, …) are the
+exception: once written they belong to the repository, a template change
+never reaches them and org-bot's PR does not bring it in, so a seed is
+changed in each repository (or rewritten from the template with
+`org_sync.py reseed FILE`). Text a
+repository owns outside the markers is likewise edited in that repository.
 
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it (a profile change applies on push here; a `[settings]` change in another repository applies when `repo-settings` is dispatched with mode `apply` after its merge); a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 
