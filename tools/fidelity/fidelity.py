@@ -1097,7 +1097,6 @@ RECORDED_PG460 = {
                 "resourceTypeGeneral": "Text",
             },
             "descriptions": [],
-            "url": "http://eldorado.tu-dortmund.de/handle/2003/22405",
             "version": None,
         },
     }
