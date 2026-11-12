@@ -22,5 +22,6 @@
 Before you add a file or a directory, touch a `core/` include, a wire
 format, randomness, a benchmark comparison or a workflow, read that rule in
 full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs/agents/org-rules.md);
-with `swarm-routing/.github` checked out next to this repository, read
-`../.github/docs/agents/org-rules.md`.
+in a `swarm-routing/.github` checkout next to this repository, that is
+`../.github/docs/agents/org-rules.md` (one level up; not this repository's
+own `.github/`).

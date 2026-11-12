@@ -130,10 +130,7 @@ KIND_BADGES = {
 # text that predates the markers: (file, section) -> (start regex, stop regex).
 ADOPT = {
     ("AGENTS.md", "org-rules"): (r"^1\. \*\*Licensing per directory", r"^(10\. |## )"),
-    ("AGENTS.md", "conventions"): (
-        r"^- (?:Issues follow the org taxonomy|An issue has one type label)",
-        r"^## ",
-    ),
+    ("AGENTS.md", "conventions"): (r"^- Issues follow the org taxonomy", r"^## "),
     ("AGENTS.md", "git-workflow"): (r"^- Branch from `main`", r"^## "),
     ("AGENTS.md", "agent-defaults"): (
         r"^## Working defaults\n",

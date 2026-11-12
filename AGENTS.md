@@ -78,8 +78,9 @@ Org-wide (1–9), then this repo's own.
 Before you add a file or a directory, touch a `core/` include, a wire
 format, randomness, a benchmark comparison or a workflow, read that rule in
 full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs/agents/org-rules.md);
-with `swarm-routing/.github` checked out next to this repository, read
-`../.github/docs/agents/org-rules.md`.
+in a `swarm-routing/.github` checkout next to this repository, that is
+`../.github/docs/agents/org-rules.md` (one level up; not this repository's
+own `.github/`).
 
 10. **Reusable workflows are a public contract.** Callers pin `@main`: never rename or remove an input, never change a default's meaning; add inputs with backward-compatible defaults. A breaking change needs a new file or a tag, announced in an issue in every caller repo.
 11. **`labels.json` is the taxonomy.** Change it together with `CONTRIBUTING.md` and the issue forms; `sync-labels` never deletes labels, so a rename is a manual migration recorded in an issue.
@@ -87,34 +88,90 @@ with `swarm-routing/.github` checked out next to this repository, read
 
 ## Conventions
 
-- An issue has one type label, its area label(s), one `priority:P1|P2|P3`
-  (not on epics) and a `release:vX.Y.Z` label only when a release gates it.
-  Body: **Context** · **Scope** · **Acceptance criteria** (checkboxes) ·
-  **Depends on** · **References**. A child of an epic says "Part of #N" and
-  is linked as a sub-issue.
-- Comments you post end with the Claude Code footer.
-- A generated epic list is never edited by hand: refresh it with
-  `swarm-routing/.github` `tools/epics/epics.py`.
-
-Before you file, close or re-scope an issue or an epic, read
-[the conventions in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/conventions.md);
-with `swarm-routing/.github` checked out next to this repository, read
-`../.github/docs/agents/conventions.md`.
+- Issues follow the org taxonomy ([CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#issues), from
+  [AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)): one type label
+  (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
+  umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
+  `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
+  recommendation, one `priority:P1|P2|P3` on non-epic issues, a
+  `release:vX.Y.Z` label only when a release in the repository's ladder
+  (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
+  gates the issue: that label set is the version's scope,
+  and the version is released when its issues are done (CONTRIBUTING
+  "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
+  workflow, the shared `release:v0.1.0` to `release:v0.4.0` and
+  `release:v1.0.0` among them; a version outside that set is added to
+  `swarm-routing/.github`'s `labels.json` (and CONTRIBUTING's label table)
+  when a ladder needs it, and reaches a repository when its `sync-labels` runs
+  (monthly, or dispatched after the change merges),
+  or, in a repository that keeps its own release labels (AntHocNet), created
+  there with `gh label create release:vX.Y.Z` when its ladder adds the version.
+- Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
+  **Acceptance criteria** (checkboxes) · **Depends on** (cross-repo form
+  `swarm-routing/<repo>#N`) · **References**. Children of an epic say "Part of
+  #N" and are linked as sub-issues. Comments you post end with the Claude Code
+  footer.
+- Issues migrated from AntHocNet carry `migrated` and start with *Migrated from
+  `danieljoppi/AntHocNet#N`*.
+- Epics are listed where contributors look. In a public repository, this
+  README's `## Epics` section and the org
+  [ROADMAP](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#epics)
+  are generated from the issues labelled `epic` by `swarm-routing/.github`'s
+  `tools/epics/epics.py`. An open epic is Planned (no sub-issue closed) or In
+  progress (some closed); it becomes Done or Dropped only when you close the
+  epic itself (as completed or as not planned), even if every sub-issue is
+  closed. Whenever you change an epic (open, close, rename or re-scope it, add
+  or remove its `epic` label) or one of its sub-issues (close, reopen, add,
+  unlink), refresh the lists in that PR or the next one. You need
+  `swarm-routing/.github` checked out next to this repository and `gh` logged
+  in (or `GH_TOKEN` set). Run `python3 ../.github/tools/epics/epics.py readme .`
+  in the repository that owns the epic (for a sub-issue of another
+  repository's epic, that repository, not this one), then
+  `python3 tools/epics/epics.py roadmap ROADMAP.md` and
+  `python3 tools/epics/epics.py profile profile/README.md` in `.github`. Never
+  edit a generated section by hand; the weekly `epics` workflow in `.github`
+  only reports drift. Private repositories (such as `papers`) are never listed
+  and keep no generated section.
+- Make minimal, reviewable changes; update the relevant doc/ADR when you change
+  a documented decision.
 
 ## Git workflow
 
-- Branch from `main`, one focused change per PR, and open the PR as soon as
-  the branch is pushed. PRs are squash-merged; the title is the commit on
-  `main`, a lowercase Conventional Commit (`feat:`, `fix:`, `docs:`…).
-- `main` takes no direct push. Merge when the required checks are green; in
-  a repository with a merge queue, by enabling auto-merge.
-- Settings are code: change them only by a PR to `.github/org-sync.toml`
-  `[settings]` or `templates/rulesets/` in `swarm-routing/.github`.
-
-Before you push, update a PR that is behind `main`, merge, or change a
-setting, read [the git workflow in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/git-workflow.md);
-with `swarm-routing/.github` checked out next to this repository, read
-`../.github/docs/agents/git-workflow.md`.
+- Branch from `main` (`claude/<short-topic>`), one focused change per PR.
+- **Always open a PR to `main`** once the branch is pushed — every change is
+  tracked through one.
+- **PRs are squash-merged** (the only merge method enabled). The PR title is
+  the commit on `main`, so it is a lowercase Conventional Commit
+  (`feat:`/`fix:`/`docs:`/`chore:`/`ci:`…, optional scope).
+- Push with `git push -u origin <branch>`; merge when CI is green.
+- **`main` takes no direct push**, in any repo: its ruleset requires a PR and
+  the required checks, not an up-to-date branch. Bots push `bot/<name>` branches
+  and open PRs; a release is the bump PR from `bot/release`, tagged after it
+  merges (CONTRIBUTING "Cutting a release").
+- A PR behind `main` may merge as it is: the ruleset does not require an
+  up-to-date branch. Update it first
+  (`gh api -X PUT "repos/<owner>/<repo>/pulls/<n>/update-branch"`, with
+  `<owner>/<repo>` the PR's base repository and `<n>` its number) only when
+  `main` changed what it touches (a template, a workflow, a required check),
+  then merge after its CI on the updated branch. A
+  repository with a merge queue (`merge_queue = true` in its `[settings]`)
+  is not updated by hand: enable auto-merge and the queue tests each PR on
+  the latest `main` and merges it (CONTRIBUTING "Merge when CI is green").
+  Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
+  dispatch the release `bump` again, so the version and changelog are rebuilt
+  on the new `main`.
+- **Settings are code.** Repository settings, rulesets, required checks and the
+  Actions allowlist change only by a PR to the repo's `[settings]` in
+  `.github/org-sync.toml` or to `templates/rulesets/` in `swarm-routing/.github`,
+  never in the UI or by a direct API write. A `templates/rulesets/` change
+  applies on merge; a repo's `[settings]` change applies when `repo-settings`
+  in `swarm-routing/.github` is dispatched with mode `apply` after the merge
+  (the daily run only checks). A required check runs on every PR (no `paths:`
+  filter; skip work inside a gate job instead) and is named exactly as its
+  check run. A new third-party action goes into `defaults.json`
+  `selected_actions` (`templates/rulesets/`) before or with the workflow that
+  uses it: in the same PR in `swarm-routing/.github`, otherwise merged there
+  first, or `repo-settings` refuses the repo.
 
 ## Working defaults
 
@@ -122,8 +179,9 @@ Condensed from [andrej-karpathy-skills](https://github.com/forrestchang/andrej-k
 
 - **Assumptions:** state the ones that matter. Ask only when the choice
   belongs to the maintainer: a default, a published number, a cell, the scope.
-  Otherwise pick the sensible option, say which, and keep going. Long
-  unattended runs, like campaigns, depend on that.
+  Then give your recommendation and its reason with the question, never the
+  options alone. Otherwise pick the sensible option, say which, and keep
+  going. Long unattended runs, like campaigns, depend on that.
 - **Simplicity:** the least code that solves the task. No speculative
   features, configurability or abstractions for one use.
 - **Surgical diffs:** every changed line traces to the request. Match the
@@ -136,13 +194,14 @@ Condensed from [andrej-karpathy-skills](https://github.com/forrestchang/andrej-k
 
 - **Handoffs are always a ticket.** When a session ends with work in flight, or a
   handoff is asked for, open a GitHub issue from the *Handoff* template (label
-  `handoff`). Never write a handoff file in the repo. Start a new session from
-  the newest open `handoff` issue, and close it when the work it hands off is
-  done ([AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md) item 5).
+  `handoff`). Never write a handoff file in the repo. A session that continues
+  handed-off work starts from the newest open `handoff` issue for that work; a
+  new task starts from the request. Close the issue when the work it hands off
+  is done ([AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md) item 5).
 - **Attach only the repositories the task needs.** Each attached repository's
   agent files are loaded into every request, whether the task touches it or
   not.
-- **Start from the record, not from memory:** the newest open `handoff` issue,
+- **Start from the record, not from memory:** the matching `handoff` issue,
   then the issue's acceptance criteria, then `main`. Check a claim against its
   source before it goes into an issue or a PR.
 - **Script what repeats.** A check or a lookup run more than a few times
