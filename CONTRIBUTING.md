@@ -76,6 +76,29 @@ is the long form.
    (and from the job summary). A job that runs entirely in a `container:`
    cannot take it on a hosted runner (it needs sudo on the VM; StepSecurity's
    limitations), so it goes without: today `reusable-ns3-ci.yml`'s `build`.
+   Audit is best effort, not a guarantee (#237). Its agent registers each
+   job with StepSecurity's API (`agent.api.stepsecurity.io`); when that call
+   times out, the job runs on, but nothing is recorded for it. The log then
+   shows `error in connecting to https://agent.api.stepsecurity.io/v1
+   (attempt 1/3): TimeoutError` three times, `no response from monitor
+   endpoint after 3 attempts`, and `fetch policies: API error status 401:
+   {"error":"invalid authorization header format"}`. The 401 comes only
+   with the failed registration (in every sampled job that timed out, and
+   in no other), so it is a consequence, not a token or setting of ours: on
+   public repositories the action takes no API key, and there is nothing to
+   configure. A sample of 175 hardened jobs in 100 runs across six
+   repositories (171 of them on 2026-11-11) found it in 26 jobs (15%), all
+   on 2026-11-11 between 15:03Z and 20:05Z, in several
+   repositories at once and sometimes in some jobs of a run but not others:
+   an outage on StepSecurity's side. So harden-runner stays, in `audit`,
+   on every job: it costs seconds, and a failed registration loses only that
+   job's audit data (the sampled jobs all ran on and passed). Before a job moves
+   to `block`, check on one job that `block` still enforces its
+   `allowed-endpoints` when the API is unreachable; until then no job
+   relies on it. An insights page missing for a run is put down to an
+   outage only when that run's job logs show `no response from monitor
+   endpoint`; without that line, look into it. The same search counts it
+   again.
 6. **Comparator arms** (protocols we did not design) clear three gates before
    their numbers count: a fidelity sheet from the paper, the per-PR delivery
    smoke, and an anchor reproducing the paper's own trend.
@@ -197,8 +220,8 @@ starts from the newest open `handoff` issue and closes it when done.
   independently), it merges a PR GitHub reports `behind` as it is, and
   updates it first (`PUT pulls/<n>/update-branch`) only where the ruleset
   requires an up-to-date branch or with `--update` (you judged that `main`
-  changed what it touches); it waits for every check on the head,
-  squash-merges with the title `<PR title> (#n)`, and only then moves on to
+  changed what it touches); it waits for every check on the head
+  and for CodeRabbit's review (below), squash-merges with the title `<PR title> (#n)`, and only then moves on to
   that repository's next PR. It never merges while a required check is
   missing on the head, and stops and reports on a failing check (a workflow
   that ended in `startup_failure` counts as one), an unresolved review thread, a conflict, a draft or a refusal, and never
@@ -208,6 +231,22 @@ starts from the newest open `handoff` issue and closes it when done.
   queue yet, and it waits on (or stops at) checks no ruleset requires, such
   as `codecov/patch` or `dco` (#196): in a merge-queue repository enable
   auto-merge instead.
+- **CodeRabbit's review comes before the merge** (#238). CodeRabbit reviews
+  each PR once, when it opens (#37), usually within 10 to 20 minutes; it is
+  not a required check, so auto-merge and a merge queue do not wait for it,
+  and a PR whose required checks finish first merges unreviewed (CodeRabbit
+  then reports "Review failed: The pull request is closed"). So enable
+  auto-merge only once CodeRabbit has reviewed and every thread it opened is
+  answered and resolved: `python3 -I tools/pr-status/pr_status.py wait
+  --review REPO#N` waits for its review (a review on the PR, or its `CodeRabbit`
+  check run completed on the head) and `pr_status.py merge` waits for it
+  before reading the threads. Both give up after `--review-timeout`
+  seconds from the PR's opening (default 1800) and go on with a warning,
+  so an absent or failing CodeRabbit never holds a PR. A PR that merged
+  before its review is reviewed after the fact: comment
+  `@coderabbitai review` on it, and fix what it finds in a follow-up PR.
+  Making CodeRabbit's check required was not chosen: a required check has
+  no time-out, so a CodeRabbit outage would stop every merge.
 - **Only the required checks gate a merge.** They are the ones in the
   repository's `[settings]` `required_checks` (live:
   `gh api 'repos/{owner}/{repo}/rules/branches/main'`). A red or pending
@@ -319,6 +358,31 @@ of the adopting repositories; they merge as they are, and org-bot's refresh PR
 brings the templates in. A push to `main` keeps the full check, so drift there
 stays visible until the refresh PR merges. A caller that wants the full check on
 PRs too passes `full-check-on-pr: true`.
+
+**A change to an org-managed section is a template change here, never a hand
+edit in each repository** (#236). Text between `org-sync:begin/end` markers
+(the AGENTS.md and CLAUDE.md org sections, the README badges, the CodeRabbit
+head and tail, …) and the other managed (non-seed) items come from
+`templates/`. To change them across the org, open one PR here that edits the
+template; after it merges, org-bot opens each adopting repository's
+`bot/org-sync` refresh PR (`org_sync.py apply`), which is the only PR that
+brings the change in. Do not open a hand-edited PR per repository alongside
+it: the check renders the templates of this repository's `main` as they are
+when it runs (`org-ref`), so a hand edit pushed while the template PR is
+still open is drift, red on `check / org-sync`, and it stays red after the
+template merges until the check runs again on that branch; org-bot never
+pushes to a branch it did not open (2026-11-11: ten PRs sat red for about
+2.5 hours after #230 merged, until each branch was updated and re-applied
+by hand). If such a PR exists anyway, close it in favour of org-bot's, or
+update its branch from `main`, run `org_sync.py apply .` on it (from a
+checkout of `swarm-routing/.github` next to the repository:
+`python3 ../.github/tools/org-sync/org_sync.py apply .`) and push. Seeds
+(SECURITY.md, the Makefile, LICENSING.md, CITATION.cff, …) are the
+exception: once written they belong to the repository, a template change
+never reaches them and org-bot's PR does not bring it in, so a seed is
+changed in each repository (or rewritten from the template with
+`org_sync.py reseed FILE`). Text a
+repository owns outside the markers is likewise edited in that repository.
 
 Settings are changed by PR, never by hand: edit the repository's `[settings]` (or a profile here) and the next apply writes it (a profile change applies on push here; a `[settings]` change in another repository applies when `repo-settings` is dispatched with mode `apply` after its merge); a hand edit, in the UI or by a direct API write, shows up as drift the next day. A required check must run on every PR (no `paths:` filter; skip the work inside a gate job instead), or the PRs it skips can never merge, and its name must match the check run's name exactly. An org-level ruleset (an org-owner setting) can add a floor every repository inherits, including new ones before their `[settings]` land.
 

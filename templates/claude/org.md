@@ -46,6 +46,10 @@ because the issue threads were thorough. Caveman the chat, not the record.
   acceptance criteria remain open.
 - Before saying a tool or check is missing, look at `main` (`git fetch`,
   `origin/main`), not a stale local checkout.
+- Change text inside `org-sync:begin/end` markers only through the template
+  in `swarm-routing/.github` `templates/`: one PR there, then org-bot's
+  `bot/org-sync` refresh PR in each repository. A hand edit per repository
+  stays red on `check / org-sync` (swarm-routing/.github#236).
 - In a repository with a merge queue, merge by enabling auto-merge (squash);
   a direct merge (`PUT pulls/<n>/merge`) is refused with HTTP 405. Only the
   required checks (`gh api 'repos/{owner}/{repo}/rules/branches/main'`, which
@@ -57,6 +61,12 @@ because the issue threads were thorough. Caveman the chat, not the record.
   `pull_request` only, so enable auto-merge on an outside contributor's PR
   only after `dco` passed on its current head, and disable it before pushing
   to that PR.
+- Enable auto-merge only after CodeRabbit has reviewed and its threads are
+  resolved: it is not a required check, so auto-merge does not wait for it.
+  `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`
+  (a `swarm-routing/.github` checkout next to the repository) waits for the
+  review and goes on with a warning 30 minutes after the PR opened
+  (swarm-routing/.github#238).
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").
