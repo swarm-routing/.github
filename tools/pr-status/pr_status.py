@@ -272,11 +272,15 @@ def startup_failures(gh, repo, sha):
     )
 
 
-def ci_summary(gh, repo, sha, required=frozenset()):
+def ci_summary(gh, repo, sha, required=frozenset(), skip_coderabbit=False):
     """The verdict, the count of each conclusion, the failed checks' names and
-    the required checks that have not reported on the head."""
+    the required checks that have not reported on the head. With
+    `skip_coderabbit`, CodeRabbit's own check run is left out unless required
+    (`wait --review` waits for the review separately)."""
     counts, failed, seen = Counter(), [], set()
     for run in gh.paged(f"repos/{repo}/commits/{sha}/check-runs"):
+        if skip_coderabbit and is_coderabbit(run) and run.get("name") not in required:
+            continue
         done = run.get("status") == "completed"
         state = (run.get("conclusion") or "pending") if done else "pending"
         counts[state] += 1
@@ -381,7 +385,7 @@ def threads(gh, repo, number, include_resolved=False):
     return out
 
 
-def pr_state(gh, repo, number, cache=None):
+def pr_state(gh, repo, number, cache=None, skip_coderabbit=False):
     pr = gh.get(f"repos/{repo}/pulls/{number}")
     if pr is None:
         raise Failure(f"pr_status: {short_repo(repo)}#{number} not found")
@@ -400,7 +404,7 @@ def pr_state(gh, repo, number, cache=None):
         "mergeable": pr.get("mergeable"),
         "mergeable_state": pr.get("mergeable_state") or "unknown",
         "created_at": pr.get("created_at"),
-        "ci": ci_summary(gh, repo, sha, required),
+        "ci": ci_summary(gh, repo, sha, required, skip_coderabbit),
         "unresolved": None if ts is None else len(ts),
         "threads": ts or [],
     }
@@ -471,12 +475,16 @@ def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
     review_wait = getattr(args, "review_timeout", 0) if getattr(args, "review", False) else 0
     start, cache = clock(), {}
     while True:
-        prs = [pr_state(gh, repo, n, cache) for repo, n in refs]
+        prs = [pr_state(gh, repo, n, cache, review_wait > 0) for repo, n in refs]
         pending = [p for p in prs if p["ci"]["verdict"] == "pending"]
         unreviewed = []
         for p in prs if review_wait > 0 else []:
-            p["review"] = coderabbit_review(gh, full_repo(p["repo"]), p["number"], p["head"])
+            repo = full_repo(p["repo"])
+            p["review"] = coderabbit_review(gh, repo, p["number"], p["head"])
             p["review_age"] = pr_age(p, wall, clock() - start)
+            if p["review"] == "reviewed":  # the threads the review opened, read after it
+                ts = threads(gh, repo, p["number"])
+                p["unresolved"], p["threads"] = (None if ts is None else len(ts)), ts or []
             if p["review"] != "reviewed" and p["review_age"] < review_wait:
                 unreviewed.append(p)
         if not (pending or unreviewed) or clock() - start >= args.timeout:
@@ -1580,6 +1588,35 @@ def self_test():
         and waited == 300
         and out.splitlines()[-1]
         == "alpha#27 warning: no CodeRabbit review yet 300s after the PR opened",
+    )
+
+    gh = SimGitHub({("alpha", 28): {"sha": "28" * 20}}, reviews={("alpha", 28): []})
+    gh.checks = {"28" * 20: reviewing}
+    rc, out, waited = wait_review(gh, "alpha#28", review_timeout=120)
+    check(
+        "wait --review: an optional CodeRabbit run still going is not pending CI",
+        rc == 0
+        and waited == 120
+        and "ci=pass(success=1)" in out
+        and out.splitlines()[-1].startswith("alpha#28 warning: CodeRabbit review in progress"),
+    )
+    gh = SimGitHub({("alpha", 29): {"sha": "29" * 20}})
+    reads = []
+    real_get29 = gh.get
+
+    def thread_on_second_read(path):  # the review lands between pr_state's read and its own
+        if path.endswith("/pulls/29/ccr/review_threads"):
+            reads.append(1)
+            if len(reads) > 1:
+                return [{"resolved": False, "path": "x.py", "line": 3, "comment_ids": [7]}]
+            return []
+        return real_get29(path)
+
+    gh.get = thread_on_second_read
+    rc, out, _ = wait_review(gh, "alpha#29")
+    check(
+        "wait --review: the threads are read again after the review",
+        rc == 0 and "threads=1" in out and "Guard the empty list." in out,
     )
 
     # --dry-run writes nothing; --json puts the events on stderr and results on stdout

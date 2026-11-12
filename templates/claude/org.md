@@ -59,8 +59,9 @@ because the issue threads were thorough. Caveman the chat, not the record.
   agent's commits it is expected (swarm-routing/.github#212).
 - Enable auto-merge only after CodeRabbit has reviewed and its threads are
   resolved: it is not a required check, so auto-merge does not wait for it.
-  `pr_status.py wait --review REPO#N` (swarm-routing/.github `tools/pr-status/`)
-  waits for the review and goes on with a warning after 30 minutes
+  `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`
+  (a `swarm-routing/.github` checkout next to the repository) waits for the
+  review and goes on with a warning 30 minutes after the PR opened
   (swarm-routing/.github#238).
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside

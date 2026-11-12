@@ -235,8 +235,8 @@ starts from the newest open `handoff` issue and closes it when done.
   and a PR whose required checks finish first merges unreviewed (CodeRabbit
   then reports "Review failed: The pull request is closed"). So enable
   auto-merge only once CodeRabbit has reviewed and every thread it opened is
-  answered and resolved: `tools/pr-status/pr_status.py wait --review
-  REPO#N` waits for its review (a review on the PR, or its `CodeRabbit`
+  answered and resolved: `python3 -I tools/pr-status/pr_status.py wait
+  --review REPO#N` waits for its review (a review on the PR, or its `CodeRabbit`
   check run completed on the head) and `pr_status.py merge` waits for it
   before reading the threads. Both give up after `--review-timeout`
   seconds from the PR's opening (default 1800) and go on with a warning,
