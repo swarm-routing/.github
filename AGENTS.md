@@ -192,7 +192,8 @@ Org-wide (1–9), then this repo's own.
   and the version is released when its issues are done (CONTRIBUTING
   "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
   workflow, the shared `release:v0.1.0` to `release:v1.0.0` among them; a
-  version outside that set is added to `labels.json` when a ladder needs it,
+  version outside that set is added to `labels.json` (and CONTRIBUTING's
+  label table) when a ladder needs it,
   or, in a repository that keeps its own release labels (AntHocNet), created
   there with `gh label create release:vX.Y.Z` when its ladder adds the version.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·

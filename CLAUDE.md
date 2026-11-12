@@ -67,7 +67,8 @@ because the issue threads were thorough. Caveman the chat, not the record.
   off; on the maintainer's or an agent's commits it is expected
   (swarm-routing/.github#212). `dco` is not a required check and runs on
   `pull_request` only, so enable auto-merge on an outside contributor's PR
-  only after `dco` passed.
+  only after `dco` passed on its current head, and disable it before pushing
+  to that PR.
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").
