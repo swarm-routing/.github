@@ -697,10 +697,20 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   DOI. Never the repository's own DOI (CITATION.cff carries it), and only
   public sources: a work is cited by its DOI link, never by where a copy of it
   is kept.
-- **Fields come from Crossref or Zenodo, never typed.** `fidelity.py bib entry
-  DOI --key K --role R` prints Crossref's record as an entry; `zenodo.py bibtex
-  OWNER/REPO --key K --role tool` prints an org release's concept record as
-  `@software`.
+- **Keys.** An entry's key is the one the repository already cites: a
+  fidelity sheet's key (`G02`, `PG460`, `DDG04`) or an existing bib file's
+  (AntHocNet's `paper/paper.bib`). One key per work across the sheet, the bib
+  files and the code comments: a work cited as `G02` in one place is never
+  `gunes2002` in another.
+- **Fields come from Crossref, DataCite or Zenodo, never typed.** `fidelity.py
+  bib entry DOI --key K --role R` prints Crossref's record as an entry, or,
+  when Crossref has none, DataCite's (a university repository's report or
+  thesis, a dataset: the type from its `resourceTypeGeneral`); `zenodo.py
+  bibtex OWNER/REPO --key K --role tool` prints an org release's concept record
+  as `@software` (a Zenodo DOI is never looked up through `bib entry`). `bib
+  check --online` suggests a DOI for a url-only entry by its title; that match
+  may be another work with the same title (a later chapter or article), so
+  check its type and year before adopting it.
 - **Generated sections.** Once the file has an entry, org-sync renders
   CITATION.cff's `references:` and the README's Releases & citing list from its
   `implemented`, `tool` and `dataset` entries (an entry's `note` is its role
