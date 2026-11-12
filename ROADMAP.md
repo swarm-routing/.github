@@ -18,6 +18,49 @@ Whoever opens, closes or re-scopes an epic, or changes one of its sub-issues,
 refreshes it in that PR or the next one (CONTRIBUTING, "Epics are the public
 plan"); the weekly `epics` workflow only reports drift.
 
+## Direction beyond ns-3 (proposed 2026-11-12)
+
+Proposed after a review of every repository and open issue on 2026-11-12, and
+not decided yet: the issues marked *decision* below wait on the maintainer.
+This section becomes the frame of this file when
+[.github#261](https://github.com/swarm-routing/.github/issues/261) rewrites it
+by tracks; until then the phases below stay as they are.
+
+**The goal.** A swarm-protocol environment built on ns-3 whose protocols also
+run on other simulators and as software installed on Raspberry Pis and other
+Linux computers, tested there with the same scenes, and a protocol of the org's
+own if the tests say one is needed.
+
+| Track | What | Epic | Decisions it waits on |
+|---|---|---|---|
+| **A** Protocols on ns-3 | the phases and the [release train](#the-release-train) below, unchanged | each repository's epic | none |
+| **B** Portable runtime | one host contract for every `core/`, a standalone discrete-event host, a Linux daemon, installable packages, a Raspberry Pi testbed; another simulator last ([Later: other simulators](#later-other-simulators-deferred)) | [.github#250](https://github.com/swarm-routing/.github/issues/250) | [.github#253](https://github.com/swarm-routing/.github/issues/253) (order of hosts, where the code lives, licence, timing, who owns each adapter), [.github#268](https://github.com/swarm-routing/.github/issues/268) (the scenes and their tolerances) |
+| **C** Research | security under one epic; network families under one owner; AntHocNet or a protocol of our own, decided by tests; the remaining swarm protocols' verdicts | [.github#272](https://github.com/swarm-routing/.github/issues/272); [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43) ([.github#275](https://github.com/swarm-routing/.github/issues/275)); [.github#252](https://github.com/swarm-routing/.github/issues/252); [.github#54](https://github.com/swarm-routing/.github/issues/54) | [.github#273](https://github.com/swarm-routing/.github/issues/273) (threat model), [.github#269](https://github.com/swarm-routing/.github/issues/269) (the deciding tests and the naming rule), [.github#264](https://github.com/swarm-routing/.github/issues/264) (gates for a protocol with no paper) |
+| **I** Infrastructure | templates, hardening, CI time, images, releases, skills, the AI files; it rides along and never gates a release | [.github#6](https://github.com/swarm-routing/.github/issues/6), [#14](https://github.com/swarm-routing/.github/issues/14), [#150](https://github.com/swarm-routing/.github/issues/150), [#141](https://github.com/swarm-routing/.github/issues/141), [#216](https://github.com/swarm-routing/.github/issues/216) | [.github#262](https://github.com/swarm-routing/.github/issues/262) (priorities, the infrastructure share), [.github#280](https://github.com/swarm-routing/.github/issues/280) (the `model:*` labels) |
+
+**One test ladder.** Nine named scenes with stated expectations (RT-1 to RT-9,
+[.github#268](https://github.com/swarm-routing/.github/issues/268)) are run on
+every rung and judged by one checker: `core/` unit tests, ns-3 (the reference,
+and the only rung whose numbers are published), a standalone discrete-event
+host, another simulator, the Linux daemon in network namespaces, emulation,
+and real computers. A host is written to pass them; results off ns-3 stay
+qualitative.
+
+**Tests decide the protocol.** AntHocNet is the pathfinder for track B. Seven
+deployment-fitness tests ([.github#269](https://github.com/swarm-routing/.github/issues/269)),
+most runnable on ns-3 today, decide whether it is installed under its own name
+or whether its failures become the requirements of a new protocol, which needs
+a new name as soon as a mechanism its paper lacks is on by default.
+
+**The clean-up that goes with it** is
+[.github#251](https://github.com/swarm-routing/.github/issues/251): this file
+by tracks, duplicated and finished issues, stale handoffs, decisions as a
+queue. Making the agent files shorter and the org's state readable by a new
+session is under [.github#141](https://github.com/swarm-routing/.github/issues/141)
+([#277](https://github.com/swarm-routing/.github/issues/277),
+[#278](https://github.com/swarm-routing/.github/issues/278),
+[#281](https://github.com/swarm-routing/.github/issues/281)).
+
 ## The ladder
 
 ```mermaid
@@ -51,7 +94,7 @@ flowchart LR
 | Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | **done**: [swarm-routing/AntHocNet](https://github.com/swarm-routing/AntHocNet), CI green after the move (AntHocNet#854); missed releases are archived on Zenodo by the daily `zenodo` workflow (.github#66); left: the links ([.github#63](https://github.com/swarm-routing/.github/issues/63)) and the org template (AntHocNet#855), tracked on the handoff [AntHocNet#856](https://github.com/swarm-routing/AntHocNet/issues/856) |
 | 5 Termite | [Termite#3](https://github.com/swarm-routing/Termite/issues/3) (was .github#51) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | version decided (ch. 4, Termite#4); fidelity sheet merged (Termite#21, #23–#26; #4 stays open on its last criterion); anchor-miss pre-registration accepted 2026-11-10 ([Termite#5](https://github.com/swarm-routing/Termite/issues/5), its runs to come); `core/` started ([Termite#28](https://github.com/swarm-routing/Termite/pull/28): the ch. 4 data path, 16 tests; the `core` check required by Termite#29); next in [Termite#6](https://github.com/swarm-routing/Termite/issues/6): the route request, then `ns3/` |
 | 5+ HOPNET | [HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3) (was .github#52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | scheduled after Termite (maintainer decision 2026-11-10, [on HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3)); fidelity sheet merged (HOPNET#4 closed) and the #5 pre-registration accepted 2026-11-10; `core/` started ([HOPNET#25](https://github.com/swarm-routing/HOPNET/pull/25): the intra-zone half; `core-test`/`core-format` required by HOPNET#26); next in [HOPNET#5](https://github.com/swarm-routing/HOPNET/issues/5): the inter-zone half of `core/`; `ns3/` follows ARA's (see [Non-goals](#non-goals)) |
-| Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first |
+| Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first; proposed 2026-11-12 as the last step of the portable runtime ([.github#250](https://github.com/swarm-routing/.github/issues/250)), the order to be decided in [.github#253](https://github.com/swarm-routing/.github/issues/253) |
 
 ## Where to start
 
@@ -216,8 +259,8 @@ These lines come after the 1.0.0 releases (wave E). Each is a theme, not a date.
 | Line | Theme | Issues |
 |---|---|---|
 | **1.1** | **Comparators**: protocols we did not design, under identical conditions (epic [ns3-tools#15](https://github.com/swarm-routing/ns3-tools/issues/15)) | secure arms SAODV, SEAD, TAODV and the crypto cost model they share: [ns3-tools#16](https://github.com/swarm-routing/ns3-tools/issues/16)–[#19](https://github.com/swarm-routing/ns3-tools/issues/19); the multi-agent DRL arm [ns3-tools#20](https://github.com/swarm-routing/ns3-tools/issues/20), gated (disjoint training and test seeds, a held-out family, the training budget reported); the DTN arm for the disaster family [ns3-tools#21](https://github.com/swarm-routing/ns3-tools/issues/21); AntHocNet's vendored AOMDV and GPSR promoted to `ns3/arms/` ([ns3-tools#34](https://github.com/swarm-routing/ns3-tools/issues/34)–[#36](https://github.com/swarm-routing/ns3-tools/issues/36)) |
-| **1.2** | **Network families**: the ns-3 pieces new network types need, for every arm (epic [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43)) | substrates [ns3-tools#44](https://github.com/swarm-routing/ns3-tools/issues/44)–[#53](https://github.com/swarm-routing/ns3-tools/issues/53); the tactical narrowband cell [ns3-tools#24](https://github.com/swarm-routing/ns3-tools/issues/24). The public-safety fallback cell ([ns3-tools#48](https://github.com/swarm-routing/ns3-tools/issues/48)) needs `lte` and `buildings` in the images first ([ns3-containers#63](https://github.com/swarm-routing/ns3-containers/issues/63)) |
-| **2.0** | **Security**: attacks every arm can face, and the secure swarm variants | protocol-agnostic adversary nodes (wormhole, rushing, Sybil) [ns3-tools#37](https://github.com/swarm-routing/ns3-tools/issues/37); the secure ARA variants [ARA#9](https://github.com/swarm-routing/ARA/issues/9) (trust-weighted ACO) and [ARA#10](https://github.com/swarm-routing/ARA/issues/10) (ACO + watchdog); BeeSec / BeeAIS [BeeAdHoc#9](https://github.com/swarm-routing/BeeAdHoc/issues/9). Alongside AntHocNet's secured profile and wider threat model ([AntHocNet#302](https://github.com/swarm-routing/AntHocNet/issues/302), [AntHocNet#564](https://github.com/swarm-routing/AntHocNet/issues/564)) and the site's campaign chapters on it ([swarm-routing.github.io#21](https://github.com/swarm-routing/swarm-routing.github.io/issues/21)–[#23](https://github.com/swarm-routing/swarm-routing.github.io/issues/23)) |
+| **1.2** | **Network families**: the ns-3 pieces new network types need, for every arm (epic [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43)) | substrates [ns3-tools#44](https://github.com/swarm-routing/ns3-tools/issues/44)–[#53](https://github.com/swarm-routing/ns3-tools/issues/53); the tactical narrowband cell [ns3-tools#24](https://github.com/swarm-routing/ns3-tools/issues/24). The public-safety fallback cell ([ns3-tools#48](https://github.com/swarm-routing/ns3-tools/issues/48)) needs `lte` and `buildings` in the images first ([ns3-containers#63](https://github.com/swarm-routing/ns3-containers/issues/63)). One owner, one list of families and verdicts before substrates are proposed in [.github#275](https://github.com/swarm-routing/.github/issues/275) |
+| **2.0** | **Security**: attacks every arm can face, and the secure swarm variants | protocol-agnostic adversary nodes (wormhole, rushing, Sybil) [ns3-tools#37](https://github.com/swarm-routing/ns3-tools/issues/37); the secure ARA variants [ARA#9](https://github.com/swarm-routing/ARA/issues/9) (trust-weighted ACO) and [ARA#10](https://github.com/swarm-routing/ARA/issues/10) (ACO + watchdog); BeeSec / BeeAIS [BeeAdHoc#9](https://github.com/swarm-routing/BeeAdHoc/issues/9). Alongside AntHocNet's secured profile and wider threat model ([AntHocNet#302](https://github.com/swarm-routing/AntHocNet/issues/302), [AntHocNet#564](https://github.com/swarm-routing/AntHocNet/issues/564)) and the site's campaign chapters on it ([swarm-routing.github.io#21](https://github.com/swarm-routing/swarm-routing.github.io/issues/21)–[#23](https://github.com/swarm-routing/swarm-routing.github.io/issues/23)). One owning epic and the order of work are proposed in [.github#272](https://github.com/swarm-routing/.github/issues/272); its first step is the decision [.github#273](https://github.com/swarm-routing/.github/issues/273) |
 | **Later** | **More swarm protocols, other simulators** | the remaining swarm MANET protocols, each a repository, a skip or a fold into an existing one by the verdicts of [.github#54](https://github.com/swarm-routing/.github/issues/54); other simulators (OMNeT++/INET, Veins, CORE/EMANE), deferred until their trigger fires ([.github#48](https://github.com/swarm-routing/.github/issues/48)) |
 
 A 2.0 here is a theme name. A repository bumps its major version only for a breaking change, and an additive security arm is a minor release in the repository that ships it.
@@ -553,6 +596,15 @@ simulator gives; a venue or reviewer asks for cross-simulator confirmation; an
 emulation or real-stack claim is needed. Cross-simulator results stay
 qualitative: they confirm an ns-3 ranking, they do not replace its numbers.
 
+The third arm of that trigger is the goal stated on 2026-11-12 (software on
+real computers). The proposal that answers it,
+[Direction beyond ns-3](#direction-beyond-ns-3-proposed-2026-11-12), puts a
+standalone discrete-event host and a Linux daemon before any other simulator
+and moves the CORE/EMANE row of this section into the portable runtime
+([.github#250](https://github.com/swarm-routing/.github/issues/250)); OMNeT++/INET
+and Veins stay here. Nothing in this section changes until
+[.github#253](https://github.com/swarm-routing/.github/issues/253) is answered.
+
 ## Non-goals
 
 - **No protocol before its foundation.** A protocol's simulator-free `core/` may start once swarm-core's primitives and glue have merged (ns3-swarm-core#8, #9; done 2026-11-10). A protocol's ns-3 module waits until the first protocol module builds green against swarm-core `main` (maintainer decision 2026-11-10; met by ARA#40 on 2026-11-10).
@@ -565,4 +617,4 @@ qualitative: they confirm an ns-3 ranking, they do not replace its numbers.
 - **AntHocNet keeps its own ladder.** Its `docs/roadmap.md` governs AntHocNet's releases; the org's [release train](#the-release-train) only places them among the other repositories' releases. Issues not migrated (95 audited, 31 moved in three waves) keep their `release:` labels there; a migrated issue takes the target repository's `release:` labels, from that repository's own ladder ([Releases](#releases); decision 2026-11-11). The undecided ones (swarm-routing/AntHocNet#319, #112, #405) stay until the maintainer moves them.
 - **No learned arm without its gates.** The DRL comparator (ns3-tools#20) needs disjoint training and test seeds, one held-out family and a reported training budget, plus frozen, versioned weights; nothing about it is scheduled before those exist.
 - **DTN only where the oracle says so.** The store-carry-forward arm (ns3-tools#21) exists because swarm-routing/AntHocNet#580's trigger fired (the oracle delivers about 81 % on the disaster scene: the rest is partition-bound); it is scoped to the disaster family, not a general comparator.
-- **No second simulator for now.** ns-3 is the focus; OMNeT++/INET, Veins and CORE/EMANE are planned as their own container and tooling repositories, deferred until the trigger in [Later: other simulators](#later-other-simulators-deferred) fires (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"; org decision 2026-11-03, .github#48). Cross-simulator results would be qualitative only.
+- **No second simulator for now.** ns-3 is the focus; OMNeT++/INET, Veins and CORE/EMANE are planned as their own container and tooling repositories, deferred until the trigger in [Later: other simulators](#later-other-simulators-deferred) fires (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"; org decision 2026-11-03, .github#48). Cross-simulator results would be qualitative only. Under review: [.github#253](https://github.com/swarm-routing/.github/issues/253) proposes hosts that are not simulators (a standalone discrete-event host, a Linux daemon, real computers) before any second simulator; this non-goal stands until it is answered.
