@@ -90,7 +90,9 @@ Org-wide (1–9), then this repo's own.
    readers/writers, a leading version byte, and deterministic roundtrip + fuzz
    tests. Changing a field or its units bumps the version byte.
 4. **No contrib module named `core`** (collides with ns-3's `src/core`). The
-   shared module is `swarm-core` (`#include "ns3/swarm-core-module.h"`).
+   shared module is `swarm-core` (`#include "ns3/swarm-core-module.h"`), and
+   every protocol builds on it, AntHocNet included: `core/` on its `core/`, the
+   ns-3 adapter on `SwarmRoutingBase` (swarm-routing/ns3-swarm-core#14).
 5. **Determinism.** A fixed `--seed=<N>` gives byte-identical output. All
    randomness through the simulator's seeded streams or an injected RNG port;
    never libc `rand()`, wall-clock time, or unordered-container iteration order
@@ -122,7 +124,8 @@ Org-wide (1–9), then this repo's own.
   (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
   umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
   `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
-  recommendation, one `priority:P1|P2|P3` on non-epic issues, a
+  suggestion (a model on the Claude Pro plan), one `priority:P1|P2|P3` on
+  non-epic issues (none on an epic), a
   `release:vX.Y.Z` label only when a release in the repository's ladder
   (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
   gates the issue: that label set is the version's scope,
@@ -284,8 +287,12 @@ because the issue threads were thorough. Caveman the chat, not the record.
   off; on the maintainer's or an agent's commits it is expected
   (swarm-routing/.github#212). `dco` is not a required check and runs on
   `pull_request` only, so merge an outside contributor's PR, by auto-merge or
-  directly, only after `dco` passed on the head commit that merges, and
-  disable auto-merge before anyone pushes to that PR.
+  directly, only after `dco` passed on the head commit that merges. Never push
+  to an outside contributor's PR: ask them for the change, or make it in a
+  follow-up PR after the merge (swarm-routing/.github#288). If anyone pushes
+  to such a PR in a merge queue, remove it from the queue (disabling
+  auto-merge does not) and enqueue it again only after `dco` passed on the new
+  head.
 - Enable auto-merge only after CodeRabbit has reviewed and its threads are
   resolved: it is not a required check, so auto-merge does not wait for it.
   `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`

@@ -3,7 +3,8 @@
   (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
   umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
   `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
-  recommendation, one `priority:P1|P2|P3` on non-epic issues, a
+  suggestion (a model on the Claude Pro plan), one `priority:P1|P2|P3` on
+  non-epic issues (none on an epic), a
   `release:vX.Y.Z` label only when a release in the repository's ladder
   (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
   gates the issue: that label set is the version's scope,

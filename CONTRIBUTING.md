@@ -52,7 +52,11 @@ is the long form.
    deterministic roundtrip + fuzz tests.
 3. **No module named `core`.** It collides with ns-3's `src/core`; the shared
    module is `swarm-core` (`#include "ns3/swarm-core-module.h"`).
-   `ns3-build-contrib` refuses the name.
+   `ns3-build-contrib` refuses the name. **Every protocol builds on
+   swarm-core**, AntHocNet included: its `core/` on swarm-core's dual-licensed
+   `core/`, its ns-3 adapter on `SwarmRoutingBase`; what a protocol needs and
+   the base lacks is promoted into swarm-core (maintainer decision,
+   swarm-routing/ns3-swarm-core#14).
 4. **Determinism.** Fixed `--seed=<N>` ⇒ byte-identical output. Comparisons are
    paired per-seed deltas over ≥ 20 seeds, emitting `##CONFIG##`, `##RUN##`,
    `##BENCH##`, `##DIAG##` lines.
@@ -165,8 +169,8 @@ automatic CodeRabbit review, so a new label is added there by hand):
 |---|---|---|
 | Type | exactly one; umbrellas add `epic` | `bug`, `enhancement`, `chore`, `documentation`, `verification` (+ `question`, `handoff`) |
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `learn-site`, `literature` |
-| Model | exactly one: what a wrong first pass costs, not code volume | `model:haiku-4.5` (mechanical), `model:sonnet-5` (plumbing, tooling, docs), `model:opus-4.8` (protocol semantics, root cause, CI-validated adapter work), `model:fable-5` (architecture, greenfield) |
-| Priority | exactly one on non-epic issues | `priority:P1` (regression / invalidates numbers), `priority:P2` (gates a result or feature), `priority:P3` (valuable, not blocking) |
+| Model | exactly one, a suggestion: what a wrong first pass costs, not code volume; only models a Claude Pro plan includes (maintainer decision, #280) | `model:haiku-5.5` (mechanical), `model:sonnet-5.5` (plumbing, tooling, docs), `model:opus-5.5` (protocol semantics, root cause, adapter work, architecture: write the design first) |
+| Priority | exactly one on non-epic issues; never on an epic | `priority:P1` (blocks the current wave's release, breaks `main`, or invalidates published numbers; a protocol's gated v0.2.0 issue while its wave is current), `priority:P2` (gates a result or feature), `priority:P3` (valuable, not blocking). Infrastructure work holds at most 30% of the work in flight (maintainer decision, #262) |
 | Release | only when a release in the repository's own ladder (its `docs/roadmap.md`) gates the issue; never on infrastructure-track work that only rides along | `release:v0.1.0`, `release:v0.2.0`, `release:v0.3.0`, `release:v0.4.0`, `release:v1.0.0` (shared, from `labels.json`); a repository with a longer ladder (AntHocNet) keeps its own `release:vX.Y.Z` labels |
 | Contributor | any number, set by a maintainer when an outside contributor can pick the issue up | `good first issue` (small, well scoped, needs no history), `help wanted` (outside help welcome) |
 
@@ -324,7 +328,12 @@ event, so the check also asks for the author's permission): the
 person who opened the PR certifies its contents by opening it (maintainer
 decision, #212). The same commit on an outside contributor's PR is not
 exempt; it needs its author's own sign-off, since no one signs off on anyone
-else's behalf.
+else's behalf. So **an agent never pushes to an outside contributor's PR**: a
+change is asked of the contributor, or made in a follow-up PR after the merge
+(maintainer decision, #288). If someone else pushes to such a PR while it is
+in a merge queue, disabling auto-merge does not take it out: remove it from
+the queue, and enqueue it again only once `dco` has passed on the new head
+(swarm-routing/BeeAdHoc#79).
 
 The sign-off is the recorded grant AntHocNet
 [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)

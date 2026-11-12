@@ -80,8 +80,12 @@ because the issue threads were thorough. Caveman the chat, not the record.
   off; on the maintainer's or an agent's commits it is expected
   (swarm-routing/.github#212). `dco` is not a required check and runs on
   `pull_request` only, so merge an outside contributor's PR, by auto-merge or
-  directly, only after `dco` passed on the head commit that merges, and
-  disable auto-merge before anyone pushes to that PR.
+  directly, only after `dco` passed on the head commit that merges. Never push
+  to an outside contributor's PR: ask them for the change, or make it in a
+  follow-up PR after the merge (swarm-routing/.github#288). If anyone pushes
+  to such a PR in a merge queue, remove it from the queue (disabling
+  auto-merge does not) and enqueue it again only after `dco` passed on the new
+  head.
 - Enable auto-merge only after CodeRabbit has reviewed and its threads are
   resolved: it is not a required check, so auto-merge does not wait for it.
   `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`

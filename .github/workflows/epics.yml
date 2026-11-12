@@ -79,6 +79,6 @@ jobs:
             gh issue comment "$n" --body-file "$body"
           else
             gh issue create --title "$title" --body-file "$body" \
-              --label documentation --label packaging --label model:haiku-4.5 --label priority:P3
+              --label documentation --label packaging --label model:haiku-5.5 --label priority:P3
           fi
           exit 1
