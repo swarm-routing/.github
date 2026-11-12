@@ -663,7 +663,8 @@ def crossref_entry(msg, key, role):
 
 
 # DataCite's resourceTypeGeneral -> entry type; a thesis is read from its resourceType
-# and descriptions (doctoral, master), else @misc; anything else is @misc
+# and descriptions (master first, then doctoral or PhD), else @misc; a Text or Report
+# whose resourceType names such a degree is that thesis; anything else is @misc
 DATACITE_TYPES = {
     "Text": "techreport",
     "Report": "techreport",
@@ -682,17 +683,22 @@ def datacite_entry(attrs, key, role):
     """A references.bib entry from a DataCite DOI record; fields DataCite lacks stay out."""
     types = attrs.get("types") or {}
     kind = DATACITE_TYPES.get(types.get("resourceTypeGeneral", ""), "misc")
+
+    def degree(text):
+        if re.search(r"\bmaster|\bm\.?sc\b", text):
+            return "mastersthesis"
+        if re.search(r"\b(?:phd|ph\.d\.|doctoral|doctorate)\b", text):
+            return "phdthesis"
+        return None
+
     if kind == "thesis":
         about = " ".join(
             [str(types.get("resourceType") or "")]
             + [str(d.get("description", "")) for d in attrs.get("descriptions") or []]
         ).lower()
-        if re.search(r"\b(?:phd|ph\.d\.|doctoral|doctorate|dissertation)\b", about):
-            kind = "phdthesis"
-        elif re.search(r"\bmaster|\bm\.?sc\b", about):
-            kind = "mastersthesis"
-        else:
-            kind = "misc"
+        kind = degree(about) or "misc"
+    elif kind == "techreport":
+        kind = degree(str(types.get("resourceType") or "").lower()) or kind
     f = {}
     names = []
     for c in attrs.get("creators") or []:
@@ -702,6 +708,8 @@ def datacite_entry(attrs, key, role):
         if fam and c.get("nameType") != "Organizational":
             giv = _clean(giv, "author")
             names.append(_clean(fam, "author") + (f", {giv}" if giv else ""))
+        elif c.get("name") and c.get("nameType") == "Personal":
+            names.append(_clean(c["name"], "author"))  # "Family, Given" as DataCite writes it
         elif c.get("name"):
             names.append("{" + _clean(c["name"], "author") + "}")
     if names:
@@ -1614,14 +1622,18 @@ def bib_self_test():
 
     org = dc(
         "Dataset",
-        creators=[{"name": "LENS Team", "nameType": "Organizational"}, {"name": "Doe, J."}],
+        creators=[
+            {"name": "LENS Team", "nameType": "Organizational"},
+            {"name": "Doe, Jane", "nameType": "Personal"},
+            {"name": "Some Lab"},
+        ],
         titles=[{"title": "Traces"}, {"title": "one & two", "titleType": "Subtitle"}],
         publisher={"name": "Zenodo"},
     )
     expect(
         "datacite: a dataset is @misc; organisations braced; subtitle; publisher object",
         org["type"] == "misc"
-        and org["fields"]["author"] == "{LENS Team} and {Doe, J.}"
+        and org["fields"]["author"] == "{LENS Team} and Doe, Jane and {Some Lab}"
         and org["fields"]["title"] == "Traces: one \\& two"
         and org["fields"]["publisher"] == "Zenodo",
     )
@@ -1642,6 +1654,23 @@ def bib_self_test():
         "compared",
     )
     expect("datacite: a master's thesis", ms["type"] == "mastersthesis")
+    msd = datacite_entry(
+        {"types": {"resourceTypeGeneral": "Dissertation", "resourceType": "Master's dissertation"}},
+        "K",
+        "compared",
+    )
+    expect("datacite: master's evidence wins over 'dissertation'", msd["type"] == "mastersthesis")
+    txt = datacite_entry(
+        {"types": {"resourceTypeGeneral": "Text", "resourceType": "Master's thesis"}},
+        "K",
+        "compared",
+    )
+    expect("datacite: a Text that is a master's thesis", txt["type"] == "mastersthesis")
+    expect(
+        "datacite: a Text of no stated degree is a report",
+        dc("Text", types={"resourceTypeGeneral": "Text", "resourceType": "study thesis"})["type"]
+        == "techreport",
+    )
     expect("datacite: a thesis of no stated degree is @misc", dc("Dissertation")["type"] == "misc")
     expect("datacite: an unknown type is @misc", dc("Image")["type"] == "misc")
     return failures
