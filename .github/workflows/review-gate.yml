@@ -1,0 +1,23 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: review
+
+# This repository's own review gate (#294): the reusable workflow from this
+# checkout, with tools/pr-status from the PR's head, so a change to either is
+# proven on its own PR. Other repositories get templates/workflows/review-gate.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions: {}
+
+jobs:
+  review:
+    uses: ./.github/workflows/reusable-review-gate.yml
+    with:
+      org-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: write

@@ -1,0 +1,111 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable review gate
+
+# A required check that waits for CodeRabbit's review (#294). CodeRabbit is
+# not a required check (a required check has no time-out, so an outage would
+# stop every merge: #238), so without this a PR whose checks finish first,
+# org-bot's included, merges unreviewed. This job passes once CodeRabbit has
+# reviewed the PR, once it said it will not (a skipped review, a rate limit,
+# a used-up quota), for a draft (it runs again when the PR is marked ready),
+# or once `timeout-minutes` have passed since the PR opened; on that time-out
+# it leaves one comment so the PR can be reviewed after the fact
+# (`@coderabbitai review`). Unresolved threads are held by the ruleset
+# (`required_review_thread_resolution`), not here. In a merge group it passes
+# at once: the PR passed this gate before it was queued.
+#
+# The wait is `tools/pr-status/pr_status.py gate`, read-only; its self-test
+# covers every outcome (`python3 -I tools/pr-status/pr_status.py --self-test`).
+#
+# Caller (the check is `review / coderabbit` in [settings] required_checks):
+#
+#   on:
+#     pull_request:
+#       types: [opened, synchronize, reopened, ready_for_review]
+#     merge_group:
+#   permissions: {}
+#   jobs:
+#     review:
+#       uses: swarm-routing/.github/.github/workflows/reusable-review-gate.yml@main
+#       permissions:
+#         contents: read
+#         checks: read          # CodeRabbit's check run
+#         pull-requests: write   # the one time-out comment (read-only on a fork's PR: skipped)
+#
+# A public contract (AGENTS.md rule 10): inputs are only ever added.
+on:
+  workflow_call:
+    inputs:
+      timeout-minutes:
+        description: 'Minutes after the PR opened to wait for CodeRabbit, then pass with a comment (maintainer decision on #294: 30; at most 40, the job time-out)'
+        type: number
+        default: 30
+      org-ref:
+        description: 'swarm-routing/.github ref whose tools/pr-status to run'
+        type: string
+        default: main
+
+permissions: {}
+
+jobs:
+  coderabbit:
+    runs-on: ubuntu-24.04
+    # the wait ends at most `timeout-minutes` (<= 40) after the PR opened
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: write
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - name: Merge group
+        if: github.event_name == 'merge_group'
+        run: echo "merge group, each PR passed this gate before it was queued"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          repository: swarm-routing/.github
+          ref: ${{ inputs.org-ref }}
+          path: org
+          persist-credentials: false
+          sparse-checkout: tools/pr-status
+      - name: Wait for CodeRabbit
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 45
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.repository }}#${{ github.event.pull_request.number }}
+          N: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          MINUTES: ${{ inputs.timeout-minutes }}
+          FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          # seconds from the input, which may be fractional (2.5 minutes is 150 s)
+          secs=$(awk -v m="$MINUTES" 'BEGIN { if (m + 0 <= 0) exit 1; printf "%d", m * 60 }') || {
+            echo "::error::timeout-minutes must be a positive number, got '$MINUTES'"; exit 1; }
+          result=$(python3 -I org/tools/pr-status/pr_status.py --min-rate 50 gate "$REF" --timeout "$secs" --interval 30)
+          echo "$result"
+          echo "review gate: $result" >> "$GITHUB_STEP_SUMMARY"
+          case "$result" in
+            timeout:*)
+              echo "::warning::$result; passing so an absent CodeRabbit never holds the PR"
+              marker='<!-- review-gate: timeout -->'
+              if [ "$FORK" = true ]; then
+                echo "a fork's PR: the token cannot comment; the summary records it"
+              # only this gate's own earlier notice counts (the Actions token posts as github-actions[bot])
+              elif ! posted=$(gh api "repos/$REPO/issues/$N/comments?per_page=100" --paginate \
+                    --jq '.[] | select(.user.login == "github-actions[bot]") | .body'); then
+                echo "::warning::could not read the PR's comments; the time-out is recorded in the summary only"
+              elif ! grep -qF "$marker" <<< "$posted"; then
+                body="$marker
+          CodeRabbit had not reviewed this PR ${MINUTES} minutes after it opened, so the review gate passed without it (swarm-routing/.github#294). Ask for the review with \`@coderabbitai review\`; if the PR has merged, fix what it finds in a follow-up PR."
+                # a failed post (a 502) is a warning: the gate itself has passed
+                gh api -X POST "repos/$REPO/issues/$N/comments" -f body="$body" > /dev/null \
+                  || echo "::warning::could not post the time-out comment; the summary records the time-out"
+              fi
+              ;;
+          esac
