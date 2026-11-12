@@ -15,49 +15,19 @@ Files here only take effect from `main` (GitHub reads community defaults and
 `@main` workflow references from the default branch).
 
 ```
-profile/README.md          org landing page
-ROADMAP.md                 the org's phases, exit criteria and non-goals (epics carry the work)
-CONTRIBUTING.md            org invariants + issue/label conventions (default for every repo)
-ISSUE_TEMPLATE/            default issue forms (AntHocNet's set + literature)
-pull_request_template.md   default PR template
-labels.json                the label taxonomy (source of truth)
-.clang-format              LLVM-based C++20 style
-ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
-tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags; contributor copyright lines beneath the org line)
-tools/checks/check-dco.py       the DCO gate of reusable-dco.yml: every PR commit's Signed-off-by matches its author email (members, the org App, Dependabot and agent commits on a member's PR exempt, #212)
-tools/checks/check-swarm-core-pin.py   a protocol's swarm-core pin: one commit everywhere, and swarm-core main's core/ (reusable-swarm-core-pin.yml)
-DCO                             the Developer Certificate of Origin 1.1, verbatim (CONTRIBUTING "Outside contributions")
-tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: only a PR's own drift fails, the base's warns); `seeds` / `reseed FILE` for the repo-owned seeds (+ test_org_sync.py)
-tools/epics/epics.py            the epic lists: each README's ## Epics, ROADMAP.md#epics, the profile's open epics (generated from issues)
-tools/org-bot/org_bot.py        opens the refresh PRs across the org: epic lists (epics.py), templates (org_sync.py apply) and a new Zenodo concept's DOI (zenodo.py record)
-tools/zenodo/zenodo.py          every release on Zenodo: checks each repo's releases against its concept record, archives the missed ones; `orphans`: released repos with no concept; `create`: a first concept from a tag (a failed first release, #226); `publish-release`: the release job's push of a release's own assets (opt-in `zenodo: true` of reusable-release.yml, #232); `record`: a repo's CITATION.cff doi, `zenodo_concept` and README DOI badge against its concept on Zenodo (`--write`: org-bot's `zenodo` task)
-tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against the org standard (AntHocNet's): badges, explanation, site page, ns-3 image, layout, sections, links, citing (a released repo: DOI badge, CITATION.cff doi, citing section, references); the AI files' facts (paths, planned paths, open issues with --online, org-rule contradictions, required checks)
-tools/docs-review/ai_files_review.py   the weekly AI-files review: check_docs.py's AI-files pass on every public repo, one `[docs] AI files: N finding(s)` issue per repo, opened, updated in place, closed when clean
-tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
-tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's, with HINT lines at the likely spots
-tools/pr-status/pr_status.py    open PRs across repos: `list`, `threads` and `wait` (read-only) print a line per PR (head, CI verdict and counts, required checks missing on the head, workflows that ended in `startup_failure`, mergeable state) and per unresolved review thread (severity · title · path:line · id); a missing required check is never a pass; `merge` writes: it waits for green and squash-merges (a behind PR as it is, updated only where the rules require an up-to-date branch or with `--update`; a behind `bot/release` stops), one PR at a time per repo; every read backs off below `--min-rate` remaining API requests (#226)
-tools/release/fixture/         the release self-test's caller: the minimal Commitizen config (.cz.toml), a `make dist`, and a CITATION.cff (the Zenodo push test)
-tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
-tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy (incl. fork-PR approval) and `release` environment as code: `plan`/`check` (read-only diff), `apply` (only the differences)
-templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
-templates/                      what org-sync renders: AGENTS.md/CLAUDE.md org sections (incl. Agent skills), README badges,
-                                SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
-                                CITATION.cff and the README's Releases & citing section (`citation = true`, `[[references]]`),
-                                the org-sync, dco and Scorecard workflows, the marketplace keys of .claude/settings.json,
-                                the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
-                                codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
-                                quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos
-SECURITY.md                     the org default security policy (repos without their own get it)
-CODE_OF_CONDUCT.md              the org default code of conduct: Contributor Covenant 2.1, reports to the maintainer's GitHub profile (no email)
-SUPPORT.md                      the org default support policy: issues for bugs, features and questions, no private support
-.github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
-.github/actions/bot-token/      the bots' token: the org GitHub App's installation token, else ORG_BOT_TOKEN (#21; CONTRIBUTING "The bot's GitHub App")
-.github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-benchmark-cell.yml, reusable-python-ci.yml,
-                           reusable-pr-title.yml, reusable-licence-check.yml, reusable-dco.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-scorecard.yml, reusable-swarm-core-pin.yml,
-                           sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
-                           benchmark-cell-selftest.yml
-LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
+profile/README.md, ROADMAP.md, CONTRIBUTING.md   the org landing page, its phases, its invariants and conventions
+ISSUE_TEMPLATE/, pull_request_template.md, labels.json   the default forms and the label taxonomy
+SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, DCO, .github/FUNDING.yml   the org default community files
+.clang-format, ruff.toml           the C++ style and the Python lint baseline
+tools/<tool>/                       the org's scripts, each with --self-test (checks, org-sync, org-bot, epics, zenodo, docs-review, fidelity, protocol-review, pr-status, lit-search, repo-settings, release)
+templates/                          what org-sync renders into each repository; templates/rulesets/: the settings profiles
+.github/workflows/, .github/actions/   the reusable workflows other repos call, this repo's CI and bots, the bot token
+docs/                               tools.md (every file, tool, workflow and self-test), where-to-look.md (the full task table)
 ```
+
+Before adding, changing or running a tool or a workflow, read
+[`docs/tools.md`](docs/tools.md): one line per file and directory, every
+self-test and read-only run, and how a reusable workflow change is proven.
 
 ## Build & verify
 
@@ -69,49 +39,16 @@ actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
-python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsigned, mismatched, exempt (member, write access, bots, merges, agent commits on a member's PR), a real git history
-python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos
-python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos
-python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
-python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo (publish-release: first release, next version, idempotent re-run, refusal, retries; record: unrecorded, written, two concepts refused)
-python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub (the zenodo task: record, then apply's badge)
-python3 -I tools/docs-review/check_docs.py --self-test   # the docs standard and the AI-files facts, a passing and a failing fixture repo per check
-python3 -I tools/docs-review/check_docs.py ../AntHocNet --online   # read-only, a real repo's docs and AI files (issue states through gh)
-python3 -I tools/docs-review/ai_files_review.py --self-test   # the weekly review's issue sync, against local bare repos and a fake GitHub
-python3 -I tools/docs-review/ai_files_review.py run --dry-run --repos .github,skills   # read-only, what the weekly run would open, update or close
-python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker, on fixture sheets
-python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule; a hinted and an unhinted one for 6 and 7
-python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, a startup_failure run and missing required checks, threads, a CodeRabbit body reduced to its heading, wait), and merge against a simulated one (behind -> update -> merged where the rules require it, behind merged as it is where they do not, `--update`, an outdated PR reported `clean`, a refusal as not up to date, a behind `bot/release`, sequence, failing check, open thread, conflict, draft, refused, unreported required check, startup failure, already merged; CodeRabbit's review awaited before the threads are read, a warning at --review-timeout, its own check run no CI failure; wait --review)
-python3 -I tools/lit-search/lit_search.py --self-test   # confirm, citing, refs, search, related on recorded responses of each source, a source down or rate-limited, keys never leaked
-python3 -I tools/repo-settings/repo_settings.py --self-test   # plan, check, apply against a fake GitHub (each field's drift, ruleset create/update, unmanaged ruleset left alone, private masked, 403 refused, dry run; merge_queue rule, its table overrides and validation, refused without a merge_group trigger behind each required check; security on in order, own CodeQL kept, private unsupported, Actions policy and an uncovered action refused, fork-PR approval for all outside contributors (a note on a private repository), 409 org policy, release environment, idempotent)
-python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
-python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
-python3 -I tools/zenodo/zenodo.py orphans --repos benchmarks,ARA   # read-only, released repos without a concept
-python3 -I tools/zenodo/zenodo.py create --repo swarm-routing/benchmarks --tag v0.1.0   # read-only without --publish and ZENODO_TOKEN: what it would create
-python3 -I tools/pr-status/pr_status.py list --repos .github,skills   # read-only, the open PRs and their unresolved threads
-python3 -I tools/pr-status/pr_status.py merge --dry-run .github#N   # read-only, what merge would do now (would update / would merge / would wait)
-python3 -I tools/lit-search/lit_search.py confirm 10.1613/jair.530   # read-only, free: Crossref, Semantic Scholar, OpenAlex agree
-python3 -I tools/repo-settings/repo_settings.py plan .github skills   # read-only, live settings vs each repo's [settings]
+python3 -I tools/<tool>/<tool>.py --self-test   # for every tool you changed; the list: docs/tools.md
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
-clang-format-18 --style=file:.clang-format --dump-config >/dev/null
 ```
 
-A change to `reusable-ns3-ci.yml` is validated by running its step scripts in
-an `ns3-dev` image against `swarm-routing/ns3-containers`' `test/fixtures/`
-module (see that repo's AGENTS.md), then by a caller repo's PR. A change to
-`reusable-benchmark-cell.yml` runs `benchmark-cell-selftest.yml` on its PR (one
-build-mode cell); its prebuilt mode is proven by a protocol repo's caller. A change to
-`reusable-ns3-image.yml` runs `ns3-image-selftest.yml` on its PR (build and
-test only); its push, sign and attest steps are proven by a `push: true`
-caller after merge. A change to `reusable-release.yml` runs `release-selftest.yml`
-on its PR: a dry run on `tools/release/fixture/` (bump to v0.1.0, `make dist`,
-checksums, SBOM, real attestations and their verification, nothing pushed),
-then a check of every file it would have published, then `zenodo.py
-publish-release` on those files against the fake Zenodo (`fake-zenodo`; also
-on a change to `tools/zenodo/`); its bump PR (`propose`) and its
-tag-and-publish job are proven by the first caller's release (ns3-tools#26),
-its opt-in `zenodo` job by a `zenodo-sandbox: true` run and the first
-caller's release with `zenodo: true` (#232).
+Every tool has a `--self-test` against fixtures or a fake GitHub, and most a
+read-only run against the real org; [`docs/tools.md`](docs/tools.md#self-tests-and-read-only-runs)
+lists each with what it covers. A change to a reusable workflow is proven by
+its self-test workflow and then by a caller: read
+[`docs/tools.md`](docs/tools.md#validating-a-change-to-a-reusable-workflow)
+before changing one.
 
 ## Golden rules (invariants — do not break)
 
@@ -267,35 +204,39 @@ Org-wide (1–9), then this repo's own.
 
 ## Where to look
 
+One line per task. Each row has a full entry in [`docs/where-to-look.md`](docs/where-to-look.md)
+(the commands, the configuration, the issues behind it): read it before
+changing what the row names.
+
 | You want to… | Go to |
 |--------------|-------|
-| Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` (quality inputs `strict-warnings`, `coverage`, `determinism`: CONTRIBUTING § Quality gates) |
-| Build a protocol's release or campaign image | `.github/workflows/reusable-ns3-image.yml` (`FROM` a resolved ns3-dev digest, `ns3-build-contrib`, `test.py`, then push, cosign, provenance, SBOM; caller examples and verify commands in its header), self-tested by `ns3-image-selftest.yml` (`push: false`, ns3-containers' `swarm-hello`); CONTRIBUTING § Images |
-| Run one benchmark cell of any protocol repository (a change test, or a cell of a released run) | `.github/workflows/reusable-benchmark-cell.yml` (an image by digest, `source_sha` checked out and verified whatever the dispatch ref, prebuilt mode `--no-build` or build mode with pinned dependencies, the `##PROV##` line; caller and its safe pattern, #160, in its header), dispatched by `ns3-campaign` (`swarm-routing/ns3-tools`), self-tested by `benchmark-cell-selftest.yml`; CONTRIBUTING § Benchmark cells, epic #156 |
-| Cut a release of any org repository (or change how releases are made) | `.github/workflows/reusable-release.yml` (Commitizen bump from Conventional Commits, first release v0.1.0, the caller's `make dist`, `SHA256SUMS`, CycloneDX SBOM, SLSA provenance as `*.intoto.jsonl`, the verify commands in the notes; mode `bump` opens the `chore(release): bump version A to B` PR from `bot/release` with the org App's token, its merge releases: tag on the merged commit, GitHub release; mode `dry-run`; opt-in `zenodo: true` (+ secret `ZENODO_TOKEN`) archives the published release on Zenodo from the release job, #232; caller example, permissions and verify commands in its header), self-tested by `release-selftest.yml` (dry run on `tools/release/fixture/`); CONTRIBUTING § Releases and DOIs, ROADMAP § Releases |
-| Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar` (+ `SONAR_TOKEN`; `sonar-python-coverage` to import the Python job's coverage into the same analysis), a job calling `reusable-codecov.yml`; seeds `templates/quality/`; badges `sonar`/`codecov` in its `org-sync.toml`; CONTRIBUTING § Quality gates |
-| Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` + CONTRIBUTING's type list |
-| Change the licence rules or their gate | `tools/checks/check-headers.py` (+ its self-test), `reusable-licence-check.yml`, `CONTRIBUTING.md` rule 1, each repo's `LICENSING.md` |
-| Change how outside contributions are accepted (DCO sign-off, inbound = outbound, contributor copyright lines) | `CONTRIBUTING.md` "Outside contributions", `DCO`, `tools/checks/check-dco.py` (+ its self-test), `reusable-dco.yml`, its caller `templates/workflows/dco.yml` (org-sync places it in every repo; not a required check yet, #179) |
+| Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` |
+| Build a protocol's release or campaign image | `.github/workflows/reusable-ns3-image.yml` |
+| Run one benchmark cell of any protocol repository | `.github/workflows/reusable-benchmark-cell.yml` |
+| Cut a release of any org repository, or change how releases are made | `.github/workflows/reusable-release.yml` |
+| Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
+| Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
+| Change the licence rules or their gate | `tools/checks/check-headers.py`, `reusable-licence-check.yml`, CONTRIBUTING rule 1 |
+| Change how outside contributions are accepted (DCO, contributor copyright lines) | CONTRIBUTING "Outside contributions", `tools/checks/check-dco.py`, `reusable-dco.yml` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
-| List an org skill in every repo's AGENTS.md (when it ships in the `swarm-routing` plugin) | `templates/agents/skills.md` (task, script, skill); a skill one repo uses stays in that repo's `.claude/skills/` |
-| Change what every repo shares (AGENTS.md/CLAUDE.md org sections, badges, SECURITY, ADR template, Makefile targets) | `templates/` + `tools/org-sync/org_sync.py` (its docstring lists the item kinds; `ITEMS` in `items()`). A template change makes every adopting repo's `org-sync` check red on its next push to `main` until it runs `org_sync.py apply` (on a PR or a merge group only the drift the change brings in fails, an item that did not drift at the base or that it edits by hand; drift already on the base is a warning, `check --changed-only BASE`, #159): open those PRs with the change (the `org-repo` skill of the `swarm-routing` plugin in `swarm-routing/skills` does it; org-bot opens them on its own after the push). Seeds (SECURITY.md, Makefile, LICENSING.md, …) are the repo's once written, so a template or config change never reaches them: `org_sync.py seeds [REPO]` says which differ from today's render (information, exit 0; org-bot lists them in its PR body), `org_sync.py reseed FILE [REPO]` shows the diff and writes the fresh render of that one seed |
-| Bring a repo onto the templates | `python3 tools/org-sync/org_sync.py init <dir> --kind <kind>` (new repo) or write its `.github/org-sync.toml` and run `plan` → `apply` → `conflicts` → `check` (existing repo); CI: `reusable-org-sync-check.yml` |
-| Change the org security policy | `SECURITY.md` (served to every repo without its own) and `templates/SECURITY.md.in` (a repo's own); write no claim a repo cannot back |
-| Change the C++ style | `.clang-format` (repos without their own use it in CI) |
+| List an org skill in every repo's AGENTS.md | `templates/agents/skills.md` |
+| Change what every repo shares (org sections, badges, SECURITY, ADR template, Makefile) | `templates/` + `tools/org-sync/org_sync.py`; a template change turns every adopting repo's `org-sync` check red until its refresh PR lands |
+| Bring a repo onto the templates | `tools/org-sync/org_sync.py init` (new repo) or `plan` → `apply` → `check` |
+| Change the org security policy | `SECURITY.md`, `templates/SECURITY.md.in`; write no claim a repo cannot back |
+| Change the C++ style | `.clang-format` |
 | Change the org landing page | `profile/README.md` |
-| Give a workflow the bot's token, or check the org GitHub App's permissions and repository scope | `.github/actions/bot-token` (App token from `BOT_APP_ID` + `BOT_APP_PRIVATE_KEY`, else `ORG_BOT_TOKEN`; used by `org-bot.yml`, `repo-settings.yml`, `repo-metadata.yml`). The App: org-owned, no webhook, installed on **all repositories**; repository permissions Administration, Contents, Pull requests, Issues, Workflows, Actions, Dependabot alerts, Secret scanning alerts, Environments: read and write, Metadata: read (#21); CONTRIBUTING "The bot's GitHub App" |
-| Keep every repo's epic list and org-managed files current without hand PRs | `tools/org-bot/org_bot.py` (`run --task` `epics`, `org-sync`, `zenodo` or `all`; `--self-test`), `org-bot.yml` (daily, on template pushes; the org GitHub App's token, else secret `ORG_BOT_TOKEN`); CONTRIBUTING "Automation" |
-| Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py` (`repos`, `status`, `sync`, `orphans`, `create`, `publish-release`, `record`; `--self-test`), the opt-in `zenodo` job of `reusable-release.yml` (the push path, #232; then `record` checks CITATION.cff and the DOI badge against the concept Zenodo returned, outputs `zenodo-concept`, `zenodo-doi`), org-bot's `zenodo` task (the PR that records a new concept: `record --write`, then `org_sync.py apply`), the daily `zenodo.yml` (secret `ZENODO_TOKEN`; mode `create` with `repo` and `tag`, maintainer-dispatched, archives a failed FIRST release as a new concept); CONTRIBUTING "Releases and DOIs", "When Zenodo fails a release" |
-| Hold a repo's README, AGENTS/CLAUDE/CONTEXT and docs/ to the org standard, and keep the AI files' facts true | `tools/docs-review/check_docs.py [REPO] [--online]` (`[docs]` table in its `.github/org-sync.toml`: `arena_id`, `uses_image`; `--self-test`). The AI-files pass (#142) warns on missing or still-planned paths, closed issues written as open (`--online`), text an org rule replaced (its `CONTRADICTIONS` table, each with its source) and unknown required checks, outside the org-sync sections. Weekly across the org: `ai-files-review.yml` runs `tools/docs-review/ai_files_review.py` (`run [--repos A,B] [--dry-run] [--offline]`; `--self-test`), one `[docs] AI files` issue per public repo (#143); the `docs-review` skill in `swarm-routing/skills` |
-| Check a diff against the org golden rules before review | `tools/protocol-review/check_invariants.py [REPO] --base origin/main [--pr-body FILE] [--json]` (per-repo `[review]` table in its `.github/org-sync.toml`; `--self-test`); the `protocol-review` skill in `swarm-routing/skills` |
-| See every open PR's CI, mergeable state and unresolved review threads, wait for CI, or merge PRs that keep falling behind | `tools/pr-status/pr_status.py` (`list [--repos A,B] [--author L]`, `threads REPO#N [--all]`, `wait REPO#N… [--review]`, `merge REPO#N… [--dry-run] [--timeout S] [--review-timeout S]`; `--json` on each; `--self-test`); the `pr-shepherd` skill in `swarm-routing/skills` |
-| Confirm a reference, or find newer, citing, cited or related papers | `tools/lit-search/lit_search.py` (`confirm DOI` / `confirm --title`, `citing`, `refs`, `search [--crossref] [--preprints]`, `related`; `--library FILE…` marks known DOIs; `--self-test`): free sources only (Crossref, Semantic Scholar, OpenCitations, arXiv, OpenAlex single records), OpenAlex search only with a free `OPENALEX_API_KEY`; the `lit-search` skill in `swarm-routing/skills` |
-| Change a repository's description, homepage, topics, merge settings, features, rulesets, required checks, merge queue (`merge_queue = true`, after its required-check workflows run `on: merge_group`), security features, Actions policy or release environment | its `.github/org-sync.toml` `[settings]` table (a settings-only file, without `kind`, where org-sync manages nothing), the profiles in `templates/rulesets/` and their shared `defaults.json` (a new third-party action goes into its `selected_actions.patterns_allowed` in the same PR as the workflow that uses it); `tools/repo-settings/repo_settings.py` (`plan`, `check`, `apply [--dry-run]`; `--self-test`), applied by `repo-settings.yml` on push and checked daily (the org GitHub App's token, else secret `ORG_BOT_TOKEN`: CONTRIBUTING "Automation" lists the permissions either needs) |
-| Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `verify --text KEY=<pdfx text>`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |
-| List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
-| Know where the org is going beyond ns-3 (other hosts and real computers, security, a protocol of our own), and which decisions wait on the maintainer | `ROADMAP.md` "Direction beyond ns-3" (proposed 2026-11-12). Epics: #250 portable runtime (its test ladder and the nine scenes every host must pass: #268; measurement off ns-3: #270), #272 security (first step, the decision #273), #252 a protocol of our own (the tests that decide between it and AntHocNet: #269), #251 the roadmap by tracks and the ticket clean-up (#261, #271, #274, #275, #279). Open decisions, the maintainer's to answer, never an agent's: #253, #262, #264, #268, #269, #273, #280 |
-| Make the agent files shorter, or the org's state readable by a new session | #277 (the AGENTS.md / CLAUDE.md refactor, with the measured sizes: an all-repositories session loads about 341 KB of agent files, 54 % of it the same org text), #278 (a generated state page), #281 (an org glossary), under epic #141 |
+| Give a workflow the bot's token, or check the org App's permissions | `.github/actions/bot-token`; CONTRIBUTING "The bot's GitHub App" |
+| Keep epic lists and org-managed files current without hand PRs | `tools/org-bot/org_bot.py`, `org-bot.yml` |
+| Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py`, `zenodo.yml` |
+| Hold a repo's README, AI files and docs/ to the org standard | `tools/docs-review/check_docs.py`, `ai_files_review.py`, `ai-files-review.yml` |
+| Check a diff against the org golden rules before review | `tools/protocol-review/check_invariants.py` |
+| See open PRs' CI and review threads, wait for CI, or merge PRs that fall behind | `tools/pr-status/pr_status.py` |
+| Confirm a reference, or find newer, citing, cited or related papers | `tools/lit-search/lit_search.py` |
+| Change a repository's settings, rulesets, required checks, merge queue or Actions policy | its `.github/org-sync.toml` `[settings]`, `templates/rulesets/`, `tools/repo-settings/repo_settings.py` |
+| Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` |
+| List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py`, `epics.yml` |
+| Know where the org is going beyond ns-3, and which decisions wait on the maintainer | `ROADMAP.md` "Direction beyond ns-3"; epics #250, #251, #252, #272 |
+| Make the agent files shorter, or the org's state readable by a new session | #277, #278, #281 under epic #141 |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
 | The reference implementation and its history | [`swarm-routing/AntHocNet`](https://github.com/swarm-routing/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |
 | Pick up open work | this repo's issues — highest open `priority:P*` first; newest open `handoff` issue for work in flight |
