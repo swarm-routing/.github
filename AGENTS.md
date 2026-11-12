@@ -54,153 +54,58 @@ before changing one.
 
 Org-wide (1–9), then this repo's own.
 
-1. **Licensing per directory, as AntHocNet** ([`LICENSING.md`](LICENSING.md);
-   AntHocNet [LICENSING.md](https://github.com/swarm-routing/AntHocNet/blob/main/LICENSING.md),
-   [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
-   simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
-   ns-3 modules, the site, docs and data are `GPL-2.0-only`. Every original
-   `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
-   `// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)` +
-   `// SPDX-License-Identifier: <MIT OR GPL-2.0-only | GPL-2.0-only>` (`#`
-   comments where needed), matching its directory in `LICENSING.md`; an
-   outside contributor may add their own `Copyright (c) <year> <Name>` line
-   beneath the org line, never replace it, and signs off every commit (DCO,
-   CONTRIBUTING "Outside contributions"). CI (`reusable-licence-check.yml`)
-   checks the SPDX line, and the org line's place when a header names more
-   than one holder; a header with a single, other holder (a replaced org line,
-   or third-party code) passes it, so review catches that. A new directory
-   gets its row in `LICENSING.md` in the same PR.
-2. **The licence boundary only goes one way.** GPL code may use the dual
-   parts; dual code never pulls GPL-only code in: a `core/` file includes only
-   the C++ standard library, other `core/` files and the dual-licensed `core/`
-   of a dependency pinned by commit and declared as the `core-deps` input of
-   every workflow that runs the licence check (one calling
-   `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
-   forwards it; workflow file names differ per repo), each with the same pin,
-   with `core-roots` naming the repo's own `core/`
-   (without it the check skips core includes; a protocol's `core/` on
-   swarm-core's; CI checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
-   licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its
-   `ns3/` modules and `web/` (GPL-2.0-only) only in GPL paths. Third-party code
-   (AntHocNet's vendored `aomdv`/`gpsr`, IITP RAS) lands only in GPL paths with
-   its provenance recorded. Write clean implementations against public ns-3
-   interfaces rather than copying ns-3's `src/aodv`/`src/olsr`.
-3. **Wire formats are POD + versioned.** Control headers are
-   simulator-independent POD structs with bounds-checked little-endian
-   readers/writers, a leading version byte, and deterministic roundtrip + fuzz
-   tests. Changing a field or its units bumps the version byte.
-4. **No contrib module named `core`** (collides with ns-3's `src/core`). The
-   shared module is `swarm-core` (`#include "ns3/swarm-core-module.h"`).
-5. **Determinism.** A fixed `--seed=<N>` gives byte-identical output. All
-   randomness through the simulator's seeded streams or an injected RNG port;
-   never libc `rand()`, wall-clock time, or unordered-container iteration order
-   in anything that reaches an output.
-6. **Comparisons are paired.** Per-seed deltas across >= 20 seeds, emitting the
-   canonical `##CONFIG##`, `##RUN##`, `##BENCH##`, `##DIAG##` lines. A
-   comparator arm (a protocol we did not design) counts only after its three
-   gates: a fidelity sheet from its paper, the per-PR delivery smoke, and an
-   anchor reproducing the paper's own trend.
-7. **Keep bounded structures bounded** (visited paths, dedup histories, queues
-   carry a configured cap).
-8. **CI hygiene.** Actions pinned by full commit SHA with a `# vX.Y.Z` comment;
-   buildx caches scoped per profile; transient artifacts `retention-days` <= 7.
-   Every job that runs steps has a `timeout-minutes` cap (a job that only
-   calls a reusable workflow cannot take one: the called workflow's jobs carry it), and every apt, npm or installer step
-   its own, sized from recent green runs; `apt-get update` runs with
-   `--error-on=any` inside a shell retry. Ubuntu mirror outages are the usual
-   cause of a red run.
-9. **Nothing shipped depends on `.claude/`.** Skills hold procedures; scripts
-   that anything shipped needs live in `tools/` (AntHocNet ADR-0014).
+1. **Licensing per directory, as AntHocNet**: `core/` and standalone tooling
+   are `MIT OR GPL-2.0-only`; ns-3 modules, the site, docs and data are
+   `GPL-2.0-only`. Every original source file starts with the org copyright
+   line and the SPDX line its directory has in `LICENSING.md`.
+2. **The licence boundary only goes one way**: GPL code may use the dual
+   parts, never the reverse. A `core/` file includes only the standard
+   library, other `core/` files and a pinned dependency's dual `core/`.
+3. **Wire formats are POD + versioned**: a leading version byte, bounded
+   little-endian readers; a changed field bumps it.
+4. **No contrib module named `core`**: the shared module is `swarm-core`.
+5. **Determinism**: a fixed `--seed=<N>` gives byte-identical output.
+6. **Comparisons are paired**: per-seed deltas over >= 20 seeds; a
+   comparator arm counts only after its three gates.
+7. **Keep bounded structures bounded**: every queue and history has a cap.
+8. **CI hygiene.** Actions pinned by full SHA, a `timeout-minutes` on every
+   job and installer step, artifacts kept <= 7 days.
+9. **Nothing shipped depends on `.claude/`**: scripts live in `tools/`.
+
+Before you add a file or a directory, touch a `core/` include, a wire
+format, randomness, a benchmark comparison or a workflow, read that rule in
+full: [org golden rules](https://github.com/swarm-routing/.github/blob/main/docs/agents/org-rules.md).
+
 10. **Reusable workflows are a public contract.** Callers pin `@main`: never rename or remove an input, never change a default's meaning; add inputs with backward-compatible defaults. A breaking change needs a new file or a tag, announced in an issue in every caller repo.
 11. **`labels.json` is the taxonomy.** Change it together with `CONTRIBUTING.md` and the issue forms; `sync-labels` never deletes labels, so a rename is a manual migration recorded in an issue.
 12. **The issue forms stay AntHocNet's shape.** Same fields, same body sections; org-specific additions only (areas, Depends on, literature).
 
 ## Conventions
 
-- Issues follow the org taxonomy ([CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#issues), from
-  [AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)): one type label
-  (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
-  umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
-  `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
-  recommendation, one `priority:P1|P2|P3` on non-epic issues, a
-  `release:vX.Y.Z` label only when a release in the repository's ladder
-  (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
-  gates the issue: that label set is the version's scope,
-  and the version is released when its issues are done (CONTRIBUTING
-  "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
-  workflow, the shared `release:v0.1.0` to `release:v0.4.0` and
-  `release:v1.0.0` among them; a version outside that set is added to
-  `swarm-routing/.github`'s `labels.json` (and CONTRIBUTING's label table)
-  when a ladder needs it, and reaches a repository when its `sync-labels` runs
-  (monthly, or dispatched after the change merges),
-  or, in a repository that keeps its own release labels (AntHocNet), created
-  there with `gh label create release:vX.Y.Z` when its ladder adds the version.
-- Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
-  **Acceptance criteria** (checkboxes) · **Depends on** (cross-repo form
-  `swarm-routing/<repo>#N`) · **References**. Children of an epic say "Part of
-  #N" and are linked as sub-issues. Comments you post end with the Claude Code
-  footer.
-- Issues migrated from AntHocNet carry `migrated` and start with *Migrated from
-  `danieljoppi/AntHocNet#N`*.
-- Epics are listed where contributors look. In a public repository, this
-  README's `## Epics` section and the org
-  [ROADMAP](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#epics)
-  are generated from the issues labelled `epic` by `swarm-routing/.github`'s
-  `tools/epics/epics.py`. An open epic is Planned (no sub-issue closed) or In
-  progress (some closed); it becomes Done or Dropped only when you close the
-  epic itself (as completed or as not planned), even if every sub-issue is
-  closed. Whenever you change an epic (open, close, rename or re-scope it, add
-  or remove its `epic` label) or one of its sub-issues (close, reopen, add,
-  unlink), refresh the lists in that PR or the next one. You need
-  `swarm-routing/.github` checked out next to this repository and `gh` logged
-  in (or `GH_TOKEN` set). Run `python3 ../.github/tools/epics/epics.py readme .`
-  in the repository that owns the epic (for a sub-issue of another
-  repository's epic, that repository, not this one), then
-  `python3 tools/epics/epics.py roadmap ROADMAP.md` and
-  `python3 tools/epics/epics.py profile profile/README.md` in `.github`. Never
-  edit a generated section by hand; the weekly `epics` workflow in `.github`
-  only reports drift. Private repositories (such as `papers`) are never listed
-  and keep no generated section.
-- Make minimal, reviewable changes; update the relevant doc/ADR when you change
-  a documented decision.
+- An issue has one type label, its area label(s), one `priority:P1|P2|P3`
+  (not on epics) and a `release:vX.Y.Z` label only when a release gates it.
+  Body: **Context** · **Scope** · **Acceptance criteria** (checkboxes) ·
+  **Depends on** · **References**. A child of an epic says "Part of #N" and
+  is linked as a sub-issue.
+- Comments you post end with the Claude Code footer.
+- A generated epic list is never edited by hand: refresh it with
+  `swarm-routing/.github` `tools/epics/epics.py`.
+
+Before you file, close or re-scope an issue or an epic, read
+[the conventions in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/conventions.md).
 
 ## Git workflow
 
-- Branch from `main` (`claude/<short-topic>`), one focused change per PR.
-- **Always open a PR to `main`** once the branch is pushed — every change is
-  tracked through one.
-- **PRs are squash-merged** (the only merge method enabled). The PR title is
-  the commit on `main`, so it is a lowercase Conventional Commit
-  (`feat:`/`fix:`/`docs:`/`chore:`/`ci:`…, optional scope).
-- Push with `git push -u origin <branch>`; merge when CI is green.
-- **`main` takes no direct push**, in any repo: its ruleset requires a PR and
-  the required checks, not an up-to-date branch. Bots push `bot/<name>` branches
-  and open PRs; a release is the bump PR from `bot/release`, tagged after it
-  merges (CONTRIBUTING "Cutting a release").
-- A PR behind `main` may merge as it is: the ruleset does not require an
-  up-to-date branch. Update it first
-  (`gh api -X PUT "repos/<owner>/<repo>/pulls/<n>/update-branch"`, with
-  `<owner>/<repo>` the PR's base repository and `<n>` its number) only when
-  `main` changed what it touches (a template, a workflow, a required check),
-  then merge after its CI on the updated branch. A
-  repository with a merge queue (`merge_queue = true` in its `[settings]`)
-  is not updated by hand: enable auto-merge and the queue tests each PR on
-  the latest `main` and merges it (CONTRIBUTING "Merge when CI is green").
-  Never force-push a branch someone else pushed. A behind `bot/release` PR is the exception:
-  dispatch the release `bump` again, so the version and changelog are rebuilt
-  on the new `main`.
-- **Settings are code.** Repository settings, rulesets, required checks and the
-  Actions allowlist change only by a PR to the repo's `[settings]` in
-  `.github/org-sync.toml` or to `templates/rulesets/` in `swarm-routing/.github`,
-  never in the UI or by a direct API write. A `templates/rulesets/` change
-  applies on merge; a repo's `[settings]` change applies when `repo-settings`
-  in `swarm-routing/.github` is dispatched with mode `apply` after the merge
-  (the daily run only checks). A required check runs on every PR (no `paths:`
-  filter; skip work inside a gate job instead) and is named exactly as its
-  check run. A new third-party action goes into `defaults.json`
-  `selected_actions` (`templates/rulesets/`) before or with the workflow that
-  uses it: in the same PR in `swarm-routing/.github`, otherwise merged there
-  first, or `repo-settings` refuses the repo.
+- Branch from `main`, one focused change per PR, and open the PR as soon as
+  the branch is pushed. PRs are squash-merged; the title is the commit on
+  `main`, a lowercase Conventional Commit (`feat:`, `fix:`, `docs:`…).
+- `main` takes no direct push. Merge when the required checks are green; in
+  a repository with a merge queue, by enabling auto-merge.
+- Settings are code: change them only by a PR to `.github/org-sync.toml`
+  `[settings]` or `templates/rulesets/` in `swarm-routing/.github`.
+
+Before you push, update a PR that is behind `main`, merge, or change a
+setting, read [the git workflow in full](https://github.com/swarm-routing/.github/blob/main/docs/agents/git-workflow.md).
 
 ## Working defaults
 
