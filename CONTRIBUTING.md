@@ -217,8 +217,10 @@ starts from the newest open `handoff` issue and closes it when done.
   the updated branch.
   `tools/pr-status/pr_status.py merge
   REPO#N [REPO#N …]` does exactly that: in the order given (repositories
-  independently), it updates a PR GitHub reports `behind`
-  (`PUT pulls/<n>/update-branch`), waits for every check on the new head
+  independently), it merges a PR GitHub reports `behind` as it is, and
+  updates it first (`PUT pulls/<n>/update-branch`) only where the ruleset
+  requires an up-to-date branch or with `--update` (you judged that `main`
+  changed what it touches); it waits for every check on the head
   and for CodeRabbit's review (below), squash-merges with the title `<PR title> (#n)`, and only then moves on to
   that repository's next PR. It never merges while a required check is
   missing on the head, and stops and reports on a failing check (a workflow
@@ -247,7 +249,7 @@ starts from the newest open `handoff` issue and closes it when done.
   no time-out, so a CodeRabbit outage would stop every merge.
 - **Only the required checks gate a merge.** They are the ones in the
   repository's `[settings]` `required_checks` (live:
-  `gh api repos/<owner>/<repo>/rules/branches/main`). A red or pending
+  `gh api 'repos/{owner}/{repo}/rules/branches/main'`). A red or pending
   report-only check (Codecov, SonarQube Cloud, Scorecard) is read and
   triaged, never a reason to hold a PR whose required checks are green
   (GitHub then reports the merge state `unstable`, which is mergeable).

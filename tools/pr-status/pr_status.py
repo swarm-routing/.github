@@ -7,7 +7,7 @@ Usage:
   pr_status.py list [--repos A,B] [--author LOGIN] [--json]
   pr_status.py threads REPO#N [--all] [--json]
   pr_status.py wait REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review [--review-timeout S]] [--json]
-  pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review-timeout S] [--dry-run] [--json]
+  pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review-timeout S] [--update] [--dry-run] [--json]
   pr_status.py --self-test
   (any command takes --min-rate N, placed before it)
 
@@ -60,8 +60,18 @@ repositories run independently of each other. For each PR it polls every
   check name, the commit statuses, and a workflow run whose latest attempt
   ended in `startup_failure`) or an unresolved review thread stops
   that PR, and the PRs after it in the same repository are not run;
-- when GitHub reports the PR `behind`, it calls `PUT pulls/{n}/update-branch`
-  with `expected_head_sha`, then waits for the new head and that head's checks;
+- a PR GitHub reports `behind` merges as it is when the base branch's rules
+  do not require an up-to-date branch (`strict_required_status_checks_policy`
+  off, every org profile: CONTRIBUTING "Merge when CI is green"). It is
+  updated only when they do, or with `--update` (you judged that `main`
+  changed what it touches: a template, a workflow, a required check): then it
+  calls `PUT pulls/{n}/update-branch` with `expected_head_sha`, and waits for
+  the new head and that head's checks. Since GitHub may report an outdated
+  PR `clean` under such rules, `--update` (and a `bot/release` head) also asks
+  `compare/{base}...{head}`; a merge refused as "not up to date" (a rule the
+  rules endpoint does not show) is updated on the next poll. A behind
+  `bot/release` PR is never updated: it stops, since the release `bump` is
+  dispatched again instead;
 - it waits while a check is pending, or while a check the base branch's rules
   require (`rules/branches/{base}`) has not reported on the head, so it never
   merges while a required check is missing (at the timeout it gives up);
@@ -508,22 +518,30 @@ def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
     return 2 if pending else 0
 
 
-# --- merge: update when behind, wait for green, squash-merge one at a time -----
+# --- merge: wait for green, squash-merge one at a time (update when needed) ---
 
 RETRY = re.compile(r"up to date|modified|behind", re.I)
+UPDATE_FIRST = re.compile(r"not up to date", re.I)
 
 
-def required_checks(gh, repo, base, cache):
-    """The check names the base branch's rules require (cached per repo and branch)."""
+def branch_rules(gh, repo, base, cache):
+    """(required check names, strict) of the base branch's rules, cached per repo
+    and branch; strict: a rule requires the branch to be up to date before merging."""
     key = (repo, base)
     if key not in cache:
-        names = set()
+        names, strict = set(), False
         for rule in gh.get(f"repos/{repo}/rules/branches/{base}") or []:
             if rule.get("type") == "required_status_checks":
                 params = rule.get("parameters") or {}
                 names |= {c.get("context") for c in params.get("required_status_checks") or []}
-        cache[key] = names - {None}
+                strict = strict or bool(params.get("strict_required_status_checks_policy"))
+        cache[key] = (names - {None}, strict)
     return cache[key]
+
+
+def required_checks(gh, repo, base, cache):
+    """The check names the base branch's rules require (cached per repo and branch)."""
+    return branch_rules(gh, repo, base, cache)[0]
 
 
 def head_checks(gh, repo, sha, required):
@@ -612,7 +630,7 @@ class Job:
             out(f"{self.ref()} {self.sha[:7] or '-'} {text}")
 
 
-def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0):
+def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0, update=False):
     """One poll of one PR: (result, text) once it is done with, None to poll again."""
     repo, n = job.repo, job.number
     pr = gh.get(f"repos/{repo}/pulls/{n}")
@@ -632,10 +650,20 @@ def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0):
     if state == "dirty":
         return ("stopped", "conflict")
     base = (pr.get("base") or {}).get("ref") or "main"
-    ci = head_checks(gh, repo, job.sha, required_checks(gh, repo, base, cache))
+    required, strict = branch_rules(gh, repo, base, cache)
+    ci = head_checks(gh, repo, job.sha, required)
     if ci["failed"]:
         return ("stopped", "failing: " + ", ".join(ci["failed"]))
-    if state == "behind":
+    release = (pr.get("head") or {}).get("ref") == "bot/release"
+    outdated = state == "behind"
+    if not outdated and (update or release):
+        # under rules that do not require an up-to-date branch GitHub may report an
+        # outdated PR `clean`: ask the comparison with the base instead
+        cmp = gh.get(f"repos/{repo}/compare/{base}...{job.sha}") or {}
+        outdated = (cmp.get("behind_by") or 0) > 0
+    if outdated and release:
+        return ("stopped", "behind: dispatch the release bump again")
+    if outdated and (strict or update):
         if dry_run:
             return ("dry", "would update")
         ok, got = gh.put(f"repos/{repo}/pulls/{n}/update-branch", {"expected_head_sha": job.sha})
@@ -683,6 +711,12 @@ def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0):
     ok, got = gh.put(f"repos/{repo}/pulls/{n}/merge", fields)
     if ok:
         return ("merged", f"merged {((got or {}).get('sha') or '')[:7]}".rstrip())
+    if UPDATE_FIRST.search(got):
+        # an up-to-date branch is required after all (a rule the rules endpoint
+        # did not show, such as a legacy branch protection): update on the next poll
+        cache[(repo, base)] = (required, True)
+        job.say(f"retry {job.sha}", f"waiting: merge not accepted yet ({plain(got)})", out)
+        return None
     if got.startswith("HTTP 409") or RETRY.search(got):
         job.say(f"retry {job.sha}", f"waiting: merge not accepted yet ({plain(got)})", out)
         return None
@@ -714,6 +748,7 @@ def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
                         out,
                         review_wait=args.review_timeout,
                         age=lambda pr, job=job: pr_age(pr, wall, clock() - job.start),
+                        update=args.update,
                     )
                 except Failure as e:
                     if args.dry_run:  # a dry run reads each PR once
@@ -796,8 +831,13 @@ def parser():
     )
     w.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     w.add_argument("--json", action="store_true")
-    m = sub.add_parser("merge", help="update when behind, wait for green, squash-merge in order")
+    m = sub.add_parser("merge", help="wait for green, squash-merge in order")
     m.add_argument("refs", nargs="+", metavar="REPO#N")
+    m.add_argument(
+        "--update",
+        action="store_true",
+        help="update a behind PR first even where the rules do not require it",
+    )
     m.add_argument("--interval", type=float, default=60)
     m.add_argument("--timeout", type=float, default=7200, help="seconds per PR")
     m.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
@@ -942,7 +982,16 @@ class SimGitHub(GitHub):
     closes the PR and puts the repository's other open PRs behind."""
 
     def __init__(
-        self, prs, checks=None, threads=None, required=None, refuse=None, runs=None, reviews=None
+        self,
+        prs,
+        checks=None,
+        threads=None,
+        required=None,
+        refuse=None,
+        runs=None,
+        strict=(),
+        legacy=(),
+        reviews=None,
     ):
         self.prs = {}
         for (repo, n), fields in prs.items():
@@ -956,6 +1005,8 @@ class SimGitHub(GitHub):
         self.required = required or {}
         self.refuse = refuse or {}  # (repo, n) -> "HTTP 405: ..."
         self.runs = runs or {}  # sha -> workflow runs
+        self.strict = set(strict)  # repos whose rules require an up-to-date branch
+        self.legacy = set(legacy)  # repos that require it without the rules showing it
         self.reviews = reviews or {}  # (repo, n) -> reviews; default: CodeRabbit has reviewed
         self.calls, self.puts, self.updates = [], [], 0
 
@@ -980,9 +1031,16 @@ class SimGitHub(GitHub):
             return self.thr.get((repo, int(m.group(1))), [])
         if re.fullmatch(r"pulls/comments/\d+", rest):
             return {"user": {"login": "coderabbitai[bot]"}, "body": CR_OLD}
+        if m := re.fullmatch(r"compare/main\.\.\.(\w+)", rest):
+            prs = [p for (r, _), p in self.prs.items() if r == repo]
+            pr = next(p for p in prs if p["head"]["sha"] == m.group(1))
+            return {
+                "behind_by": int(pr["mergeable_state"] == "behind" or pr.get("outdated", False))
+            }
         if rest == "rules/branches/main":
             names = self.required.get(repo, [])
             params = {"required_status_checks": [{"context": c} for c in names]}
+            params["strict_required_status_checks_policy"] = repo in self.strict
             return [{"type": "deletion"}, {"type": "required_status_checks", "parameters": params}]
         return None
 
@@ -999,10 +1057,11 @@ class SimGitHub(GitHub):
             self.updates += 1
             pr["head"]["sha"] = f"{9 - self.updates}{n}" * 20
             pr["mergeable_state"] = "clean"
+            pr["outdated"] = False
             return True, {"message": "Updating pull request branch."}
         if fields["sha"] != pr["head"]["sha"]:
             return False, "HTTP 409: Head branch was modified."
-        if pr["mergeable_state"] == "behind":
+        if pr["mergeable_state"] == "behind" and repo in self.strict | self.legacy:
             return False, "HTTP 405: Head branch is not up to date with the base branch."
         pr.update(state="closed", merged=True)
         for (r, _), other in self.prs.items():
@@ -1269,8 +1328,8 @@ def self_test():
 
         return {sha: runs}
 
-    # behind -> update -> wait for the new head's checks -> merged
-    gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}})
+    # rules require an up-to-date branch: behind -> update -> wait for the new head -> merged
+    gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}}, strict={"alpha"})
     gh.checks = pending_then("81" * 20, 2)
     rc, out, _ = merge(["alpha#1"], gh)
     check(
@@ -1296,7 +1355,7 @@ def self_test():
     )
 
     # two PRs in sequence: the second falls behind after the first merges
-    gh = SimGitHub({("alpha", 2): {}, ("alpha", 3): {}})
+    gh = SimGitHub({("alpha", 2): {}, ("alpha", 3): {}}, strict={"alpha"})
     rc, out, _ = merge(["alpha#2", "alpha#3"], gh)
     merges = [p for p, f in gh.puts if p.endswith("/merge")]
     check(
@@ -1441,6 +1500,75 @@ def self_test():
     check(
         "merge: repositories independent",
         rc == 1 and "beta#15 fffffff merged eeeeeee" in out and "alpha#14 eeeeeee conflict" in out,
+    )
+
+    # rules that do not require an up-to-date branch (every org profile, #205): a
+    # behind PR merges as it is, in sequence, with no update
+    gh = SimGitHub({("alpha", 2): {}, ("alpha", 3): {}})
+    rc, out, _ = merge(["alpha#2", "alpha#3"], gh)
+    check(
+        "merge: behind merges as it is when the rules allow it",
+        rc == 0
+        and gh.updates == 0
+        and [p for p, _ in gh.puts]
+        == ["repos/swarm-routing/alpha/pulls/2/merge", "repos/swarm-routing/alpha/pulls/3/merge"]
+        and out.splitlines()
+        == ["alpha#2 2222222 merged eeeeeee", "alpha#3 3333333 merged eeeeeee"],
+    )
+    # --update: main changed what the PR touches, so it is updated first all the same
+    gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}})
+    rc, out, _ = merge(["alpha#1"], gh, "--update")
+    check(
+        "merge: --update updates a behind PR the rules would merge",
+        rc == 0
+        and gh.updates == 1
+        and out.splitlines() == ["alpha#1 1111111 updated", "alpha#1 8181818 merged eeeeeee"],
+    )
+    # a behind bot/release PR is never updated: the bump is dispatched again
+    for strict in ((), {"alpha"}):
+        gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}}, strict=strict)
+        gh.prs[("alpha", 1)]["head"]["ref"] = "bot/release"
+        rc, out, _ = merge(["alpha#1"], gh, "--update")
+        check(
+            f"merge: behind bot/release stops (strict={bool(strict)})",
+            rc == 1
+            and not gh.puts
+            and out == "alpha#1 1111111 behind: dispatch the release bump again\n",
+        )
+
+    # GitHub may report an outdated PR `clean` under non-strict rules: --update and a
+    # bot/release head ask the comparison with the base
+    gh = SimGitHub({("alpha", 1): {"outdated": True}})
+    rc, out, _ = merge(["alpha#1"], gh, "--update")
+    check(
+        "merge: --update updates an outdated PR GitHub reports clean",
+        rc == 0
+        and gh.updates == 1
+        and out.splitlines() == ["alpha#1 1111111 updated", "alpha#1 8181818 merged eeeeeee"],
+    )
+    gh = SimGitHub({("alpha", 1): {"outdated": True}})
+    gh.prs[("alpha", 1)]["head"]["ref"] = "bot/release"
+    rc, out, _ = merge(["alpha#1"], gh)
+    check(
+        "merge: an outdated bot/release PR reported clean stops",
+        rc == 1
+        and not gh.puts
+        and out == "alpha#1 1111111 behind: dispatch the release bump again\n",
+    )
+    gh = SimGitHub({("alpha", 1): {"outdated": True}})
+    rc, out, _ = merge(["alpha#1"], gh)
+    check(
+        "merge: an outdated PR merges as it is without --update",
+        rc == 0 and gh.updates == 0 and out == "alpha#1 1111111 merged eeeeeee\n",
+    )
+    # a refusal as "not up to date" (strict without the rules showing it): update, merge
+    gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}}, legacy={"alpha"})
+    rc, out, _ = merge(["alpha#1"], gh)
+    check(
+        "merge: refused as not up to date, then updated and merged",
+        rc == 0
+        and gh.updates == 1
+        and out.splitlines()[-2:] == ["alpha#1 1111111 updated", "alpha#1 8181818 merged eeeeeee"],
     )
 
     # CodeRabbit's review comes before the merge (#238): wait for it, check the
@@ -1620,7 +1748,9 @@ def self_test():
     )
 
     # --dry-run writes nothing; --json puts the events on stderr and results on stdout
-    gh = SimGitHub({("alpha", 1): {"mergeable_state": "behind"}, ("alpha", 2): {}})
+    gh = SimGitHub(
+        {("alpha", 1): {"mergeable_state": "behind"}, ("alpha", 2): {}}, strict={"alpha"}
+    )
     rc, out, _ = merge(["alpha#1", "alpha#2"], gh, "--dry-run")
     check(
         "merge: dry run",
