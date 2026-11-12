@@ -36,8 +36,10 @@ thread under it:
 
 `threads REPO#N` prints the thread lines of one PR (`--all` adds the resolved
 ones, marked). `wait` polls the PRs until no check is pending, then prints
-their `list` lines; it exits 2 if `--timeout` passes first, and a PR still
-missing a required check at the timeout is reported `ci=fail`. With
+their `list` lines; it exits 2 if `--timeout` passes first. At the timeout a
+PR missing a required check is reported `ci=fail` only when nothing else is
+pending on its head; while other checks still run it stays `ci=pending`
+(#319). With
 `--review` it also waits for CodeRabbit's review (below) and adds a line per
 PR, `review: CodeRabbit reviewed` or `warning: no CodeRabbit review yet ...`;
 the warning does not change the exit status. Run it before enabling
@@ -511,8 +513,9 @@ def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
         if not (pending or unreviewed) or clock() - start >= args.timeout:
             break
         sleep(args.interval)
-    for p in pending:  # a required check that never reported is a failure by now
-        if p["ci"]["missing"]:
+    # a required check that never reported, with nothing else running, is a failure
+    for p in pending:
+        if p["ci"]["missing"] and "pending" not in p["ci"]["counts"]:
             p["ci"]["verdict"] = "fail"
     lines = [ln for p in prs for ln in pr_lines(p)]
     for p in prs if review_wait > 0 else []:
@@ -1363,6 +1366,25 @@ def self_test():
         and out.splitlines()[0].startswith("alpha#5 aaaaaaa ci=fail(success=1) missing=")
         and "timeout: 1 still pending after 3s" in out,
     )
+    data[f"repos/swarm-routing/alpha/commits/{sha}/check-runs?per_page=100&page=1"] = {
+        "check_runs": [
+            {"name": "lint", "status": "completed", "conclusion": "success"},
+            {"name": "build", "status": "in_progress", "conclusion": None},
+        ]
+    }
+    now[0] = 0.0
+    rc, out, _ = run(["wait", "alpha#5"], data=data, sleep=tick, clock=lambda: now[0], timeout=3)
+    check(
+        "wait: a missing required check while others still run stays pending at the timeout",
+        rc == 2
+        and out.splitlines()[0].startswith(
+            "alpha#5 aaaaaaa ci=pending(pending=1,success=1) missing="
+        )
+        and "timeout: 1 still pending after 3s" in out,
+    )
+    data[f"repos/swarm-routing/alpha/commits/{sha}/check-runs?per_page=100&page=1"] = {
+        "check_runs": [{"name": "lint", "status": "completed", "conclusion": "success"}]
+    }
 
     # threads: unresolved only, --all marks the resolved one; at most 3 lines per thread
     rc, out, _ = run(["threads", "alpha#5"])
