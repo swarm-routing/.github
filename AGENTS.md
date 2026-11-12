@@ -191,9 +191,11 @@ Org-wide (1–9), then this repo's own.
   gates the issue: that label set is the version's scope,
   and the version is released when its issues are done (CONTRIBUTING
   "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
-  workflow, the shared `release:v0.1.0` to `release:v1.0.0` among them; a
-  version outside that set is added to `labels.json` (and CONTRIBUTING's
-  label table) when a ladder needs it,
+  workflow, the shared `release:v0.1.0` to `release:v0.4.0` and
+  `release:v1.0.0` among them; a version outside that set is added to
+  `swarm-routing/.github`'s `labels.json` (and CONTRIBUTING's label table)
+  when a ladder needs it, and reaches a repository when its `sync-labels` runs
+  (monthly, or dispatched after the change merges),
   or, in a repository that keeps its own release labels (AntHocNet), created
   there with `gh label create release:vX.Y.Z` when its ladder adds the version.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
@@ -292,6 +294,8 @@ Org-wide (1–9), then this repo's own.
 | Change a repository's description, homepage, topics, merge settings, features, rulesets, required checks, merge queue (`merge_queue = true`, after its required-check workflows run `on: merge_group`), security features, Actions policy or release environment | its `.github/org-sync.toml` `[settings]` table (a settings-only file, without `kind`, where org-sync manages nothing), the profiles in `templates/rulesets/` and their shared `defaults.json` (a new third-party action goes into its `selected_actions.patterns_allowed` in the same PR as the workflow that uses it); `tools/repo-settings/repo_settings.py` (`plan`, `check`, `apply [--dry-run]`; `--self-test`), applied by `repo-settings.yml` on push and checked daily (the org GitHub App's token, else secret `ORG_BOT_TOKEN`: CONTRIBUTING "Automation" lists the permissions either needs) |
 | Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` (`skeleton`, `check`, `verify --text KEY=<pdfx text>`, `row`; `--self-test`); the `fidelity-sheet` skill in `swarm-routing/skills` (plugin `swarm-routing`) |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py` (`readme`, `roadmap`, `profile`, `check-all`; `--self-test`), the weekly `epics.yml`; CONTRIBUTING "Epics are the public plan" |
+| Know where the org is going beyond ns-3 (other hosts and real computers, security, a protocol of our own), and which decisions wait on the maintainer | `ROADMAP.md` "Direction beyond ns-3" (proposed 2026-11-12). Epics: #250 portable runtime (its test ladder and the nine scenes every host must pass: #268; measurement off ns-3: #270), #272 security (first step, the decision #273), #252 a protocol of our own (the tests that decide between it and AntHocNet: #269), #251 the roadmap by tracks and the ticket clean-up (#261, #271, #274, #275, #279). Open decisions, the maintainer's to answer, never an agent's: #253, #262, #264, #268, #269, #273, #280 |
+| Make the agent files shorter, or the org's state readable by a new session | #277 (the AGENTS.md / CLAUDE.md refactor, with the measured sizes: an all-repositories session loads about 341 KB of agent files, 54 % of it the same org text), #278 (a generated state page), #281 (an org glossary), under epic #141 |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
 | The reference implementation and its history | [`swarm-routing/AntHocNet`](https://github.com/swarm-routing/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |
 | Pick up open work | this repo's issues — highest open `priority:P*` first; newest open `handoff` issue for work in flight |
