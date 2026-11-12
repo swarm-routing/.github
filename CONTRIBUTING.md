@@ -218,8 +218,8 @@ starts from the newest open `handoff` issue and closes it when done.
   `tools/pr-status/pr_status.py merge
   REPO#N [REPO#N …]` does exactly that: in the order given (repositories
   independently), it updates a PR GitHub reports `behind`
-  (`PUT pulls/<n>/update-branch`), waits for every check on the new head,
-  squash-merges with the title `<PR title> (#n)`, and only then moves on to
+  (`PUT pulls/<n>/update-branch`), waits for every check on the new head
+  and for CodeRabbit's review (below), squash-merges with the title `<PR title> (#n)`, and only then moves on to
   that repository's next PR. It never merges while a required check is
   missing on the head, and stops and reports on a failing check (a workflow
   that ended in `startup_failure` counts as one), an unresolved review thread, a conflict, a draft or a refusal, and never
@@ -229,6 +229,22 @@ starts from the newest open `handoff` issue and closes it when done.
   queue yet, and it waits on (or stops at) checks no ruleset requires, such
   as `codecov/patch` or `dco` (#196): in a merge-queue repository enable
   auto-merge instead.
+- **CodeRabbit's review comes before the merge** (#238). CodeRabbit reviews
+  each PR once, when it opens (#37), usually within 10 to 20 minutes; it is
+  not a required check, so auto-merge and a merge queue do not wait for it,
+  and a PR whose required checks finish first merges unreviewed (CodeRabbit
+  then reports "Review failed: The pull request is closed"). So enable
+  auto-merge only once CodeRabbit has reviewed and every thread it opened is
+  answered and resolved: `python3 -I tools/pr-status/pr_status.py wait
+  --review REPO#N` waits for its review (a review on the PR, or its `CodeRabbit`
+  check run completed on the head) and `pr_status.py merge` waits for it
+  before reading the threads. Both give up after `--review-timeout`
+  seconds from the PR's opening (default 1800) and go on with a warning,
+  so an absent or failing CodeRabbit never holds a PR. A PR that merged
+  before its review is reviewed after the fact: comment
+  `@coderabbitai review` on it, and fix what it finds in a follow-up PR.
+  Making CodeRabbit's check required was not chosen: a required check has
+  no time-out, so a CodeRabbit outage would stop every merge.
 - **Only the required checks gate a merge.** They are the ones in the
   repository's `[settings]` `required_checks` (live:
   `gh api repos/<owner>/<repo>/rules/branches/main`). A red or pending

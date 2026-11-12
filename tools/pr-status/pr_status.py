@@ -6,8 +6,8 @@
 Usage:
   pr_status.py list [--repos A,B] [--author LOGIN] [--json]
   pr_status.py threads REPO#N [--all] [--json]
-  pr_status.py wait REPO#N [REPO#N ...] [--interval S] [--timeout S] [--json]
-  pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--dry-run] [--json]
+  pr_status.py wait REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review [--review-timeout S]] [--json]
+  pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review-timeout S] [--dry-run] [--json]
   pr_status.py --self-test
   (any command takes --min-rate N, placed before it)
 
@@ -37,7 +37,19 @@ thread under it:
 `threads REPO#N` prints the thread lines of one PR (`--all` adds the resolved
 ones, marked). `wait` polls the PRs until no check is pending, then prints
 their `list` lines; it exits 2 if `--timeout` passes first, and a PR still
-missing a required check at the timeout is reported `ci=fail`.
+missing a required check at the timeout is reported `ci=fail`. With
+`--review` it also waits for CodeRabbit's review (below) and adds a line per
+PR, `review: CodeRabbit reviewed` or `warning: no CodeRabbit review yet ...`;
+the warning does not change the exit status. Run it before enabling
+auto-merge, which does not wait for CodeRabbit (#238).
+
+CodeRabbit's review counts as in once it has posted a review on the PR (on
+any commit: it reviews once, when the PR opens) or its `CodeRabbit` check run
+on the head has completed (`success`, `neutral`, `skipped`); while that check
+run is queued or in progress the review is in progress. It is waited for at
+most `--review-timeout` seconds after the PR opened (default 1800; 0: not at
+all), then the run goes on with a warning: CodeRabbit is not a required
+check, and an absent or failing CodeRabbit never holds a PR.
 
 `merge` squash-merges PRs one at a time per repository, in the order given;
 repositories run independently of each other. For each PR it polls every
@@ -53,6 +65,10 @@ repositories run independently of each other. For each PR it polls every
 - it waits while a check is pending, or while a check the base branch's rules
   require (`rules/branches/{base}`) has not reported on the head, so it never
   merges while a required check is missing (at the timeout it gives up);
+  CodeRabbit's own check run is not counted there, unless a rule requires it;
+- it then waits for CodeRabbit's review (above), so the threads the review
+  opens are read before the merge; past `--review-timeout` it prints
+  `warning: ...; going on without it` once and goes on;
 - once every check on the head passed and no thread is open, it merges with
   `merge_method=squash`, `sha=<head>` and the org's squash title
   `"<PR title> (#n)"`, and only then goes on to that repository's next PR,
@@ -64,7 +80,7 @@ moved or the branch fell behind (409, "not up to date", "modified") is polled
 again, and so is a failed GitHub read (a 502, a rate limit, a network
 drop), within the PR's timeout. It never reruns a check and never resolves a
 thread. Output is one
-line per PR per change of state (`updated`, `waiting: ...`, `merged <sha7>`,
+line per PR per change of state (`updated`, `waiting: ...`, `warning: ...`, `merged <sha7>`,
 `failing: <checks>`, `open threads: N` with the thread lines, `conflict`,
 `draft`, `refused: ...`, `timeout`, `not run`); with `--json` those lines go
 to stderr and the results to stdout. `--dry-run` reads each PR once and says
@@ -77,7 +93,8 @@ not available to agent sessions, so `--repos` names the repositories (default:
 the org's public ones, DEFAULT_REPOS). Review threads come from
 `pulls/{n}/ccr/review_threads` (resolved, path, line, comment_ids); where that
 endpoint is missing the count prints as `threads=?` (and `merge` leaves the
-check to the ruleset's thread rule). `list`, `threads` and `wait` are read-only
+check to the ruleset's thread rule). CodeRabbit's reviews come from
+`pulls/{n}/reviews`. `list`, `threads` and `wait` are read-only
 (GET only); `merge` writes only the two PUTs above. Every call goes through
 `gh api`, which authenticates with GH_TOKEN or the gh CLI's own login
 (`gh auth token`), so no token is in an argument list. Each read checks the
@@ -88,6 +105,7 @@ printed as data; nothing here acts on their text. Stdlib only.
 """
 
 import argparse
+import datetime
 import json
 import re
 import subprocess
@@ -254,11 +272,15 @@ def startup_failures(gh, repo, sha):
     )
 
 
-def ci_summary(gh, repo, sha, required=frozenset()):
+def ci_summary(gh, repo, sha, required=frozenset(), skip_coderabbit=False):
     """The verdict, the count of each conclusion, the failed checks' names and
-    the required checks that have not reported on the head."""
+    the required checks that have not reported on the head. With
+    `skip_coderabbit`, CodeRabbit's own check run is left out unless required
+    (`wait --review` waits for the review separately)."""
     counts, failed, seen = Counter(), [], set()
     for run in gh.paged(f"repos/{repo}/commits/{sha}/check-runs"):
+        if skip_coderabbit and is_coderabbit(run) and run.get("name") not in required:
+            continue
         done = run.get("status") == "completed"
         state = (run.get("conclusion") or "pending") if done else "pending"
         counts[state] += 1
@@ -363,7 +385,7 @@ def threads(gh, repo, number, include_resolved=False):
     return out
 
 
-def pr_state(gh, repo, number, cache=None):
+def pr_state(gh, repo, number, cache=None, skip_coderabbit=False):
     pr = gh.get(f"repos/{repo}/pulls/{number}")
     if pr is None:
         raise Failure(f"pr_status: {short_repo(repo)}#{number} not found")
@@ -381,7 +403,8 @@ def pr_state(gh, repo, number, cache=None):
         "head": sha,
         "mergeable": pr.get("mergeable"),
         "mergeable_state": pr.get("mergeable_state") or "unknown",
-        "ci": ci_summary(gh, repo, sha, required),
+        "created_at": pr.get("created_at"),
+        "ci": ci_summary(gh, repo, sha, required, skip_coderabbit),
         "unresolved": None if ts is None else len(ts),
         "threads": ts or [],
     }
@@ -447,19 +470,38 @@ def cmd_threads(args, gh):
     return 0
 
 
-def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic):
+def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
     refs = [parse_ref(r) for r in args.refs]
+    review_wait = getattr(args, "review_timeout", 0) if getattr(args, "review", False) else 0
     start, cache = clock(), {}
     while True:
-        prs = [pr_state(gh, repo, n, cache) for repo, n in refs]
+        prs = [pr_state(gh, repo, n, cache, review_wait > 0) for repo, n in refs]
         pending = [p for p in prs if p["ci"]["verdict"] == "pending"]
-        if not pending or clock() - start >= args.timeout:
+        unreviewed = []
+        for p in prs if review_wait > 0 else []:
+            repo = full_repo(p["repo"])
+            p["review"] = coderabbit_review(gh, repo, p["number"], p["head"])
+            p["review_age"] = pr_age(p, wall, clock() - start)
+            if p["review"] == "reviewed":  # the threads the review opened, read after it
+                ts = threads(gh, repo, p["number"])
+                p["unresolved"], p["threads"] = (None if ts is None else len(ts)), ts or []
+            if p["review"] != "reviewed" and p["review_age"] < review_wait:
+                unreviewed.append(p)
+        if not (pending or unreviewed) or clock() - start >= args.timeout:
             break
         sleep(args.interval)
     for p in pending:  # a required check that never reported is a failure by now
         if p["ci"]["missing"]:
             p["ci"]["verdict"] = "fail"
     lines = [ln for p in prs for ln in pr_lines(p)]
+    for p in prs if review_wait > 0 else []:
+        if p["review"] == "reviewed":
+            lines.append(f"{p['repo']}#{p['number']} review: CodeRabbit reviewed")
+        else:  # a warning, not a failure: CodeRabbit may be absent or down (#238)
+            lines.append(
+                f"{p['repo']}#{p['number']} warning: {REVIEW_WAIT[p['review']]} "
+                f"{p['review_age']:.0f}s after the PR opened"
+            )
     if pending:
         lines.append(f"timeout: {len(pending)} still pending after {args.timeout:g}s")
     emit(prs, lines, args.json)
@@ -490,6 +532,8 @@ def head_checks(gh, repo, sha, required):
     latest = {}
     for run in gh.paged(f"repos/{repo}/commits/{sha}/check-runs"):
         name = run.get("name") or f"#{run.get('id')}"
+        if is_coderabbit(run) and name not in required:
+            continue  # the review, not CI: coderabbit_review() waits for it, with its own time-out
         key = (run.get("started_at") or "", run.get("id") or 0)
         if name not in latest or key >= latest[name][0]:
             latest[name] = (key, run)
@@ -512,6 +556,43 @@ def head_checks(gh, repo, sha, required):
     return {"failed": sorted(failed), "pending": sorted(pending)}
 
 
+def is_coderabbit(run):
+    """CodeRabbit's own check run (`CodeRabbit`, app `coderabbitai`)."""
+    slug = ((run.get("app") or {}).get("slug") or "").lower()
+    return run.get("name") == "CodeRabbit" or slug.startswith("coderabbit")
+
+
+def coderabbit_review(gh, repo, number, sha):
+    """`reviewed`, `reviewing` or `none`: whether CodeRabbit has had its say on the PR.
+
+    `reviewed` when it posted a review (on any commit: it reviews once when the
+    PR opens, #37) or its check run on the head completed (`success`,
+    `neutral`, `skipped`: done, or nothing to review by its settings);
+    `reviewing` while that check run is queued or in progress; `none` before
+    it has started, or where CodeRabbit is not installed or is down."""
+    for r in gh.paged(f"repos/{repo}/pulls/{number}/reviews"):
+        if ((r.get("user") or {}).get("login") or "").startswith("coderabbitai"):
+            return "reviewed"
+    runs = [r for r in gh.paged(f"repos/{repo}/commits/{sha}/check-runs") if is_coderabbit(r)]
+    if any(r.get("status") != "completed" for r in runs):
+        return "reviewing"
+    if any(r.get("conclusion") in ("success", "neutral", "skipped") for r in runs):
+        return "reviewed"
+    return "none"
+
+
+def pr_age(pr, wall, elapsed):
+    """Seconds since the PR was opened (at least `elapsed`, the time spent polling it)."""
+    opened = pr.get("created_at")
+    if not opened:
+        return elapsed
+    t = datetime.datetime.fromisoformat(opened.replace("Z", "+00:00")).timestamp()
+    return max(elapsed, wall() - t)
+
+
+REVIEW_WAIT = {"reviewing": "CodeRabbit review in progress", "none": "no CodeRabbit review yet"}
+
+
 class Job:
     """One PR's progress through `merge`."""
 
@@ -519,6 +600,7 @@ class Job:
         self.repo, self.number = repo, number
         self.sha, self.title, self.start, self.updated_from = "", "", None, None
         self.last, self.events, self.result, self.detail = None, [], None, ""
+        self.review_warned = False
 
     def ref(self):
         return f"{short_repo(self.repo)}#{self.number}"
@@ -530,7 +612,7 @@ class Job:
             out(f"{self.ref()} {self.sha[:7] or '-'} {text}")
 
 
-def merge_step(gh, job, dry_run, cache, out):
+def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0):
     """One poll of one PR: (result, text) once it is done with, None to poll again."""
     repo, n = job.repo, job.number
     pr = gh.get(f"repos/{repo}/pulls/{n}")
@@ -570,6 +652,23 @@ def merge_step(gh, job, dry_run, cache, out):
         text = f"waiting: {text}"
         job.say("ci", text, out)
         return None
+    if review_wait > 0 and not job.review_warned:
+        # before the threads: the review is what opens them (#238)
+        cr = coderabbit_review(gh, repo, n, job.sha)
+        if cr != "reviewed":
+            waited = age(pr)
+            if waited < review_wait:
+                if dry_run:
+                    return ("dry", f"would wait: {REVIEW_WAIT[cr]}")
+                job.say("review", f"waiting: {REVIEW_WAIT[cr]}", out)
+                return None
+            job.review_warned = True
+            job.say(
+                "review-late",
+                f"warning: {REVIEW_WAIT[cr]} {waited:.0f}s after the PR opened "
+                f"(--review-timeout {review_wait:g}); going on without it",
+                out,
+            )
     ts = threads(gh, repo, n)
     if ts:
         return ("stopped", "\n".join([f"open threads: {len(ts)}"] + [thread_line(t) for t in ts]))
@@ -590,7 +689,7 @@ def merge_step(gh, job, dry_run, cache, out):
     return ("stopped", f"refused: {plain(got)}")
 
 
-def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic):
+def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
     def out(line):
         print(line, file=sys.stderr if args.json else sys.stdout, flush=True)
 
@@ -607,7 +706,15 @@ def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic):
                 if job.start is None:
                     job.start = clock()
                 try:
-                    res = merge_step(gh, job, args.dry_run, cache, out)
+                    res = merge_step(
+                        gh,
+                        job,
+                        args.dry_run,
+                        cache,
+                        out,
+                        review_wait=args.review_timeout,
+                        age=lambda pr, job=job: pr_age(pr, wall, clock() - job.start),
+                    )
                 except Failure as e:
                     if args.dry_run:  # a dry run reads each PR once
                         raise
@@ -654,6 +761,12 @@ def cmd_merge(args, gh, sleep=time.sleep, clock=time.monotonic):
     return 2 if "timeout" in results else 0
 
 
+REVIEW_HELP = (
+    "seconds after the PR opened to wait for CodeRabbit's review, then go on with a "
+    "warning (default %(default)s; 0: do not wait)"
+)
+
+
 def parser():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true")
@@ -676,11 +789,18 @@ def parser():
     w.add_argument("refs", nargs="+", metavar="REPO#N")
     w.add_argument("--interval", type=float, default=30)
     w.add_argument("--timeout", type=float, default=1800)
+    w.add_argument(
+        "--review",
+        action="store_true",
+        help="also wait for CodeRabbit's review (before enabling auto-merge)",
+    )
+    w.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     w.add_argument("--json", action="store_true")
     m = sub.add_parser("merge", help="update when behind, wait for green, squash-merge in order")
     m.add_argument("refs", nargs="+", metavar="REPO#N")
     m.add_argument("--interval", type=float, default=60)
     m.add_argument("--timeout", type=float, default=7200, help="seconds per PR")
+    m.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     m.add_argument("--dry-run", action="store_true", help="read once, say what it would do")
     m.add_argument("--json", action="store_true")
     return p
@@ -814,13 +934,16 @@ class FakeGitHub(GitHub):
 
 
 OK_RUN = {"name": "ci", "status": "completed", "conclusion": "success"}
+CR_REVIEW = {"user": {"login": "coderabbitai[bot]"}, "state": "COMMENTED", "commit_id": "0" * 40}
 
 
 class SimGitHub(GitHub):
     """A fake GitHub that changes state: update-branch moves the head, a merge
     closes the PR and puts the repository's other open PRs behind."""
 
-    def __init__(self, prs, checks=None, threads=None, required=None, refuse=None, runs=None):
+    def __init__(
+        self, prs, checks=None, threads=None, required=None, refuse=None, runs=None, reviews=None
+    ):
         self.prs = {}
         for (repo, n), fields in prs.items():
             pr = {"number": n, "title": f"feat: pr {n}", "state": "open", "merged": False}
@@ -833,6 +956,7 @@ class SimGitHub(GitHub):
         self.required = required or {}
         self.refuse = refuse or {}  # (repo, n) -> "HTTP 405: ..."
         self.runs = runs or {}  # sha -> workflow runs
+        self.reviews = reviews or {}  # (repo, n) -> reviews; default: CodeRabbit has reviewed
         self.calls, self.puts, self.updates = [], [], 0
 
     def get(self, path):
@@ -849,6 +973,9 @@ class SimGitHub(GitHub):
             return {"state": "success", "statuses": []}
         if m := re.fullmatch(r"actions/runs\?head_sha=(\w+)&.*", rest):
             return {"workflow_runs": self.runs.get(m.group(1), [])}
+        if m := re.fullmatch(r"pulls/(\d+)/reviews\?.*", rest):
+            got = self.reviews.get((repo, int(m.group(1))), [CR_REVIEW])
+            return got() if callable(got) else got
         if m := re.fullmatch(r"pulls/(\d+)/ccr/review_threads", rest):
             return self.thr.get((repo, int(m.group(1))), [])
         if re.fullmatch(r"pulls/comments/\d+", rest):
@@ -1314,6 +1441,182 @@ def self_test():
     check(
         "merge: repositories independent",
         rc == 1 and "beta#15 fffffff merged eeeeeee" in out and "alpha#14 eeeeeee conflict" in out,
+    )
+
+    # CodeRabbit's review comes before the merge (#238): wait for it, check the
+    # threads it opened, and go on with a warning when it never comes
+    def review_after(polls, then=None):
+        seen = []
+
+        def reviews():
+            seen.append(1)
+            return [CR_REVIEW] if len(seen) > polls else (then or [])
+
+        return reviews
+
+    gh = SimGitHub({("alpha", 20): {"sha": "20" * 20}}, reviews={("alpha", 20): review_after(2)})
+    rc, out, _ = merge(["alpha#20"], gh)
+    check(
+        "merge: waits for CodeRabbit's review, then merges",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#20 2020202 waiting: no CodeRabbit review yet",
+            "alpha#20 2020202 merged eeeeeee",
+        ],
+    )
+    gh = SimGitHub({("alpha", 21): {"sha": "21" * 20}})
+    seen = []
+
+    def review_once():
+        seen.append(1)
+        return [CR_REVIEW] if len(seen) > 1 else []
+
+    gh.reviews = {("alpha", 21): review_once}
+    real_get = gh.get
+
+    def get_threads(path):  # the review opens a thread
+        if path.endswith("/pulls/21/ccr/review_threads") and len(seen) > 1:
+            return [{"resolved": False, "path": "x.py", "line": 3, "comment_ids": [7]}]
+        return real_get(path)
+
+    gh.get = get_threads
+    rc, out, _ = merge(["alpha#21"], gh)
+    check(
+        "merge: the threads the review opened stop the merge",
+        rc == 1
+        and not gh.puts
+        and out.splitlines()
+        == [
+            "alpha#21 2121212 waiting: no CodeRabbit review yet",
+            "alpha#21 2121212 open threads: 1",
+            "  Major · Guard the empty list. · x.py:3 · 7",
+        ],
+    )
+    cr_run = {"name": "CodeRabbit", "app": {"slug": "coderabbitai"}}
+    reviewing = [dict(cr_run, status="in_progress"), OK_RUN]
+    finished = [dict(cr_run, status="completed", conclusion="skipped"), OK_RUN]
+    gh = SimGitHub({("alpha", 22): {"sha": "22" * 20}}, reviews={("alpha", 22): []})
+    polls = []
+
+    def cr_then_done():
+        polls.append(1)
+        return finished if len(polls) > 4 else reviewing
+
+    gh.checks = {"22" * 20: cr_then_done}
+    rc, out, _ = merge(["alpha#22"], gh)
+    check(
+        "merge: CodeRabbit's running check is the review, not a pending CI check",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#22 2222222 waiting: CodeRabbit review in progress",
+            "alpha#22 2222222 merged eeeeeee",
+        ],
+    )
+    gh = SimGitHub({("alpha", 23): {"sha": "23" * 20}}, reviews={("alpha", 23): []})
+    rc, out, _ = merge(["alpha#23"], gh, "--review-timeout", "120")
+    check(
+        "merge: no review by the review time-out: a warning, then the merge",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#23 2323232 waiting: no CodeRabbit review yet",
+            "alpha#23 2323232 warning: no CodeRabbit review yet 120s after the PR opened "
+            "(--review-timeout 120); going on without it",
+            "alpha#23 2323232 merged eeeeeee",
+        ],
+    )
+    gh = SimGitHub(
+        {("alpha", 24): {"sha": "24" * 20, "created_at": "2026-01-01T00:00:00Z"}},
+        reviews={("alpha", 24): []},
+    )
+    gh.checks = {"24" * 20: [dict(cr_run, status="completed", conclusion="cancelled"), OK_RUN]}
+    rc, out, _ = merge(["alpha#24"], gh)
+    check(
+        "merge: an old PR CodeRabbit never reviewed is not held, a cancelled review is no failure",
+        rc == 0
+        and len(out.splitlines()) == 2
+        and "warning: no CodeRabbit review yet" in out.splitlines()[0]
+        and out.splitlines()[1] == "alpha#24 2424242 merged eeeeeee",
+    )
+    gh = SimGitHub({("alpha", 25): {"sha": "25" * 20}}, reviews={("alpha", 25): []})
+    rc, out, _ = merge(["alpha#25"], gh, "--review-timeout", "0")
+    check(
+        "merge: --review-timeout 0 does not wait",
+        rc == 0 and out == "alpha#25 2525252 merged eeeeeee\n",
+    )
+    rc, out, _ = merge(
+        ["alpha#25"],
+        SimGitHub({("alpha", 25): {"sha": "25" * 20}}, reviews={("alpha", 25): []}),
+        "--dry-run",
+    )
+    check(
+        "merge: dry run before the review",
+        rc == 0 and out == "alpha#25 2525252 would wait: no CodeRabbit review yet\n",
+    )
+
+    # wait --review: until CodeRabbit has reviewed, a warning (exit 0) when it never does
+    def wait_review(gh, ref, timeout=600, review_timeout=300):
+        now = [0.0]
+
+        def tick(s):
+            now[0] += s
+
+        ns = parser().parse_args(
+            ["wait", ref, "--review", "--interval", "60", "--timeout", str(timeout)]
+            + ["--review-timeout", str(review_timeout)]
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = cmd_wait(ns, gh, sleep=tick, clock=lambda: now[0])
+        return rc, out.getvalue(), now[0]
+
+    gh = SimGitHub({("alpha", 26): {"sha": "26" * 20}}, reviews={("alpha", 26): review_after(3)})
+    rc, out, waited = wait_review(gh, "alpha#26")
+    check(
+        "wait --review: until CodeRabbit reviewed",
+        rc == 0
+        and waited == 180
+        and out.splitlines()[-1] == "alpha#26 review: CodeRabbit reviewed",
+    )
+    gh = SimGitHub({("alpha", 27): {"sha": "27" * 20}}, reviews={("alpha", 27): []})
+    rc, out, waited = wait_review(gh, "alpha#27")
+    check(
+        "wait --review: a warning, not a failure, at the review time-out",
+        rc == 0
+        and waited == 300
+        and out.splitlines()[-1]
+        == "alpha#27 warning: no CodeRabbit review yet 300s after the PR opened",
+    )
+
+    gh = SimGitHub({("alpha", 28): {"sha": "28" * 20}}, reviews={("alpha", 28): []})
+    gh.checks = {"28" * 20: reviewing}
+    rc, out, waited = wait_review(gh, "alpha#28", review_timeout=120)
+    check(
+        "wait --review: an optional CodeRabbit run still going is not pending CI",
+        rc == 0
+        and waited == 120
+        and "ci=pass(success=1)" in out
+        and out.splitlines()[-1].startswith("alpha#28 warning: CodeRabbit review in progress"),
+    )
+    gh = SimGitHub({("alpha", 29): {"sha": "29" * 20}})
+    reads = []
+    real_get29 = gh.get
+
+    def thread_on_second_read(path):  # the review lands between pr_state's read and its own
+        if path.endswith("/pulls/29/ccr/review_threads"):
+            reads.append(1)
+            if len(reads) > 1:
+                return [{"resolved": False, "path": "x.py", "line": 3, "comment_ids": [7]}]
+            return []
+        return real_get29(path)
+
+    gh.get = thread_on_second_read
+    rc, out, _ = wait_review(gh, "alpha#29")
+    check(
+        "wait --review: the threads are read again after the review",
+        rc == 0 and "threads=1" in out and "Guard the empty list." in out,
     )
 
     # --dry-run writes nothing; --json puts the events on stderr and results on stdout
