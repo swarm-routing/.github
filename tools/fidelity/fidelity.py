@@ -609,7 +609,7 @@ def crossref_entry(msg, key, role):
         if msg.get(src):
             f[dst] = _clean(msg[src], dst)
     if msg.get("page"):
-        f["pages"] = re.sub(r"\s*[-–]+\s*", "--", _clean(msg["page"], "pages"))
+        f["pages"] = re.sub(r"[-–]+", "--", _clean(msg["page"], "pages").replace(" ", ""))
     inst = [i.get("name") for i in msg.get("institution") or [] if i.get("name")]
     if kind in ("phdthesis", "mastersthesis"):
         if inst or msg.get("publisher"):
@@ -715,7 +715,7 @@ def public_files(repo):
     checkout), without test inputs."""
     try:
         out = subprocess.run(
-            ["git", "-C", repo, "ls-files", "-z"], capture_output=True, check=True
+            ["git", "-C", os.path.abspath(repo), "ls-files", "-z"], capture_output=True, check=True
         ).stdout.decode("utf-8", "replace")
         paths = [p for p in out.split("\0") if p]
     except (OSError, subprocess.CalledProcessError):
@@ -863,7 +863,7 @@ def bib_check(repo, online=False):
                     continue
                 before = line[: m.start()]
                 if before.endswith("/") and not re.search(r"(?i)https://doi\.org/$", before):
-                    link = re.search(r"\S*$", before).group(0)
+                    link = before.split()[-1] if before.split() else before
                     findings.append(
                         f"{path}:{n}: [{dois[d]}] shown as {link}{m.group(0)}, "
                         f"not https://doi.org/{m.group(0)}"
