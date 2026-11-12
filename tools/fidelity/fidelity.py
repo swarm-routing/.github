@@ -583,7 +583,7 @@ def crossref_entry(msg, key, role):
     names = []
     for a in msg.get("author") or []:
         if not isinstance(a, dict):
-            continue
+            raise TypeError("an author is not an object")  # never an entry missing an author
         if a.get("family"):
             given = _clean(a.get("given", ""), "author")
             names.append(_clean(a["family"], "author") + (f", {given}" if given else ""))
@@ -1260,6 +1260,8 @@ def bib_self_test():
                 return json.dumps(RECORDED_G02)
             if "odd" in url:
                 return json.dumps({"message": "not an object"})
+            if "badauthor" in url:
+                return json.dumps({"message": {"type": "book", "author": ["Gunes, M."]}})
             if "flaky" in url and len(calls) == 1:
                 raise Failure("Crossref answered HTTP 503")
             return None
@@ -1304,6 +1306,11 @@ def bib_self_test():
                 bib_entry("10.1109/icppw.2002.1039715", "Gunes:2002", "implemented")[0] == 2,
             )
             code, out = bib_entry("10.1000/odd", "O1", "background")
+            code2, out2 = bib_entry("10.1000/badauthor", "B1", "background")
+            expect(
+                "entry: an author that is not an object is exit 2, not an entry without it",
+                code2 == 2 and "works shape" in out2,
+            )
             expect(
                 "entry: a message that is not an object is exit 2",
                 code == 2 and "not a works record" in out,
