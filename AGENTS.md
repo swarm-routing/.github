@@ -35,7 +35,7 @@ tools/docs-review/check_docs.py   a repo's README, AI files and docs/ against th
 tools/docs-review/ai_files_review.py   the weekly AI-files review: check_docs.py's AI-files pass on every public repo, one `[docs] AI files: N finding(s)` issue per repo, opened, updated in place, closed when clean
 tools/fidelity/fidelity.py      a protocol's docs/fidelity.md: the org shape (skeleton), valid sources and the list of unknowns (check), each locator and table value against the paper's text (verify), the review row (row)
 tools/protocol-review/check_invariants.py   the mechanical org golden rules (1-5, 8, 9) on a repo's diff, a line per rule the diff touches, exit 1 on a FAIL; rules 6 and 7 stay the reviewer's, with HINT lines at the likely spots
-tools/pr-status/pr_status.py    open PRs across repos: `list`, `threads` and `wait` (read-only) print a line per PR (head, CI verdict and counts, required checks missing on the head, workflows that ended in `startup_failure`, mergeable state) and per unresolved review thread (severity · title · path:line · id); a missing required check is never a pass; `merge` writes: it updates a behind PR, waits for green and squash-merges, one PR at a time per repo; every read backs off below `--min-rate` remaining API requests (#226)
+tools/pr-status/pr_status.py    open PRs across repos: `list`, `threads` and `wait` (read-only) print a line per PR (head, CI verdict and counts, required checks missing on the head, workflows that ended in `startup_failure`, mergeable state) and per unresolved review thread (severity · title · path:line · id); a missing required check is never a pass; `merge` writes: it waits for green and squash-merges (a behind PR as it is, updated only where the rules require an up-to-date branch or with `--update`; a behind `bot/release` stops), one PR at a time per repo; every read backs off below `--min-rate` remaining API requests (#226)
 tools/release/fixture/         the release self-test's caller: the minimal Commitizen config (.cz.toml), a `make dist`, and a CITATION.cff (the Zenodo push test)
 tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
 tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy (incl. fork-PR approval) and `release` environment as code: `plan`/`check` (read-only diff), `apply` (only the differences)
@@ -81,7 +81,7 @@ python3 -I tools/docs-review/ai_files_review.py --self-test   # the weekly revie
 python3 -I tools/docs-review/ai_files_review.py run --dry-run --repos .github,skills   # read-only, what the weekly run would open, update or close
 python3 -I tools/fidelity/fidelity.py --self-test   # the fidelity-sheet checker, on fixture sheets
 python3 -I tools/protocol-review/check_invariants.py --self-test   # a passing and a failing fixture repo per checked rule; a hinted and an unhinted one for 6 and 7
-python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, a startup_failure run and missing required checks, threads, a CodeRabbit body reduced to its heading, wait), and merge against a simulated one (behind -> update -> merged, sequence, failing check, open thread, conflict, draft, refused, unreported required check, startup failure, already merged)
+python3 -I tools/pr-status/pr_status.py --self-test   # the PR view, against a fake GitHub (CI states, a startup_failure run and missing required checks, threads, a CodeRabbit body reduced to its heading, wait), and merge against a simulated one (behind -> update -> merged where the rules require it, behind merged as it is where they do not, `--update`, a behind `bot/release`, sequence, failing check, open thread, conflict, draft, refused, unreported required check, startup failure, already merged)
 python3 -I tools/lit-search/lit_search.py --self-test   # confirm, citing, refs, search, related on recorded responses of each source, a source down or rate-limited, keys never leaked
 python3 -I tools/repo-settings/repo_settings.py --self-test   # plan, check, apply against a fake GitHub (each field's drift, ruleset create/update, unmanaged ruleset left alone, private masked, 403 refused, dry run; merge_queue rule, its table overrides and validation, refused without a merge_group trigger behind each required check; security on in order, own CodeQL kept, private unsupported, Actions policy and an uncovered action refused, fork-PR approval for all outside contributors (a note on a private repository), 409 org policy, release environment, idempotent)
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
@@ -191,7 +191,10 @@ Org-wide (1–9), then this repo's own.
   gates the issue: that label set is the version's scope,
   and the version is released when its issues are done (CONTRIBUTING
   "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
-  workflow.
+  workflow, the shared `release:v0.1.0` to `release:v1.0.0` among them; a
+  version outside that set is added to `labels.json` when a ladder needs it,
+  or, in a repository that keeps its own release labels (AntHocNet), created
+  there with `gh label create release:vX.Y.Z` when its ladder adds the version.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
   **Acceptance criteria** (checkboxes) · **Depends on** (cross-repo form
   `swarm-routing/<repo>#N`) · **References**. Children of an epic say "Part of
