@@ -36,6 +36,21 @@ Condensed from [andrej-karpathy-skills](https://github.com/forrestchang/andrej-k
 - **Verifiable goals:** a bug gets a reproducing test first; a refactor passes
   before and after. Finish when the check passes, not when the code looks right.
 
+## Session habits
+
+- **Attach only the repositories the task needs.** Each attached repository's
+  agent files are loaded into every request, whether the task touches it or
+  not.
+- **Start from the record, not from memory:** the newest open `handoff` issue,
+  then the issue's acceptance criteria, then `main`. Check a claim against its
+  source before it goes into an issue or a PR.
+- **Script what repeats.** A check or a lookup run more than a few times
+  becomes a script in `tools/` that prints a summary; the model reads the
+  verdict, not the raw data (AntHocNet ADR-0014).
+- **Measure before cutting or adding agent text:** the `token-audit` skill
+  (`swarm-routing/skills` `tools/token-audit/token_audit.py`) prints what a
+  session loads and where a finished session's tokens went.
+
 ## Response style — caveman (token economy)
 
 Answer in tight, low-filler prose: drop hedging, pleasantries, and preamble; keep
