@@ -12,7 +12,7 @@ own citable repository.
 
 ## Why this exists
 
-I am [Daniel Joppi](https://github.com/danieljoppi). I have more than 20
+I am [Daniel Joppi](https://github.com/danieljoppi) ([LinkedIn](https://www.linkedin.com/in/danieljoppi)). I have more than 20
 years of experience building high-scale software, delivery pipelines and the
 architecture of new systems. AntHocNet started as my college project: I began
 implementing the protocol in 2008 on NS-2 and saved the code on GitHub more
