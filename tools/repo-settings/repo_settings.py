@@ -403,19 +403,49 @@ def names_job(text, job):
     return False
 
 
+def job_block(text, job):
+    """The lines of the job with the id `job` (two-space indent under
+    `jobs:`), or None when no job has that id."""
+    m = re.search(rf"^  {re.escape(job)}:[ \t]*(?:#.*)?\n", text, re.M)
+    if not m:
+        return None
+    end = re.search(r"^(?:  )?\S", text[m.end() :], re.M)
+    return text[m.end() : m.end() + end.start()] if end else text[m.end() :]
+
+
+def reports_as(text, job, nested):
+    """Whether the workflow's job `job` can report a check of that shape. A
+    check `X / Y` comes from a job X that calls a reusable workflow (`uses:`
+    at job level), so a plain job with the id X is not it; a plain check `X`
+    comes from any job named X (#294: `ai-files-review.yml`'s plain job
+    `review`, which has `runs-on` and `steps`, is not the caller of
+    `review / coderabbit`)."""
+    if not names_job(text, job):
+        return False
+    block = job_block(text, job)
+    if block is None or not nested:
+        return True  # matched by name only, or a plain check: as before
+    if re.search(r"^    uses:[ \t]*\S", block, re.M):
+        return True
+    # a job that runs its own steps cannot be the caller; anything else is kept
+    return not re.search(r"^    (?:runs-on|steps):", block, re.M)
+
+
 def without_merge_group(checks, workflows):
     """The required checks a merge group would never get: no workflow found
     with a job named (or with the id) the check's first ` / ` segment, or one
     found whose triggers have no merge_group. Only workflows that run on
     pull_request can report a required check, so a reusable (workflow_call)
-    workflow whose job carries the same name is not one of them."""
+    workflow whose job carries the same name is not one of them; and a check
+    `X / Y` is reported only by a job X that calls a reusable workflow."""
     out = []
     for c in checks:
         job = c.split(" / ")[0]
+        nested = " / " in c
         found = [
             t
             for p, t in workflows.items()
-            if "/workflows/" in p and runs_on_pr(t) and names_job(t, job)
+            if "/workflows/" in p and runs_on_pr(t) and reports_as(t, job, nested)
         ]
         if not found or not all(MERGE_GROUP.search(t) for t in found):
             out.append(c)
@@ -1792,6 +1822,34 @@ def self_test():
     )
     workflows["AntHocNet"][".github/workflows/ci.yml"] = (
         "on:\n  pull_request:\n  merge_group:\n" + plain_ci + gate
+    )
+    # a plain job with the caller's id does not stand in for a `X / Y` check (#294)
+    plain_review = (
+        "on:\n  pull_request:\njobs:\n  review:\n    runs-on: ubuntu-24.04\n    steps: []\n"
+    )
+    caller = (
+        "on:\n  pull_request:\n  merge_group:\njobs:\n  review:\n"
+        "    uses: ./.github/workflows/reusable-review-gate.yml\n"
+    )
+    check(
+        "a plain job of the same id is not the caller of an X / Y check",
+        without_merge_group(
+            ["review / coderabbit"],
+            {
+                ".github/workflows/ai-files-review.yml": plain_review,
+                ".github/workflows/review-gate.yml": caller,
+            },
+        )
+        == [],
+    )
+    check(
+        "an X / Y check with only a plain job of that id has no merge-group workflow",
+        without_merge_group(["review / coderabbit"], {".github/workflows/a.yml": plain_review})
+        == ["review / coderabbit"],
+    )
+    check(
+        "a plain check X still matches a plain job X",
+        without_merge_group(["review"], {".github/workflows/a.yml": plain_review}) == ["review"],
     )
     rc, out = go("check", ["AntHocNet"], gh)
     check("merge_queue drift", rc == 1 and "AntHocNet ruleset main: update (+merge_queue)" in out)
