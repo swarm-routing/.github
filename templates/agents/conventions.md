@@ -9,9 +9,11 @@
   gates the issue: that label set is the version's scope,
   and the version is released when its issues are done (CONTRIBUTING
   "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
-  workflow, the shared `release:v0.1.0` to `release:v1.0.0` among them; a
-  version outside that set is added to `labels.json` (and CONTRIBUTING's
-  label table) when a ladder needs it,
+  workflow, the shared `release:v0.1.0` to `release:v0.4.0` and
+  `release:v1.0.0` among them; a version outside that set is added to
+  `swarm-routing/.github`'s `labels.json` (and CONTRIBUTING's label table)
+  when a ladder needs it, and reaches a repository when its `sync-labels` runs
+  (monthly, or dispatched after the change merges),
   or, in a repository that keeps its own release labels (AntHocNet), created
   there with `gh label create release:vX.Y.Z` when its ladder adds the version.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·

@@ -93,9 +93,9 @@ because the issue threads were thorough. Caveman the chat, not the record.
   outside contributor's commit still holds the PR until that author signs
   off; on the maintainer's or an agent's commits it is expected
   (swarm-routing/.github#212). `dco` is not a required check and runs on
-  `pull_request` only, so enable auto-merge on an outside contributor's PR
-  only after `dco` passed on its current head, and disable it before pushing
-  to that PR.
+  `pull_request` only, so merge an outside contributor's PR, by auto-merge or
+  directly, only after `dco` passed on the head commit that merges, and
+  disable auto-merge before anyone pushes to that PR.
 - Enable auto-merge only after CodeRabbit has reviewed and its threads are
   resolved: it is not a required check, so auto-merge does not wait for it.
   `python3 -I ../.github/tools/pr-status/pr_status.py wait --review REPO#N`
