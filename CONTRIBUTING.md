@@ -615,8 +615,9 @@ README's **Releases & citing** section (`<!-- org-sync:begin citing -->`):
 how releases ship, the concept DOI (or, before the first archived release,
 that there is none yet), a pointer to each release's version DOI on its
 Zenodo record (never a hand-kept row per version), the work the repository
-implements or builds on, and `docs/fidelity.md` when it exists. That work is
-listed once, as `[[references]]` in `.github/org-sync.toml` (type, title,
+implements or builds on, and `docs/fidelity.md` when it exists. That work
+comes from `docs/references.bib` once it has an entry (References, below);
+until then it is listed once, as `[[references]]` in `.github/org-sync.toml` (type, title,
 authors, year, venue, `doi`, a one-line `role`; a work with no DOI gives its
 publisher's or institution's `url` and `no_doi`, the reason), and renders
 both the README list and CITATION.cff's `references:` (reseed it after a
@@ -662,6 +663,38 @@ token's `X-RateLimit-Remaining` drops below `--min-rate` (default 500), and
 `reusable-release.yml` prints the release token's remaining quota in the job
 summary before it publishes (a signal only: that token is the job's, not the
 maintainer's) (#226).
+
+### References
+
+Each repository keeps one bibliography, `docs/references.bib` (#307, #308):
+the works it relies on, one BibTeX entry each. org-sync seeds it with a
+commented header and no entry; a repository with nothing to cite keeps it so.
+
+- **Roles.** An entry's `keywords` hold its roles: `implemented` (the work the
+  repository implements), `restates`, `compared`, `dataset`, `tool`,
+  `background`.
+- **DOI links first.** An entry gives its `doi`, and a reference to it is
+  shown as its `https://doi.org/` link; a `url` only for a work that has no
+  DOI. Never the repository's own DOI (CITATION.cff carries it), and only
+  public sources: a work is cited by its DOI link, never by where a copy of it
+  is kept.
+- **Fields come from Crossref or Zenodo, never typed.** `fidelity.py bib entry
+  DOI --key K --role R` prints Crossref's record as an entry; `zenodo.py bibtex
+  OWNER/REPO --key K --role tool` prints an org release's concept record as
+  `@software`.
+- **Generated sections.** Once the file has an entry, org-sync renders
+  CITATION.cff's `references:` and the README's Releases & citing list from its
+  `implemented`, `tool` and `dataset` entries (an entry's `note` is its role
+  line), in place of `[[references]]`, which it then reports as redundant: remove
+  it in the same PR. A fidelity sheet's Sources table is `fidelity.py bib
+  sources`'s, between its `fidelity:sources` markers.
+- **Checked in CI.** `fidelity.py bib check` runs in the `org-sync` check
+  (`reusable-org-sync-check.yml`) once `docs/references.bib` holds more than
+  `%` comments (an entry, or text that is not one, which fails): the
+  keys a sheet cites, the roles, a DOI or url per entry, the doi.org links, the
+  repository's own DOI and any public line about where papers are kept. The
+  seed alone is not checked, so a repository turns it on with the PR that fills
+  it.
 
 ### Archived releases
 

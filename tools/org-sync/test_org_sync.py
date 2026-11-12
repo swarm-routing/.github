@@ -381,6 +381,187 @@ if yaml:
         "CITATION.cff references parse as YAML",
     )
 check(run("check", dr)[0] == 0, "check is clean with references")
+
+# docs/references.bib (#308): the seed, the bib's references, the bib over [[references]]
+sys.path.insert(0, os.path.join(HERE, "..", "fidelity"))
+import fidelity  # noqa: E402
+
+
+def run_err(*argv):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            rc = org_sync.main(list(argv))
+        except SystemExit as e:
+            rc = e.code
+    return rc, out.getvalue(), err.getvalue()
+
+
+seed = read(os.path.join(ORG, "templates", "references.bib.in"))
+check(
+    read(os.path.join(dr, "docs/references.bib")) == seed
+    and fidelity.bib.parse(seed) == []
+    and not fidelity.PRIVATE.search(seed),
+    "the references.bib seed: a header alone, no entries, no private-library phrase",
+)
+db = tempfile.mkdtemp()
+os.makedirs(os.path.join(db, "docs"))
+write(os.path.join(db, "docs/references.bib"), seed)
+check(fidelity.bib_check(db) == ([], []), "fidelity.py bib check passes on the seed alone")
+for kind in org_sync.KINDS:
+    dk = fresh()
+    run("init", dk, "--kind", kind)
+    check(
+        read(os.path.join(dk, "docs/references.bib")) == seed
+        and fidelity.bib_check(dk) == ([], []),
+        f"init --kind {kind} seeds docs/references.bib, and bib check passes on the fresh repo",
+    )
+BIB = r"""% the header
+@inproceedings{G02,
+  author    = {Güneş, Mesut and Sorges, Udo and Bouazizi, Imed},
+  title     = {{ARA} -- The Ant-Colony Based Routing Algorithm for {MANETs}},
+  booktitle = {Proceedings. International Conference on Parallel Processing Workshop},
+  pages     = {79--85},
+  publisher = {IEEE},
+  year      = {2002},
+  doi       = {10.1109/ICPPW.2002.1039715},
+  keywords  = {implemented},
+}
+@mastersthesis{W07,
+  author   = {Jianping Wang},
+  title    = {A thesis},
+  school   = {University of Manitoba},
+  year     = {2007},
+  url      = {https://hdl.handle.net/1993/20935},
+  note     = {The primary source.},
+  keywords = {implemented, compared},
+}
+@software{ns3tools,
+  author    = {Joppi, Daniel},
+  title     = {ns3-tools},
+  publisher = {Zenodo},
+  year      = {2026},
+  version   = {v0.1.0},
+  doi       = {10.5281/zenodo.24136068},
+  url       = {https://doi.org/10.5281/zenodo.24136068},
+  keywords  = {tool},
+}
+@misc{runs,
+  author   = {{swarm-routing}},
+  title    = {Benchmark runs},
+  year     = {2026},
+  doi      = {10.5281/zenodo.1},
+  keywords = {dataset},
+}
+@article{D05,
+  author   = {Di Caro, Gianni},
+  title    = {Background only},
+  journal  = {J},
+  year     = {2005},
+  doi      = {10.1000/bg},
+  keywords = {background},
+}
+"""
+# toml-only: the render above is today's; the bib-only repo below gets the same shape
+bo = fresh()
+run("init", bo, "--kind", "protocol")
+edit(bo, ".github/org-sync.toml", 'kind = "protocol"\n', 'kind = "protocol"\ncitation = true\n')
+write(os.path.join(bo, "docs/references.bib"), BIB)
+rc, out, err = run_err("apply", bo)
+run("reseed", "CITATION.cff", bo)
+rr = read(os.path.join(bo, "README.md"))
+cff = read(os.path.join(bo, "CITATION.cff"))
+check(rc == 0 and "redundant" not in err, "bib only: apply succeeds, no warning")
+check(
+    "- M. Güneş, U. Sorges, I. Bouazizi, *ARA -- The Ant-Colony Based Routing Algorithm "
+    "for MANETs*, Proceedings. International Conference on Parallel Processing Workshop, "
+    "pp. 79–85, 2002, [doi:10.1109/ICPPW.2002.1039715](https://doi.org/10.1109/ICPPW.2002.1039715). "
+    "The work this repository implements.\n"
+    in rr
+    and "- J. Wang, *A thesis*, University of Manitoba, 2007, <https://hdl.handle.net/1993/20935> "
+    "(no DOI: none registered). The primary source.\n"
+    in rr
+    and "- D. Joppi, *ns3-tools*, 2026, [doi:10.5281/zenodo.24136068]"
+    "(https://doi.org/10.5281/zenodo.24136068). A tool this repository uses.\n"
+    in rr
+    and "- swarm-routing, *Benchmark runs*, 2026, [doi:10.5281/zenodo.1]" in rr
+    and "Background only" not in rr
+    and rr.index("*ARA") < rr.index("*A thesis*") < rr.index("*ns3-tools*"),
+    "bib only: README cites the implemented, tool and dataset entries in file order, doi.org links",
+)
+check(
+    '  - type: conference-paper\n    title: "ARA -- The Ant-Colony Based Routing Algorithm for MANETs"\n'
+    in cff
+    and '      - family-names: "Güneş"\n        given-names: "Mesut"\n' in cff
+    and '    start: "79"\n    end: "85"\n    year: 2002\n    publisher:\n      name: "IEEE"\n'
+    '    doi: "10.1109/ICPPW.2002.1039715"\n'
+    in cff
+    and "  - type: thesis\n" in cff
+    and '    thesis-type: "Master\'s thesis"\n' in cff
+    and '    url: "https://hdl.handle.net/1993/20935"\n    notes: "The primary source. No DOI: none registered."\n'
+    in cff
+    and "  - type: software\n" in cff
+    and 'zenodo.24136068"\n    notes' in cff
+    and "  - type: data\n" in cff
+    and '  - type: data\n    title: "Benchmark runs"\n    authors:\n      - name: "swarm-routing"\n'
+    in cff
+    and "10.1000/bg" not in cff,
+    "bib only: CITATION.cff references: CFF types, authors, DOI (url only without one), role as notes",
+)
+if yaml:
+    check(len(yaml.safe_load(cff)["references"]) == 4, "bib only: CITATION.cff parses as YAML")
+check(run("check", bo)[0] == 0, "bib only: check is clean")
+check(fidelity.bib_check(bo)[0] == [], "bib only: fidelity.py bib check agrees with the render")
+# both: the bib wins, [[references]] is reported as redundant (and left in place)
+toml_before = read(os.path.join(dr, ".github/org-sync.toml"))
+readme_before = read(os.path.join(dr, "README.md"))
+write(os.path.join(dr, "docs/references.bib"), BIB)
+rc, out, err = run_err("check", dr)
+check(
+    rc == 1 and "README.md#citing" in out and "[[references]]" in err and "redundant" in err,
+    "both: the bib wins (the citing section drifts) and [[references]] is reported redundant",
+)
+run_err("apply", dr)
+rr = read(os.path.join(dr, "README.md"))
+check(
+    "*ns3-tools*" in rr
+    and "a thesis in the university's repository" not in rr
+    and read(os.path.join(dr, ".github/org-sync.toml")) == toml_before,
+    "both: the README cites the bib's entries; [[references]] is not deleted",
+)
+write(os.path.join(dr, "docs/references.bib"), seed)
+run_err("apply", dr)
+check(
+    read(os.path.join(dr, "README.md")) == readme_before,
+    "toml only: with the seed (no entry), [[references]] renders byte-identically to before",
+)
+os.remove(os.path.join(dr, "docs/references.bib"))
+rc, out, err = run_err("plan", dr)
+check(
+    rc == 0 and "docs/references.bib" in out and "redundant" not in err,
+    "toml only: without the bib, plan proposes the seed and gives no warning",
+)
+write(os.path.join(dr, "docs/references.bib"), seed)
+# malformed: a clear error naming the file and the line
+for bad, why in (
+    ("@article{X,\n  title = {unclosed,\n", "unbalanced braces"),
+    ("@article{X,\n  title = bare,\n}\n", "macro"),
+    (
+        "@article{X,\n  author = {A, B}, title = {T}, year = {2000}, doi = {not-a-doi},\n"
+        "  keywords = {implemented},\n}\n",
+        "not a DOI",
+    ),
+    (
+        "@article{X,\n  title = {T}, year = {2000}, doi = {10.1/x}, keywords = {implemented},\n}\n",
+        "author",
+    ),
+):
+    write(os.path.join(bo, "docs/references.bib"), bad)
+    rc, out, err = run_err("plan", bo)
+    check(
+        rc not in (0, None) and "docs/references.bib" in str(rc) + err and why in str(rc) + err,
+        f"malformed bib refused: {why}",
+    )
 dd = fresh()
 run("init", dd, "--kind", "data", "--dual", "tools/")
 edit(

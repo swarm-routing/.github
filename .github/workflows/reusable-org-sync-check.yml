@@ -20,6 +20,12 @@ name: org-sync check (reusable)
 # newer template does not stall the queue either. Pushes and every other
 # event keep the full check, so drift on main stays red and visible;
 # full-check-on-pr: true restores it on PRs too.
+# A second step checks the repository's docs/references.bib with
+# `fidelity.py bib check` (#308) once the file holds more than blank and `%`
+# comment lines (stray text is checked, and fails): the seed org-sync places is
+# a header alone, and checking it would fail a protocol repository
+# whose fidelity sheet predates the bib, so a repository is checked from the
+# PR that fills its bibliography on.
 # A public contract (AGENTS.md rule 10): inputs are only ever added.
 on:
   workflow_call:
@@ -69,5 +75,17 @@ jobs:
           if [ "$CHANGED_ONLY" = true ]; then scope=(--changed-only "$BASE"); fi
           python3 -I org/tools/org-sync/org_sync.py check "${scope[@]}" repo || {
             echo "::error::org-managed files drifted from swarm-routing/.github templates. Run locally: python3 org_sync.py conflicts . && python3 org_sync.py apply ."
+            exit 1
+          }
+      - name: references
+        run: |
+          bib=repo/docs/references.bib
+          # skipped only without the file or for the seed: blank and `%` comment lines alone
+          if [ ! -f "$bib" ] || ! grep -Eqv '^[[:space:]]*(%.*)?$' "$bib"; then
+            echo "docs/references.bib is absent or comments only: bib check skipped (swarm-routing/.github#308)"
+            exit 0
+          fi
+          python3 -I org/tools/fidelity/fidelity.py bib check repo || {
+            echo "::error::docs/references.bib breaks a references rule (swarm-routing/.github CONTRIBUTING \"References\"). Run locally: python3 -I tools/fidelity/fidelity.py bib check REPO"
             exit 1
           }
