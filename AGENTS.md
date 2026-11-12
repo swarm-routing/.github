@@ -39,7 +39,7 @@ actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
-python3 -I tools/<tool>/<tool>.py --self-test   # for every tool you changed; the list: docs/tools.md
+# and the --self-test of every tool you changed: the exact commands are in docs/tools.md
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
 ```
 

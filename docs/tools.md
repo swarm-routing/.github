@@ -49,7 +49,8 @@ SUPPORT.md                      the org default support policy: issues for bugs,
                            reusable-pr-title.yml, reusable-licence-check.yml, reusable-dco.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-scorecard.yml, reusable-swarm-core-pin.yml,
                            sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, org-bot.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
                            benchmark-cell-selftest.yml
-LICENSE, LICENSE-MIT, LICENSING.md   this repo is tooling: all of it MIT OR GPL-2.0-only except docs
+LICENSE, LICENSE-MIT, LICENSING.md   the licence per path (LICENSING.md): the tooling MIT OR GPL-2.0-only, the docs GPL-2.0-only,
+                                     CODE_OF_CONDUCT.md CC-BY-4.0, DCO verbatim copies only
 ```
 
 ## Self-tests and read-only runs
