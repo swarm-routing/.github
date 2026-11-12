@@ -76,6 +76,27 @@ is the long form.
    (and from the job summary). A job that runs entirely in a `container:`
    cannot take it on a hosted runner (it needs sudo on the VM; StepSecurity's
    limitations), so it goes without: today `reusable-ns3-ci.yml`'s `build`.
+   Audit is best effort, not a guarantee (#237). Its agent registers each
+   job with StepSecurity's API (`agent.api.stepsecurity.io`); when that call
+   times out, the job runs on, but nothing is recorded for it. The log then
+   shows `error in connecting to https://agent.api.stepsecurity.io/v1
+   (attempt 1/3): TimeoutError` three times, `no response from monitor
+   endpoint after 3 attempts`, and `fetch policies: API error status 401:
+   {"error":"invalid authorization header format"}`. The 401 comes only
+   with the failed registration (in every sampled job that timed out, and
+   in no other), so it is a consequence, not a token or setting of ours: on
+   public repositories the action takes no API key, and there is nothing to
+   configure. A sample of 175 hardened jobs in 100 runs across six
+   repositories (171 of them on 2026-11-11) found it in 26 jobs (15%), all
+   on 2026-11-11 between 15:03Z and 20:05Z, in several
+   repositories at once and sometimes in some jobs of a run but not others:
+   an outage on StepSecurity's side. So harden-runner stays, in `audit`,
+   on every job: it costs seconds and never fails a job. Before a job moves
+   to `block`, check on one job that `block` still enforces its
+   `allowed-endpoints` when the API is unreachable; until then no job
+   relies on it, and an insights page missing for a run is that outage,
+   not a finding. To count it again, search the job logs for
+   `no response from monitor endpoint`.
 6. **Comparator arms** (protocols we did not design) clear three gates before
    their numbers count: a fidelity sheet from the paper, the per-PR delivery
    smoke, and an anchor reproducing the paper's own trend.
