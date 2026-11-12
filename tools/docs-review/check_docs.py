@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """A repository's README, AI files and docs/ against the org standard.
 
-    check_docs.py [REPO_DIR] [--json] [--online]   PASS/WARN/FAIL per check; exit 1 on a FAIL
+    check_docs.py [REPO_DIR] [--json] [--online]   PASS/WARN/SKIP/FAIL per check; exit 1 on a FAIL
     check_docs.py --self-test
 
 The standard is AntHocNet's README and docs map (#94): a title and the
@@ -15,7 +15,9 @@ Epics, License and how-to-work-here sections; for a released repository (a
 `doi:` equal to the concept, a README section on citing it, and for a protocol
 a CITATION.cff reference per source with a DOI or the reason it has none;
 AGENTS.md with the org's
-sections; CLAUDE.md importing it; CONTEXT.md past its seed; a docs/ map
+sections (a settings-only org-sync.toml, `[settings]` and no `kind`, as this
+repository's, skips the badge row and the org sections with a SKIP line:
+org-sync manages nothing there, #320); CLAUDE.md importing it; CONTEXT.md past its seed; a docs/ map
 when docs/ holds more than ADRs; no broken relative link. The checks are what
 a script can decide; whether the explanation is good is the reviewer's
 (the docs-review skill).
@@ -97,6 +99,8 @@ def config(repo):
     concept = str(cfg.get("zenodo_concept", "")).strip()
     return {
         "kind": cfg.get("kind", ""),
+        # [settings] and no kind: org-sync manages nothing here (#320)
+        "settings_only": "settings" in cfg and not cfg.get("kind"),
         "zenodo_concept": concept if concept.isdigit() else "",
         "references": cfg.get("references", []),
         "arena_id": d.get("arena_id", default_id),
@@ -177,7 +181,9 @@ def check(repo, online=False, fetch=None):
         m = re.search(
             r"<!-- org-sync:begin badges -->\n(.*?)<!-- org-sync:end badges -->", readme, re.S
         )
-        if not m or "[![" not in m.group(1):
+        if cfg["settings_only"]:
+            r.add("SKIP", "README", "badge row: settings-only org-sync.toml, no templates managed")
+        elif not m or "[![" not in m.group(1):
             r.add("FAIL", "README", "no org-sync badge row (run org_sync.py apply)")
         else:
             r.add("PASS", "README", f"badge row with {m.group(1).count('[![')} badge(s)")
@@ -241,7 +247,13 @@ def check(repo, online=False, fetch=None):
     else:
         heads = re.findall(r"^##\s+(.+)$", agents, re.M)
         lack = [h for h in AGENTS_HEADINGS if not any(x.strip().startswith(h) for x in heads)]
-        if lack:
+        if cfg["settings_only"]:
+            r.add(
+                "SKIP",
+                "AGENTS.md",
+                "org sections: settings-only org-sync.toml, no templates managed",
+            )
+        elif lack:
             r.add("FAIL", "AGENTS.md", "missing the org's sections", lack)
         else:
             r.add("PASS", "AGENTS.md", "has the org's sections")
@@ -952,6 +964,27 @@ def self_test():
     expect("a status that disagrees with AGENTS.md warns", has(r, "WARN", "disagrees"))
     r = repo({"AGENTS.md": agents_ok.replace("## Agent skills", "## Skills")})
     expect("a missing AGENTS section fails", has(r, "FAIL", "org's sections"))
+    # a settings-only repository (the template source) skips both adopter checks (#320)
+    bare = {
+        "README.md": readme_ok.replace(
+            "<!-- org-sync:begin badges -->\n[![CI](https://x/b.svg)](https://x/a)\n<!-- org-sync:end badges -->\n",
+            "",
+        ),
+        "AGENTS.md": agents_ok.replace("## Agent skills", "## Skills"),
+    }
+    r = repo({**bare, ".github/org-sync.toml": "[settings]\nmerge_queue = true\n"})
+    expect(
+        "a settings-only repo skips the badge row and the org sections",
+        has(r, "SKIP", "badge row")
+        and has(r, "SKIP", "org sections")
+        and not has(r, "FAIL", "badge row")
+        and not has(r, "FAIL", "org's sections"),
+    )
+    r = repo({**bare, ".github/org-sync.toml": 'kind = "protocol"\ntitle = "ARA"\n[settings]\n'})
+    expect(
+        "…an adopter with [settings] still fails both",
+        has(r, "FAIL", "badge row") and has(r, "FAIL", "org's sections"),
+    )
     r = repo({"CLAUDE.md": "nothing\n"})
     expect("CLAUDE.md without @AGENTS.md fails", has(r, "FAIL", "@AGENTS.md"))
     r = repo({"CONTEXT.md": "**Status: empty.** Describe the repository here.\n"})
