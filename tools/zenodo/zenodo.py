@@ -95,12 +95,14 @@ AntHocNet's v2.6.1 was):
   REPO is `swarm-routing/<name>` or `<name>`; the concept is the one the
   repository names (CITATION.cff, else `zenodo_concept`), else a Zenodo record
   linking one of its release tags. author (each creator's name as Zenodo
-  holds it, "Family, Given", joined by " and "), title, year (the newest version's publication date),
+  holds it, "Family, Given", joined by " and "; a name with a bare `and`
+  braced whole), title, year (the newest version's publication date),
   version and doi (the CONCEPT DOI) all come from the record Zenodo returns;
   publisher is Zenodo, url the repository's github.com page, keywords the
   role (--role, default `tool`; one of BIB_ROLES). A repository with no
   release, or with releases none of which is on Zenodo, is exit 1 with the
-  reason: a DOI is never composed or guessed. Reads only; it needs no token.
+  reason: a DOI is never composed or guessed. Reads only; it needs no token;
+  retry notes go to stderr, so stdout is the entry alone.
 
 Every Zenodo call is retried with exponential backoff (5 s, doubling, 5
 tries; Retry-After honoured, as seconds or a date, up to 300 s): a 429
@@ -220,8 +222,9 @@ class Zenodo:
     RETRY_ALWAYS = (429,)
     RETRY_IDEMPOTENT = (500, 502, 503, 504)
 
-    def __init__(self, base, token=None, tries=5, backoff=5.0):
+    def __init__(self, base, token=None, tries=5, backoff=5.0, log=None):
         self.base = base.rstrip("/")
+        self.log = log  # where retry notes go (None: stdout); `bibtex` keeps its stdout the entry
         self.token = token
         self.tries, self.backoff = tries, backoff
         u = urllib.parse.urlsplit(self.base)
@@ -255,11 +258,17 @@ class Zenodo:
                 if not again or attempt == self.tries:
                     raise Failure(f"{where}: HTTP {e.code}: {detail}")
                 wait = max(wait, retry_after(e.headers.get("Retry-After")))
-                print(f"{where}: HTTP {e.code}, retry {attempt}/{self.tries - 1} in {wait:g} s")
+                print(
+                    f"{where}: HTTP {e.code}, retry {attempt}/{self.tries - 1} in {wait:g} s",
+                    file=self.log or sys.stdout,
+                )
             except urllib.error.URLError as e:
                 if method == "POST" or attempt == self.tries:
                     raise Failure(f"{where}: {e.reason}")
-                print(f"{where}: {e.reason}, retry {attempt}/{self.tries - 1} in {wait:g} s")
+                print(
+                    f"{where}: {e.reason}, retry {attempt}/{self.tries - 1} in {wait:g} s",
+                    file=self.log or sys.stdout,
+                )
             time.sleep(wait)
         raise Failure(f"{where}: no attempt left")  # unreachable: the last attempt raises
 
@@ -992,6 +1001,13 @@ BIB_ROLES = ("implemented", "restates", "compared", "dataset", "tool", "backgrou
 BIB_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:.+-]*$")
 
 
+def bib_author(name):
+    """A creator's name as Zenodo holds it ("Family, Given"); one with a bare `and` in it
+    (an organisation) braced, so BibTeX does not split it into two authors."""
+    name = bib_value(name)
+    return "{" + name + "}" if re.search(r"(?i)\band\b", name) else name
+
+
 def bib_value(text):
     """A BibTeX field value: whitespace collapsed, braces dropped, & % $ # _ escaped."""
     text = " ".join(str(text).split()).replace("{", "").replace("}", "")
@@ -1026,7 +1042,7 @@ def cmd_bibtex(args, gh, zen, now):
     meta = rec.get("metadata") or {}
     fields = {
         "author": " and ".join(
-            bib_value(c["name"]) for c in meta.get("creators") or [] if c.get("name")
+            bib_author(c["name"]) for c in meta.get("creators") or [] if c.get("name")
         ),
         "title": meta.get("title", ""),
         "year": str(meta.get("publication_date", ""))[:4],
@@ -1138,7 +1154,7 @@ def main(argv=None):
             print(json.dumps(found))
         return 0
     if args.cmd == "bibtex":  # public records only: never sends the token
-        cmd_bibtex(args, gh, Zenodo(args.api or ZENODO[False]), None)
+        cmd_bibtex(args, gh, Zenodo(args.api or ZENODO[False], log=sys.stderr), None)
         return 0
     zen = Zenodo(
         getattr(args, "api", None) or ZENODO[args.sandbox], os.environ.get("ZENODO_TOKEN") or None
@@ -1221,6 +1237,7 @@ def fake_zenodo():
                                 {"name": "Doe, Jane", "orcid": "0000-0001"},
                                 {"name": "Roe,  Rich"},
                                 {"name": "Swarm & Co"},
+                                {"name": "Research and Development Team"},
                             ],
                         },
                     },
@@ -2143,10 +2160,10 @@ def self_test():
     # bibtex: the concept record as @software, read-only, never a DOI it did not read
     def bib(gh, repo="R", key="r2026", role="tool"):
         ns = argparse.Namespace(repo=repo, key=key, role=role, org="org")
-        out = io.StringIO()
+        out, log = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out):
             try:
-                got, err = cmd_bibtex(ns, gh, Zenodo(base), now), None
+                got, err = cmd_bibtex(ns, gh, Zenodo(base, backoff=0, log=log), now), None
             except Failure as e:
                 got, err = None, str(e)
         return got, err, out.getvalue()
@@ -2160,7 +2177,7 @@ def self_test():
         and got
         == (
             "@software{r2026,\n"
-            "  author = {Doe, Jane and Roe, Rich and Swarm \\& Co},\n"
+            "  author = {Doe, Jane and Roe, Rich and Swarm \\& Co and {Research and Development Team}},\n"
             "  title = {R: a routing protocol},\n"
             "  year = {2026},\n"
             "  publisher = {Zenodo},\n"
@@ -2173,6 +2190,10 @@ def self_test():
         and only_reads()
         and not any(c[2] for c in st.calls),
     )
+    st.reset()
+    st.fail_next = [429, 503]
+    got, err, out = bib(FakeGitHub(rel))
+    check("bibtex: a retry note never reaches the entry", err is None and out == got)
     got, err, out = bib(FakeGitHub(rel), role="dataset")
     check("bibtex: a bare name, another role", err is None and "keywords = {dataset}" in got)
     st.reset()
