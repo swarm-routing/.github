@@ -14,6 +14,13 @@ name: Release self-test
 # token: a pull request from a fork (read-only token) skips it, and the same
 # self-test runs on main once the change is merged.
 #
+# The `release-major` leg (#211) dry-runs the same workflow with
+# `increment: MAJOR` on tools/release/fixture-major/, a caller at 0.4.0 with
+# `major_version_zero = false` (a 0.x repository about to release 1.0.0):
+# `check-major` requires 1.0.0 (`cz bump --increment MAJOR`, which with no
+# `v*` tag replaces the first release's 0.1.0). The `release` leg passes no
+# `increment`, so it proves the default unchanged.
+#
 # The `zenodo` job then archives that release's assets as the release job's
 # opt-in `zenodo` job does (#232), with this checkout's
 # tools/zenodo/zenodo.py `publish-release`, against the self-test's fake
@@ -109,6 +116,66 @@ jobs:
         run: |
           test -z "$(git ls-remote --tags "${SERVER}/${REPO}.git" "refs/tags/${TAG}")"
           echo "dry run ${TAG}: complete, verified, nothing pushed or published" >> "$GITHUB_STEP_SUMMARY"
+
+  release-major:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    # The same grant as `release`.
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/reusable-release.yml
+    with:
+      working-directory: tools/release/fixture-major
+      build: make -f ../fixture/Makefile dist
+      dry-run: true
+      increment: MAJOR
+
+  check-major:
+    needs: release-major
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      MODE: ${{ needs.release-major.outputs.mode }}
+      VER: ${{ needs.release-major.outputs.version }}
+      TAG: ${{ needs.release-major.outputs.tag }}
+      ART: ${{ needs.release-major.outputs.artifact }}
+      PR_URL: ${{ needs.release-major.outputs.pull-request }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.release-major.outputs.artifact }}
+          path: rel
+      - name: increment MAJOR from 0.4.0 is 1.0.0
+        env:
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -x
+          test "$MODE" = dry-run && test -z "$PR_URL"
+          test "$VER" = 1.0.0 && test "$TAG" = v1.0.0
+          case "$ART" in *-major) ;; *) exit 1 ;; esac
+          cd rel/release
+          for f in SHA256SUMS fixture-1.0.0.txt fixture-1.0.0.tar.gz github-1.0.0.intoto.jsonl; do
+            test -s "$f"
+          done
+          sha256sum -c SHA256SUMS
+          grep -q 'fixture 1.0.0' fixture-1.0.0.txt
+          test "$(tar -xzOf fixture-1.0.0.tar.gz VERSION)" = 1.0.0
+          cd ../meta
+          grep -q '^## v1.0.0 ' notes.md
+          git init -q "$RUNNER_TEMP/g"
+          git -C "$RUNNER_TEMP/g" bundle list-heads "$PWD/release.bundle" | grep -q ' refs/tags/v1.0.0$'
+          test -z "$(git ls-remote --tags "${SERVER}/${REPO}.git" "refs/tags/${TAG}")"
+          echo "dry run ${TAG} (increment: MAJOR from 0.4.0): complete, verified, nothing pushed or published" >> "$GITHUB_STEP_SUMMARY"
 
   zenodo:
     needs: release

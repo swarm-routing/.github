@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+# The release self-test's second caller (.github/workflows/release-selftest.yml,
+# leg `release-major`, #211): a repository at 0.4.0 that has set
+# major_version_zero = false for its 1.0.0 (CONTRIBUTING.md, Cutting a release).
+# A dry run with `increment: MAJOR` must compute 1.0.0. Never released.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.4.0"
+version_scheme = "semver"
+tag_format = "v$version"
+major_version_zero = false
+update_changelog_on_bump = true
+version_files = ["VERSION"]
