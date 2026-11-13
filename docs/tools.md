@@ -131,6 +131,9 @@ then a check of every file it would have published, then `zenodo.py
 publish-release` on those files against the fake Zenodo (`fake-zenodo`; also
 on a change to `tools/zenodo/`), and a second dry run with `increment: MAJOR`
 on `tools/release/fixture-major/` (0.4.0, no tag: must be 1.0.0, #211); its bump PR (`propose`) and its
-tag-and-publish job are proven by the first caller's release (ns3-tools#26),
+tag-and-publish job are proven by the first caller's release (ns3-tools#26), the
+publish job's last step, the `org-release` `repository_dispatch` to the org site
+(`notify-site`, default true; both self-test calls pass `false`, so no test sends
+one), by the first caller's release after it lands (#388),
 its opt-in `zenodo` job by a `zenodo-sandbox: true` run and the first
 caller's release with `zenodo: true` (#232).

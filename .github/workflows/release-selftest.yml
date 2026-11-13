@@ -54,6 +54,7 @@ jobs:
     with:
       working-directory: tools/release/fixture
       dry-run: true
+      notify-site: false   # no org-release event from a test (#388)
 
   check:
     needs: release
@@ -131,6 +132,7 @@ jobs:
       build: make -f ../fixture/Makefile dist
       dry-run: true
       increment: MAJOR
+      notify-site: false
 
   check-major:
     needs: release-major

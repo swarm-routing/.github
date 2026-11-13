@@ -527,7 +527,12 @@ Creating the App (an org owner, once):
 3. **Repository permissions**, Read and write: Actions, Administration,
    Contents, Dependabot alerts, Environments, Issues, Pull requests, Secret
    scanning alerts, Workflows. Metadata: Read-only (set automatically). No
-   organization or account permissions.
+   organization or account permissions. Contents: write on every repository is
+   also what lets `reusable-release.yml` send the `repository_dispatch`
+   event `org-release` to `swarm-routing/swarm-routing.github.io` after each
+   release (#388): GitHub requires Contents write on the target repository
+   for `POST /repos/{owner}/{repo}/dispatches`, and the App, installed on
+   all repositories, has it there.
 4. **Where can this GitHub App be installed?** *Only on this account*. Create
    the App.
 5. On the App's page: note the **App ID** (or the Client ID; either works);
