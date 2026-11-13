@@ -38,7 +38,12 @@ Releases & citing list come from `docs/references.bib` once it has an entry
 (its `implemented`, `tool` and `dataset` entries, read with
 tools/fidelity/bib.py), else from `[[references]]`; with both, the bib wins
 and a warning names `[[references]]` as redundant. Every repository gets the
-bib as a seed: a commented header, no entry (#308). An @incollection whose
+bib as a seed: a commented header, no entry (#308). The header is the org's
+rules, so it is a managed section, `bib-header` between `% org-sync:begin`
+and `% org-sync:end` lines: a template change reaches every repository
+through the refresh, and an edit there is drift; a bib seeded before that is
+adopted, its old header replaced; the entries, and any comment lines after
+the end marker, stay the repository's (#343). An @incollection whose
 booktitle names proceedings, a conference, workshop or symposium, or whose
 series is a proceedings series (Lecture Notes in Computer Science), is a CFF
 `conference-paper` (#331).
@@ -107,12 +112,16 @@ BEGIN = "<!-- org-sync:begin {} -->"
 END = "<!-- org-sync:end {} -->"
 YAML_BEGIN = "# org-sync:begin {}"
 YAML_END = "# org-sync:end {}"
+BIB_BEGIN = "% org-sync:begin {}"  # docs/references.bib's org header (#343)
+BIB_END = "% org-sync:end {}"
 
 
 def markers(path):
     """The (begin, end) marker formats for a managed section in this file."""
     if path.endswith((".yaml", ".yml")) or os.path.basename(path) == "CODEOWNERS":
         return YAML_BEGIN, YAML_END
+    if path.endswith(".bib"):
+        return BIB_BEGIN, BIB_END
     return BEGIN, END
 
 
@@ -164,7 +173,19 @@ ADOPT = {
         r"^(<!-- org-sync:begin |## Where to look\n)",
     ),
     ("SECURITY.md", "reporting"): (r"^## Reporting a vulnerability\n", r"^## "),
+    # the header every bib was seeded with before it was managed (#343), and only
+    # that: from its first line ("% docs/references.bib: ...") at the top of the
+    # file to the seed's last line ("% this header alone."); a file without both
+    # is a conflict, never rewritten. A repository's own comment lines after it
+    # stay its own, below the end marker
+    ("docs/references.bib", "bib-header"): (
+        r"\A% docs/references\.bib: ",
+        r"(?<=^% this header alone\.\n)",
+    ),
 }
+# Adopted sections whose old text is the org's, not the repository's: a
+# difference from the template is replaced, not a conflict (#343)
+ADOPT_REPLACE = {("docs/references.bib", "bib-header")}
 # Sections with nothing to adopt: inserted after the first match of the regex.
 INSERT_AFTER = {
     ("README.md", "badges"): r"^# .*\n",
@@ -986,6 +1007,8 @@ def items(cfg):
         ("section", ".github/CODEOWNERS", f"codeowners/{cfg['kind']}", "codeowners"),
         # the repository's one bibliography (#308): a commented header, no entries
         ("seed", BIB, "references.bib.in", None),
+        # its header is the org's rules, managed so a change reaches every repository (#343)
+        ("section", BIB, "references-header.bib", "bib-header"),
     ]
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))
@@ -1090,6 +1113,8 @@ def adopt_span(text, path, name):
     if not m:
         return None
     n = re.search(rule[1], text[m.start() + 1 :], re.M)
+    if not n and (path, name) in ADOPT_REPLACE:
+        return None  # replaced only when recognised whole: never up to the end of the file
     end = m.start() + 1 + n.start() if n else len(text)
     return m.start(), end
 
@@ -1207,6 +1232,8 @@ def evaluate(cfg, repo_dir, item):
     new = cur[:s] + wrap(name, want, path) + "\n" + trail + cur[e:]
     if old.rstrip("\n") + "\n" == want:
         return "adopt", new, "markers added; text identical"
+    if (path, name) in ADOPT_REPLACE:
+        return "adopt", new, "markers added; the old org text replaced by the template's"
     return "conflict", new, "existing text differs from the template"
 
 

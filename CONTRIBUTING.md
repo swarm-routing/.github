@@ -698,6 +698,12 @@ maintainer's) (#226).
 Each repository keeps one bibliography, `docs/references.bib` (#307, #308):
 the works it relies on, one BibTeX entry each. org-sync seeds it with a
 commented header and no entry; a repository with nothing to cite keeps it so.
+The header holds these rules, so it is managed: the section `bib-header`,
+between `% org-sync:begin bib-header` and `% org-sync:end bib-header`
+(`templates/references-header.bib`), reaches every repository through
+org-bot's refresh, and an edit there is drift. The entries, and any comment
+lines of the repository's own after the end marker, stay the repository's
+(#343).
 
 - **Roles.** An entry's `keywords` hold its roles: `implemented` (the work the
   repository implements), `restates`, `compared`, `dataset`, `tool`,

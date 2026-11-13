@@ -39,7 +39,7 @@ templates/rulesets/             the ruleset profiles repo_settings.py applies (p
 templates/                      what org-sync renders: AGENTS.md org sections (incl. Agent skills, agent defaults), CLAUDE.md, README badges,
                                 SECURITY.md, LICENSE(-MIT), LICENSING.md, ADR template, Makefile per kind,
                                 CITATION.cff and the README's Releases & citing section (`citation = true`; references from docs/references.bib, else `[[references]]`),
-                                references.bib.in: the docs/references.bib seed (a header, no entry; #308),
+                                references.bib.in: the docs/references.bib seed (the header, no entry; #308), references-header.bib: that header, a managed `bib-header` section between `% org-sync:begin/end` lines (#343),
                                 the org-sync, dco and Scorecard workflows, the marketplace keys of .claude/settings.json,
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
                                 codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
@@ -72,7 +72,7 @@ python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
 python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsigned, mismatched, exempt (member, write access, bots, merges, agent commits on a member's PR), a real git history
 python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos; --bump rewrites a stale pin everywhere (extra files included), leaves a current one, refuses a split one
-python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos (references: the seed, bib only, [[references]] only, both, a malformed bib; citation-refs: drift, the rest of the file byte-identical, idempotent, appended, removed, the seed left alone; LNCS and proceedings @incollection as conference-paper)
+python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos (references: the seed, the managed bib header (a hand edit and a changed template are drift, apply keeps the entries and the repository's own lines, an old unmarked header adopted and replaced, #343), bib only, [[references]] only, both, a malformed bib; citation-refs: drift, the rest of the file byte-identical, idempotent, appended, removed, the seed left alone; LNCS and proceedings @incollection as conference-paper)
 python3 -I tools/org-sync/org_sync.py citation-refs ../AntHocNet --check   # read-only: is CITATION.cff's references: block the bib's render
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
 python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo (publish-release: first release, next version, idempotent re-run, refusal, retries; record: unrecorded, written, two concepts refused; bibtex: the entry, roles, the key from ORG_KEYS (= CONTRIBUTING's table), unrecorded, unreleased and unarchived)

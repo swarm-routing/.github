@@ -397,7 +397,8 @@ def run_err(*argv):
     return rc, out.getvalue(), err.getvalue()
 
 
-seed = read(os.path.join(ORG, "templates", "references.bib.in"))
+head = read(os.path.join(ORG, "templates", "references-header.bib"))
+seed = "% org-sync:begin bib-header\n" + head + "% org-sync:end bib-header\n"
 check(
     read(os.path.join(dr, "docs/references.bib")) == seed
     and fidelity.bib.parse(seed) == []
@@ -416,6 +417,63 @@ for kind in org_sync.KINDS:
         and fidelity.bib_check(dk) == ([], []),
         f"init --kind {kind} seeds docs/references.bib, and bib check passes on the fresh repo",
     )
+
+# the bib header is a managed section (#343): a changed template is drift, the
+# entries and the repository's own comment lines survive apply, and an old
+# unmarked header (the seed before #343) is adopted and replaced
+db = fresh()
+run("init", db, "--kind", "protocol")
+entry = "@misc{X1,\n  title    = {T},\n  url      = {https://example.org/x},\n  keywords = {background}\n}\n"
+own = "%\n% This repository's own note, below the org header.\n"
+write(os.path.join(db, "docs/references.bib"), seed + own + entry)
+check(run("check", db)[0] == 0, "bib-header: a bib with entries and its own lines is clean")
+edit(db, "docs/references.bib", "% Roles, in `keywords`", "% Roles (edited), in `keywords`")
+rc, out = run("check", db)
+check(rc == 1 and "bib-header" in out, "bib-header: a hand edit of the header is drift")
+real = org_sync.template
+
+
+def changed_template(name):
+    t = real(name)
+    return t + "% a new org line\n" if name == "references-header.bib" else t
+
+
+org_sync.template = changed_template
+try:
+    write(os.path.join(db, "docs/references.bib"), seed + own + entry)
+    rc, out = run("check", db)
+    check(rc == 1 and "bib-header" in out, "bib-header: a changed header template is drift")
+    run("apply", db)
+    got = read(os.path.join(db, "docs/references.bib"))
+    check(
+        got == seed.replace("% org-sync:end", "% a new org line\n% org-sync:end") + own + entry,
+        "bib-header: apply takes the new header; the entries and own lines are unchanged",
+    )
+finally:
+    org_sync.template = real
+for text, what in (
+    ("% Repository-specific citation instructions\n" + entry, "a comment of the repository's own"),
+    (head.replace("% this header alone.\n", "") + entry, "a header without the seed's last line"),
+    (entry, "no header at all"),
+):
+    write(os.path.join(db, "docs/references.bib"), text)
+    rc, out = run("check", db)
+    run("apply", db)
+    check(
+        rc == 1 and "bib-header" in out and read(os.path.join(db, "docs/references.bib")) == text,
+        f"bib-header: {what} is not an old org header: a conflict, the file left as it is",
+    )
+old_head = head.replace("Roles, in", "Roles (an older wording), in")
+for tail, what in ((entry, "entries"), (own + entry, "own lines and entries"), ("", "empty rest")):
+    write(os.path.join(db, "docs/references.bib"), old_head + tail)
+    rc, out = run("check", db)
+    check(rc == 1 and "bib-header" in out, f"bib-header: an unmarked old header is drift ({what})")
+    run("apply", db)
+    check(
+        read(os.path.join(db, "docs/references.bib")) == seed + tail and run("check", db)[0] == 0,
+        f"bib-header: apply adopts an old header and replaces it, keeping the {what}",
+    )
+
 BIB = r"""% the header
 @inproceedings{G02,
   author    = {Güneş, Mesut and Sorges, Udo and Bouazizi, Imed},
@@ -462,6 +520,7 @@ BIB = r"""% the header
   keywords = {background},
 }
 """
+BIB = seed + BIB.removeprefix("% the header\n")  # a bib as org-sync seeds it (#343)
 # toml-only: the render above is today's; the bib-only repo below gets the same shape
 bo = fresh()
 run("init", bo, "--kind", "protocol")
