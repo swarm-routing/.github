@@ -88,6 +88,18 @@ name: Reusable release
 # `mode` left empty (the default) picks from the event: a push releases
 # (when it is a merged bump PR), anything else bumps; `dry-run: true` wins.
 #
+# `increment` (#211; bump and dry-run only) forces the bump's size instead of
+# the one Commitizen reads from the commits: `PATCH`, `MINOR` or `MAJOR`,
+# passed as `cz bump --increment <value>`. Empty (the default) leaves the
+# bump exactly as before. Any other value fails the run in `route`, before
+# anything is built or pushed. `MAJOR` is how a repository releases 1.0.0
+# (CONTRIBUTING "Cutting a release": set `major_version_zero = false` first,
+# then dispatch `bump` with `increment: MAJOR`). A repository with no `v*`
+# tag yet releases 0.1.0 first whatever `increment` says, except `MAJOR`:
+# then Commitizen bumps the configured version's major, so a config at any
+# 0.x version releases 1.0.0 as its first release. A release run ignores the
+# input (the merged bump PR already carries the version).
+#
 # The caller needs a Commitizen config (`[tool.commitizen]` in pyproject.toml,
 # or .cz.toml) in `working-directory`, with `tag_format = "v$version"` and
 # `major_version_zero = true` while 0.x (CONTRIBUTING "Releases and DOIs" has
@@ -112,6 +124,7 @@ name: Reusable release
 #     workflow_dispatch:
 #       inputs:
 #         mode: { type: choice, options: [dry-run, bump], default: dry-run }
+#         increment: { type: choice, options: [auto, PATCH, MINOR, MAJOR], default: auto }  # no empty option (actionlint)
 #     push:
 #       branches: [main]
 #   concurrency: { group: "release-${{ github.sha }}", cancel-in-progress: false }
@@ -122,6 +135,7 @@ name: Reusable release
 #       uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
 #       with:
 #         mode: ${{ inputs.mode }}           # empty on push: release
+#         increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}  # '' on push and for auto
 #       secrets:
 #         BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
 #         BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -179,6 +193,10 @@ on:
         default: false
       mode:
         description: "bump (open or update the bump PR), release (publish the merged bump PR this commit is), dry-run; empty: release on push, bump otherwise"
+        type: string
+        default: ''
+      increment:
+        description: "bump and dry-run: force the bump's size, PATCH, MINOR or MAJOR (cz bump --increment); empty: from the commits, as before. MAJOR with no v* tag releases the configured 0.x version's major (1.0.0) instead of 0.1.0"
         type: string
         default: ''
       zenodo:
@@ -251,8 +269,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MODE_IN: ${{ inputs.mode }}
           DRY_RUN: ${{ inputs.dry-run }}
+          INCREMENT: ${{ inputs.increment }}
           EVENT: ${{ github.event_name }}
         run: |
+          case "$INCREMENT" in
+            ''|PATCH|MINOR|MAJOR) ;;
+            *) echo "::error::increment '$INCREMENT': use PATCH, MINOR, MAJOR or leave it empty"; exit 1 ;;
+          esac
           mode="$MODE_IN"
           if [ "$DRY_RUN" = true ]; then
             if [ -n "$mode" ] && [ "$mode" != dry-run ]; then
@@ -293,6 +316,9 @@ jobs:
               echo "version=${ver}" >> "$GITHUB_OUTPUT"
               echo "Release commit ${GITHUB_SHA}: $(jq -r .html_url <<< "$pr") (${title})"
             fi
+          fi
+          if [ -n "$INCREMENT" ] && [ "$mode" != bump ] && [ "$mode" != dry-run ]; then
+            echo "::notice::increment: $INCREMENT applies to bump and dry-run only; a $mode ignores it"
           fi
           echo "mode=${mode}" >> "$GITHUB_OUTPUT"
           echo "mode: ${mode}"
@@ -365,6 +391,7 @@ jobs:
         id: bump
         env:
           PR_VERSION: ${{ needs.route.outputs.version }}
+          INCREMENT: ${{ inputs.increment }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -404,11 +431,21 @@ jobs:
             commit="$GITHUB_SHA"
           else
             # The first release is v0.1.0 (ROADMAP "Releases", .github#81); after
-            # that Commitizen computes the next version from the commits.
-            manual=()
-            if [ -z "$(git tag --list 'v[0-9]*')" ]; then manual=(0.1.0); fi
+            # that Commitizen computes the next version from the commits, or
+            # takes the size `increment` forces (#211). With no tag and
+            # increment MAJOR, the first release is the configured version's
+            # next major (0.x -> 1.0.0), not 0.1.0.
+            bump_args=()
+            if [ -z "$(git tag --list 'v[0-9]*')" ] && [ "$INCREMENT" != MAJOR ]; then
+              bump_args=(0.1.0)
+              if [ -n "$INCREMENT" ]; then
+                echo "::notice::no v* tag yet: the first release is 0.1.0, increment $INCREMENT is not used"
+              fi
+            elif [ -n "$INCREMENT" ]; then
+              bump_args=(--increment "$INCREMENT")
+            fi
             rc=0
-            cz bump --yes --changelog --changelog-to-stdout --git-output-to-stderr "${manual[@]}" \
+            cz bump --yes --changelog --changelog-to-stdout --git-output-to-stderr "${bump_args[@]}" \
               > "$OUT/meta/changes.md" || rc=$?
             if [ "$rc" -ne 0 ]; then
               # 3 = no commits since the last tag, 21 = none that bumps (docs, ci, ...)
@@ -440,7 +477,9 @@ jobs:
             echo "old-version=${old}"
             echo "tag=${tag}"
             echo "name=${name}"
-            echo "artifact=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            # A forced increment names its own artifact, so two calls in one
+            # run (release-selftest.yml's legs) do not collide.
+            echo "artifact=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}${INCREMENT:+-${INCREMENT,,}}"
             # Fixed before anything else runs: propose pushes only this commit,
             # whatever a later step does to the bundle on disk.
             echo "commit=${commit}"

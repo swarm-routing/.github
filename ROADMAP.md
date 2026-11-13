@@ -153,7 +153,8 @@ format frozen, paper-faithful with every deviation documented in its fidelity
 sheet, and the three gates passed (CONTRIBUTING invariant 6). For a shared
 component, which has no paper of its own: its public contract frozen with a
 deprecation policy (`ns3-swarm-core`: `kSwarmCoreApiVersion`, with two gated
-protocols on it unchanged; `ns3-tools`: marker contract v2 and the CLI), and
+protocols on it unchanged; `ns3-tools`: marker contract v1 and the CLI, maintainer decision
+2026-11-13, with contract v2 its 2.0.0), and
 the protocols that consume it green. This replaces the earlier per-phase
 release targets: this file keeps the phases and the cross-repo
 [release train](#the-release-train) below, and each repository's ladder says
@@ -196,7 +197,7 @@ recorded in the `benchmarks` global suite).
 | Repository | Ladder | Next release |
 |---|---|---|
 | ns3-swarm-core | [docs/roadmap.md](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md) | `v0.2.0` (ns3-swarm-core#40 first); `v0.1.0` "the shared module" shipped on 2026-11-11 |
-| ns3-tools | [docs/roadmap.md](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md) | `v0.2.0` (ns3-tools#81 first); `v0.1.0` "harness packaged" shipped on 2026-11-11 |
+| ns3-tools | [docs/roadmap.md](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md) | `v1.0.0` (CLI and marker contract v1 frozen; maintainer decision 2026-11-13, [wave E](#the-release-train)), then `v1.1.0` (ns3-tools#81 first); `v0.1.0` "harness packaged" shipped on 2026-11-11 |
 | AntHocNet | [docs/roadmap.md](https://github.com/swarm-routing/AntHocNet/blob/main/docs/roadmap.md) (its own ladder, v2.1.0 → v3.3.0) | `v2.7.0`, after the ns3-tools#29 switch-over |
 | ARA | [docs/roadmap.md](https://github.com/swarm-routing/ARA/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11) |
 | BeeAdHoc | [docs/roadmap.md](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11) |
@@ -208,7 +209,10 @@ artifact; their milestones are tied to the waves below and written here only:
 `benchmarks` (immutable runs, each started by a release: benchmarks#24, #23,
 #25, #7, #33), `ns3-containers` (tags per ns-3 release and profile, each
 image tested by digest before its tag moves; ns3-containers#35, the AODV
-livelock that pins the anchors to ns-3.48, then #44 and #43), the site
+livelock that pins the anchors to ns-3.48, then #44 and #43; since the
+maintainer's decision of 2026-11-13 it also gets a first release, v1.0.0,
+which versions its image pipeline: the tags, profiles, bases and
+`ns3-build-contrib`, never an image tag, which stays the ns-3 release), the site
 (deploys from `main`; site#28, epic site#27, and after wave C site#12, #13,
 #55, #56, #57), and `skills` and `.github` (the infrastructure track; their
 gating item is the release workflow's `increment` input for wave E,
@@ -222,19 +226,20 @@ it depends on are out.
 ```mermaid
 flowchart LR
   subgraph A["Wave A (now)"]
-    T1["ns3-tools v0.1.0"]
+    T1["ns3-tools v0.1.0, then v1.0.0"]
+    NC["ns3-containers v1.0.0"]
     C1["ns3-swarm-core v0.1.0"]
     AH["AntHocNet v2.7.0"]
   end
   subgraph B["Wave B"]
-    T2["ns3-tools v0.2.0"]
+    T2["ns3-tools v1.1.0"]
     C2["ns3-swarm-core v0.2.0"]
     ARA2["ARA v0.2.0"]
     BEE2["BeeAdHoc v0.2.0"]
   end
   subgraph C["Wave C"]
     TER2["Termite v0.2.0"]
-    T3["ns3-tools v0.3.0"]
+    T3["ns3-tools v2.0.0"]
     BM["benchmarks release runs<br/>+ global suite"]
     SITE["site leaderboard /<br/>results explorer"]
   end
@@ -243,7 +248,6 @@ flowchart LR
   end
   subgraph E["Wave E: 1.0.0s"]
     C10["ns3-swarm-core v1.0.0"]
-    T10["ns3-tools v1.0.0"]
     P10["each protocol v1.0.0"]
   end
   T1 --> AH
@@ -259,17 +263,32 @@ flowchart LR
   TER2 --> HOP2
   ARA2 --> C10
   BEE2 --> C10
-  C10 --> T10
-  T10 --> P10
+  C10 --> P10
 ```
 
 | Wave | Releases | Gated by |
 |---|---|---|
-| A (now) | `ns3-tools v0.1.0` and `ns3-swarm-core v0.1.0` (both shipped 2026-11-11), AntHocNet `v2.7.0` | ns3-tools: its release workflow (ns3-tools#26), shipped; ns3-swarm-core#38 (phase 2's exit criteria all hold); AntHocNet: the switch-over to the released harness (ns3-tools#29) |
-| B | `ns3-tools v0.2.0`, `ns3-swarm-core v0.2.0`, then `ARA v0.2.0` and `BeeAdHoc v0.2.0` (the first gated protocol releases) | ns3-tools v0.2.0: a protocol pipeline runs a paired campaign end to end (every protocol pipeline needs it); ns3-swarm-core v0.2.0: the adapter complete, additive and byte-identical, every consumer green; each protocol's own pipeline and anchor (ARA#36, BeeAdHoc#41) |
-| C | `Termite v0.2.0`; `ns3-tools v0.3.0` (marker contract v2, the `benchmarks` schema in step, benchmarks#33), then the `benchmarks` release runs and global suite (benchmarks#24, #23), then the site's leaderboard and results explorer (site#12) | Termite: its module, pipeline and anchor (Termite#37, #31; the pre-registered runs of Termite#5); ns3-tools v0.3.0: readers refuse unknown contracts, outputs byte-identical apart from new fields |
+| A (now) | `ns3-tools v0.1.0` and `ns3-swarm-core v0.1.0` (both shipped 2026-11-11), AntHocNet `v2.7.0`; then `ns3-tools v1.0.0` and `ns3-containers v1.0.0` (decision 2026-11-13, below) | ns3-tools: its release workflow (ns3-tools#26), shipped; ns3-swarm-core#38 (phase 2's exit criteria all hold); AntHocNet: the switch-over to the released harness (ns3-tools#29) |
+| B | `ns3-tools v1.1.0` (was v0.2.0), `ns3-swarm-core v0.2.0`, then `ARA v0.2.0` and `BeeAdHoc v0.2.0` (the first gated protocol releases) | ns3-tools v1.1.0: a protocol pipeline runs a paired campaign end to end (every protocol pipeline needs it); ns3-swarm-core v0.2.0: the adapter complete, additive and byte-identical, every consumer green; each protocol's own pipeline and anchor (ARA#36, BeeAdHoc#41) |
+| C | `Termite v0.2.0`; `ns3-tools v2.0.0` (was v0.3.0: marker contract v2, the `benchmarks` schema in step, benchmarks#33), then the `benchmarks` release runs and global suite (benchmarks#24, #23), then the site's leaderboard and results explorer (site#12) | Termite: its module, pipeline and anchor (Termite#37, #31; the pre-registered runs of Termite#5); ns3-tools v2.0.0: readers refuse unknown contracts, outputs byte-identical apart from new fields |
 | D | `HOPNET v0.2.0` | after Termite's; the anchor against AntHocNet through ns3-tools (HOPNET#28; HOPNET golden rule 12) passes or ships as a written infeasibility verdict |
-| E | `1.0.0`s: `ns3-swarm-core` first, then `ns3-tools`, then each protocol after its `v0.3.0` review | swarm-core: every protocol on it, AntHocNet included (ns3-swarm-core#14), the gated ones with no API change; the host contract waits for `2.0.0` (.github#253); ns3-tools: contract v2 and the CLI frozen; a protocol: its `v0.3.0` review; all of them: the release workflow's `increment` input, so a major can be released ([.github#211](https://github.com/swarm-routing/.github/issues/211)) |
+| E | `1.0.0`s: `ns3-swarm-core`, then each protocol after its `v0.3.0` review (`ns3-tools` and `ns3-containers` released theirs ahead of the wave, below) | swarm-core: every protocol on it, AntHocNet included (ns3-swarm-core#14), the gated ones with no API change; the host contract waits for `2.0.0` (.github#253); a protocol: its `v0.3.0` review; all of them: the release workflow's `increment` input, so a major can be released ([.github#211](https://github.com/swarm-routing/.github/issues/211)) |
+
+**Wave E reordered (maintainer decision 2026-11-13: "ns3-tools now, core
+later").** Until this decision wave E put `ns3-swarm-core` first, then `ns3-tools`;
+the order is now reversed. `ns3-tools` releases `v1.0.0` now, freezing its
+CLI and today's marker contract v1; marker contract v2 (wave C) becomes its
+`2.0.0`, and the campaign release of wave B a minor after 1.0 (`v1.1.0`;
+ns3-tools' own ladder, its `docs/roadmap.md`, has the versions; the labels
+`release:v1.1.0` and `release:v2.0.0` exist for it). `ns3-swarm-core`
+reaches `1.0.0` only after AntHocNet runs on it
+(swarm-routing/ns3-swarm-core#14). `ns3-containers` gets a first release,
+`v1.0.0`, that versions its image pipeline. Both 1.0.0s released now are
+gated by the release workflow's `increment` input
+([.github#211](https://github.com/swarm-routing/.github/issues/211)):
+`increment: MAJOR` with `major_version_zero = false`, and, for a repository
+with no tag yet, the configured version's next major (CONTRIBUTING "Cutting a
+release").
 
 ### After 1.0
 

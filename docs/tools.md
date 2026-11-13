@@ -34,6 +34,7 @@ tools/pr-status/pr_status.py    open PRs across repos: `list`, `threads`, `wait`
 tools/images/rolling_tags.py    a release image's rolling tags: `move` copies its digest to `latest-<profile>` (and `latest`, for optimized), only for a release version, never back to an older release, failing closed on a registry error; `reusable-ns3-image.yml` runs it after the signature verifies, and without `--digest` (with `--verify-signature`) it repairs a release whose step failed, from the version tag's digest (#373)
 tools/images/retention.py       the 2-day retention of `<repo>-dev` packages (#371, epic #370): `pinned` lists every `sha256:<hex>` and `ghcr.io/<org>/<pkg>:<tag>` in the tracked text files of every public, unarchived, non-fork repository's default branch and every open benchmarks PR head (counts per package; `--out` the JSON); `sweep` deletes a `-dev` package's tagged versions older than `--days` that nothing pins, never the newest image, an untagged version, a kept image's signatures, a non-`-dev` package or `ns3-dev`; dry run unless `--apply`; fails closed when a repository cannot be read; `reusable-dev-image-cleanup.yml` runs it
 tools/release/fixture/         the release self-test's caller: the minimal Commitizen config (.cz.toml), a `make dist`, and a CITATION.cff (the Zenodo push test)
+tools/release/fixture-major/   the release self-test's second caller (#211): a Commitizen config at 0.4.0 with major_version_zero = false, dry-run with `increment: MAJOR` (built with fixture/'s Makefile)
 tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
 tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy (incl. fork-PR approval) and `release` environment as code: `plan`/`check` (read-only diff), `apply` (only the differences)
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
@@ -128,7 +129,8 @@ on its PR: a dry run on `tools/release/fixture/` (bump to v0.1.0, `make dist`,
 checksums, SBOM, real attestations and their verification, nothing pushed),
 then a check of every file it would have published, then `zenodo.py
 publish-release` on those files against the fake Zenodo (`fake-zenodo`; also
-on a change to `tools/zenodo/`); its bump PR (`propose`) and its
+on a change to `tools/zenodo/`), and a second dry run with `increment: MAJOR`
+on `tools/release/fixture-major/` (0.4.0, no tag: must be 1.0.0, #211); its bump PR (`propose`) and its
 tag-and-publish job are proven by the first caller's release (ns3-tools#26),
 its opt-in `zenodo` job by a `zenodo-sandbox: true` run and the first
 caller's release with `zenodo: true` (#232).

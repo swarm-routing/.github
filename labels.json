@@ -35,6 +35,8 @@
     {"name": "release:v0.3.0", "color": "ededed", "description": "Gated by this repository's v0.3.0 release (its docs/roadmap.md)"},
     {"name": "release:v0.4.0", "color": "ededed", "description": "Gated by this repository's v0.4.0 release (its docs/roadmap.md)"},
     {"name": "release:v1.0.0", "color": "ededed", "description": "Gated by this repository's v1.0.0 release (its docs/roadmap.md)"},
+    {"name": "release:v1.1.0", "color": "ededed", "description": "Gated by this repository's v1.1.0 release (its docs/roadmap.md)"},
+    {"name": "release:v2.0.0", "color": "ededed", "description": "Gated by this repository's v2.0.0 release (its docs/roadmap.md)"},
 
     {"name": "migrated", "color": "cccccc", "description": "Cloned from danieljoppi/AntHocNet during the org split"}
   ]

@@ -171,7 +171,7 @@ automatic CodeRabbit review, so a new label is added there by hand):
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `learn-site`, `literature` |
 | Model | exactly one, a suggestion: what a wrong first pass costs, not code volume; only models a Claude Pro plan includes (maintainer decision, #280) | `model:haiku-5.5` (mechanical), `model:sonnet-5.5` (plumbing, tooling, docs), `model:opus-5.5` (protocol semantics, root cause, adapter work, architecture: write the design first) |
 | Priority | exactly one on non-epic issues; never on an epic | `priority:P1` (blocks the current wave's release, breaks `main`, or invalidates published numbers; a protocol's gated v0.2.0 issue while its wave is current), `priority:P2` (gates a result or feature), `priority:P3` (valuable, not blocking). Infrastructure work holds at most 30% of the work in flight (maintainer decision, #262) |
-| Release | only when a release in the repository's own ladder (its `docs/roadmap.md`) gates the issue; never on infrastructure-track work that only rides along | `release:v0.1.0`, `release:v0.2.0`, `release:v0.3.0`, `release:v0.4.0`, `release:v1.0.0` (shared, from `labels.json`); a repository with a longer ladder (AntHocNet) keeps its own `release:vX.Y.Z` labels |
+| Release | only when a release in the repository's own ladder (its `docs/roadmap.md`) gates the issue; never on infrastructure-track work that only rides along | `release:v0.1.0`, `release:v0.2.0`, `release:v0.3.0`, `release:v0.4.0`, `release:v1.0.0`, `release:v1.1.0`, `release:v2.0.0` (shared, from `labels.json`); a repository with a longer ladder (AntHocNet) keeps its own `release:vX.Y.Z` labels |
 | Contributor | any number, set by a maintainer when an outside contributor can pick the issue up | `good first issue` (small, well scoped, needs no history), `help wanted` (outside help welcome) |
 
 GitHub lists open `good first issue` issues on each repository's Contribute
@@ -810,7 +810,9 @@ an agent on the maintainer's instruction, dispatches `bump`; an agent never
 dispatches it on its own initiative. SemVer meaning: a minor for new features
 (in `benchmarks`, new runs), a patch for fixes and docs, a major for a
 breaking change (an API, wire-format, manifest or marker schema change). The
-first release of every repository is `v0.1.0`. Commitizen bumps a patch only
+first release of every repository is `v0.1.0`, unless the maintainer decides
+it is `v1.0.0` (ns3-containers, 2026-11-13: dispatched with `increment:
+MAJOR`, below). Commitizen bumps a patch only
 from `fix:`, `refactor:` or `perf:` commits, so docs-only changes ride along with the
 next release rather than making one of their own. While a repository is at 0.x,
 Commitizen turns a breaking change into a minor (`major_version_zero`); a
@@ -828,7 +830,10 @@ actor), so the bump goes through a PR and the tag follows the merge
    from the Conventional-Commit history since the last tag (`feat` → minor,
    `fix` → patch; a breaking change → minor while 0.x), rewrites the version
    files and writes `CHANGELOG.md`. A repository with no `v*` tag yet gets
-   **v0.1.0** (ROADMAP "Releases"). A run with nothing that bumps (only
+   **v0.1.0** (ROADMAP "Releases"), or, dispatched with `increment: MAJOR`,
+   the next major of its configured version (**v1.0.0** from any 0.x).
+   The input `increment` (`PATCH`, `MINOR`, `MAJOR`) forces the bump's size
+   (`cz bump --increment`) instead of the one read from the commits (#211). A run with nothing that bumps (only
    `docs:`, `ci:`, …) fails, and nothing happens. The commit goes on the
    fixed branch `bot/release`, rebuilt on `main`'s tip, as the PR
    **`chore(release): bump version A to B`** (opened, or updated when one is
@@ -871,6 +876,52 @@ actor), so the bump goes through a PR and the tag follows the merge
 Mode `dry-run` bumps on the runner only, then builds, signs and verifies, and
 stops: nothing is pushed, proposed, tagged or published, and its artifact
 holds the release it would have published.
+
+**Releasing 1.0.0 (a major)** (#211). While 0.x, `major_version_zero = true`
+turns a breaking change into a minor, so a major is never computed from the
+commits: it is asked for.
+
+1. Set `major_version_zero = false` in the repository's Commitizen config
+   (`.cz.toml` or `pyproject.toml`) in a PR merged before the dispatch, or a
+   commit added to the bump PR before it merges. Leaving it `true` still
+   gives 1.0.0 with `increment: MAJOR` (Commitizen 4.19.3), but every later
+   breaking change would then bump only the minor (1.0.0 → 1.1.0), so the
+   flip is part of the release.
+2. Dispatch the caller's release workflow with mode `dry-run` and
+   `increment: MAJOR`: the job summary and the `version` output read 1.0.0.
+3. Dispatch it with mode `bump` and `increment: MAJOR`: the bump PR is
+   `chore(release): bump version 0.x.y to 1.0.0`. Merging it tags and
+   publishes `v1.0.0` as any other release (the release run takes the version
+   from the merged commit and ignores `increment`).
+
+A repository with no `v*` tag (a first release that is 1.0.0) does the same:
+`increment: MAJOR` bumps its configured version's major, so `version =
+"0.0.0"` releases 1.0.0. The caller forwards the input from its
+`workflow_dispatch` (empty on a push, which is the default and changes
+nothing):
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      mode: { type: choice, options: [dry-run, bump], default: dry-run }
+      increment:
+        description: "Force the bump's size (MAJOR for 1.0.0); auto: from the commits"
+        type: choice
+        options: [auto, PATCH, MINOR, MAJOR]   # a choice option cannot be empty (actionlint)
+        default: auto
+jobs:
+  release:
+    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
+    with:
+      mode: ${{ inputs.mode }}
+      increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}   # auto, or a push: ''
+```
+
+Any other value fails the run in its first job, before anything is built or
+pushed. `release-selftest.yml`'s `release-major` leg dry-runs
+`tools/release/fixture-major/` (0.4.0, `major_version_zero = false`) with
+`increment: MAJOR` and requires 1.0.0.
 
 **A publish that fails, or waits.** Where a repository has the `release`
 environment gate (Automation; off for now, #215, review #214), approving the
@@ -961,7 +1012,9 @@ Inputs (a public contract, golden rule 10: they are only added, with
 backward-compatible defaults): `build` (`make dist`), `dist-dir` (`dist`),
 `working-directory` (`.`), `sbom-path` (`.`, the checkout at the release
 commit), `dry-run` (`false`; `true` is mode `dry-run`), `mode` (empty:
-`release` on a push, `bump` otherwise; or `bump`, `release`, `dry-run`).
+`release` on a push, `bump` otherwise; or `bump`, `release`, `dry-run`),
+`increment` (empty: from the commits; or `PATCH`, `MINOR`, `MAJOR`, in bump
+and dry-run modes, #211).
 Secrets (optional): `BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`, `ORG_BOT_TOKEN`.
 Outputs: `mode` (`bump`, `release`, `dry-run`, or `none` for a push that is
 not a merged bump PR), `version`, `tag`, `artifact`, `pull-request` (bump
