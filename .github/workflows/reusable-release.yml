@@ -875,7 +875,7 @@ jobs:
           # The previous release: the highest v* tag below this one (sort -V),
           # read from the remote, as the checkout has no tags. Empty for a
           # first release, and then left out of the payload.
-          prev="$(git ls-remote --tags --refs origin 'refs/tags/v*' 2> /dev/null \
+          prev="$(timeout 30 git ls-remote --tags --refs origin 'refs/tags/v*' 2> /dev/null \
             | sed 's|.*refs/tags/||' | grep -E '^v[0-9]' | { cat; echo "$TAG"; } \
             | sort -V -u | grep -Fx -B1 "$TAG" | grep -Fxv "$TAG" || true)"
           args=(-f event_type=org-release
@@ -883,10 +883,10 @@ jobs:
                 -f "client_payload[tag]=${TAG}"
                 -f "client_payload[commit]=${COMMIT}")
           [ -z "$prev" ] || args+=(-f "client_payload[previous_tag]=${prev}")
-          if gh api -X POST "repos/${SITE}/dispatches" "${args[@]}" > /dev/null; then
+          if timeout 45 gh api -X POST "repos/${SITE}/dispatches" "${args[@]}" > /dev/null; then
             echo "Sent org-release to ${SITE}: ${GITHUB_REPOSITORY} ${TAG}${prev:+ (previous ${prev})}" >> "$GITHUB_STEP_SUMMARY"
           else
-            warn "repository_dispatch org-release to ${SITE} failed for ${TAG} (the reason is above)"
+            warn "repository_dispatch org-release to ${SITE} failed or timed out for ${TAG} (the reason is above)"
           fi
 
   # Opt-in (`zenodo: true`, #232): the published release, archived on Zenodo
