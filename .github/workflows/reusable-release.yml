@@ -875,9 +875,15 @@ jobs:
           # The previous release: the highest v* tag below this one (sort -V),
           # read from the remote, as the checkout has no tags. Empty for a
           # first release, and then left out of the payload.
-          prev="$(timeout 30 git ls-remote --tags --refs origin 'refs/tags/v*' 2> /dev/null \
-            | sed 's|.*refs/tags/||' | grep -E '^v[0-9]' | { cat; echo "$TAG"; } \
-            | sort -V -u | grep -Fx -B1 "$TAG" | grep -Fxv "$TAG" || true)"
+          # A failed or timed-out lookup is reported, and the event goes
+          # without previous_tag (the site's release_sync.py finds it).
+          prev=""
+          if tags="$(timeout 30 git ls-remote --tags --refs origin 'refs/tags/v*' 2> /dev/null)"; then
+            prev="$(printf '%s\n' "$tags" | sed 's|.*refs/tags/||' | grep -E '^v[0-9]' | { cat; echo "$TAG"; } \
+              | sort -V -u | grep -Fx -B1 "$TAG" | grep -Fxv "$TAG" || true)"
+          else
+            echo "::warning::the release tags could not be listed (failed or timed out); org-release goes without previous_tag"
+          fi
           args=(-f event_type=org-release
                 -f "client_payload[repository]=${GITHUB_REPOSITORY}"
                 -f "client_payload[tag]=${TAG}"
