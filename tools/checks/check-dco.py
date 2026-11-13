@@ -15,7 +15,15 @@ Exempt, since their commits are made by the maintainer's own account or a bot:
   ``author_association`` is OWNER, MEMBER or COLLABORATOR;
 - commits whose GitHub author has write, maintain or admin permission on the
   repository (``repos/{o}/{r}/collaborators/{user}/permission``);
-- commits by ``swarm-routing-bot[bot]`` and ``dependabot[bot]``;
+- commits by a GitHub bot account (a login ending in ``[bot]``, or an author
+  email ``…[bot]@users.noreply.github.com``: the release bump commit of
+  reusable-release.yml is ``github-actions[bot]``'s) on a PR opened by one of
+  the org's bots (``swarm-routing-bot[bot]``, ``dependabot[bot]``,
+  ``github-actions[bot]``) or by an OWNER, MEMBER or COLLABORATOR, or a user
+  with write, maintain or admin permission (#368). Anyone can write a bot's
+  email into a commit, and GitHub then reports the bot's login for it, so the
+  same commit on an outside contributor's PR is not exempt: it needs a
+  sign-off like any other;
 - agent commits (a ``Claude-Session:`` trailer) on a PR whose
   ``author_association`` is OWNER, MEMBER or COLLABORATOR, or whose author
   has write, maintain or admin permission (the event payload reports a
@@ -53,7 +61,8 @@ import urllib.error
 import urllib.request
 
 EXEMPT_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
-EXEMPT_BOTS = frozenset({"swarm-routing-bot[bot]", "dependabot[bot]"})
+TRUSTED_BOTS = frozenset({"swarm-routing-bot[bot]", "dependabot[bot]", "github-actions[bot]"})
+BOT_EMAIL = re.compile(r"^(\d+\+)?[a-z0-9-]+\[bot\]@users\.noreply\.github\.com$", re.I)
 EXEMPT_PERMISSIONS = frozenset({"admin", "maintain", "write"})
 SIGNOFF = re.compile(r"^Signed-off-by:([^<\n]*)<([^<>\s]+)>[ \t]*$", re.I)
 TRAILER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*:")
@@ -181,15 +190,30 @@ def permission_lookup(repo: str, get=api_get):
     return has_write
 
 
+def bot_author(login: str, email: str) -> bool:
+    """Whether the commit's author is a GitHub bot account, by its login or by
+    its noreply email (spoofable: see verdicts)."""
+    return login.endswith("[bot]") or bool(BOT_EMAIL.match(email.strip()))
+
+
 def verdicts(commits, logins, pr_author, association, has_write) -> list[tuple[str, dict, str]]:
     """(status, commit, why) per commit; status is ok, exempt or FAIL."""
     out = []
+
+    def trusted_pr() -> bool:
+        return (
+            pr_author in TRUSTED_BOTS
+            or association in EXEMPT_ASSOCIATIONS
+            or bool(pr_author and has_write(pr_author))
+        )
+
     for c in commits:
         login = logins.get(c["sha"], "")
         if c["parents"] > 1 and not c.get("adds"):
             out.append(("exempt", c, "merge commit, nothing new"))
-        elif login in EXEMPT_BOTS:
-            out.append(("exempt", c, f"bot {login}"))
+        elif bot_author(login, c["email"]) and trusted_pr():
+            who = login or c["email"]
+            out.append(("exempt", c, f"bot {who} on a PR by {pr_author} ({association})"))
         elif login and login == pr_author and association in EXEMPT_ASSOCIATIONS:
             out.append(("exempt", c, f"{login} is {association}"))
         elif login and has_write(login):
@@ -306,8 +330,8 @@ def self_test() -> int:
         "b2": "FAIL",
         "c3": "FAIL",
         "d4": "FAIL",  # maint opened nothing and has no write access here
-        "e5": "exempt",
-        "f6": "exempt",
+        "e5": "FAIL",  # a bot's login on an outside contributor's PR: spoofable (#368)
+        "f6": "FAIL",
         "g7": "exempt",
         "o5": "FAIL",  # a merge that adds its own text is not exempt
         "h8": "exempt",
@@ -354,6 +378,53 @@ def self_test() -> int:
     if got["p6"] != "exempt" or got["q7"] != "FAIL" or got["b2"] != "FAIL":
         fails += 1
         print(f"SELF-TEST FAIL (agent commit, writer's PR as CONTRIBUTOR): {got}")
+    # bot commits (#368): the release bump commit reusable-release.yml writes as
+    # github-actions[bot], on the bot/release PR the org App opens
+    gha = "41898282+github-actions[bot]@users.noreply.github.com"
+    bump = commit("r1", gha, "bump: version 0.1.0 → 0.2.0\n", name="github-actions[bot]")
+    bump_nologin = commit("r2", gha, "bump: version 0.2.0 → 0.3.0\n", name="github-actions[bot]")
+    fake = commit("r3", "evil[bot]@example.org", "chore: x\n", name="evil[bot]")
+    bot_logins = {
+        "r1": "github-actions[bot]",
+        "r3": "",
+        "b2": "ada",
+        "e5": "swarm-routing-bot[bot]",
+    }
+    bot_commits = [bump, bump_nologin, fake, commits[1], commits[4], commits[5]]
+    cases = [
+        # the org App's release PR: both bump commits pass, the human and the
+        # look-alike email (not a GitHub noreply address) still need a sign-off
+        (
+            ("swarm-routing-bot[bot]", "NONE"),
+            {"r1": "exempt", "r2": "exempt", "r3": "FAIL", "b2": "FAIL"},
+        ),
+        (("swarm-routing-bot[bot]", "CONTRIBUTOR"), {"r1": "exempt", "e5": "exempt", "b2": "FAIL"}),
+        (("dependabot[bot]", "NONE"), {"f6": "exempt", "r1": "exempt", "b2": "FAIL"}),
+        (("github-actions[bot]", "NONE"), {"r1": "exempt", "b2": "FAIL"}),
+        # a human writing github-actions[bot]'s email on their own PR: GitHub
+        # reports the bot's login for it, and it still fails
+        (("mallory", "NONE"), {"r1": "FAIL", "r2": "FAIL", "e5": "FAIL", "f6": "FAIL"}),
+        (("mallory", "CONTRIBUTOR"), {"r1": "FAIL", "e5": "FAIL"}),
+        # an outside contributor's PR (ada, read access): a bot commit on it
+        # is not exempt either, since no bot pushes to a contributor's PR
+        (("ada", "FIRST_TIME_CONTRIBUTOR"), {"r1": "FAIL", "e5": "FAIL", "f6": "FAIL"}),
+        # a member's or writer's PR: the person who opened it certifies it
+        (
+            ("maint", "MEMBER"),
+            {"r1": "exempt", "r2": "exempt", "e5": "exempt", "r3": "FAIL", "b2": "FAIL"},
+        ),
+        (("writer", "CONTRIBUTOR"), {"r1": "exempt", "f6": "exempt", "b2": "FAIL"}),
+    ]
+    for (author, assoc), want_bot in cases:
+        got = {
+            c["sha"]: s
+            for s, c, _ in verdicts(
+                bot_commits, bot_logins | {"f6": "dependabot[bot]"}, author, assoc, has_write
+            )
+        }
+        if any(got[k] != v for k, v in want_bot.items()):
+            fails += 1
+            print(f"SELF-TEST FAIL (bot commits, PR by {author} {assoc}): {got}")
     # pagination and a commit without a GitHub author
     pages = {
         1: [{"sha": f"s{i}", "author": {"login": "ada"}} for i in range(100)],
