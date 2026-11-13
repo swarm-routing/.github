@@ -652,8 +652,8 @@ publisher's or institution's `url` and `no_doi`, the reason), and renders
 both the README list and CITATION.cff's `references:` (reseed it after a
 change). Take every field of a work with a DOI from Crossref, confirmed with
 `tools/lit-search/lit_search.py confirm <DOI>`, never from memory; for a work
-with none, from its publisher's or institution's record (for a handle,
-`curl -sSL https://hdl.handle.net/<id> | grep -o '<meta name="citation_[a-z_]*" content="[^"]*"'`).
+with none, from its publisher's or institution's record (`fidelity.py bib
+entry --url URL`, References below).
 `role` is the repository's own line on what the work is for.
 `citation_type = "dataset"` (`software` by default) gives a dataset's
 `type:` and message; `citation_message = "..."` (one line, no double quotes)
@@ -714,7 +714,14 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   bibtex OWNER/REPO --role tool` prints an org release's concept record as
   `@software`, keyed as the table below says (`--key K` for a repository it
   does not list yet), with its concept `doi` and no `url` or `version` (a
-  Zenodo DOI is never looked up through `bib entry`). `bib check --online`
+  Zenodo DOI is never looked up through `bib entry`). A work with no DOI (a
+  thesis, a report) takes `bib entry --url URL --key K --role R` on its
+  repository's landing page: the page's `citation_*` tags and, for a handle,
+  the repository's OAI-PMH record (ETD-MS, which names the degree and its
+  grantor, else Dublin Core) give an entry with the url (the handle's) and no
+  `doi`; a field the record lacks stays out (a thesis whose record states no
+  degree is `@misc`), and a page that names a DOI is refused for `bib entry
+  DOI` (#342). `bib check --online`
   suggests a DOI for a url-only entry by its title; that match may be another
   work with the same title (a later chapter or article), so check its type and
   year before adopting it. When it is another work, the entry says so with
