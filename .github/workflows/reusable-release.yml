@@ -78,6 +78,18 @@ name: Reusable release
 #               the daily zenodo.yml `sync` archives the release after its
 #               grace period (a first release, with no concept yet: re-run
 #               it, or zenodo.yml mode `create`).
+#    The last step of `publish` tells the org site (`notify-site`, default
+#    true, #388): once the release is published it sends `repository_dispatch`
+#    event `org-release` to swarm-routing/swarm-routing.github.io with
+#    client_payload {repository, tag, commit, previous_tag} (previous_tag: the
+#    highest v* tag below this one, omitted for a first release), with the org
+#    App's token (it needs Contents: write on the site repository; CONTRIBUTING
+#    "The bot's GitHub App"). The site's release-sync.yml redeploys Pages and
+#    proposes its hub-data and lock PRs. It is report-only: a failed dispatch
+#    is a warning and a line in the job summary, never a failed release (the
+#    site's weekly run catches a missed event). A private repository's caller
+#    passes `notify-site: false` (the site lists public repositories only);
+#    release-selftest.yml passes it too, so no test sends an event.
 #
 # mode `dry-run` (or `dry-run: true`) bumps on the runner only, then builds,
 # checksums, writes the SBOM, attests (real attestations, in the caller's
@@ -207,6 +219,10 @@ on:
         description: "With zenodo: archive on sandbox.zenodo.org instead (a sandbox token as ZENODO_TOKEN), to prove the path"
         type: boolean
         default: false
+      notify-site:
+        description: "After a release is published, send repository_dispatch `org-release` to swarm-routing/swarm-routing.github.io (report-only); false for a private repository and in tests"
+        type: boolean
+        default: true
     secrets:
       BOT_APP_ID:
         description: "The org GitHub App's ID, for the bump PR's and the release tag's token (.github/actions/bot-token)"
@@ -833,6 +849,42 @@ jobs:
               --notes-file "$R/meta/notes.md" "$R"/release/*
           fi
           echo "Published ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+      # The org site follows the release (#388): its release-sync.yml listens
+      # for `org-release` (swarm-routing/swarm-routing.github.io#120). The bot
+      # token, never GITHUB_TOKEN, which reaches this repository only; the App
+      # needs Contents: write on the site. Report-only: a failed dispatch is a
+      # warning and a summary line, and the site's weekly run catches it.
+      - name: Tell the org site
+        if: ${{ inputs.notify-site }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          SITE: swarm-routing/swarm-routing.github.io
+        run: |
+          warn() {
+            echo "::warning::$1"
+            echo "Site not notified: $1 (the site's weekly release-sync run catches it)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          [ -n "$GH_TOKEN" ] || warn "no bot token (BOT_APP_ID / BOT_APP_PRIVATE_KEY, ORG_BOT_TOKEN unset), so no org-release event for ${TAG}"
+          # The previous release: the highest v* tag below this one (sort -V),
+          # read from the remote, as the checkout has no tags. Empty for a
+          # first release, and then left out of the payload.
+          prev="$(git ls-remote --tags --refs origin 'refs/tags/v*' 2> /dev/null \
+            | sed 's|.*refs/tags/||' | grep -E '^v[0-9]' | { cat; echo "$TAG"; } \
+            | sort -V -u | grep -Fx -B1 "$TAG" | grep -Fxv "$TAG" || true)"
+          args=(-f event_type=org-release
+                -f "client_payload[repository]=${GITHUB_REPOSITORY}"
+                -f "client_payload[tag]=${TAG}"
+                -f "client_payload[commit]=${COMMIT}")
+          [ -z "$prev" ] || args+=(-f "client_payload[previous_tag]=${prev}")
+          if gh api -X POST "repos/${SITE}/dispatches" "${args[@]}" > /dev/null; then
+            echo "Sent org-release to ${SITE}: ${GITHUB_REPOSITORY} ${TAG}${prev:+ (previous ${prev})}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            warn "repository_dispatch org-release to ${SITE} failed for ${TAG} (the reason is above)"
+          fi
 
   # Opt-in (`zenodo: true`, #232): the published release, archived on Zenodo
   # from here, so Zenodo never fetches it from GitHub with the maintainer's
