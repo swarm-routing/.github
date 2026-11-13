@@ -1059,6 +1059,39 @@ project as top-level `bestpractices_project = "<id>"` in
 are answered. A repository that sets its own `badges` list also adds
 `"bestpractices"` to it, after `"scorecard"`.
 
+### OpenSSF Best Practices
+
+bestpractices.dev has no write API: every answer is saved by a person logged
+in to the site, and no workflow logs in, keeps a session or submits answers.
+`tools/bestpractices/bestpractices.py` does the rest, read-only (#391):
+
+- **Register.** `bestpractices.py register swarm-routing/<repo> --dir <checkout>`
+  first asks the site whether the repository is registered; if it is, it
+  prints the project id and the `bestpractices_project = "<id>"` line for
+  `.github/org-sync.toml`. If not, it prints a registration URL pre-filled with
+  the answers the repository shows; the maintainer opens it, logs in, saves,
+  and then adds that line.
+- **Propose the answers.** `bestpractices.py answers . --write` writes
+  `.bestpractices.json` at the repository's top level: every passing criterion
+  the repository gives evidence for, each justified by its full https URL on
+  `main`. Commit it in a PR; on the site, "Save (and continue)" with the robot
+  proposes those answers. The crypto criteria are N/A unless the code calls a
+  crypto library or `.github/org-sync.toml` sets `bestpractices_crypto = true`.
+- **The maintainer answers the owner-only criteria** on the site:
+  `know_secure_design`, `know_common_errors`, `vulnerabilities_fixed_60_days`,
+  `vulnerabilities_critical_fixed`, `no_leaked_credentials`,
+  `report_responses`, `enhancement_responses`,
+  `vulnerability_report_response` (self-assessments, or facts behind the
+  Security tab). They are always `?` in the file, which the site ignores, as
+  is any criterion without evidence in the repository.
+- **The weekly check.** `bestpractices.yml` runs `bestpractices.py check`: for
+  each public repository it reads the project's public JSON (one request a
+  second) and reports a registered repository without `bestpractices_project`,
+  answers on the site that disagree with `.bestpractices.json`, justifications
+  pointing at files no longer on `main`, and a lost level. It keeps one
+  `[bestpractices] N finding(s)` issue per repository, closed when clean. It is
+  report-only, never a required check; the fix is made on the site by a person.
+
 ## AI agents
 
 Every repo carries an `AGENTS.md` (what the repo is, build & verify, golden
