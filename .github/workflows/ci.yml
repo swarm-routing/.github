@@ -55,6 +55,8 @@ jobs:
         run: python3 -I tools/pr-status/pr_status.py --self-test
       - name: rolling-tags self-test (tools/images)
         run: python3 -I tools/images/rolling_tags.py --self-test
+      - name: dev-image retention self-test (tools/images)
+        run: python3 -I tools/images/retention.py --self-test
       - name: lit-search self-test (tools/lit-search)
         run: python3 -I tools/lit-search/lit_search.py --self-test
       - name: repo-settings self-test (tools/repo-settings)
