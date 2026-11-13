@@ -883,10 +883,15 @@ actor), so the bump goes through a PR and the tag follows the merge
    swarm-routing/AntHocNet#1011). The site's `release-sync.yml` then refreshes
    its hub data (the `bot/hub-data` PR), moves the repository's
    `protocols.lock` pin if it has one (the `bot/lock` PR) and opens one
-   `[release-sync] <repo> <tag>` issue there. Whoever cut the release checks
-   that the issue opened. If none appears within an hour, dispatch the site's
-   `release-sync.yml` by hand with `repository` (`owner/repo`) and `tag`; the
-   weekly Monday run is only the backstop. AntHocNet v2.7.0 (2026-11-13), cut
+   `[release-sync] <repo> <tag>` issue there (only for a public repository
+   the site lists). Whoever cut the release checks that the issue opened and
+   that the `release-sync.yml` run that opened it is green: the ticket step
+   runs even when the hub-data or lock step failed, so an issue alone does
+   not prove the site is current. If no issue appears within an hour, or the
+   run failed, dispatch the site's `release-sync.yml` by hand with
+   `repository` (`owner/repo`) and `tag` (every step is idempotent, so a
+   second run only completes what is missing); the weekly Monday run is only
+   the backstop. AntHocNet v2.7.0 (2026-11-13), cut
    just before its dispatch landed, reached the site only that way
    (swarm-routing/swarm-routing.github.io#134,
    swarm-routing/swarm-routing.github.io#135).
