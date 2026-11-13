@@ -707,11 +707,17 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   DOI. Never the repository's own DOI (CITATION.cff carries it), and only
   public sources: a work is cited by its DOI link, never by where a copy of it
   is kept.
-- **Fields come from Crossref or Zenodo, never typed.** `fidelity.py bib entry
-  DOI --key K --role R` prints Crossref's record as an entry; `zenodo.py bibtex
-  OWNER/REPO --role tool` prints an org release's concept record as
+- **Fields come from Crossref, DataCite or Zenodo, never typed.** `fidelity.py
+  bib entry DOI --key K --role R` prints Crossref's record as an entry, or,
+  when Crossref has none, DataCite's (a university repository's report or
+  thesis, a dataset: the type from its `resourceTypeGeneral`); `zenodo.py
+  bibtex OWNER/REPO --role tool` prints an org release's concept record as
   `@software`, keyed as the table below says (`--key K` for a repository it
-  does not list yet), with its concept `doi` and no `url` or `version`.
+  does not list yet), with its concept `doi` and no `url` or `version` (a
+  Zenodo DOI is never looked up through `bib entry`). `bib check --online`
+  suggests a DOI for a url-only entry by its title; that match may be another
+  work with the same title (a later chapter or article), so check its type and
+  year before adopting it.
 - **One key per work across the org.** A key is the fidelity sheets' style,
   the authors' initials and the year (`G02`, `DDG04`); an org release keeps a
   short name. A work that more than one repository cites, and every released

@@ -29,8 +29,10 @@ keeps that mapping honest; the reading of the paper is still the author's.
                                       line per finding, exit 1 on any. --online also asks
                                       Crossref for a DOI for every url-only entry (WARN)
   fidelity.py bib entry DOI --key K --role R
-                                      Crossref's record printed as a BibTeX entry; exit 1
-                                      when Crossref has none (never guessed)
+                                      Crossref's record printed as a BibTeX entry, else
+                                      DataCite's (a report, thesis, dataset); exit 1 when
+                                      neither has one (never guessed; a Zenodo DOI: use
+                                      zenodo.py bibtex)
   fidelity.py bib sources REPO        rewrite docs/fidelity.md's Sources table, between
                                       <!-- fidelity:sources:begin --> and
                                       <!-- fidelity:sources:end -->, from the bib
@@ -481,6 +483,7 @@ SHEET = os.path.join("docs", "fidelity.md")
 BEGIN = "<!-- fidelity:sources:begin -->"
 END = "<!-- fidelity:sources:end -->"
 CROSSREF = "https://api.crossref.org/works"
+DATACITE = "https://api.datacite.org/dois"  # DOIs Crossref does not hold (TU Dortmund, Zenodo...)
 UA = "swarm-routing-fidelity/1.0"  # generic: no contact address, no personal detail
 FETCH = None  # test hook: callable(url) -> response text, or None for a 404
 # a cited key: [KEY] with a digit anywhere (G02, PG460, R05s), or any sheet key
@@ -490,10 +493,18 @@ CITE_LOC = re.compile(r"\[([A-Za-z][A-Za-z0-9_-]*)\]\s+" + LOCATOR)
 SHEET_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")  # what a sheet's REF can cite
 DOI_IN = re.compile(r"\b10\.\d{4,9}/[^\s\"'<>|)\]}]+")
 # the private paper library: a public line never names it or points into it
-# (a phrase may wrap across lines: words are joined by any whitespace)
+# (a phrase may wrap across lines: words are joined by any whitespace). Caught:
+# the phrase that says a work is kept there (old check); the repository name
+# followed by library, repo or repository, backticked, hyphenated or spaced, after
+# "the" or "private" or alone; the download checklist; its slug; and a path into a
+# library tree under it or under AntHocNet. The name alone, "library" alone and
+# docs/publications are ordinary prose (the self-test holds each form and near miss)
 PRIVATE = re.compile(
-    r"\bin\s+the\s+(?:papers?\s+)?library|\bpapers\s+library|MANUAL-DOWNLOADS"
-    r"|swarm-routing/papers\b",
+    r"\bin\s+the\s+(?:papers?\s+)?library"
+    r"|`?\bpapers`?(?:\s+|[-_])(?:library|repo(?:sitory)?)\b"
+    r"|MANUAL-DOWNLOADS"
+    r"|swarm-routing/papers\b"
+    r"|\b(?:AntHocNet|papers)/library\b",
     re.I,
 )
 TEXT_EXT = {".md", ".markdown", ".cff", ".txt", ".rst", ".bib", ".yml", ".yaml", ".toml"}
@@ -524,6 +535,10 @@ class NoRecord(Exception):
     pass
 
 
+def _service(url):
+    return "DataCite" if url.startswith(DATACITE) else "Crossref"
+
+
 def _urlopen(url):
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
@@ -532,23 +547,29 @@ def _urlopen(url):
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
-        raise Failure(f"Crossref answered HTTP {e.code}") from None
+        raise Failure(f"{_service(url)} answered HTTP {e.code}") from None
     except (urllib.error.URLError, OSError, UnicodeDecodeError) as e:
-        raise Failure(f"Crossref unreachable: {getattr(e, 'reason', type(e).__name__)}") from None
+        why = getattr(e, "reason", type(e).__name__)
+        raise Failure(f"{_service(url)} unreachable: {why}") from None
 
 
-def crossref(url):
-    """Crossref's JSON message at url; None for a 404. One retry on any other failure."""
+def _fetch(url):
+    """The response text at url; None for a 404. One retry on any other failure."""
     fetch = FETCH or _urlopen
     for attempt in (1, 2):
         try:
-            text = fetch(url)
-            break
+            return fetch(url)
         except Failure:
             if attempt == 2:
                 raise
             if FETCH is None:
                 time.sleep(2)
+    return None
+
+
+def crossref(url):
+    """Crossref's JSON message at url; None for a 404. One retry on any other failure."""
+    text = _fetch(url)
     if text is None:
         return None
     try:
@@ -558,6 +579,20 @@ def crossref(url):
     if not isinstance(msg, dict):
         raise Failure("Crossref sent a response that is not a works record")
     return msg
+
+
+def datacite(doi):
+    """DataCite's attributes of doi; None for a 404. One retry on any other failure."""
+    text = _fetch(f"{DATACITE}/{urllib.parse.quote(doi, safe='/')}")
+    if text is None:
+        return None
+    try:
+        attrs = json.loads(text)["data"]["attributes"]
+    except (ValueError, KeyError, TypeError):
+        raise Failure("DataCite sent a response that is not a DOI record") from None
+    if not isinstance(attrs, dict):
+        raise Failure("DataCite sent a response that is not a DOI record")
+    return attrs
 
 
 def _clean(value, field):
@@ -627,6 +662,78 @@ def crossref_entry(msg, key, role):
     return {"key": key, "type": kind, "fields": f}
 
 
+# DataCite's resourceTypeGeneral -> entry type; a thesis is read from its resourceType
+# and descriptions (master first, then doctoral or PhD), else @misc; a Text or Report
+# whose resourceType names such a degree is that thesis; anything else is @misc
+DATACITE_TYPES = {
+    "Text": "techreport",
+    "Report": "techreport",
+    "Dissertation": "thesis",
+    "Thesis": "thesis",
+    "Dataset": "misc",
+    "Software": "software",
+    "JournalArticle": "article",
+    "ConferencePaper": "inproceedings",
+    "Book": "book",
+    "BookChapter": "incollection",
+}
+
+
+def datacite_entry(attrs, key, role):
+    """A references.bib entry from a DataCite DOI record; fields DataCite lacks stay out."""
+    types = attrs.get("types") or {}
+    kind = DATACITE_TYPES.get(types.get("resourceTypeGeneral", ""), "misc")
+
+    def degree(text):
+        if re.search(r"\bmaster|\bm\.?sc\b", text):
+            return "mastersthesis"
+        if re.search(r"\b(?:phd|doctoral|doctorate)\b|\bph\.\s?d\.", text):
+            return "phdthesis"
+        return None
+
+    if kind == "thesis":
+        about = " ".join(
+            [str(types.get("resourceType") or "")]
+            + [str(d.get("description", "")) for d in attrs.get("descriptions") or []]
+        ).lower()
+        kind = degree(about) or "misc"
+    elif kind == "techreport":
+        kind = degree(str(types.get("resourceType") or "").lower()) or kind
+    f = {}
+    names = []
+    for c in attrs.get("creators") or []:
+        if not isinstance(c, dict):
+            raise TypeError("a creator is not an object")
+        fam, giv = c.get("familyName"), c.get("givenName", "")
+        if fam and c.get("nameType") != "Organizational":
+            giv = _clean(giv, "author")
+            names.append(_clean(fam, "author") + (f", {giv}" if giv else ""))
+        elif c.get("name") and c.get("nameType") == "Personal":
+            names.append(_clean(c["name"], "author"))  # "Family, Given" as DataCite writes it
+        elif c.get("name"):
+            names.append("{" + _clean(c["name"], "author") + "}")
+    if names:
+        f["author"] = " and ".join(names)
+    titles = [t for t in attrs.get("titles") or [] if isinstance(t, dict) and t.get("title")]
+    main = next((t["title"] for t in titles if not t.get("titleType")), "")
+    sub = next((t["title"] for t in titles if t.get("titleType") == "Subtitle"), "")
+    if main:
+        f["title"] = _clean(main + (f": {sub}" if sub else ""), "title")
+    pub = attrs.get("publisher")
+    pub = pub.get("name") if isinstance(pub, dict) else pub
+    if pub:
+        dst = {"techreport": "institution", "phdthesis": "school", "mastersthesis": "school"}
+        dst = dst.get(kind, "publisher")
+        f[dst] = _clean(pub, dst)
+    if attrs.get("version") and kind == "software":
+        f["version"] = _clean(attrs["version"], "version")
+    if attrs.get("publicationYear"):
+        f["year"] = str(attrs["publicationYear"])
+    f["doi"] = _clean(attrs.get("doi", ""), "doi")
+    f["keywords"] = role
+    return {"key": key, "type": kind, "fields": f}
+
+
 def bib_entry(doi, key, role):
     """(exit code, text): the entry, or the reason there is none."""
     doi = bib.norm_doi(doi)
@@ -641,15 +748,31 @@ def bib_entry(doi, key, role):
         msg = crossref(f"{CROSSREF}/{urllib.parse.quote(doi, safe='/')}")
     except Failure as e:
         return 2, f"bib entry: {e}"
-    if msg is None:
-        why = f"bib entry: Crossref has no record of {doi}"
-        if doi.startswith("10.5281/"):
-            why += " (a Zenodo DOI is DataCite's: for an org release use zenodo.py bibtex)"
-        return 1, why + "; nothing written (an entry is never guessed)"
+    if msg is None and doi.startswith("10.5281/"):
+        return 1, (
+            f"bib entry: Crossref has no record of {doi} (a Zenodo DOI is DataCite's: for an "
+            "org release use zenodo.py bibtex); nothing written (an entry is never guessed)"
+        )
+    if msg is not None:
+        try:
+            entry = crossref_entry(msg, key, role)
+        except (AttributeError, TypeError, KeyError, IndexError):
+            return 2, f"bib entry: Crossref's record of {doi} is not in the works shape"
+        return 0, bib.format_entry(entry).rstrip("\n")
+    # not Crossref's: a DataCite DOI (a university repository's report or thesis, a dataset)
     try:
-        entry = crossref_entry(msg, key, role)
+        attrs = datacite(doi)
+    except Failure as e:
+        return 2, f"bib entry: Crossref has no record of {doi}, and {e}"
+    if attrs is None:
+        return 1, (
+            f"bib entry: neither Crossref nor DataCite has a record of {doi}; "
+            "nothing written (an entry is never guessed)"
+        )
+    try:
+        entry = datacite_entry(attrs, key, role)
     except (AttributeError, TypeError, KeyError, IndexError):
-        return 2, f"bib entry: Crossref's record of {doi} is not in the works shape"
+        return 2, f"bib entry: DataCite's record of {doi} is not in the DOI record shape"
     return 0, bib.format_entry(entry).rstrip("\n")
 
 
@@ -847,7 +970,11 @@ def bib_check(repo, online=False):
                     warns.append(f"{where}: no usable Crossref answer: {x}")
                     found = None
                 if found:
-                    warns.append(f"{where}: Crossref has DOI {found} for this title: give it doi")
+                    warns.append(
+                        f"{where}: Crossref has DOI {found} for a work with this title; it may be "
+                        "a different work (a later chapter or article with the same title): "
+                        "check its type and year before adopting it as this entry's doi"
+                    )
 
     # rendered references: a DOI shown through any host but doi.org
     rendered = [
@@ -928,6 +1055,51 @@ RECORDED_G02 = {
         "issued": {"date-parts": [[2002]]},
         "published-print": {"date-parts": [[2002]]},
     },
+}
+
+
+# a recorded DataCite DOI record (api.datacite.org/dois/10.17877/de290r-14312,
+# trimmed to the attributes read): a TU Dortmund report Crossref does not hold
+RECORDED_PG460 = {
+    "data": {
+        "id": "10.17877/de290r-14312",
+        "type": "dois",
+        "attributes": {
+            "doi": "10.17877/de290r-14312",
+            "creators": [
+                {
+                    "name": "Farooq, Muddassar",
+                    "nameType": "Personal",
+                    "givenName": "Muddassar",
+                    "familyName": "Farooq",
+                },
+                {
+                    "name": "Wedde, Horst F.",
+                    "nameType": "Personal",
+                    "givenName": "Horst F.",
+                    "familyName": "Wedde",
+                },
+            ],
+            "titles": [
+                {"title": "BeeAdHoc"},
+                {
+                    "title": "an efficient, secure and scalable routing framework for mobile "
+                    "adhoc networks",
+                    "titleType": "AlternativeTitle",
+                },
+            ],
+            "publisher": "Technische Universit\u00e4t Dortmund",
+            "publicationYear": 2006,
+            "types": {
+                "ris": "RPRT",
+                "bibtex": "article",
+                "resourceType": "study thesis",
+                "resourceTypeGeneral": "Text",
+            },
+            "descriptions": [],
+            "version": None,
+        },
+    }
 }
 
 
@@ -1112,6 +1284,34 @@ def bib_self_test():
         )
         os.remove(os.path.join(d, "docs/notes.md"))
         os.remove(os.path.join(d, "src/b.py"))
+        # the wider forms (#307: missed on AntHocNet and ARA), and their near misses
+        hits = [
+            "Kept in the private `papers` repo.",
+            "Filed in the `papers` library.",
+            "See the papers-repo checklist.",
+            "Ask for it in the papers repo.",
+            "It is in the papers repository too.",
+            "Extract it from AntHocNet/library/ari05.pdf first.",
+            "Under papers/library/ there is a copy.",
+            "Filed in the private papers\nrepo, wrapped.",
+        ]
+        misses = [
+            "The papers we cite are listed below.",
+            "A library of primitives, and the ns-3 library.",
+            "Digests live in docs/publications/, not elsewhere.",
+            "Never name the private paper repository.",
+            "Paper repositories such as arXiv host preprints.",
+            "src/library/x.cc is a library file.",
+            "Two papers, repo choice: both.",
+        ]
+        write("docs/forms.md", "\n".join(hits + misses) + "\n")
+        f, _ = run()
+        got = [int(x.split(":")[1]) for x in f if x.startswith("docs/forms.md:")]
+        expect(
+            "check: each wider private-library form, and no near miss",
+            got == list(range(1, len(hits) + 1)),
+        )
+        os.remove(os.path.join(d, "docs/forms.md"))
 
         # a protocol: the sheet's keys, the Sources table between its markers
         write(
@@ -1262,6 +1462,10 @@ def bib_self_test():
                 )
             if url.lower().endswith("/10.1109/icppw.2002.1039715"):
                 return json.dumps(RECORDED_G02)
+            if url.lower() == f"{DATACITE}/10.17877/de290r-14312":
+                return json.dumps(RECORDED_PG460)
+            if url == f"{DATACITE}/10.1000/dcnot":
+                return json.dumps({"data": "not an object"})
             if "odd" in url:
                 return json.dumps({"message": "not an object"})
             if "badauthor" in url:
@@ -1280,6 +1484,10 @@ def bib_self_test():
             expect(
                 "online: a DOI found is a warning, not a finding",
                 f == [] and any("Crossref has DOI 10.1007/978-3-540-30217-9_47" in x for x in w),
+            )
+            expect(
+                "online: the warning says the match may be another work",
+                any("may be a different work" in x and "type and year" in x for x in w),
             )
             calls.clear()
             code, out = bib_entry(
@@ -1321,7 +1529,39 @@ def bib_self_test():
             )
             calls.clear()
             code, out = bib_entry("10.1000/flaky", "F", "background")
-            expect("entry: one retry", code == 1 and len(calls) == 2)
+            expect(
+                "entry: one retry, then DataCite",
+                code == 1 and len(calls) == 3 and calls[2].startswith(DATACITE),
+            )
+            expect(
+                "entry: in neither registry is exit 1",
+                "neither Crossref nor DataCite" in out and "never guessed" in out,
+            )
+            calls.clear()
+            code, out = bib_entry("https://doi.org/10.17877/DE290R-14312", "pg460", "compared")
+            want = (
+                "@techreport{pg460,\n"
+                "  author      = {Farooq, Muddassar and Wedde, Horst F.},\n"
+                "  title       = {BeeAdHoc},\n"
+                "  institution = {Technische Universit\u00e4t Dortmund},\n"
+                "  year        = {2006},\n"
+                "  doi         = {10.17877/de290r-14312},\n"
+                "  keywords    = {compared}\n"
+                "}"
+            )
+            expect("entry: a DataCite record, after Crossref's 404", code == 0 and out == want)
+            expect(
+                "entry: Crossref first, then DataCite",
+                [c.split("/")[2] for c in calls] == ["api.crossref.org", "api.datacite.org"],
+            )
+            calls.clear()
+            code, out = bib_entry("10.5281/zenodo.1", "Z", "tool")
+            expect("entry: a Zenodo DOI never goes to DataCite", len(calls) == 1)
+            code, out = bib_entry("10.1000/dcnot", "D", "background")
+            expect(
+                "entry: a DataCite answer that is not a record is exit 2",
+                code == 2 and "DataCite sent" in out,
+            )
         finally:
             FETCH = None
 
@@ -1375,6 +1615,69 @@ def bib_self_test():
     )
     expect("map: a PhD thesis", mapped(type="dissertation")["type"] == "phdthesis")
     expect("map: an unknown type is @misc", mapped(type="peer-review")["type"] == "misc")
+
+    def dc(general, **attrs):
+        return datacite_entry({"types": {"resourceTypeGeneral": general}, **attrs}, "K", "dataset")
+
+    org = dc(
+        "Dataset",
+        creators=[
+            {"name": "LENS Team", "nameType": "Organizational"},
+            {"name": "Doe, Jane", "nameType": "Personal"},
+            {"name": "Some Lab"},
+        ],
+        titles=[{"title": "Traces"}, {"title": "one & two", "titleType": "Subtitle"}],
+        publisher={"name": "Zenodo"},
+    )
+    expect(
+        "datacite: a dataset is @misc; organisations braced; subtitle; publisher object",
+        org["type"] == "misc"
+        and org["fields"]["author"] == "{LENS Team} and Doe, Jane and {Some Lab}"
+        and org["fields"]["title"] == "Traces: one \\& two"
+        and org["fields"]["publisher"] == "Zenodo",
+    )
+    sw = dc("Software", version="1.2", publisher="Zenodo")
+    expect(
+        "datacite: software keeps its version",
+        sw["type"] == "software" and sw["fields"]["version"] == "1.2",
+    )
+    expect("datacite: a report", dc("Report", publisher="X")["fields"]["institution"] == "X")
+    phd = dc("Dissertation", descriptions=[{"description": "A doctoral thesis."}], publisher="U")
+    expect(
+        "datacite: a doctoral thesis",
+        phd["type"] == "phdthesis" and phd["fields"]["school"] == "U",
+    )
+    ms = datacite_entry(
+        {"types": {"resourceTypeGeneral": "Dissertation", "resourceType": "Master's thesis"}},
+        "K",
+        "compared",
+    )
+    expect("datacite: a master's thesis", ms["type"] == "mastersthesis")
+    msd = datacite_entry(
+        {"types": {"resourceTypeGeneral": "Dissertation", "resourceType": "Master's dissertation"}},
+        "K",
+        "compared",
+    )
+    expect("datacite: master's evidence wins over 'dissertation'", msd["type"] == "mastersthesis")
+    phd2 = datacite_entry(
+        {"types": {"resourceTypeGeneral": "Dissertation", "resourceType": "Ph.D. thesis"}},
+        "K",
+        "compared",
+    )
+    expect("datacite: a Ph.D. thesis", phd2["type"] == "phdthesis")
+    txt = datacite_entry(
+        {"types": {"resourceTypeGeneral": "Text", "resourceType": "Master's thesis"}},
+        "K",
+        "compared",
+    )
+    expect("datacite: a Text that is a master's thesis", txt["type"] == "mastersthesis")
+    expect(
+        "datacite: a Text of no stated degree is a report",
+        dc("Text", types={"resourceTypeGeneral": "Text", "resourceType": "study thesis"})["type"]
+        == "techreport",
+    )
+    expect("datacite: a thesis of no stated degree is @misc", dc("Dissertation")["type"] == "misc")
+    expect("datacite: an unknown type is @misc", dc("Image")["type"] == "misc")
     return failures
 
 
