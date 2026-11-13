@@ -877,6 +877,24 @@ actor), so the bump goes through a PR and the tag follows the merge
    the integration's pull, or, with `zenodo: true`, the `zenodo` job's push).
    A re-run resumes: a tag already on this commit is kept and the release
    completed; a tag on another commit fails the run.
+6. **Confirm the site saw it.** The publish job's last step sends the
+   `org-release` `repository_dispatch` to `swarm-routing/swarm-routing.github.io`
+   (#388; AntHocNet's own `release.yml` sends it too,
+   swarm-routing/AntHocNet#1011). The site's `release-sync.yml` then refreshes
+   its hub data (the `bot/hub-data` PR), moves the repository's
+   `protocols.lock` pin if it has one (the `bot/lock` PR) and opens one
+   `[release-sync] <repo> <tag>` issue there (only for a public repository
+   the site lists). Whoever cut the release checks that the issue opened and
+   that the `release-sync.yml` run that opened it is green: the ticket step
+   runs even when the hub-data or lock step failed, so an issue alone does
+   not prove the site is current. If no issue appears within an hour, or the
+   run failed, dispatch the site's `release-sync.yml` by hand with
+   `repository` (`owner/repo`) and `tag` (every step is idempotent, so a
+   second run only completes what is missing); the weekly Monday run is only
+   the backstop. AntHocNet v2.7.0 (2026-11-13), cut
+   just before its dispatch landed, reached the site only that way
+   (swarm-routing/swarm-routing.github.io#134,
+   swarm-routing/swarm-routing.github.io#135).
 
 Mode `dry-run` bumps on the runner only, then builds, signs and verifies, and
 stops: nothing is pushed, proposed, tagged or published, and its artifact
