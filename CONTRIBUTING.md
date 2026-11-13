@@ -853,7 +853,12 @@ actor), so the bump goes through a PR and the tag follows the merge
    workflow, which releases only when the commit is the merge of a PR whose
    head is `<owner>/<repo>:bot/release` (`GET /repos/{repo}/commits/{sha}/pulls`)
    and its version is the one the PR's title names; any other push to `main`
-   is a no-op.
+   is a no-op. Before merging, read the bump PR's `CHANGELOG.md` diff: a
+   version whose section would be empty (a milestone bump with no `feat`/`fix`,
+   or a previous tag Commitizen cannot see) gets a hand-written paragraph or
+   the regenerated entries in a commit on the bump PR first, since the
+   release notes are that section (ns3-tools v1.0.0 shipped one empty,
+   swarm-routing/ns3-tools#185).
 3. **Build.** The caller's `build` command (default `make dist`) writes the
    assets of the merged commit into `dist/`, with `RELEASE_VERSION` and
    `RELEASE_TAG` set. It may test what it built; a failure stops the release.
