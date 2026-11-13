@@ -968,6 +968,17 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
   pins a version tag or a digest, never `latest` (benchmarks rule 11). A
   campaign image is kept while any `swarm-routing/benchmarks` manifest names
   it.
+- **Development images** live in a `<repo>-dev` package (a repository's
+  campaign images: `anthocnet-dev`, `ns3-tools-dev`; epic #370) and are
+  deleted after 2 days by a job of the owning repository's main pipeline
+  that calls `reusable-dev-image-cleanup.yml` (`packages: <repo>-dev`, the
+  job granted `packages: write`). A pinned image is never deleted:
+  `tools/images/retention.py` keeps every version whose digest or tag a
+  committed file names, on the default branch of any public org repository
+  or the head of an open `swarm-routing/benchmarks` PR, as well as the
+  package's newest image, its untagged versions and the signatures of the
+  images it keeps (#371). Commit a campaign's plan, with its image digest,
+  before dispatching it.
 
 ## Quality gates
 
