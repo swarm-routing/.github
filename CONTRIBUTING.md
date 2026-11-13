@@ -1086,7 +1086,7 @@ checked out next to it (as `../.github`):
   the repository gives evidence for, each justified by its full https URL on
   `main`. Commit it in a PR; on the site, "Save (and continue)" with the robot
   proposes those answers. The crypto criteria are N/A unless the code calls a
-  crypto library (`hashlib`, `hmac` and `secrets` count) or
+  crypto library (`ssl`, `hmac` and `secrets` count; `hashlib` for a checksum does not) or
   `.github/org-sync.toml` sets `bestpractices_crypto = true`; `test_most`,
   `tests_are_added` and `static_analysis_fixed` are left to the maintainer
   too (coverage measured is not coverage of most code; a written test policy
