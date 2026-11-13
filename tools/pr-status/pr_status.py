@@ -524,6 +524,23 @@ def cmd_threads(args, gh):
     return 0
 
 
+QUEUE_EVENTS = ("added_to_merge_queue", "removed_from_merge_queue")
+
+
+def in_merge_queue(gh, repo, base, n):
+    """True while the PR is in the merge queue: its group branch exists, or its
+    timeline's last queue event is added_to_merge_queue (a PR waiting for a
+    group has no branch yet; REST reports its auto_merge as null)."""
+    if gh.get(f"repos/{repo}/git/matching-refs/heads/gh-readonly-queue/{base}/pr-{n}-"):
+        return True
+    events = [
+        e.get("event")
+        for e in gh.paged(f"repos/{repo}/issues/{n}/timeline")
+        if e.get("event") in QUEUE_EVENTS
+    ]
+    return bool(events) and events[-1] == "added_to_merge_queue"
+
+
 def merged_poll(gh, repo, n, cache):
     """None while a PR is on its way to merging, else (result, head, detail) (#341)."""
     pr = gh.get(f"repos/{repo}/pulls/{n}")
@@ -546,12 +563,11 @@ def merged_poll(gh, repo, n, cache):
     failed = [c for c in head_checks(gh, repo, head, required)["failed"] if c in required]
     if failed:
         return "stopped", head, f"required check failed: {', '.join(failed)}"
-    # a queued PR reads auto_merge null; its merge group's branch,
-    # gh-readonly-queue/<base>/pr-<n>-<sha>, shows it is still in the queue.
-    # The branch, not queue_runs(): it exists from the moment the group forms,
-    # before any merge_group run does (`queued` reads the runs, #347).
-    queued = gh.get(f"repos/{repo}/git/matching-refs/heads/gh-readonly-queue/{base}/pr-{n}-")
-    if not pr.get("auto_merge") and not queued:
+    # A queued PR reads auto_merge null. Its merge group's branch,
+    # gh-readonly-queue/<base>/pr-<n>-<sha>, exists once its group forms; a PR
+    # waiting behind full groups has none yet, so the timeline's last queue
+    # event decides (added_to_merge_queue: still in it).
+    if not pr.get("auto_merge") and not in_merge_queue(gh, repo, base, n):
         # The queue deletes its branch as it merges: a PR read just before the
         # merge has no branch any more. Read it again before calling it off.
         again = gh.get(f"repos/{repo}/pulls/{n}") or {}
@@ -2415,7 +2431,14 @@ def self_test():
 
     # wait --merged (#341): merged, closed, a thread, a red required check, auto-merge off, timeout
     def landed(
-        pr_seq, runs=(OK_RUN,), threads_=(), timeout=100, missing=False, extra=(), in_queue=False
+        pr_seq,
+        runs=(OK_RUN,),
+        threads_=(),
+        timeout=100,
+        missing=False,
+        extra=(),
+        in_queue=False,
+        timeline=(),
     ):
         sha = "c" * 40
         prs = iter(pr_seq)
@@ -2450,6 +2473,7 @@ def self_test():
         data["repos/swarm-routing/beta/git/matching-refs/heads/gh-readonly-queue/main/pr-9-"] = (
             lambda: [{"ref": "refs/heads/gh-readonly-queue/main/pr-9-abc"}] if in_queue else []
         )
+        data["repos/swarm-routing/beta/issues/9/timeline?per_page=100&page=1"] = list(timeline)
         data["repos/swarm-routing/beta/pulls/10"] = {
             "head": {"sha": sha},
             "state": "open",
@@ -2508,6 +2532,17 @@ def self_test():
     check(
         "wait --merged: in the merge queue (auto_merge reads null there) it keeps waiting",
         rc == 0 and out.endswith("merged\n"),
+    )
+    waiting = [{"event": "auto_merge_enabled"}, {"event": "added_to_merge_queue"}]
+    rc, out = landed([{}, {}, {}, {"merged": True}], timeline=waiting)
+    check(
+        "wait --merged: queued behind full groups (no branch yet, auto_merge null) keeps waiting",
+        rc == 0 and out.endswith("merged\n"),
+    )
+    rc, out = landed([{}], timeline=waiting + [{"event": "removed_from_merge_queue"}])
+    check(
+        "…removed from the queue since, it stops",
+        rc == 1 and "auto-merge off" in out,
     )
     rc, out = landed([{}, {"merged": True, "head": {"sha": "d" * 40}}])
     check(
