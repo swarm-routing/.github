@@ -389,7 +389,11 @@ PRs too passes `full-check-on-pr: true`.
 edit in each repository** (#236). Text between `org-sync:begin/end` markers
 (the AGENTS.md org sections, the README badges, the CodeRabbit head and
 tail, …) and the other managed (non-seed) items come from
-`templates/`. To change them across the org, open one PR here that edits the
+`templates/`. One per-repository value reaches a managed section: the
+CodeRabbit head's `path_filters` list is the org's entries followed by the
+repository's `coderabbit_path_filters` (a list of globs in
+`.github/org-sync.toml`, e.g. `["!results/**"]` for generated data), since
+the list sits inside the head and a hand-added entry would be drift. To change them across the org, open one PR here that edits the
 template; after it merges, org-bot opens each adopting repository's
 `bot/org-sync` refresh PR (`org_sync.py apply`), which is the only PR that
 brings the change in. Do not open a hand-edited PR per repository alongside
