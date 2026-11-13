@@ -552,6 +552,11 @@ def merged_poll(gh, repo, n, cache):
     # before any merge_group run does (`queued` reads the runs, #347).
     queued = gh.get(f"repos/{repo}/git/matching-refs/heads/gh-readonly-queue/{base}/pr-{n}-")
     if not pr.get("auto_merge") and not queued:
+        # The queue deletes its branch as it merges: a PR read just before the
+        # merge has no branch any more. Read it again before calling it off.
+        again = gh.get(f"repos/{repo}/pulls/{n}") or {}
+        if again.get("merged") or again.get("merged_at"):
+            return "merged", (again.get("head") or {}).get("sha") or head, ""
         return "stopped", head, "auto-merge off (never enabled, or dropped from the merge queue)"
     return None
 
@@ -2503,6 +2508,12 @@ def self_test():
     check(
         "wait --merged: in the merge queue (auto_merge reads null there) it keeps waiting",
         rc == 0 and out.endswith("merged\n"),
+    )
+    rc, out = landed([{}, {"merged": True, "head": {"sha": "d" * 40}}])
+    check(
+        "wait --merged: merged between the PR read and the queue read is merged, not stopped, "
+        "with the head that merged",
+        rc == 0 and out == "beta#9 ddddddd merged\n",
     )
     rc, out = landed([queued], missing=True)
     check("wait --merged: a missing PR fails", rc == "failure")
