@@ -33,6 +33,14 @@ keeps that mapping honest; the reading of the paper is still the author's.
                                       DataCite's (a report, thesis, dataset); exit 1 when
                                       neither has one (never guessed; a Zenodo DOI: use
                                       zenodo.py bibtex)
+  fidelity.py bib entry --url URL --key K --role R
+                                      a work with no DOI (a thesis, a report), from its
+                                      repository's record: the landing page's citation_*
+                                      tags and, for a handle, its OAI-PMH record (ETD-MS:
+                                      degree and grantor; else Dublin Core); the entry has
+                                      the url (the handle's) and no doi. Exit 1 when the
+                                      page names a DOI (use bib entry DOI) or the record
+                                      lacks a title, author or year (never guessed)
   fidelity.py bib sources REPO        rewrite docs/fidelity.md's Sources table, between
                                       <!-- fidelity:sources:begin --> and
                                       <!-- fidelity:sources:end -->, from the bib
@@ -67,6 +75,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bib  # noqa: E402  (the sibling module; -I leaves the script's directory off sys.path)
@@ -537,7 +547,11 @@ class NoRecord(Exception):
 
 
 def _service(url):
-    return "DataCite" if url.startswith(DATACITE) else "Crossref"
+    if url.startswith(DATACITE):
+        return "DataCite"
+    if url.startswith(CROSSREF):
+        return "Crossref"
+    return urllib.parse.urlsplit(url).netloc or url  # a repository's record (bib entry --url)
 
 
 def _urlopen(url):
@@ -680,18 +694,20 @@ DATACITE_TYPES = {
 }
 
 
+def _degree(text):
+    """The thesis type a lower-case degree text names (master first), else None."""
+    if re.search(r"\bmaster|\bm\.?sc\b", text):
+        return "mastersthesis"
+    if re.search(r"\b(?:phd|doctoral|doctorate)\b|\bph\.\s?d\.", text):
+        return "phdthesis"
+    return None
+
+
 def datacite_entry(attrs, key, role):
     """A references.bib entry from a DataCite DOI record; fields DataCite lacks stay out."""
     types = attrs.get("types") or {}
     kind = DATACITE_TYPES.get(types.get("resourceTypeGeneral", ""), "misc")
-
-    def degree(text):
-        if re.search(r"\bmaster|\bm\.?sc\b", text):
-            return "mastersthesis"
-        if re.search(r"\b(?:phd|doctoral|doctorate)\b|\bph\.\s?d\.", text):
-            return "phdthesis"
-        return None
-
+    degree = _degree
     if kind == "thesis":
         about = " ".join(
             [str(types.get("resourceType") or "")]
@@ -775,6 +791,238 @@ def bib_entry(doi, key, role):
     except (AttributeError, TypeError, KeyError, IndexError):
         return 2, f"bib entry: DataCite's record of {doi} is not in the DOI record shape"
     return 0, bib.format_entry(entry).rstrip("\n")
+
+
+# A work with no DOI (#342): its fields come from its repository's own record,
+# never from memory. The landing page's Highwire `citation_*` tags (as DSpace,
+# EPrints and most journal sites serve them) and, for a handle, the
+# repository's OAI-PMH record (ETD-MS first: it names the degree and its
+# grantor; then Dublin Core). A page that names a DOI is refused: that work
+# takes `bib entry DOI` (Crossref, else DataCite).
+PAGE_MAX = 4 * 1024 * 1024  # a landing page is read up to this many bytes
+DOI_META = {
+    "citation_doi",
+    "dc.identifier",
+    "dc.identifier.doi",
+    "prism.doi",
+    "bepress_citation_doi",
+}
+HANDLE = re.compile(r"(?:hdl\.handle\.net|/handle)/(\d+(?:\.\d+)*/[A-Za-z0-9._-]+)")
+OAI_PATHS = ("/server/oai/request", "/oai/request")  # DSpace 7 and later, then DSpace 6
+OAI_PREFIXES = ("oai_etdms", "etdms", "oai_dc")  # ETD-MS names the degree and grantor
+
+
+class _Meta(HTMLParser):
+    """Every <meta name|property=... content=...> of a page: {lower-case name: [content]}."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags = {}
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "meta":
+            return
+        a = {k.lower(): v for k, v in attrs if v is not None}
+        name = (a.get("name") or a.get("property") or "").strip().lower()
+        if name and "content" in a:
+            self.tags.setdefault(name, []).append(a["content"].strip())
+
+
+def _page(url):
+    """(final url, text) of a landing page after redirects; None for a 404. One retry."""
+    for attempt in (1, 2):
+        try:
+            if FETCH is not None:
+                got = FETCH(url)
+                return got if got is None or isinstance(got, tuple) else (url, got)
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return r.geturl(), r.read(PAGE_MAX).decode("utf-8", "replace")
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return None
+                raise Failure(f"{_service(url)} answered HTTP {e.code}") from None
+            except (urllib.error.URLError, OSError) as e:
+                why = getattr(e, "reason", type(e).__name__)
+                raise Failure(f"{_service(url)} unreachable: {why}") from None
+        except Failure:
+            if attempt == 2:
+                raise
+            if FETCH is None:
+                time.sleep(2)
+    return None
+
+
+def _local(tag):
+    return tag.rsplit("}", 1)[-1].lower()
+
+
+def oai_record(text):
+    """{element local name: [text]} of an OAI-PMH GetRecord's metadata; None for an
+    OAI error (no such format or identifier) or a response that is not OAI-PMH."""
+    if not text or "<!ENTITY" in text:
+        return None
+    try:
+        root = ET.fromstring(text.encode("utf-8"))
+    except ET.ParseError:
+        return None
+    if _local(root.tag) != "oai-pmh":
+        return None
+    meta = next((el for el in root.iter() if _local(el.tag) == "metadata"), None)
+    if meta is None or not len(meta):
+        return None
+    out = {}
+    for el in meta[0].iter():
+        name = _local(el.tag)
+        if name == "degree":
+            continue
+        value = re.sub(r"\s+", " ", el.text or "").strip()
+        if value and el is not meta[0]:
+            out.setdefault(name, []).append(value)
+    return out
+
+
+def _oai(host, handle, tried):
+    """The first OAI-PMH record of handle at host's DSpace endpoint, else None."""
+    for path in OAI_PATHS:
+        for prefix in OAI_PREFIXES:
+            q = urllib.parse.urlencode(
+                {
+                    "verb": "GetRecord",
+                    "metadataPrefix": prefix,
+                    "identifier": f"oai:{host}:{handle}",
+                }
+            )
+            url = f"https://{host}{path}?{q}"
+            tried.append(url)
+            text = _fetch(url)
+            if text is None:
+                break  # no endpoint at this path
+            rec = oai_record(text)
+            if rec is not None:
+                return prefix, rec
+    return None
+
+
+def _year(values):
+    years = [m.group(0) for v in values for m in [re.search(r"\b(1[89]|20)\d\d\b", v)] if m]
+    return min(years) if years else ""
+
+
+def record_entry(url, key, role):
+    """(exit code, text): an entry for a work with no DOI, from its repository's record."""
+    if not re.match(r"https?://[^/\s]+/\S*$", url or ""):
+        return 1, f"bib entry: {url!r} is not an http(s) URL"
+    if not SHEET_KEY.fullmatch(key):
+        return (
+            2,
+            f"bib entry: {key!r} is not a key a sheet can cite (a letter, then letters, digits, _ or -)",
+        )
+    try:
+        page = _page(url)
+    except Failure as e:
+        return 2, f"bib entry: {e}"
+    if page is None:
+        return 1, f"bib entry: {url} is not found (HTTP 404); nothing written"
+    final, text = page
+    parser = _Meta()
+    try:
+        parser.feed(text)
+    except Exception:  # noqa: BLE001  (a page HTMLParser cannot read: no tags, as below)
+        parser.tags = {}
+    tags = parser.tags
+    for name in DOI_META:
+        for v in tags.get(name, []):
+            m = DOI_IN.search(v)
+            if m:
+                doi = m.group(0).rstrip(".,;")
+                return 1, (
+                    f"bib entry: the record at {url} names the DOI {doi}: run "
+                    f"`fidelity.py bib entry {doi} --key {key} --role {role}` (Crossref, else DataCite)"
+                )
+    handle = None
+    for cand in (
+        [url, final] + tags.get("citation_abstract_html_url", []) + tags.get("dc.identifier", [])
+    ):
+        m = HANDLE.search(cand)
+        if m:
+            handle = m.group(1)
+            break
+    tried, rec, prefix = [], {}, None
+    if handle:
+        host = urllib.parse.urlsplit(final).netloc
+        if host == "hdl.handle.net":  # the redirect was not followed: the record names its host
+            host = next(
+                (
+                    urllib.parse.urlsplit(v).netloc
+                    for v in tags.get("citation_pdf_url", [])
+                    if urllib.parse.urlsplit(v).netloc
+                ),
+                "",
+            )
+        if host:
+            try:
+                got = _oai(host, handle, tried)
+            except Failure as e:
+                return 2, f"bib entry: {e}"
+            if got:
+                prefix, rec = got
+
+    def first(*values):
+        return next((v for vs in values for v in vs if v), "")
+
+    title = first(rec.get("title", []), tags.get("citation_title", []), tags.get("dc.title", []))
+    authors = rec.get("creator") or tags.get("citation_author") or tags.get("dc.creator") or []
+    year = _year(tags.get("citation_publication_date", []) + tags.get("citation_date", []))
+    year = year or _year(rec.get("date", []))
+    missing = [n for n, v in (("title", title), ("author", authors), ("year", year)) if not v]
+    if missing:
+        if prefix:
+            looked = f"its OAI-PMH {prefix} record"
+        elif handle:
+            looked = "an OAI-PMH record of its handle (" + ", ".join(OAI_PREFIXES) + ": none)"
+        else:
+            looked = "no handle, so no OAI-PMH record"
+        return 1, (
+            f"bib entry: no record of {', '.join(missing)} at {url} (looked for: a DOI in the "
+            f"page's meta tags, its citation_* tags, {looked}); nothing written (an entry is "
+            "never guessed: give the work's repository landing page)"
+        )
+    about = " ".join(
+        rec.get("type", [])
+        + rec.get("level", [])
+        + rec.get("name", [])
+        + tags.get("citation_dissertation_name", [])
+        + tags.get("dc.type", [])
+    ).lower()
+    kind = _degree(about)
+    if kind is None:
+        if tags.get("citation_technical_report_institution") or re.search(r"\breport\b", about):
+            kind = "techreport"
+        else:
+            kind = "misc"  # a thesis of no stated degree, as datacite_entry does
+    publisher = first(
+        rec.get("publisher", []), tags.get("citation_publisher", []), tags.get("dc.publisher", [])
+    )
+    f = {"author": " and ".join(_clean(a, "author") for a in authors)}
+    f["title"] = _clean(re.sub(r"\s+:", ":", title), "title")
+    if kind in ("phdthesis", "mastersthesis"):
+        school = first(
+            rec.get("grantor", []), tags.get("citation_dissertation_institution", []), [publisher]
+        )
+        if school:
+            f["school"] = _clean(school, "school")
+    elif kind == "techreport":
+        inst = first(tags.get("citation_technical_report_institution", []), [publisher])
+        if inst:
+            f["institution"] = _clean(inst, "institution")
+    elif publisher:
+        f["publisher"] = _clean(publisher, "publisher")
+    f["year"] = year
+    f["url"] = f"https://hdl.handle.net/{handle}" if handle else url
+    f["keywords"] = role
+    return 0, bib.format_entry({"key": key, "type": kind, "fields": f}).rstrip("\n")
 
 
 def sources_table(entries):
@@ -1218,6 +1466,202 @@ RECORDED_PG460 = {
         },
     }
 }
+
+
+# bib entry --url (#342), recorded 2026-11-13 and trimmed to what is read: the
+# University of Manitoba MSpace (DSpace 7.6) landing page of Wang's 2008 M.Sc.
+# thesis (hdl.handle.net/1993/20935 redirects there) and its OAI-PMH ETD-MS
+# record; Cornell eCommons' landing page of Roth's 2005 dissertation, its
+# answer to oai_etdms (no such format) and its etdms record (no degree, no grantor)
+MSPACE = "https://mspace.lib.umanitoba.ca"
+RECORDED_MSPACE_PAGE = (
+    '<html><head><meta name="Generator" content="DSpace 7.6.5">\n'
+    '<meta name="citation_title" content="HOPNET : a Hybrid ant colony OPtimization routing '
+    'algorithm for mobile ad hoc NETwork">\n'
+    '<meta name="citation_author" content="Wang, Jianping">\n'
+    '<meta name="citation_publication_date" content="2008">\n'
+    '<meta name="citation_language" content="eng">\n'
+    '<meta name="citation_abstract_html_url" content="http://hdl.handle.net/1993/20935">\n'
+    '<meta name="citation_pdf_url" content="https://mspace.lib.umanitoba.ca/bitstreams/'
+    '943ffbd5-d17b-42c1-b090-f1d4d20a4f2e/download"></head><body></body></html>'
+)
+RECORDED_MSPACE_ETDMS = (
+    '<?xml version="1.0" encoding="UTF-8"?><OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">'
+    "<GetRecord><record><header><identifier>oai:mspace.lib.umanitoba.ca:1993/20935</identifier>"
+    "</header><metadata>"
+    '<thesis xmlns="http://www.ndltd.org/standards/metadata/etdms/1-0/">'
+    "<title>HOPNET : a Hybrid ant colony OPtimization routing algorithm for mobile ad hoc NETwork"
+    "</title><creator>Wang, Jianping</creator><date>2013-05-17</date><date>2013-05-17</date>"
+    "<date>2008</date><type>master thesis</type>"
+    "<identifier>http://hdl.handle.net/1993/20935</identifier><language>eng</language>"
+    "<publisher>University of Manitoba</publisher><degree><level>Master of Science (M.Sc.)</level>"
+    "<name>M.Sc.</name><discipline>Computer Science</discipline>"
+    "<grantor>University of Manitoba</grantor></degree></thesis>"
+    "</metadata></record></GetRecord></OAI-PMH>"
+)
+RECORDED_ECOMMONS_PAGE = (
+    '<html><head><meta name="citation_title" content="Termite: A Swarm Intelligent Routing '
+    'Algorithm For Mobile Wireless Ad-Hoc Networks">\n'
+    '<meta name="citation_author" content="Roth, Martin">\n'
+    '<meta name="citation_publication_date" content="2005-01-04T18:22:41Z">\n'
+    '<meta name="citation_abstract_html_url" content="https://hdl.handle.net/1813/240">\n'
+    '<meta name="citation_pdf_url" property="citation_pdf_url" content="https://ecommons.cornell.edu'
+    '/bitstreams/70d41c3b-8156-40e3-bf3e-38a35d1f1e7a/download"></head></html>'
+)
+RECORDED_ECOMMONS_NOFORMAT = (
+    "<?xml version='1.0' encoding='UTF-8'?><OAI-PMH xmlns=\"http://www.openarchives.org/OAI/2.0/\">"
+    '<request verb="GetRecord" metadataPrefix="oai_etdms">https://ecommons.cornell.edu/server/oai/'
+    'request</request><error code="cannotDisseminateFormat">Unknown metadata format</error></OAI-PMH>'
+)
+RECORDED_ECOMMONS_ETDMS = (
+    "<?xml version='1.0' encoding='UTF-8'?><OAI-PMH xmlns=\"http://www.openarchives.org/OAI/2.0/\">"
+    "<GetRecord><record><header><identifier>oai:ecommons.cornell.edu:1813/240</identifier></header>"
+    '<metadata><thesis xmlns="http://www.ndltd.org/standards/metadata/etdms/1.0/">'
+    "<title>Termite: A Swarm Intelligent Routing Algorithm For Mobile Wireless Ad-Hoc Networks</title>"
+    "<creator>Roth, Martin</creator><subject>Swarm Intelligence</subject><date>2005-01-04</date>"
+    "<type>dissertation or thesis</type><identifier>https://hdl.handle.net/1813/240</identifier>"
+    "<identifier>6475981</identifier></thesis></metadata></record></GetRecord></OAI-PMH>"
+)
+
+
+def record_self_test():
+    """`bib entry --url` on the recorded records; no network."""
+    global FETCH
+    failures, calls = [], []
+
+    def expect(name, cond):
+        if not cond:
+            failures.append(f"bib entry --url: {name}")
+
+    pages = {
+        "https://hdl.handle.net/1993/20935": (
+            f"{MSPACE}/items/3ea8e3c7-9db2-4e98-9d4e-41831989e20c",
+            RECORDED_MSPACE_PAGE,
+        ),
+        "https://hdl.handle.net/1813/240": (
+            "https://ecommons.cornell.edu/entities/publication/4bc1e1de",
+            RECORDED_ECOMMONS_PAGE,
+        ),
+        "https://example.org/plain": "<html><head><title>a page</title></head></html>",
+        "https://example.org/doi": '<html><head><meta name="citation_title" content="T">'
+        '<meta name="citation_doi" content="doi:10.1000/xyz123"></head></html>',
+        "https://example.org/tags": '<html><head><meta name="citation_title" content="A &amp; B">'
+        '<meta name="citation_author" content="Doe, Jane"><meta name="citation_author" content="Roe, R.">'
+        '<meta name="citation_date" content="2011/05/01">'
+        '<meta name="citation_technical_report_institution" content="Some University">'
+        "</head></html>",
+        "https://example.org/notitle": '<html><head><meta name="citation_author" content="Doe, J.">'
+        '<meta name="citation_publication_date" content="2001"></head></html>',
+    }
+
+    def fake(url):
+        calls.append(url)
+        if url in pages:
+            return pages[url]
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        host = urllib.parse.urlsplit(url).netloc
+        prefix = (q.get("metadataPrefix") or [""])[0]
+        if host == "mspace.lib.umanitoba.ca" and prefix == "oai_etdms":
+            return RECORDED_MSPACE_ETDMS
+        if host == "ecommons.cornell.edu" and url.startswith(
+            "https://ecommons.cornell.edu/server/"
+        ):
+            return RECORDED_ECOMMONS_ETDMS if prefix == "etdms" else RECORDED_ECOMMONS_NOFORMAT
+        return None
+
+    FETCH = fake
+    try:
+        code, out = record_entry("https://hdl.handle.net/1993/20935", "W07", "implemented")
+        want = (
+            "@mastersthesis{W07,\n"
+            "  author   = {Wang, Jianping},\n"
+            "  title    = {HOPNET: a Hybrid ant colony OPtimization routing algorithm for mobile ad hoc NETwork},\n"
+            "  school   = {University of Manitoba},\n"
+            "  year     = {2008},\n"
+            "  url      = {https://hdl.handle.net/1993/20935},\n"
+            "  keywords = {implemented}\n"
+            "}"
+        )
+        expect(
+            "a DSpace page + its ETD-MS record: degree, grantor, issued year, handle",
+            code == 0 and out == want,
+        )
+        expect(
+            "the OAI identifier is the handle at the redirect's host",
+            calls[1].startswith(f"{MSPACE}/server/oai/request?")
+            and "identifier=oai%3Amspace.lib.umanitoba.ca%3A1993%2F20935" in calls[1],
+        )
+        expect("what it prints parses", code == 0 and bib.parse(out)[0]["type"] == "mastersthesis")
+        calls.clear()
+        code, out = record_entry("https://hdl.handle.net/1813/240", "R05", "implemented")
+        want = (
+            "@misc{R05,\n"
+            "  author   = {Roth, Martin},\n"
+            "  title    = {Termite: A Swarm Intelligent Routing Algorithm For Mobile Wireless Ad-Hoc Networks},\n"
+            "  year     = {2005},\n"
+            "  url      = {https://hdl.handle.net/1813/240},\n"
+            "  keywords = {implemented}\n"
+            "}"
+        )
+        expect(
+            "a thesis whose record states no degree or grantor is @misc, no school",
+            code == 0 and out == want,
+        )
+        expect(
+            "an OAI error moves to the next format",
+            len(calls) == 3 and "metadataPrefix=etdms" in calls[2],
+        )
+        code, out = record_entry("https://example.org/tags", "D11", "background")
+        want = (
+            "@techreport{D11,\n"
+            "  author      = {Doe, Jane and Roe, R.},\n"
+            "  title       = {A \\& B},\n"
+            "  institution = {Some University},\n"
+            "  year        = {2011},\n"
+            "  url         = {https://example.org/tags},\n"
+            "  keywords    = {background}\n"
+            "}"
+        )
+        expect(
+            "citation_* tags alone, no handle: a report, the given url", code == 0 and out == want
+        )
+        code, out = record_entry("https://example.org/plain", "P1", "background")
+        expect(
+            "a page with neither tags nor a record is refused, naming what it looked for",
+            code == 1 and "citation_* tags" in out and "never guessed" in out and "title" in out,
+        )
+        code, out = record_entry("https://example.org/notitle", "P2", "background")
+        expect("a record without a title is refused", code == 1 and "no record of title at" in out)
+        code, out = record_entry("https://example.org/doi", "P3", "background")
+        expect(
+            "a page that names a DOI is refused: bib entry DOI instead",
+            code == 1 and "bib entry 10.1000/xyz123 --key P3" in out,
+        )
+        code, out = record_entry("https://example.org/gone", "P4", "background")
+        expect("a 404 is exit 1", code == 1 and "404" in out)
+        expect("not a URL", record_entry("hdl:1813/240", "R05", "implemented")[0] == 1)
+        expect(
+            "a key no sheet can cite",
+            record_entry("https://example.org/tags", "a:b", "tool")[0] == 2,
+        )
+
+        def down(url):
+            raise Failure(f"{_service(url)} unreachable: refused")
+
+        FETCH = down
+        code, out = record_entry("https://example.org/tags", "D11", "background")
+        expect(
+            "an unreachable repository is exit 2, named by its host",
+            code == 2 and "example.org unreachable" in out,
+        )
+    finally:
+        FETCH = None
+    expect("an OAI record that is not OAI-PMH is none", oai_record("<html/>") is None)
+    expect(
+        "an entity declaration is never parsed",
+        oai_record('<!DOCTYPE x [<!ENTITY a "b">]><x/>') is None,
+    )
+    return failures
 
 
 def bib_self_test():
@@ -2061,6 +2505,7 @@ def self_test():
     expect("verify fixture is itself a valid sheet", probs == [])
 
     failures.extend(bib_self_test())
+    failures.extend(record_self_test())
 
     for f in failures:
         print(f"FAIL: {f}")
@@ -2090,7 +2535,8 @@ def main(argv=None):
     bc.add_argument("repo")
     bc.add_argument("--online", action="store_true")
     be = bsub.add_parser("entry")
-    be.add_argument("doi")
+    be.add_argument("doi", nargs="?")
+    be.add_argument("--url", help="a work with no DOI: its repository's landing page (#342)")
     be.add_argument("--key", required=True)
     be.add_argument("--role", required=True, choices=bib.ROLES)
     bs = bsub.add_parser("sources")
@@ -2102,7 +2548,13 @@ def main(argv=None):
         return self_test()
     if args.cmd == "bib":
         if args.bibcmd == "entry":
-            code, out = bib_entry(args.doi, args.key, args.role)
+            if (args.doi is None) == (args.url is None):
+                print("bib entry: give one of a DOI or --url URL", file=sys.stderr)
+                return 2
+            if args.url:
+                code, out = record_entry(args.url, args.key, args.role)
+            else:
+                code, out = bib_entry(args.doi, args.key, args.role)
             print(out, file=sys.stdout if code == 0 else sys.stderr)
             return code
         if args.bibcmd == "sources":
