@@ -173,11 +173,15 @@ ADOPT = {
         r"^(<!-- org-sync:begin |## Where to look\n)",
     ),
     ("SECURITY.md", "reporting"): (r"^## Reporting a vulnerability\n", r"^## "),
-    # the header every bib was seeded with before it was managed (#343): from the
-    # file's first comment line to the seed's last line ("% this header alone."),
-    # else to the first line that is not a comment; a repository's own comment
-    # lines after it stay its own, below the end marker
-    ("docs/references.bib", "bib-header"): (r"\A%", r"(?<=% this header alone\.\n)|(?<=\n)(?!%)"),
+    # the header every bib was seeded with before it was managed (#343), and only
+    # that: from its first line ("% docs/references.bib: ...") at the top of the
+    # file to the seed's last line ("% this header alone."); a file without both
+    # is a conflict, never rewritten. A repository's own comment lines after it
+    # stay its own, below the end marker
+    ("docs/references.bib", "bib-header"): (
+        r"\A% docs/references\.bib: ",
+        r"(?<=^% this header alone\.\n)",
+    ),
 }
 # Adopted sections whose old text is the org's, not the repository's: a
 # difference from the template is replaced, not a conflict (#343)
@@ -1109,6 +1113,8 @@ def adopt_span(text, path, name):
     if not m:
         return None
     n = re.search(rule[1], text[m.start() + 1 :], re.M)
+    if not n and (path, name) in ADOPT_REPLACE:
+        return None  # replaced only when recognised whole: never up to the end of the file
     end = m.start() + 1 + n.start() if n else len(text)
     return m.start(), end
 

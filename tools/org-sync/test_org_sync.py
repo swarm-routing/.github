@@ -451,6 +451,18 @@ try:
     )
 finally:
     org_sync.template = real
+for text, what in (
+    ("% Repository-specific citation instructions\n" + entry, "a comment of the repository's own"),
+    (head.replace("% this header alone.\n", "") + entry, "a header without the seed's last line"),
+    (entry, "no header at all"),
+):
+    write(os.path.join(db, "docs/references.bib"), text)
+    rc, out = run("check", db)
+    run("apply", db)
+    check(
+        rc == 1 and "bib-header" in out and read(os.path.join(db, "docs/references.bib")) == text,
+        f"bib-header: {what} is not an old org header: a conflict, the file left as it is",
+    )
 old_head = head.replace("Roles, in", "Roles (an older wording), in")
 for tail, what in ((entry, "entries"), (own + entry, "own lines and entries"), ("", "empty rest")):
     write(os.path.join(db, "docs/references.bib"), old_head + tail)
@@ -508,6 +520,7 @@ BIB = r"""% the header
   keywords = {background},
 }
 """
+BIB = seed + BIB.removeprefix("% the header\n")  # a bib as org-sync seeds it (#343)
 # toml-only: the render above is today's; the bib-only repo below gets the same shape
 bo = fresh()
 run("init", bo, "--kind", "protocol")
