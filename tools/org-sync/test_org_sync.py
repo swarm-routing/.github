@@ -512,6 +512,117 @@ if yaml:
     check(len(yaml.safe_load(cff)["references"]) == 4, "bib only: CITATION.cff parses as YAML")
 check(run("check", bo)[0] == 0, "bib only: check is clean")
 check(fidelity.bib_check(bo)[0] == [], "bib only: fidelity.py bib check agrees with the render")
+
+# citation-refs (#307): only CITATION.cff's references: block, from the bib
+rc, out = run("citation-refs", bo, "--check")
+check(rc == 0 and "up to date" in out, "citation-refs --check: a reseeded CITATION.cff is current")
+LNCS = r"""@incollection{DD04,
+  author    = {Di Caro, Gianni and Ducatelle, Frederick},
+  title     = {AntHocNet},
+  booktitle = {Parallel Problem Solving from Nature - PPSN VIII},
+  series    = {Lecture Notes in Computer Science},
+  pages     = {461--470},
+  year      = {2004},
+  doi       = {10.1007/978-3-540-30217-9_47},
+  keywords  = {implemented},
+}
+@incollection{RH10,
+  author    = {Riley, George F. and Henderson, Thomas R.},
+  title     = {The ns-3 Network Simulator},
+  booktitle = {Modeling and Tools for Network Simulation},
+  year      = {2010},
+  doi       = {10.1007/978-3-642-12331-3_2},
+  keywords  = {tool},
+}
+@incollection{W09,
+  author    = {Wang, J.},
+  title     = {HOPNET},
+  booktitle = {Proceedings of the 2009 Workshop on Ants},
+  year      = {2009},
+  doi       = {10.1000/w09},
+  keywords  = {compared, implemented},
+}
+"""
+cr = tempfile.mkdtemp()  # no .github/org-sync.toml: citation-refs reads none
+os.makedirs(os.path.join(cr, "docs"))
+write(os.path.join(cr, "docs/references.bib"), LNCS)
+rc, out = run("citation-refs", cr)
+check(rc == 0 and "no CITATION.cff" in out, "citation-refs: without CITATION.cff, nothing to do")
+HEAD = '# a hand-written file\ncff-version: 1.2.0\ntitle: "X"\nauthors:\n  - name: "Y"\n'
+TAIL = "# a trailing comment\nkeywords:\n  - ants\n"
+old_refs = 'references:\n  - type: book\n    title: "stale"\n\n'
+write(os.path.join(cr, "CITATION.cff"), HEAD + old_refs + TAIL)
+rc, out = run("citation-refs", cr, "--check")
+check(
+    rc == 1
+    and "drifted" in out
+    and '-    title: "stale"' in out
+    and read(os.path.join(cr, "CITATION.cff")) == HEAD + old_refs + TAIL,
+    "citation-refs --check: stale references are drift, exit 1, nothing written",
+)
+rc, out = run("citation-refs", cr)
+cff2 = read(os.path.join(cr, "CITATION.cff"))
+block = org_sync.cff_references(org_sync.bib_references(cr))
+check(
+    rc == 0 and "rewritten" in out and cff2 == HEAD + block + "\n" + TAIL,
+    "citation-refs: only the references: block changes, every other byte as it was",
+)
+check(run("citation-refs", cr, "--check")[0] == 0, "citation-refs: idempotent")
+check(
+    '  - type: conference-paper\n    title: "AntHocNet"\n' in cff2
+    and '    collection-title: "Parallel Problem Solving from Nature - PPSN VIII"\n'
+    "    collection-type: proceedings\n"
+    in cff2
+    and '  - type: book\n    title: "The ns-3 Network Simulator"\n' in cff2
+    and '  - type: conference-paper\n    title: "HOPNET"\n' in cff2,
+    "#331: an LNCS or proceedings @incollection is a conference-paper; a book chapter stays book",
+)
+if yaml:
+    check(
+        [r["type"] for r in yaml.safe_load(cff2)["references"]]
+        == ["conference-paper", "book", "conference-paper"]
+        and yaml.safe_load(cff2)["keywords"] == ["ants"],
+        "citation-refs: the result parses as YAML, the keys after it intact",
+    )
+inner = 'references:\n  - type: book\n    title: "Old A"\n# between items\n  - type: book\n    title: "Old B"\n\n'
+write(os.path.join(cr, "CITATION.cff"), HEAD + inner + TAIL)
+run("citation-refs", cr)
+check(
+    read(os.path.join(cr, "CITATION.cff")) == HEAD + block + "\n" + TAIL,
+    "citation-refs: a comment between items is inside the block, the one before a key outside",
+)
+for flow in ("references: []\n", 'references: [{type: book, title: "x"}]\n'):
+    write(os.path.join(cr, "CITATION.cff"), HEAD + flow + TAIL)
+    run("citation-refs", cr)
+    check(
+        read(os.path.join(cr, "CITATION.cff")) == HEAD + block + TAIL,
+        f"citation-refs: a one-line flow value is replaced, not duplicated ({flow.strip()})",
+    )
+write(os.path.join(cr, "CITATION.cff"), HEAD)
+run("citation-refs", cr)
+check(
+    read(os.path.join(cr, "CITATION.cff")) == HEAD + block,
+    "citation-refs: a CITATION.cff without references: gets the block at its end",
+)
+write(
+    os.path.join(cr, "docs/references.bib"),
+    "@misc{B1, title = {t}, url = {https://e.org}, keywords = {background}}\n",
+)
+write(os.path.join(cr, "CITATION.cff"), HEAD + old_refs + TAIL)
+run("citation-refs", cr)
+check(
+    read(os.path.join(cr, "CITATION.cff")) == HEAD + "\n" + TAIL,
+    "citation-refs: no implemented, tool or dataset entry removes the block",
+)
+write(os.path.join(cr, "docs/references.bib"), seed)
+write(os.path.join(cr, "CITATION.cff"), HEAD + old_refs + TAIL)
+rc, out = run("citation-refs", cr, "--check")
+check(
+    rc == 0
+    and "no entry" in out
+    and read(os.path.join(cr, "CITATION.cff")) == HEAD + old_refs + TAIL,
+    "citation-refs: with the seed bib (no entry) it leaves CITATION.cff alone",
+)
 # both: the bib wins, [[references]] is reported as redundant (and left in place)
 toml_before = read(os.path.join(dr, ".github/org-sync.toml"))
 readme_before = read(os.path.join(dr, "README.md"))
