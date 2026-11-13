@@ -511,6 +511,7 @@ TEXT_EXT = {".md", ".markdown", ".cff", ".txt", ".rst", ".bib", ".yml", ".yaml",
 CODE_EXT = {".h", ".hpp", ".c", ".cc", ".cpp", ".py", ".sh", ".js", ".mjs", ".ts", ".cmake"}
 CODE_NAMES = {"CMakeLists.txt", "Makefile"}
 COMMENT = re.compile(r"^\s*(#|//|/\*|\*|%|<!--)")
+TRAILING = re.compile(r"(?:^|\s)(?:#|//|/\*)(?=\s|$)")  # a comment after code on the same line
 # test inputs, not references (a lookup tool's fixtures, a skill's eval cases)
 SKIP_PARTS = {"evals", "fixtures", "fixture", "testdata", "node_modules", "build"}
 CROSSREF_TYPES = {
@@ -876,8 +877,9 @@ def _norm_title(t):
     return re.sub(r"[^a-z0-9]+", "", bib.plain(t).lower())
 
 
-def crossref_doi_for(entry):
-    """A DOI Crossref holds for this url-only entry's exact title, or None."""
+def crossref_doi_for(entry, skip=frozenset()):
+    """A DOI Crossref holds for this url-only entry's exact title, or None; a DOI in
+    `skip` (lower-cased: the entry's notdoi) is passed over for the next match."""
     title = bib.plain(entry["fields"].get("title", ""))
     if not title:
         return None
@@ -897,8 +899,119 @@ def crossref_doi_for(entry):
         y = ((item.get("issued") or {}).get("date-parts") or [[None]])[0][0]
         if year.isdigit() and y and abs(int(year) - int(y)) > 1:
             continue
-        return item.get("DOI")
+        doi = item.get("DOI")
+        if isinstance(doi, str) and doi.lower() in skip:
+            continue
+        return doi
     return None
+
+
+def notdois(entry):
+    """The DOIs an entry's `notdoi` field says are not this work (lower-cased): a
+    namesake Crossref finds by title, silenced in `bib check --online` for that DOI only."""
+    raw = bib.plain(entry["fields"].get("notdoi", ""))
+    return {bib.norm_doi(d).lower() for d in re.split(r"[,;\s]+", raw) if d}
+
+
+def _prose_lines(path, body):
+    """The lines of a file that can cite a work: all of a text file, the comments of a
+    code file, whole-line or after code (the rest blanked, line numbers kept)."""
+    ext = os.path.splitext(path)[1].lower()
+    code = ext in CODE_EXT or ext in (".yml", ".yaml") or os.path.basename(path) in CODE_NAMES
+    if not code:
+        return body.split("\n")
+    out = []
+    for ln in body.split("\n"):
+        if COMMENT.match(ln):
+            out.append(ln)
+            continue
+        m = TRAILING.search(ln)
+        out.append(ln[m.start() :] if m else "")
+    return out
+
+
+def _scan_doi(text):
+    """A DOI as prose shows it, without the punctuation, backtick or badge image after it."""
+    return re.sub(r"\.(?:svg|png)$", "", text.rstrip(".,;:`"), flags=re.I).rstrip(".,;:`")
+
+
+def bib_scan(repo):
+    """(exit code, lines): read-only. What the repository cites outside docs/references.bib
+    (DOIs, [KEY]s; prose, and the comments of code and YAML; skills' evals and lookup tools'
+    fixtures skipped), each once with whether
+    the bib holds it, then the bib's entries as key, role, link."""
+    text = _read(repo, BIB)
+    entries, out = [], []
+    if text is None:
+        out.append(f"{BIB}: missing")
+    else:
+        try:
+            entries = bib.parse(text)
+        except bib.BibError as e:
+            return 1, [f"{BIB}:{e.line}: {e.message}", "fidelity bib scan: the bib does not parse"]
+    keys = {e["key"]: e for e in entries}
+    held = {}
+    for e in entries:
+        for field in ("doi", "url"):
+            for m in DOI_IN.finditer(bib.norm_doi(e["fields"].get(field))):
+                held.setdefault(m.group(0).rstrip(".,;").lower(), e["key"])
+    mine = own_doi(_read(repo, "CITATION.cff"))
+    seen = {}  # (kind, value) -> [first place, count]
+    for path in public_files(repo):
+        if path.endswith(".bib"):
+            continue
+        body = _read(repo, path)
+        if body is None:
+            continue
+        if path == SHEET.replace(os.sep, "/"):
+            span = _between(body)
+            if span:  # the generated Sources table: the bib itself
+                cut = body[span[0] : span[1]]
+                body = body[: span[0]] + "\n" * cut.count("\n") + body[span[1] :]
+        for n, line in enumerate(_prose_lines(path, body), 1):
+            found = [("DOI", _scan_doi(m.group(0))) for m in DOI_IN.finditer(line)]
+            found += [("key", k) for k in sorted(cited_keys(line))]
+            for kind, value in found:
+                slot = seen.setdefault((kind, value.lower() if kind == "DOI" else value), [None, 0])
+                slot[0] = slot[0] or (f"{path}:{n}", value)
+                slot[1] += 1
+    missing = 0
+    out.append(f"cited outside {BIB}:")
+    for (kind, norm), ((where, value), count) in sorted(
+        seen.items(), key=lambda kv: (kv[0][0], kv[0][1].lower())
+    ):
+        if kind == "DOI":
+            if norm in held:
+                status = f"in the bib as [{held[norm]}]"
+            elif norm == mine:
+                status = "the repository's own DOI (CITATION.cff)"
+            else:
+                status, missing = "NOT in the bib", missing + 1
+            label = f"https://doi.org/{value}"
+        else:
+            if value in keys:
+                status = "in the bib"
+            else:
+                status, missing = "NOT in the bib", missing + 1
+            label = f"[{value}]"
+        more = f" (+{count - 1} more)" if count > 1 else ""
+        out.append(f"  {label}: {status}; {where}{more}")
+    if not seen:
+        out.append("  nothing")
+    out.append(f"{BIB}: {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}")
+    nodoi = 0
+    for e in entries:
+        link = bib.doi_link(e) or "no doi, no url"
+        flag = ""
+        if not bib.norm_doi(e["fields"].get("doi")):
+            nodoi += 1
+            flag = "  (no doi)"
+        out.append(f"  {e['key']}  {', '.join(bib.roles(e)) or '(no role)'}  {link}{flag}")
+    out.append(
+        f"fidelity bib scan: {len(seen)} cited outside the bib, {missing} not in it; "
+        f"{len(entries)} bib entries, {nodoi} without doi"
+    )
+    return 0, out
 
 
 def bib_check(repo, online=False):
@@ -944,6 +1057,9 @@ def bib_check(repo, online=False):
             findings.append(f"{where}: neither doi nor url")
         if doi and not re.fullmatch(r"10\.\d{4,9}/\S+", doi):
             findings.append(f"{where}: doi {doi} is not a DOI (10.NNNN/...)")
+        for nd in sorted(notdois(e)):
+            if not re.fullmatch(r"10\.\d{4,9}/\S+", nd):
+                findings.append(f"{where}: notdoi {nd} is not a DOI (10.NNNN/...)")
         rs = bib.roles(e)
         bad = [r for r in rs if r not in bib.ROLES]
         if bad:
@@ -965,7 +1081,7 @@ def bib_check(repo, online=False):
                 )
             elif online:
                 try:
-                    found = crossref_doi_for(e)
+                    found = crossref_doi_for(e, notdois(e))
                 except (Failure, AttributeError, TypeError, IndexError) as x:
                     warns.append(f"{where}: no usable Crossref answer: {x}")
                     found = None
@@ -973,7 +1089,8 @@ def bib_check(repo, online=False):
                     warns.append(
                         f"{where}: Crossref has DOI {found} for a work with this title; it may be "
                         "a different work (a later chapter or article with the same title): "
-                        "check its type and year before adopting it as this entry's doi"
+                        "check its type and year before adopting it as this entry's doi, "
+                        f"or, when it is another work, give the entry notdoi = {{{found}}}"
                     )
 
     # rendered references: a DOI shown through any host but doi.org
@@ -1456,6 +1573,11 @@ def bib_self_test():
                                     "title": ["HOPNET"],
                                     "issued": {"date-parts": [[2007]]},
                                 },
+                                {
+                                    "DOI": "10.1007/978-3-540-30217-9_99",
+                                    "title": ["HOPNET"],
+                                    "issued": {"date-parts": [[2008]]},
+                                },
                             ]
                         }
                     }
@@ -1489,6 +1611,39 @@ def bib_self_test():
                 "online: the warning says the match may be another work",
                 any("may be a different work" in x and "type and year" in x for x in w),
             )
+            plain_bib = _read(d, BIB)
+            with_not = plain_bib.replace(
+                "keywords = {compared}",
+                "keywords = {compared},\n  notdoi = {10.1007/978-3-540-30217-9_47}",
+            )
+            expect("online: the fixture takes a notdoi", with_not != plain_bib)
+            write(BIB, with_not)
+            f, w = run(online=True)
+            expect(
+                "online: notdoi silences the title match for that DOI, the next match warns",
+                f == []
+                and not any("Crossref has DOI 10.1007/978-3-540-30217-9_47" in x for x in w)
+                and any("Crossref has DOI 10.1007/978-3-540-30217-9_99" in x for x in w),
+            )
+            write(BIB, with_not.replace("30217-9_47}", "30217-9_47, 10.1007/978-3-540-30217-9_99}"))
+            f, w = run(online=True)
+            expect(
+                "online: notdoi listing every title match silences the warning",
+                f == [] and not any("Crossref has DOI" in x for x in w),
+            )
+            write(BIB, with_not.replace("30217-9_47}", "30217-9_48}"))
+            f, w = run(online=True)
+            expect(
+                "online: a notdoi naming another DOI leaves the warning",
+                any("Crossref has DOI 10.1007/978-3-540-30217-9_47" in x for x in w),
+            )
+            write(BIB, with_not.replace("10.1007/978-3-540-30217-9_47}", "nope}"))
+            f, _ = run()
+            expect(
+                "check: a notdoi that is not a DOI", any("notdoi nope is not a DOI" in x for x in f)
+            )
+            write(BIB, plain_bib)
+            calls.clear()
             calls.clear()
             code, out = bib_entry(
                 "https://doi.org/10.1109/ICPPW.2002.1039715", "G02", "implemented"
@@ -1564,6 +1719,77 @@ def bib_self_test():
             )
         finally:
             FETCH = None
+
+    # bib scan: read-only, what is cited outside the bib, then the bib
+    with tempfile.TemporaryDirectory() as d:
+        for rel, text in {
+            BIB: "% h\n@misc{G02, title = {t}, doi = {10.1109/icppw.2002.1039715}, keywords = {implemented}}\n"
+            "@misc{R05, title = {u}, url = {https://hdl.handle.net/1813/240}, keywords = {restates}}\n",
+            "CITATION.cff": 'doi: "10.5281/zenodo.7"\n',
+            "README.md": "[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7.svg)]"
+            "(https://doi.org/10.5281/zenodo.7)\nARA [G02], see https://doi.org/10.1109/ICPPW.2002.1039715.\n"
+            "Also `https://doi.org/10.1000/xyz1` and [Q99].\n",
+            "docs/notes.md": "[G02] §3 again; [Q99] again.\n",
+            "src/a.cc": "// follows [R05] §4\nint v = arr[x1];\nint w = 0; // and [G02] §2\n",
+            "plan.yaml": "cells: [run1]\n# from [G02]\nseeds: [s20] # per [G02]\n",
+            "skills/s/evals/evals.json": '{"doi": "10.1000/evalonly", "k": "[E01]"}\n',
+            "tools/t/fixtures/rec.json": '{"doi": "10.1000/fixtureonly"}\n',
+        }.items():
+            path = os.path.join(d, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        before = {rel: _read(d, rel) for rel in (BIB, "README.md", "CITATION.cff", "docs/notes.md")}
+        code, out = bib_scan(d)
+        text = "\n".join(out)
+        expect("scan: exit 0", code == 0)
+        expect("scan: read-only", all(_read(d, r) == t for r, t in before.items()))
+        expect(
+            "scan: a DOI the bib holds, any case, counted once with its first place",
+            "https://doi.org/10.1109/ICPPW.2002.1039715: in the bib as [G02]; README.md:2" in text,
+        )
+        expect(
+            "scan: a DOI the bib lacks, backticks off",
+            "https://doi.org/10.1000/xyz1: NOT in the bib; README.md:3" in text,
+        )
+        expect(
+            "scan: the badge image and the own DOI",
+            "https://doi.org/10.5281/zenodo.7: the repository's own DOI (CITATION.cff); "
+            "CITATION.cff:1 (+2 more)"
+            in text
+            and ".svg" not in text,
+        )
+        expect("scan: a key the bib lacks", "[Q99]: NOT in the bib; README.md:3 (+1 more)" in text)
+        expect("scan: a key in a code comment", "[R05]: in the bib; src/a.cc:1" in text)
+        expect(
+            "scan: code and YAML values are not citations, a comment after them is",
+            "[x1]" not in text
+            and "[run1]" not in text
+            and "[s20]" not in text
+            and "[G02]: in the bib; README.md:2 (+4 more)" in text,  # notes.md, a.cc, the YAML
+        )
+        expect(
+            "scan: evals and fixtures skipped",
+            "evalonly" not in text and "fixtureonly" not in text and "[E01]" not in text,
+        )
+        expect(
+            "scan: the bib as key, role, link",
+            "  G02  implemented  https://doi.org/10.1109/icppw.2002.1039715" in out
+            and "  R05  restates  https://hdl.handle.net/1813/240  (no doi)" in out,
+        )
+        expect(
+            "scan: the summary",
+            out[-1] == "fidelity bib scan: 6 cited outside the bib, 2 not in it; "
+            "2 bib entries, 1 without doi",
+        )
+        expect("main: bib scan exit 0", main(["bib", "scan", d]) == 0)
+        with open(os.path.join(d, BIB), "a", encoding="utf-8") as fh:
+            fh.write("@misc{G02, title = {again}}\n")
+        code, out = bib_scan(d)
+        expect("scan: a bib that does not parse is exit 1", code == 1 and "duplicate" in out[0])
+        os.remove(os.path.join(d, BIB))
+        code, out = bib_scan(d)
+        expect("scan: no bib still scans", code == 0 and out[0] == f"{BIB}: missing")
 
     # Crossref types and fields
     def mapped(**msg):
@@ -1858,7 +2084,7 @@ def main(argv=None):
     v = sub.add_parser("verify")
     v.add_argument("file")
     v.add_argument("--text", action="append", required=True, metavar="KEY=PATH")
-    b = sub.add_parser("bib", help="docs/references.bib: check, entry, sources")
+    b = sub.add_parser("bib", help="docs/references.bib: check, entry, sources, scan")
     bsub = b.add_subparsers(dest="bibcmd", required=True)
     bc = bsub.add_parser("check")
     bc.add_argument("repo")
@@ -1869,6 +2095,8 @@ def main(argv=None):
     be.add_argument("--role", required=True, choices=bib.ROLES)
     bs = bsub.add_parser("sources")
     bs.add_argument("repo")
+    bn = bsub.add_parser("scan", help="read-only: citations outside the bib, the bib's entries")
+    bn.add_argument("repo")
     args = p.parse_args(argv)
     if args.self_test:
         return self_test()
@@ -1882,8 +2110,12 @@ def main(argv=None):
             print(out, file=sys.stdout if code == 0 else sys.stderr)
             return code
         if not os.path.isdir(args.repo):
-            print(f"bib check: {args.repo} is not a directory", file=sys.stderr)
+            print(f"bib {args.bibcmd}: {args.repo} is not a directory", file=sys.stderr)
             return 2
+        if args.bibcmd == "scan":
+            code, out = bib_scan(args.repo)
+            print("\n".join(out))
+            return code
         findings, warns = bib_check(args.repo, args.online)
         for f in findings:
             print(f)

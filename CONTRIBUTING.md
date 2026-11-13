@@ -717,7 +717,8 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   Zenodo DOI is never looked up through `bib entry`). `bib check --online`
   suggests a DOI for a url-only entry by its title; that match may be another
   work with the same title (a later chapter or article), so check its type and
-  year before adopting it.
+  year before adopting it. When it is another work, the entry says so with
+  `notdoi = {DOI}`, which silences that warning for that DOI only.
 - **One key per work across the org.** A key is the fidelity sheets' style,
   the authors' initials and the year (`G02`, `DDG04`); an org release keeps a
   short name. A work that more than one repository cites, and every released
