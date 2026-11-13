@@ -45,13 +45,13 @@ name: Reusable ns-3 image
 # produces a published number pins the version tag or the digest, never
 # `latest` (benchmarks rule 11).
 #
-# Names (epic #370): a release image is `<repo>` (the default of `image`,
-# #371); a campaign image goes to the caller's development package
-# `<repo>-dev`. Retention: release images are kept; a `<repo>-dev` version is
-# deleted after 2 days by reusable-dev-image-cleanup.yml, called from the
-# owning repository's main pipeline, unless a committed file pins its digest
-# or tag (a swarm-routing/benchmarks manifest, a campaign plan; benchmarks
-# rule 11).
+# Names (epic #370): a caller passes `image`, `<repo>` for a release image and
+# `<repo>-dev` for a campaign image. The input's default stays `<repo>-ns3`
+# for compatibility (golden rule 10: a default keeps its meaning; #371).
+# Retention: release images are kept; a `<repo>-dev` version is deleted after
+# 2 days by reusable-dev-image-cleanup.yml, called from the owning
+# repository's main pipeline, unless a committed file pins its digest or tag
+# (a swarm-routing/benchmarks manifest, a campaign plan; benchmarks rule 11).
 #
 # Labels: the inherited org.opencontainers.image.* are overridden (source =
 # the caller repo, revision = its commit, version = the full tag, title,
@@ -80,6 +80,7 @@ name: Reusable ns-3 image
 #       with:
 #         modules: ara=ns3
 #         dependencies: swarm-core=swarm-routing/ns3-swarm-core@v0.3.0
+#         image: ara                             # the repository's name (epic #370)
 #         tag: ${{ github.ref_name }}            # -> ara:v1.2.0-{optimized,debug}, latest-*, latest
 #
 # Campaign caller (one image per (commit, base digest); cells pull it by digest):
@@ -160,7 +161,7 @@ on:
         type: string
         default: '["optimized", "debug"]'
       image:
-        description: "Package name under ghcr.io/<owner>/; default `<repo>`, lowercase, a leading `.`, `_` or `-` dropped (`<repo>-ns3` before #371; a campaign passes `<repo>-dev`)"
+        description: "Package name under ghcr.io/<owner>/; default `<repo>-ns3` (lowercase), kept for compatibility (golden rule 10). Org callers pass it: `<repo>` for a release image, `<repo>-dev` for a campaign image (epic #370)"
         type: string
         default: ''
       tag:
@@ -246,9 +247,9 @@ jobs:
           PY
           )
           [ -n "$ns3" ] || { echo "::error::${BASE_REPO}@${digest} sets no NS3_VERSION: not an ns3-dev image?"; exit 1; }
-          image=${IMAGE_IN:-${GITHUB_REPOSITORY#*/}}
+          image=${IMAGE_IN:-${GITHUB_REPOSITORY#*/}-ns3}
           image=${image,,}
-          image=${image##[._-]}   # swarm-routing/.github -> github
+          image=${image##[._-]}   # swarm-routing/.github -> github-ns3
           [[ "$image" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || { echo "::error::invalid image name '$image'"; exit 1; }
           tag="${TAG_IN//\{base7\}/${digest:7:7}}-${PROFILE}"
           [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::invalid tag '$tag'"; exit 1; }

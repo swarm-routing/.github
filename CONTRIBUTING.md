@@ -968,9 +968,9 @@ build provenance and a CycloneDX SBOM. The workflow's header has the caller
 examples and the verify commands (`cosign verify`, `gh attestation verify`).
 
 - **Releases** publish `ghcr.io/swarm-routing/<repo>:<version>-<profile>`,
-  `optimized` and `debug` by default: the package is named after the
-  repository, the default of the `image` input (`<repo>-ns3` before #371;
-  epic #370; every caller also passes it explicitly). Each release also moves the rolling `latest-<profile>`,
+  `optimized` and `debug` by default: a caller names the package after its
+  repository with `image: <repo>` (epic #370; the input's default stays
+  `<repo>-ns3`, as golden rule 10 keeps a default's meaning, #371). Each release also moves the rolling `latest-<profile>`,
   and `latest` (its optimized image), to its digests, so a project can
   follow the newest release without a hash; a re-run of an older release
   never moves them back, and a pre-release never moves them (#373). If that
