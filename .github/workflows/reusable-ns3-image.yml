@@ -539,26 +539,39 @@ jobs:
           moved=()
           for t in "${targets[@]}"; do
             # The release a rolling tag holds now: its version label (the full
-            # tag, e.g. v1.3.0-optimized). Absent: the first release moves it.
-            held=$(docker buildx imagetools inspect "${REPO}:${t}" --format '{{json .Image}}' 2>/dev/null \
-              | python3 -c 'import json,sys
+            # tag, e.g. v1.3.0-optimized). Fail closed: only a tag the registry
+            # reports missing is new (the first release moves it); any other
+            # error, or a tag whose version cannot be read, stops the step.
+            if out=$(docker buildx imagetools inspect "${REPO}:${t}" --format '{{json .Image}}' 2>&1); then
+              if ! held=$(python3 -c 'import json, re, sys
           img = json.load(sys.stdin)
           if "config" not in img:
               img = img.get("linux/amd64") or next(iter(img.values()))
-          print((img["config"].get("Labels") or {}).get("org.opencontainers.image.version", ""))' 2>/dev/null) || held=""
-            if [ -n "$held" ] && ! python3 - "$TAG_IN" "$held" <<'PY'
+          v = (img["config"].get("Labels") or {}).get("org.opencontainers.image.version", "")
+          if not re.match(r"v?\d+\.\d+\.\d+", v):
+              sys.exit(1)
+          print(v)' <<<"$out"); then
+                echo "::error::${REPO}:${t} exists but its release cannot be read (org.opencontainers.image.version); not moving it"
+                exit 1
+              fi
+              if ! python3 - "$TAG_IN" "$held" <<'PY'
           import re, sys
           def ver(s):
-              m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", s)
-              return tuple(map(int, m.groups())) if m else None
-          new, cur = ver(sys.argv[1]), ver(sys.argv[2])
-          sys.exit(0 if cur is None or new >= cur else 1)
+              return tuple(map(int, re.match(r"v?(\d+)\.(\d+)\.(\d+)", s).groups()))
+          sys.exit(0 if ver(sys.argv[1]) >= ver(sys.argv[2]) else 1)
           PY
-            then
-              echo "::notice::${REPO}:${t} holds ${held}, newer than ${TAG_IN}: not moved back"
-              continue
+              then
+                echo "::notice::${REPO}:${t} holds ${held}, newer than ${TAG_IN}: not moved back"
+                continue
+              fi
+            elif ! grep -qiE 'not found|manifest unknown|name unknown' <<<"$out"; then
+              echo "$out" >&2
+              echo "::error::cannot tell which release ${REPO}:${t} holds; not moving it"
+              exit 1
             fi
-            docker buildx imagetools create -t "${REPO}:${t}" "${REPO}@${DIGEST}"
+            # A carbon copy: --prefer-index=false keeps a single-platform
+            # manifest as it is (the default would wrap it in a new index).
+            docker buildx imagetools create --prefer-index=false -t "${REPO}:${t}" "${REPO}@${DIGEST}"
             got=$(docker buildx imagetools inspect "${REPO}:${t}" --format '{{json .Manifest}}' \
               | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
             [ "$got" = "$DIGEST" ] || { echo "::error::${REPO}:${t} is ${got}, pushed ${DIGEST}"; exit 1; }
