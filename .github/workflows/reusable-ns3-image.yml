@@ -35,7 +35,13 @@ name: Reusable ns-3 image
 # optimized one `latest`, copied from the pushed digest once its signature
 # verifies, so a project can follow the newest release without a hash. They
 # never move back: a tag held by a newer release stays where it is. A
-# campaign tag, a pre-release or `latest: false` moves none. Anything that
+# campaign tag, a pre-release or `latest: false` moves none. If that step
+# fails after the push, the version tag already exists, so re-running the
+# job cannot repair it: run swarm-routing/.github's
+#   python3 tools/images/rolling_tags.py move --repo ghcr.io/<owner>/<image> \
+#     --tag v1.2.0 --profile optimized --verify-signature
+# with a token that may write the package; it reads the version tag's digest,
+# checks its signature and moves only the rolling tags. Anything that
 # produces a published number pins the version tag or the digest, never
 # `latest` (benchmarks rule 11).
 #
@@ -520,6 +526,19 @@ jobs:
             --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
             "$REF" > /dev/null
           echo "signature verified for \`$REF\`"
+      - name: Check out the org's rolling-tag script
+        if: steps.push.outcome == 'success' && inputs.latest
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          path: .org
+          sparse-checkout: tools/images
+          persist-credentials: false
+      # tools/images/rolling_tags.py (its docstring has the rules; #373): only a
+      # release version moves latest-<profile> (and latest, for optimized),
+      # never back to an older release, failing closed on a registry error.
+      # A failed run is repaired without a rebuild by the same command with no
+      # --digest (it reads the version tag's) and --verify-signature.
       - name: Rolling tags (latest-<profile>, latest)
         id: latest
         if: steps.push.outcome == 'success' && inputs.latest
@@ -528,59 +547,8 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
           TAG_IN: ${{ inputs.tag }}
         run: |
-          set -euo pipefail
-          # Only a release version moves them; a campaign tag (<commit7>-{base7})
-          # or a pre-release (v1.2.0-rc1) never does.
-          if ! [[ "$TAG_IN" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "no rolling tags: '${TAG_IN}' is not a release version"; exit 0
-          fi
-          targets=("latest-${PROFILE}")
-          [ "$PROFILE" = optimized ] && targets+=("latest")
-          moved=()
-          for t in "${targets[@]}"; do
-            # The release a rolling tag holds now: its version label (the full
-            # tag, e.g. v1.3.0-optimized). Fail closed: only a tag the registry
-            # reports missing is new (the first release moves it); any other
-            # error, or a tag whose version cannot be read, stops the step.
-            if out=$(docker buildx imagetools inspect "${REPO}:${t}" --format '{{json .Image}}' 2>&1); then
-              if ! held=$(python3 -c 'import json, re, sys
-          img = json.load(sys.stdin)
-          if "config" not in img:
-              img = img.get("linux/amd64") or next(iter(img.values()))
-          v = (img["config"].get("Labels") or {}).get("org.opencontainers.image.version", "")
-          if not re.match(r"v?\d+\.\d+\.\d+", v):
-              sys.exit(1)
-          print(v)' <<<"$out"); then
-                echo "::error::${REPO}:${t} exists but its release cannot be read (org.opencontainers.image.version); not moving it"
-                exit 1
-              fi
-              if ! python3 - "$TAG_IN" "$held" <<'PY'
-          import re, sys
-          def ver(s):
-              return tuple(map(int, re.match(r"v?(\d+)\.(\d+)\.(\d+)", s).groups()))
-          sys.exit(0 if ver(sys.argv[1]) >= ver(sys.argv[2]) else 1)
-          PY
-              then
-                echo "::notice::${REPO}:${t} holds ${held}, newer than ${TAG_IN}: not moved back"
-                continue
-              fi
-            elif ! grep -qiE 'not found|manifest unknown|name unknown' <<<"$out"; then
-              echo "$out" >&2
-              echo "::error::cannot tell which release ${REPO}:${t} holds; not moving it"
-              exit 1
-            fi
-            # A carbon copy: --prefer-index=false keeps a single-platform
-            # manifest as it is (the default would wrap it in a new index).
-            docker buildx imagetools create --prefer-index=false -t "${REPO}:${t}" "${REPO}@${DIGEST}"
-            got=$(docker buildx imagetools inspect "${REPO}:${t}" --format '{{json .Manifest}}' \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
-            [ "$got" = "$DIGEST" ] || { echo "::error::${REPO}:${t} is ${got}, pushed ${DIGEST}"; exit 1; }
-            moved+=("$t")
-          done
-          echo "moved=${moved[*]}" >> "$GITHUB_OUTPUT"
-          if [ "${#moved[@]}" -gt 0 ]; then
-            echo "rolling tags \`${moved[*]}\` -> \`${REPO}@${DIGEST}\` (${TAG_IN}-${PROFILE})" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          python3 -I .org/tools/images/rolling_tags.py move --repo "$REPO" --tag "$TAG_IN" \
+            --profile "$PROFILE" --digest "$DIGEST" --summary "$GITHUB_STEP_SUMMARY"
       - name: Summary
         id: result
         if: always() && steps.resolve.outcome == 'success'

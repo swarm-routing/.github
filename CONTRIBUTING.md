@@ -955,7 +955,10 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
   #371; epic #370). Each release also moves the rolling `latest-<profile>`,
   and `latest` (its optimized image), to its digests, so a project can
   follow the newest release without a hash; a re-run of an older release
-  never moves them back, and a pre-release never moves them (#373).
+  never moves them back, and a pre-release never moves them (#373). If that
+  step fails after the push, `tools/images/rolling_tags.py move --repo …
+  --tag vX.Y.Z --profile <p> --verify-signature` repairs it from the version
+  tag's digest, with no rebuild.
 - **Campaigns** build one image per (commit, base digest),
   `<repo>-ns3-campaign:<commit7>-<base7>-<profile>` (the caller passes
   `tag: <commit7>-{base7}`), with `skip-existing: true`, so a second call with
