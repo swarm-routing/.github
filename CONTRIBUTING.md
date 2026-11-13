@@ -982,8 +982,8 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
 
 - **Releases** publish `ghcr.io/swarm-routing/<repo>:<version>-<profile>`,
   `optimized` and `debug` by default: a caller names the package after its
-  repository with `image: <repo>` (the input's default is still `<repo>-ns3`,
-  #371; epic #370). Each release also moves the rolling `latest-<profile>`,
+  repository with `image: <repo>` (epic #370; the input's default stays
+  `<repo>-ns3`, as golden rule 10 keeps a default's meaning, #371). Each release also moves the rolling `latest-<profile>`,
   and `latest` (its optimized image), to its digests, so a project can
   follow the newest release without a hash; a re-run of an older release
   never moves them back, and a pre-release never moves them (#373). If that
@@ -991,8 +991,8 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
   --tag vX.Y.Z --profile <p> --verify-signature` repairs it from the version
   tag's digest, with no rebuild.
 - **Campaigns** build one image per (commit, base digest),
-  `<repo>-ns3-campaign:<commit7>-<base7>-<profile>` (the caller passes
-  `tag: <commit7>-{base7}`), with `skip-existing: true`, so a second call with
+  `<repo>-dev:<commit7>-<base7>-<profile>` (the caller passes `image:
+  <repo>-dev` and `tag: <commit7>-{base7}`), with `skip-existing: true`, so a second call with
   the same pair pushes nothing; every cell pulls it by digest. A campaign on a released version uses the release image.
 - **Version tags never move.** A release tag that exists fails the build;
   only the `latest…` tags move. Anything that produces a published number
