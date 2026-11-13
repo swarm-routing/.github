@@ -30,6 +30,15 @@ name: Reusable ns-3 image
 # one is reused and nothing is built or pushed, so a second call with the same
 # (commit, base digest) pushes nothing new. `{base7}` in `tag` is replaced with
 # the first 7 hex digits of the profile's resolved base digest.
+# Rolling tags (#373, epic #370): a release image (`tag` a version such as
+# v1.2.0 or 1.2.0, no pre-release suffix) also gets `latest-<profile>`, and the
+# optimized one `latest`, copied from the pushed digest once its signature
+# verifies, so a project can follow the newest release without a hash. They
+# never move back: a tag held by a newer release stays where it is. A
+# campaign tag, a pre-release or `latest: false` moves none. Anything that
+# produces a published number pins the version tag or the digest, never
+# `latest` (benchmarks rule 11).
+#
 # Retention: release images are kept; a campaign image is kept while any
 # swarm-routing/benchmarks manifest names it (benchmarks rule 11), and may be
 # deleted only after no manifest does.
@@ -160,6 +169,10 @@ on:
         description: "If <image>:<tag>-<profile> already exists, reuse it and build nothing (campaigns); false = an existing tag fails the leg"
         type: boolean
         default: false
+      latest:
+        description: "For a release version tag (vX.Y.Z or X.Y.Z): also move latest-<profile> (and latest, for optimized) to the pushed digest, never back to an older release. Campaign and pre-release tags never move them"
+        type: boolean
+        default: true
     outputs:
       image:
         description: "The pushed (or reused) image as <image>@sha256:...; with several profiles, one leg's value: read the job summary"
@@ -507,6 +520,54 @@ jobs:
             --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
             "$REF" > /dev/null
           echo "signature verified for \`$REF\`"
+      - name: Rolling tags (latest-<profile>, latest)
+        id: latest
+        if: steps.push.outcome == 'success' && inputs.latest
+        env:
+          REPO: ${{ steps.resolve.outputs.repo }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TAG_IN: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Only a release version moves them; a campaign tag (<commit7>-{base7})
+          # or a pre-release (v1.2.0-rc1) never does.
+          if ! [[ "$TAG_IN" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "no rolling tags: '${TAG_IN}' is not a release version"; exit 0
+          fi
+          targets=("latest-${PROFILE}")
+          [ "$PROFILE" = optimized ] && targets+=("latest")
+          moved=()
+          for t in "${targets[@]}"; do
+            # The release a rolling tag holds now: its version label (the full
+            # tag, e.g. v1.3.0-optimized). Absent: the first release moves it.
+            held=$(docker buildx imagetools inspect "${REPO}:${t}" --format '{{json .Image}}' 2>/dev/null \
+              | python3 -c 'import json,sys
+          img = json.load(sys.stdin)
+          if "config" not in img:
+              img = img.get("linux/amd64") or next(iter(img.values()))
+          print((img["config"].get("Labels") or {}).get("org.opencontainers.image.version", ""))' 2>/dev/null) || held=""
+            if [ -n "$held" ] && ! python3 - "$TAG_IN" "$held" <<'PY'
+          import re, sys
+          def ver(s):
+              m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", s)
+              return tuple(map(int, m.groups())) if m else None
+          new, cur = ver(sys.argv[1]), ver(sys.argv[2])
+          sys.exit(0 if cur is None or new >= cur else 1)
+          PY
+            then
+              echo "::notice::${REPO}:${t} holds ${held}, newer than ${TAG_IN}: not moved back"
+              continue
+            fi
+            docker buildx imagetools create -t "${REPO}:${t}" "${REPO}@${DIGEST}"
+            got=$(docker buildx imagetools inspect "${REPO}:${t}" --format '{{json .Manifest}}' \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+            [ "$got" = "$DIGEST" ] || { echo "::error::${REPO}:${t} is ${got}, pushed ${DIGEST}"; exit 1; }
+            moved+=("$t")
+          done
+          echo "moved=${moved[*]}" >> "$GITHUB_OUTPUT"
+          if [ "${#moved[@]}" -gt 0 ]; then
+            echo "rolling tags \`${moved[*]}\` -> \`${REPO}@${DIGEST}\` (${TAG_IN}-${PROFILE})" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Summary
         id: result
         if: always() && steps.resolve.outcome == 'success'
