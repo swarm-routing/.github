@@ -8,6 +8,7 @@ Usage:
   pr_status.py threads REPO#N [--all] [--json]
   pr_status.py wait REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review [--review-timeout S]] [--json]
   pr_status.py merge REPO#N [REPO#N ...] [--interval S] [--timeout S] [--review-timeout S] [--update] [--dry-run] [--json]
+  pr_status.py queued REPO#N [REPO#N ...] [--json]
   pr_status.py --self-test
   (any command takes --min-rate N, placed before it)
 
@@ -39,7 +40,13 @@ ones, marked). `wait` polls the PRs until no check is pending, then prints
 their `list` lines; it exits 2 if `--timeout` passes first. At the timeout a
 PR missing a required check is reported `ci=fail` only when nothing else is
 pending on its head; while other checks still run it stays `ci=pending`
-(#319). With
+(#319). `wait --merged` instead polls until each PR has merged, or stops
+at the first that needs a hand: closed unmerged, an unresolved review
+thread, a failed required check, auto-merge off (never enabled, or dropped
+from the merge queue). One line per PR (`merged`, `stopped: <reason>`,
+`timeout: ...`; `--json`: one list at the end); exit 0 when all merged, 1 as
+soon as one needs a hand (the rest are not waited for), 2 at the timeout; a
+failed read is retried at the next poll (#341). With
 `--review` it also waits for CodeRabbit's review (below) and adds a line per
 PR, `review: CodeRabbit reviewed` or `warning: no CodeRabbit review yet ...`;
 the warning does not change the exit status. Run it before enabling
@@ -111,13 +118,37 @@ what it would do (`would update`, `would merge`, `would wait: ...`) without
 writing. Exit status: 0 when every PR merged (or was already merged or
 closed), 1 when one stopped, 2 when one timed out.
 
+`queued` says, one line per PR, where it stands in a merge queue. Read-only.
+
+  .github#345 merged 1aed1d1
+  .github#346 queued: gh-readonly-queue/main/pr-346-eff0982 CI=in_progress review=success
+  .github#347 not queued: open, auto-merge squash by alice
+  .github#348 not queued: open, auto-merge none (REST shows none for a queued PR too)
+  .github#349 not queued: queue run failed (gh-readonly-queue/main/pr-349-1aed1d1 CI=failure), open, auto-merge none ...
+
+A PR is `queued` when a `merge_group` workflow run exists on a
+`gh-readonly-queue/<base>/pr-<n>-<sha>` branch and was created at or after its
+current head was pushed (the earliest workflow run on the head, else the head
+commit's committer date): a squash queue commit does not name the PR's head,
+so its time is what ties it to the head, and a push after queueing takes the
+PR out of the queue. The line gives that queue branch and, for each workflow,
+its latest run's status, or its conclusion once completed. When one of those
+ended in failure (failure, cancelled, timed_out, ...), GitHub has taken the PR
+out of the queue: it is `not queued: queue run failed (...)`. A PR taken out
+by hand, with no new push and no failed run, still reads `queued`: the runs
+are all this read-only command sees (membership itself is GraphQL only). Only
+the newest 100 `merge_group` runs of the repository are read. Otherwise the
+PR is `not queued`: its state and the auto-merge GitHub's REST API reports (merge
+method and who enabled it, or `none`; REST reports none for a PR the queue
+holds, so `none` alone never means "not queued"). Exit status 0.
+
 A REPO is a name in the swarm-routing org or `owner/name`. The org-wide API is
 not available to agent sessions, so `--repos` names the repositories (default:
 the org's public ones, DEFAULT_REPOS). Review threads come from
 `pulls/{n}/ccr/review_threads` (resolved, path, line, comment_ids); where that
 endpoint is missing the count prints as `threads=?` (and `merge` leaves the
 check to the ruleset's thread rule). CodeRabbit's reviews come from
-`pulls/{n}/reviews`. `list`, `threads` and `wait` are read-only
+`pulls/{n}/reviews`. `list`, `threads`, `wait`, `gate` and `queued` are read-only
 (GET only); `merge` writes only the two PUTs above. Every call goes through
 `gh api`, which authenticates with GH_TOKEN or the gh CLI's own login
 (`gh auth token`), so no token is in an argument list. Each read checks the
@@ -493,8 +524,113 @@ def cmd_threads(args, gh):
     return 0
 
 
+QUEUE_EVENTS = ("added_to_merge_queue", "removed_from_merge_queue")
+
+
+def in_merge_queue(gh, repo, base, n):
+    """True while the PR is in the merge queue: its group branch exists, or its
+    timeline's last queue event is added_to_merge_queue (a PR waiting for a
+    group has no branch yet; REST reports its auto_merge as null)."""
+    if gh.get(f"repos/{repo}/git/matching-refs/heads/gh-readonly-queue/{base}/pr-{n}-"):
+        return True
+    events = [
+        e.get("event")
+        for e in gh.paged(f"repos/{repo}/issues/{n}/timeline")
+        if e.get("event") in QUEUE_EVENTS
+    ]
+    return bool(events) and events[-1] == "added_to_merge_queue"
+
+
+def merged_poll(gh, repo, n, cache):
+    """None while a PR is on its way to merging, else (result, head, detail) (#341)."""
+    pr = gh.get(f"repos/{repo}/pulls/{n}")
+    if pr is None:
+        raise LookupError(f"pr_status: {short_repo(repo)}#{n} not found")
+    head = pr["head"]["sha"]
+    if pr.get("merged") or pr.get("merged_at"):
+        return "merged", head, ""
+    if pr.get("state") == "closed":
+        return "stopped", head, "closed unmerged"
+    ts = threads(gh, repo, n)
+    if ts:
+        return (
+            "stopped",
+            head,
+            f"{len(ts)} unresolved thread(s), first: {thread_line(ts[0]).strip()}",
+        )
+    base = (pr.get("base") or {}).get("ref") or "main"
+    required = required_checks(gh, repo, base, cache)
+    failed = [c for c in head_checks(gh, repo, head, required)["failed"] if c in required]
+    if failed:
+        return "stopped", head, f"required check failed: {', '.join(failed)}"
+    # A queued PR reads auto_merge null. Its merge group's branch,
+    # gh-readonly-queue/<base>/pr-<n>-<sha>, exists once its group forms; a PR
+    # waiting behind full groups has none yet, so the timeline's last queue
+    # event decides (added_to_merge_queue: still in it).
+    if not pr.get("auto_merge") and not in_merge_queue(gh, repo, base, n):
+        # The queue deletes its branch as it merges: a PR read just before the
+        # merge has no branch any more. Read it again before calling it off.
+        again = gh.get(f"repos/{repo}/pulls/{n}") or {}
+        if again.get("merged") or again.get("merged_at"):
+            return "merged", (again.get("head") or {}).get("sha") or head, ""
+        return "stopped", head, "auto-merge off (never enabled, or dropped from the merge queue)"
+    return None
+
+
+def cmd_wait_merged(args, gh, sleep=time.sleep, clock=time.monotonic):
+    """Poll until every PR merged (0); stop at the first that needs a hand (1);
+    2 at the timeout. --json prints one list of results at the end."""
+    refs = [(full_repo(r), n) for r, n in (parse_ref(x) for x in args.refs)]
+    as_json = getattr(args, "json", False)
+    results, cache, start = {}, {}, clock()
+
+    def report(repo, n, result, head="", detail=""):
+        results[(repo, n)] = {
+            "repo": short_repo(repo),
+            "number": n,
+            "head": head,
+            "result": result,
+            "detail": detail,
+        }
+        if not as_json:
+            sha = f" {head[:7]}" if head else ""
+            tail = "" if result == "merged" else f": {detail}"
+            print(f"{short_repo(repo)}#{n}{sha} {result}{tail}", flush=True)
+
+    def finish(rc):
+        if as_json:
+            print(json.dumps([results[k] for k in refs if k in results], indent=1))
+        return rc
+
+    while True:
+        for repo, n in refs:
+            if (repo, n) in results:
+                continue
+            try:
+                got = merged_poll(gh, repo, n, cache)
+            except LookupError as e:
+                raise Failure(str(e)) from None
+            except Failure as e:  # a 502 or a rate limit: read again next poll
+                print(f"retrying after a failed read: {e}", file=sys.stderr)
+                got = None
+            if got:
+                report(repo, n, *got)
+                if got[0] == "stopped":  # one needs a hand: stop now, the rest are not waited for
+                    return finish(1)
+        if len(results) == len(refs):
+            return finish(0)
+        if clock() - start >= args.timeout:
+            for repo, n in refs:
+                if (repo, n) not in results:
+                    report(repo, n, "timeout", detail=f"not merged after {args.timeout:g}s")
+            return finish(2)
+        sleep(args.interval)
+
+
 def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
     refs = [parse_ref(r) for r in args.refs]
+    if getattr(args, "merged", False):
+        return cmd_wait_merged(args, gh, sleep=sleep, clock=clock)
     review_wait = getattr(args, "review_timeout", 0) if getattr(args, "review", False) else 0
     start, cache = clock(), {}
     while True:
@@ -933,6 +1069,11 @@ def parser():
     )
     w.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     w.add_argument("--json", action="store_true")
+    w.add_argument(
+        "--merged",
+        action="store_true",
+        help="poll until each PR merged, or stop when one needs a hand (#341)",
+    )
     g = sub.add_parser("gate", help="wait for CodeRabbit on one PR (the review-gate check)")
     g.add_argument("ref", metavar="REPO#N")
     g.add_argument("--interval", type=float, default=30)
@@ -954,7 +1095,96 @@ def parser():
     m.add_argument("--review-timeout", type=float, default=1800, help=REVIEW_HELP)
     m.add_argument("--dry-run", action="store_true", help="read once, say what it would do")
     m.add_argument("--json", action="store_true")
+    qd = sub.add_parser("queued", help="merged, in the merge queue, or neither (read-only)")
+    qd.add_argument("refs", nargs="+", metavar="REPO#N")
+    qd.add_argument("--json", action="store_true")
     return p
+
+
+def head_pushed_at(gh, repo, sha):
+    """When the head reached GitHub: its earliest workflow run, else its committer date."""
+    runs = gh.get(f"repos/{repo}/actions/runs?head_sha={sha}&per_page=100") or {}
+    times = [r["created_at"] for r in runs.get("workflow_runs") or [] if r.get("created_at")]
+    if times:
+        return min(times)
+    commit = gh.get(f"repos/{repo}/commits/{sha}") or {}
+    return ((commit.get("commit") or {}).get("committer") or {}).get("date") or ""
+
+
+def queue_runs(gh, repo, base, number, since, cache):
+    """The newest queue branch's runs for the PR created at or after `since`, latest per workflow."""
+    if repo not in cache:
+        got = gh.get(f"repos/{repo}/actions/runs?event=merge_group&per_page=100") or {}
+        cache[repo] = got.get("workflow_runs") or []
+    prefix = f"gh-readonly-queue/{base}/pr-{number}-"
+    runs = [
+        r
+        for r in cache[repo]
+        if (r.get("head_branch") or "").startswith(prefix) and (r.get("created_at") or "") >= since
+    ]
+    if not runs:
+        return None, {}
+    newest = max(runs, key=lambda r: (r.get("created_at") or "", r.get("id") or 0))
+    branch, latest = newest["head_branch"], {}
+    for r in sorted(runs, key=lambda r: (r.get("created_at") or "", r.get("id") or 0)):
+        if r["head_branch"] == branch:
+            latest[r.get("name") or str(r.get("workflow_id"))] = r
+    return branch, latest
+
+
+def cmd_queued(args, gh):
+    results, lines, cache = [], [], {}
+    for ref in args.refs:
+        repo, n = parse_ref(ref)
+        name = f"{short_repo(repo)}#{n}"
+        pr = gh.get(f"repos/{repo}/pulls/{n}")
+        if pr is None:
+            raise Failure(f"pr_status: {name} not found")
+        res = {"pr": name, "state": pr.get("state")}
+        if pr.get("merged") or pr.get("merged_at"):
+            sha = (pr.get("merge_commit_sha") or "")[:7]
+            res.update(status="merged", merge_commit=pr.get("merge_commit_sha"))
+            lines.append(f"{name} merged {sha}".rstrip())
+            results.append(res)
+            continue
+        base, head = pr["base"]["ref"], pr["head"]["sha"]
+        branch, runs = (None, {})
+        if pr.get("state") == "open":
+            since = head_pushed_at(gh, repo, head)
+            branch, runs = queue_runs(gh, repo, base, n, since, cache)
+        states = {}
+        if branch:
+            states = {
+                k: (r.get("conclusion") or "?")
+                if r.get("status") == "completed"
+                else r.get("status")
+                for k, r in sorted(runs.items())
+            }
+            short = branch.rsplit("-", 1)
+            shown = f"{short[0]}-{short[1][:7]}" if len(short) == 2 else branch
+            shown = f"{shown} " + " ".join(f"{k}={v}" for k, v in states.items())
+        failed = any(
+            r.get("status") == "completed" and r.get("conclusion") in FAILED for r in runs.values()
+        )
+        if branch and not failed:
+            res.update(status="queued", branch=branch, runs=states)
+            lines.append(f"{name} queued: {shown}")
+        else:
+            am = pr.get("auto_merge")
+            if am:
+                who = (am.get("enabled_by") or {}).get("login") or "?"
+                auto = f"auto-merge {(am.get('merge_method') or '?').lower()} by {who}"
+            else:
+                auto = "auto-merge none (REST shows none for a queued PR too)"
+            res.update(status="not queued", auto_merge=am)
+            why = ""
+            if branch:  # a failed queue run: GitHub took the PR out of the queue
+                res.update(branch=branch, runs=states, queue_run_failed=True)
+                why = f"queue run failed ({shown}), "
+            lines.append(f"{name} not queued: {why}{pr.get('state')}, {auto}")
+        results.append(res)
+    emit(results, lines, args.json)
+    return 0
 
 
 def main(argv=None, gh=None):
@@ -972,6 +1202,7 @@ def main(argv=None, gh=None):
         "wait": cmd_wait,
         "gate": cmd_gate,
         "merge": cmd_merge,
+        "queued": cmd_queued,
     }
     return cmds[args.cmd](args, gh)
 
@@ -1229,6 +1460,129 @@ def self_test():
         heading("\nPlease rename this.\nMore.", "carol") == ("@carol", "Please rename this."),
     )
     check("long title cut", len(heading("x" * 500, "dave")[1]) == TITLE_MAX)
+
+    # queued: merged, in the queue for the current head, a stale queue run, auto-merge
+    q = "repos/swarm-routing/alpha"
+    qpr = {"state": "open", "merged": False, "base": {"ref": "main"}, "auto_merge": None}
+    qrun = {"event": "merge_group", "status": "completed", "conclusion": "success"}
+    qdata = {
+        f"{q}/pulls/7": dict(qpr, state="closed", merged=True, merge_commit_sha="c" * 40),
+        f"{q}/pulls/8": dict(qpr, head={"sha": "8" * 40}),
+        f"{q}/pulls/9": dict(qpr, head={"sha": "9" * 40}),
+        f"{q}/pulls/10": dict(
+            qpr,
+            head={"sha": "a1" * 20},
+            auto_merge={"merge_method": "squash", "enabled_by": {"login": "alice"}},
+        ),
+        f"{q}/actions/runs?head_sha={'8' * 40}&per_page=100": {
+            "workflow_runs": [{"created_at": "2026-11-12T10:05:00Z"}]
+        },
+        f"{q}/actions/runs?head_sha={'9' * 40}&per_page=100": {
+            "workflow_runs": [{"created_at": "2026-11-12T11:00:00Z"}]
+        },
+        f"{q}/actions/runs?head_sha={'a1' * 20}&per_page=100": {"workflow_runs": []},
+        f"{q}/pulls/11": dict(qpr, head={"sha": "b1" * 20}),
+        f"{q}/actions/runs?head_sha={'b1' * 20}&per_page=100": {
+            "workflow_runs": [{"created_at": "2026-11-12T10:00:00Z"}]
+        },
+        f"{q}/commits/{'a1' * 20}": {"commit": {"committer": {"date": "2026-11-12T09:00:00Z"}}},
+        f"{q}/actions/runs?event=merge_group&per_page=100": {
+            "workflow_runs": [
+                # pr-8: an older queue entry (failed), then the current one
+                dict(
+                    qrun,
+                    id=1,
+                    name="CI",
+                    conclusion="failure",
+                    created_at="2026-11-12T10:10:00Z",
+                    head_branch="gh-readonly-queue/main/pr-8-" + "1" * 40,
+                ),
+                dict(
+                    qrun,
+                    id=2,
+                    name="CI",
+                    status="in_progress",
+                    conclusion=None,
+                    created_at="2026-11-12T10:20:00Z",
+                    head_branch="gh-readonly-queue/main/pr-8-" + "2" * 40,
+                ),
+                dict(
+                    qrun,
+                    id=3,
+                    name="review",
+                    created_at="2026-11-12T10:20:01Z",
+                    head_branch="gh-readonly-queue/main/pr-8-" + "2" * 40,
+                ),
+                # pr-9: queued before its head was pushed, so not for this head
+                dict(
+                    qrun,
+                    id=4,
+                    name="CI",
+                    created_at="2026-11-12T10:30:00Z",
+                    head_branch="gh-readonly-queue/main/pr-9-" + "3" * 40,
+                ),
+                # pr-80 shares the prefix digits, never pr-8's
+                dict(
+                    qrun,
+                    id=5,
+                    name="CI",
+                    created_at="2026-11-12T10:40:00Z",
+                    head_branch="gh-readonly-queue/main/pr-80-" + "4" * 40,
+                ),
+                # pr-11: queued after its head was pushed, then its queue CI failed (dequeued)
+                dict(
+                    qrun,
+                    id=6,
+                    name="CI",
+                    conclusion="failure",
+                    created_at="2026-11-12T10:50:00Z",
+                    head_branch="gh-readonly-queue/main/pr-11-" + "5" * 40,
+                ),
+                dict(
+                    qrun,
+                    id=7,
+                    name="review",
+                    created_at="2026-11-12T10:50:01Z",
+                    head_branch="gh-readonly-queue/main/pr-11-" + "5" * 40,
+                ),
+            ]
+        },
+    }
+    rc, out, gh = run(["queued", "alpha#7", "alpha#8", "alpha#9", "alpha#10", "alpha#11"], qdata)
+    check(
+        "queued: one line per PR",
+        rc == 0
+        and out.splitlines()
+        == [
+            "alpha#7 merged ccccccc",
+            "alpha#8 queued: gh-readonly-queue/main/pr-8-2222222 CI=in_progress review=success",
+            "alpha#9 not queued: open, auto-merge none (REST shows none for a queued PR too)",
+            "alpha#10 not queued: open, auto-merge squash by alice",
+            "alpha#11 not queued: queue run failed (gh-readonly-queue/main/pr-11-5555555 "
+            "CI=failure review=success), open, auto-merge none (REST shows none for a queued "
+            "PR too)",
+        ],
+    )
+    check(
+        "queued: read only, the queue runs read once",
+        all(not c.startswith("-") for c in gh.calls)
+        and gh.calls.count(f"{q}/actions/runs?event=merge_group&per_page=100") == 1,
+    )
+    rc, out, gh = run(["queued", "alpha#8", "--json"], qdata)
+    got = json.loads(out)
+    check(
+        "queued --json",
+        got[0]["status"] == "queued"
+        and got[0]["runs"] == {"CI": "in_progress", "review": "success"},
+    )
+    rc, out, gh = run(["queued", "alpha#11", "--json"], qdata)
+    got = json.loads(out)
+    check(
+        "queued --json: a failed queue run",
+        got[0]["status"] == "not queued"
+        and got[0]["queue_run_failed"] is True
+        and got[0]["runs"]["CI"] == "failure",
+    )
 
     # list: CI states, a resolved and an unresolved thread, the 404 endpoint
     rc, out, gh = run(["list", "--repos", "alpha"])
@@ -2074,6 +2428,155 @@ def self_test():
         check("gate: a missing PR fails", False)
     except Failure:
         check("gate: a missing PR fails", True)
+
+    # wait --merged (#341): merged, closed, a thread, a red required check, auto-merge off, timeout
+    def landed(
+        pr_seq,
+        runs=(OK_RUN,),
+        threads_=(),
+        timeout=100,
+        missing=False,
+        extra=(),
+        in_queue=False,
+        timeline=(),
+    ):
+        sha = "c" * 40
+        prs = iter(pr_seq)
+        last = {}
+
+        def next_pr():
+            last["pr"] = next(prs, last.get("pr"))
+            return None if missing else dict({"head": {"sha": sha}, "state": "open"}, **last["pr"])
+
+        data = {
+            "repos/swarm-routing/beta/pulls/9": next_pr,
+            "repos/swarm-routing/beta/pulls/9/ccr/review_threads": list(threads_),
+            "repos/swarm-routing/beta/pulls/comments/700": {
+                "user": {"login": "coderabbitai[bot]"},
+                "body": CR_BODY,
+            },
+            "repos/swarm-routing/beta/rules/branches/main": [
+                {
+                    "type": "required_status_checks",
+                    "parameters": {"required_status_checks": [{"context": "ci"}]},
+                }
+            ],
+            f"repos/swarm-routing/beta/commits/{sha}/check-runs?per_page=100&page=1": {
+                "check_runs": list(runs)
+            },
+            f"repos/swarm-routing/beta/commits/{sha}/status": {"statuses": []},
+            f"repos/swarm-routing/beta/actions/runs?head_sha={sha}&per_page=100&page=1": {
+                "workflow_runs": []
+            },
+        }
+        now = [0.0]
+        data["repos/swarm-routing/beta/git/matching-refs/heads/gh-readonly-queue/main/pr-9-"] = (
+            lambda: [{"ref": "refs/heads/gh-readonly-queue/main/pr-9-abc"}] if in_queue else []
+        )
+        data["repos/swarm-routing/beta/issues/9/timeline?per_page=100&page=1"] = list(timeline)
+        data["repos/swarm-routing/beta/pulls/10"] = {
+            "head": {"sha": sha},
+            "state": "open",
+            "auto_merge": {"merge_method": "squash"},
+        }
+        data["repos/swarm-routing/beta/pulls/10/ccr/review_threads"] = []
+        ns = parser().parse_args(["wait", "--merged", *extra, "beta#9", "--timeout", str(timeout)])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                rc = cmd_wait(
+                    ns,
+                    FakeGitHub(data),
+                    sleep=lambda x: now.__setitem__(0, now[0] + x),
+                    clock=lambda: now[0],
+                )
+            except Failure:
+                rc = "failure"
+        return rc, out.getvalue()
+
+    queued = {"auto_merge": {"merge_method": "squash"}}
+    rc, out = landed([queued, queued, dict(queued, merged=True)])
+    check(
+        "wait --merged: waits while queued, then merged",
+        rc == 0 and out == "beta#9 ccccccc merged\n",
+    )
+    rc, out = landed([{"state": "closed"}])
+    check("wait --merged: closed unmerged stops", rc == 1 and "stopped: closed unmerged" in out)
+    rc, out = landed(
+        [queued], threads_=[{"resolved": False, "path": "b.py", "line": 58, "comment_ids": [700]}]
+    )
+    check(
+        "wait --merged: an unresolved thread stops, naming it",
+        rc == 1
+        and "1 unresolved thread(s), first: Minor · Add the missing failing fixtures." in out,
+    )
+    rc, out = landed([queued], runs=[dict(OK_RUN, conclusion="failure")])
+    check(
+        "wait --merged: a red required check stops", rc == 1 and "required check failed: ci" in out
+    )
+    rc, out = landed(
+        [queued], runs=[OK_RUN, {"name": "sonar", "status": "completed", "conclusion": "failure"}]
+    )
+    check("…a red report-only check does not", rc == 2 and "timeout: not merged" in out)
+    rc, out = landed([queued, {}])
+    check(
+        "wait --merged: auto-merge off (dropped from the queue) stops",
+        rc == 1 and "auto-merge off" in out,
+    )
+    rc, out = landed([queued], timeout=60)
+    check(
+        "wait --merged: the timeout exits 2",
+        rc == 2 and "beta#9 timeout: not merged after 60s" in out,
+    )
+    rc, out = landed([{}, {}, {"merged": True}], in_queue=True)
+    check(
+        "wait --merged: in the merge queue (auto_merge reads null there) it keeps waiting",
+        rc == 0 and out.endswith("merged\n"),
+    )
+    waiting = [{"event": "auto_merge_enabled"}, {"event": "added_to_merge_queue"}]
+    rc, out = landed([{}, {}, {}, {"merged": True}], timeline=waiting)
+    check(
+        "wait --merged: queued behind full groups (no branch yet, auto_merge null) keeps waiting",
+        rc == 0 and out.endswith("merged\n"),
+    )
+    rc, out = landed([{}], timeline=waiting + [{"event": "removed_from_merge_queue"}])
+    check(
+        "…removed from the queue since, it stops",
+        rc == 1 and "auto-merge off" in out,
+    )
+    rc, out = landed([{}, {"merged": True, "head": {"sha": "d" * 40}}])
+    check(
+        "wait --merged: merged between the PR read and the queue read is merged, not stopped, "
+        "with the head that merged",
+        rc == 0 and out == "beta#9 ddddddd merged\n",
+    )
+    rc, out = landed([queued], missing=True)
+    check("wait --merged: a missing PR fails", rc == "failure")
+    rc, out = landed([{"state": "closed"}], extra=["beta#10"])
+    check(
+        "wait --merged: one PR stopped while another is pending returns 1 at once",
+        rc == 1 and "beta#9 ccccccc stopped: closed unmerged" in out and "beta#10" not in out,
+    )
+    rc, out = landed([dict(queued, merged=True)], extra=["--json"])
+    got = json.loads(out)
+    check(
+        "wait --merged --json: merged as one list",
+        rc == 0
+        and got
+        == [{"repo": "beta", "number": 9, "head": "c" * 40, "result": "merged", "detail": ""}],
+    )
+    rc, out = landed([{"state": "closed"}], extra=["--json"])
+    check(
+        "wait --merged --json: stopped",
+        rc == 1
+        and json.loads(out)[0]["result"] == "stopped"
+        and json.loads(out)[0]["detail"] == "closed unmerged",
+    )
+    rc, out = landed([queued], timeout=60, extra=["--json"])
+    check(
+        "wait --merged --json: timeout",
+        rc == 2 and json.loads(out)[0]["result"] == "timeout",
+    )
 
     got, slept, err = rate_get(4000, 1100)
     check("rate: plenty left, no wait", got == [1] and slept == [] and err is None)

@@ -262,6 +262,14 @@ def load_config(repo_dir, slug=None):
             f"org-sync: {CONFIG}: citation_message must be one line of text, "
             "without double quotes or backslashes"
         )
+    filters = cfg.setdefault("coderabbit_path_filters", [])
+    if not isinstance(filters, list) or not all(
+        isinstance(f, str) and f.strip() and not re.search(r'["\\\x00-\x1f]', f) for f in filters
+    ):
+        sys.exit(
+            f"org-sync: {CONFIG}: coderabbit_path_filters must be a list of glob strings, "
+            "without double quotes or backslashes"
+        )
     cfg["references"] = check_references(cfg.get("references", []))
     if cfg["references"] and bib_references(repo_dir) is not None:
         print(
@@ -1099,6 +1107,15 @@ def render(cfg, repo_dir, item, v=None):
         want = citing_section(cfg, repo_dir)
     else:
         want = template(src) or "" if src else ""
+    if name == "coderabbit-head" and cfg.get("coderabbit_path_filters"):
+        # The repository's own path_filters (generated data, lockfiles) go after
+        # the org's: the list sits inside the managed head, so a hand-added
+        # entry would be drift and a second `path_filters:` key a YAML error.
+        anchor = '  path_filters:\n    - "!**/*.pdf"\n'
+        if anchor not in want:
+            sys.exit("org-sync: templates/coderabbit/head.yaml lost its path_filters list")
+        extra = "".join(f'    - "{f}"\n' for f in cfg["coderabbit_path_filters"])
+        want = want.replace(anchor, anchor + extra)
     if kind == "seed":
         if path == "Makefile":
             want = render_makefile(cfg)

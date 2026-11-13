@@ -365,7 +365,7 @@ runs until their secret is set, and the secrets belong to the maintainer:
 
 | Workflow | What it does | Secret |
 |---|---|---|
-| `org-bot` (daily, and on every push that changes `templates/` or a generator) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted, or when Zenodo holds a concept its CITATION.cff and `zenodo_concept` do not name yet (task `zenodo`, #232). The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write |
+| `org-bot` (daily, and on every push that changes `templates/` or a generator; task `swarm-core-pin` also every three hours) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted, or when Zenodo holds a concept its CITATION.cff and `zenodo_concept` do not name yet (task `zenodo`, #232), or when swarm-core `main` changed `core/` since a protocol repository's pin (task `swarm-core-pin`, #208: `check-swarm-core-pin.py --bump` rewrites every occurrence of the old commit; one PR per repository on `org-bot/swarm-core-pin`, updated in place when swarm-core moves again). The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer (where `release_environment = false`, an existing `release` environment's reviewers and wait timer are removed instead). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
@@ -389,7 +389,11 @@ PRs too passes `full-check-on-pr: true`.
 edit in each repository** (#236). Text between `org-sync:begin/end` markers
 (the AGENTS.md org sections, the README badges, the CodeRabbit head and
 tail, …) and the other managed (non-seed) items come from
-`templates/`. To change them across the org, open one PR here that edits the
+`templates/`. One per-repository value reaches a managed section: the
+CodeRabbit head's `path_filters` list is the org's entries followed by the
+repository's `coderabbit_path_filters` (a list of globs in
+`.github/org-sync.toml`, e.g. `["!results/**"]` for generated data), since
+the list sits inside the head and a hand-added entry would be drift. To change them across the org, open one PR here that edits the
 template; after it merges, org-bot opens each adopting repository's
 `bot/org-sync` refresh PR (`org_sync.py apply`), which is the only PR that
 brings the change in. Do not open a hand-edited PR per repository alongside
@@ -699,8 +703,34 @@ commented header and no entry; a repository with nothing to cite keeps it so.
   is kept.
 - **Fields come from Crossref or Zenodo, never typed.** `fidelity.py bib entry
   DOI --key K --role R` prints Crossref's record as an entry; `zenodo.py bibtex
-  OWNER/REPO --key K --role tool` prints an org release's concept record as
-  `@software`.
+  OWNER/REPO --role tool` prints an org release's concept record as
+  `@software`, keyed as the table below says (`--key K` for a repository it
+  does not list yet), with its concept `doi` and no `url` or `version`.
+- **One key per work across the org.** A key is the fidelity sheets' style,
+  the authors' initials and the year (`G02`, `DDG04`); an org release keeps a
+  short name. A work that more than one repository cites, and every released
+  org repository, has one key everywhere, chosen to need the fewest renames
+  and never to change a fidelity sheet's `[KEY]` citations:
+
+  | Work | DOI | Key |
+  |---|---|---|
+  | AntHocNet (org release) | https://doi.org/10.5281/zenodo.20981979 | `AHN` |
+  | ns3-swarm-core (org release) | https://doi.org/10.5281/zenodo.24138628 | `SwarmCore` |
+  | ns3-tools (org release) | https://doi.org/10.5281/zenodo.24136068 | `ns3tools` |
+  | Riley & Henderson 2010, the ns-3 paper | https://doi.org/10.1007/978-3-642-12331-3_2 | `RH10` |
+  | Di Caro, Ducatelle & Gambardella 2004, AntHocNet (PPSN VIII) | https://doi.org/10.1007/978-3-540-30217-9_47 | `DDG04` |
+  | Di Caro, Ducatelle & Gambardella 2005, AntHocNet (ETT) | https://doi.org/10.1002/ett.1062 | `DDG05` |
+  | Güneş, Sorges & Bouazizi 2002, ARA | https://doi.org/10.1109/icppw.2002.1039715 | `G02` |
+  | Roth 2005, Termite (PhD thesis) | https://hdl.handle.net/1813/240 | `R05` |
+  | Roth & Wicker 2003, Termite (GLOBECOM) | https://doi.org/10.1109/glocom.2003.1258772 | `RW03` |
+  | Schoonderwoerd et al. 1997, ABC | https://doi.org/10.1177/105971239700500203 | `S97` |
+  | Wedde et al. 2005, BeeAdHoc (GECCO) | https://doi.org/10.1145/1068009.1068034 | `W05` |
+  | Farooq & Wedde 2006, PG 460 report | https://doi.org/10.17877/de290r-14312 | `PG460` |
+  | Zhao & Pan 2024, the LENS dataset | https://doi.org/10.1145/3625468.3652170 | `ZP24` |
+
+  A new shared work or a new org release adds its row here, and an org
+  release also its key in `zenodo.py`'s `ORG_KEYS` (its self-test compares the
+  two).
 - **Generated sections.** Once the file has an entry, org-sync renders
   CITATION.cff's `references:` and the README's Releases & citing list from its
   `implemented`, `tool` and `dataset` entries (an entry's `note` is its role

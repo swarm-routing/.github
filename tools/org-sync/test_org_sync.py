@@ -906,6 +906,30 @@ check(
     "apply restores the YAML head and keeps the repository's own instructions",
 )
 
+# A repository's own path_filters (swarm-routing/AntHocNet#838: generated data) are rendered
+# into the head after the org's, as list entries, not hand edits.
+toml = os.path.join(d, ".github/org-sync.toml")
+write(toml, 'coderabbit_path_filters = ["!results/**", "!docs/*.png"]\n' + read(toml))
+rc, out = run("check", d)
+check(rc == 1 and ".coderabbit.yaml#coderabbit-head" in out, "a new path filter is drift")
+run("apply", d)
+text = read(cr)
+check(
+    run("check", d)[0] == 0
+    and '    - "!**/*.pdf"\n    - "!results/**"\n    - "!docs/*.png"\n  path_instructions:' in text
+    and "LOCAL RULE" in text,
+    "apply renders the repository's path filters after the org's, in order",
+)
+for bad in ('coderabbit_path_filters = "!results/**"\n', 'coderabbit_path_filters = ["a\\"b"]\n'):
+    db = fresh()
+    os.makedirs(os.path.join(db, ".github"))
+    write(os.path.join(db, ".github/org-sync.toml"), bad + 'kind = "data"\n')
+    try:
+        rc = run("plan", db)[0]
+    except SystemExit as e:
+        rc = e.code
+    check(rc not in (0, None), "refused: " + bad.strip())
+
 # 11. Seeds: `seeds` reports each against today's render (information, exit 0);
 # `reseed` takes today's render for one seed and refuses anything else (#91).
 d = fresh()
