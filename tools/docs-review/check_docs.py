@@ -17,7 +17,10 @@ a CITATION.cff reference per source with a DOI or the reason it has none;
 AGENTS.md with the org's
 sections (a settings-only org-sync.toml, `[settings]` and no `kind`, as this
 repository's, skips the badge row and the org sections with a SKIP line:
-org-sync manages nothing there, #320); CLAUDE.md importing it; CONTEXT.md past its seed; a docs/ map
+org-sync manages nothing there, #320) and within its size budget (#277,
+warn-only: the org-sync sections, the repository's own text, or a
+settings-only file as a whole, each today's largest plus 10 %); CLAUDE.md
+importing it; CONTEXT.md past its seed; a docs/ map
 when docs/ holds more than ADRs; no broken relative link. The checks are what
 a script can decide; whether the explanation is good is the reviewer's
 (the docs-review skill).
@@ -70,6 +73,13 @@ AGENTS_HEADINGS = (
     "Agent skills",
     "Where to look",
 )
+# What a session loads from AGENTS.md, in bytes (#277): today's largest plus
+# 10 %, measured on every repository's main on 2026-11-13. Warn-only, a
+# ratchet against growth: lower them when a file shrinks.
+AGENTS_ORG_BUDGET = 23_200  # the org-sync sections (21,018 today, the same in each repository)
+AGENTS_OWN_BUDGET = 16_300  # the repository's own text (AntHocNet's 14,810 the largest)
+AGENTS_SETTINGS_ONLY_BUDGET = 27_700  # a settings-only repository's whole file (.github's 25,102)
+ORG_SECTION = re.compile(r"<!-- org-sync:begin (\S+) -->.*?<!-- org-sync:end \1 -->\n?", re.S)
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 LAYOUT = re.compile(r"^([A-Za-z0-9_.][\w./-]*/)\s{2,}\S")
 
@@ -134,6 +144,25 @@ class Report:
         else:
             out.append("PASS  docs match the org standard")
         return "\n".join(out)
+
+
+def check_agents_size(agents, cfg, r):
+    """Warn when AGENTS.md outgrows its budget (#277): every session loads it whole."""
+    size = len(agents.encode())
+    if cfg["settings_only"]:
+        over = [f"whole file {size:,} B > {AGENTS_SETTINGS_ONLY_BUDGET:,}"]
+        over = over if size > AGENTS_SETTINGS_ONLY_BUDGET else []
+    else:
+        org = sum(len(m.group(0).encode()) for m in ORG_SECTION.finditer(agents))
+        over = []
+        if org > AGENTS_ORG_BUDGET:
+            over.append(f"org-sync sections {org:,} B > {AGENTS_ORG_BUDGET:,} (a template grew)")
+        if size - org > AGENTS_OWN_BUDGET:
+            over.append(f"own text {size - org:,} B > {AGENTS_OWN_BUDGET:,}")
+    if over:
+        r.add("WARN", "AGENTS.md", "over its size budget (#277): move detail to docs/", over)
+    else:
+        r.add("PASS", "AGENTS.md", f"within its size budget ({size:,} B)")
 
 
 def layout_dirs(text):
@@ -257,6 +286,7 @@ def check(repo, online=False, fetch=None):
             r.add("FAIL", "AGENTS.md", "missing the org's sections", lack)
         else:
             r.add("PASS", "AGENTS.md", "has the org's sections")
+        check_agents_size(agents, cfg, r)
         bad = [
             d
             for d, planned in layout_dirs(agents)
@@ -964,6 +994,25 @@ def self_test():
     expect("a status that disagrees with AGENTS.md warns", has(r, "WARN", "disagrees"))
     r = repo({"AGENTS.md": agents_ok.replace("## Agent skills", "## Skills")})
     expect("a missing AGENTS section fails", has(r, "FAIL", "org's sections"))
+    # #277: AGENTS.md's size budget, warn-only (own text, org-sync sections, settings-only whole)
+    expect("…a small AGENTS.md is within its budget", has(ok, "PASS", "size budget"))
+    big = "x" * (AGENTS_OWN_BUDGET + 1)
+    r = repo({"AGENTS.md": agents_ok + big + "\n"})
+    expect("own text over its budget warns", has(r, "WARN", "size budget") and not r.fail)
+    org_block = (
+        "<!-- org-sync:begin rules -->\n"
+        + "y" * AGENTS_ORG_BUDGET
+        + "\n<!-- org-sync:end rules -->\n"
+    )
+    r = repo({"AGENTS.md": agents_ok + org_block})
+    expect("org-sync sections over their budget warn", has(r, "WARN", "size budget"))
+    r = repo({"AGENTS.md": agents_ok + org_block.replace("y" * 1000, "y" * 10)})
+    expect("…sections under it do not, own text unchanged", not has(r, "WARN", "size budget"))
+    settings = {".github/org-sync.toml": "[settings]\nmerge_queue = true\n"}
+    r = repo({**settings, "AGENTS.md": agents_ok + "z" * AGENTS_SETTINGS_ONLY_BUDGET})
+    expect(
+        "a settings-only AGENTS.md over its whole-file budget warns", has(r, "WARN", "size budget")
+    )
     # a settings-only repository (the template source) skips both adopter checks (#320)
     bare = {
         "README.md": readme_ok.replace(

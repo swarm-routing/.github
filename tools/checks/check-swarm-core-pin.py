@@ -23,8 +23,16 @@ PR. It clones swarm-core (`--swarm-core`, default its GitHub URL) without
 blobs into a temporary directory. Output is one line per finding and a summary
 line (AntHocNet ADR-0014). Stdlib only.
 
+`--bump` (org-bot's swarm-core-pin task, #208) does what the check asks for:
+when swarm-core main changed `core/` since the pin, it rewrites every
+occurrence of the pinned commit under the repository root (the places above,
+and any other file naming it, such as a benchmark workflow's dependency) to
+main's commit, and prints the files, a `pin-target: <sha>` line and the
+swarm-core commits on `core/` since the pin. A pin the files disagree on is
+left to a person (exit 1).
+
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
-  check-swarm-core-pin.py [--swarm-core URL_OR_PATH]
+  check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--bump]
   check-swarm-core-pin.py --self-test
 """
 
@@ -93,25 +101,78 @@ def check_files():
     return pin, errors
 
 
-def check_main(pin, url):
-    """Errors when swarm-core main's core/ is not the pinned commit's (blobless clone)."""
+def core_change(pin, url):
+    """(error, main, diff --stat lines, commits on core/ since the pin): swarm-core
+    main against the pin, from a blobless clone. error is None when both resolve."""
     with tempfile.TemporaryDirectory() as d:
         rc, _, err = git("clone", "-q", "--filter=blob:none", "--no-checkout", url, d)
         if rc:
-            return [f"cannot clone swarm-core ({url}): {err}"], None
+            return f"cannot clone swarm-core ({url}): {err}", None, [], []
         _, main, _ = git("rev-parse", "origin/main", cwd=d)
         if git("cat-file", "-e", f"{pin}^{{commit}}", cwd=d)[0]:
-            return [f"{CMAKE}: SWARM_CORE_REF {pin} is not a swarm-core commit"], main
+            return f"{CMAKE}: SWARM_CORE_REF {pin} is not a swarm-core commit", main, [], []
         rc, stat, err = git("diff", "--stat", pin, main, "--", "core/", cwd=d)
         if rc:
-            return [f"git diff {pin} {main}: {err}"], main
-        if stat:
-            return [
-                f"swarm-core main ({main}) changed core/ since the pin ({pin}): bump "
-                f"SWARM_CORE_REF in {CMAKE}, the Makefile and every core-deps to {main}",
-                *stat.splitlines(),
-            ], main
-        return [], main
+            return f"git diff {pin} {main}: {err}", main, [], []
+        _, log, _ = git("log", "--format=%h %s", f"{pin}..{main}", "--", "core/", cwd=d)
+        return None, main, stat.splitlines() if stat else [], log.splitlines() if log else []
+
+
+def check_main(pin, url):
+    """Errors when swarm-core main's core/ is not the pinned commit's (blobless clone)."""
+    err, main, stat, _ = core_change(pin, url)
+    if err:
+        return [err], main
+    if stat:
+        return [
+            f"swarm-core main ({main}) changed core/ since the pin ({pin}): bump "
+            f"SWARM_CORE_REF in {CMAKE}, the Makefile and every core-deps to {main}",
+            *stat,
+        ], main
+    return [], main
+
+
+def bump(url):
+    """--bump (org-bot's swarm-core-pin task, #208): when swarm-core main changed
+    core/ since the pin, rewrite every occurrence of the pinned commit under the
+    cwd (the check's places and any other file that names it, such as a
+    benchmark workflow's dependency) to main's commit. A pin the files disagree
+    on is left to a person. 0: bumped or already current; 1: refused."""
+    pin, errors = check_files()
+    for e in errors:
+        print(f"FAIL {e}")
+    if not pin or errors:
+        print("swarm-core pin: not bumped (fix the pin by hand first)")
+        return 1
+    err, main, stat, log = core_change(pin, url)
+    if err:
+        print(f"FAIL {err}")
+        return 1
+    if not stat:
+        print(f"swarm-core pin: current, core/ at {pin[:7]} is swarm-core main's")
+        return 0
+    changed = []
+    for root, dirs, files in os.walk("."):
+        dirs[:] = sorted(d for d in dirs if d not in (".git", "build"))
+        for name in sorted(files):
+            path = os.path.join(root, name)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    text = f.read()
+            except (UnicodeDecodeError, OSError):
+                continue
+            if pin in text:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text.replace(pin, main))
+                changed.append(os.path.relpath(path).replace(os.sep, "/"))
+    print(f"swarm-core pin: bumped {pin[:7]} -> {main[:7]} in {len(changed)} file(s)")
+    print(f"pin-target: {main}")
+    for c in changed:
+        print(f"  {c}")
+    print("swarm-core commits on core/ since the pin:")
+    for line in log:
+        print(f"  {line}")
+    return 0
 
 
 def run(url):
@@ -171,7 +232,7 @@ def self_test():
                 f.write(text)
         return d
 
-    def go(repo, url):
+    def go(repo, url, bump_mode=False):
         import contextlib
         import io
 
@@ -179,7 +240,7 @@ def self_test():
         try:
             os.chdir(repo)
             with contextlib.redirect_stdout(out):
-                rc = run(url)
+                rc = bump(url) if bump_mode else run(url)
         finally:
             os.chdir(here)
         return rc, out.getvalue()
@@ -222,6 +283,31 @@ def self_test():
         rc, out = go(protocol(os.path.join(t, "new"), c, c, c), url)
         check("bumped pin: ok", rc == 0)
 
+        # --bump (#208): a stale pin is rewritten everywhere, extra files included
+        stale = protocol(os.path.join(t, "bump"), a, a, a, ("main", a))
+        with open(os.path.join(stale, ".github", "workflows", "bench.yml"), "w") as f:
+            f.write(f"        swarm-core=swarm-routing/ns3-swarm-core@{a}\n")
+        rc, out = go(stale, url, bump_mode=True)
+        names = []
+        for root, _, files in os.walk(stale):
+            for name in files:
+                with open(os.path.join(root, name)) as f:
+                    names += [name] if a in f.read() else []
+        check(
+            "--bump rewrites the stale pin in every file, extra ones included",
+            rc == 0
+            and not names
+            and f"pin-target: {c}" in out
+            and "core/ changes" in out
+            and "bench.yml" in out,
+        )
+        rc, out = go(stale, url)
+        check("…after which the check passes", rc == 0)
+        rc, out = go(stale, url, bump_mode=True)
+        check("--bump on a current pin changes nothing", rc == 0 and "current" in out)
+        rc, out = go(protocol(os.path.join(t, "split"), a, b, a), url, bump_mode=True)
+        check("--bump refuses a pin the files disagree on", rc == 1 and "not bumped" in out)
+
         rc, out = go(protocol(os.path.join(t, "ghost"), "f" * 40, "f" * 40, "f" * 40), url)
         check(
             "a pin that is not a swarm-core commit", rc == 1 and "is not a swarm-core commit" in out
@@ -253,9 +339,16 @@ def self_test():
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--swarm-core", default=SWARM_CORE, help="swarm-core's git URL or a local path")
+    p.add_argument(
+        "--bump",
+        action="store_true",
+        help="rewrite a stale pin to swarm-core main's commit everywhere it is named (#208)",
+    )
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
-    return self_test() if a.self_test else run(a.swarm_core)
+    if a.self_test:
+        return self_test()
+    return bump(a.swarm_core) if a.bump else run(a.swarm_core)
 
 
 if __name__ == "__main__":
