@@ -511,6 +511,7 @@ TEXT_EXT = {".md", ".markdown", ".cff", ".txt", ".rst", ".bib", ".yml", ".yaml",
 CODE_EXT = {".h", ".hpp", ".c", ".cc", ".cpp", ".py", ".sh", ".js", ".mjs", ".ts", ".cmake"}
 CODE_NAMES = {"CMakeLists.txt", "Makefile"}
 COMMENT = re.compile(r"^\s*(#|//|/\*|\*|%|<!--)")
+TRAILING = re.compile(r"(?:^|\s)(?:#|//|/\*)(?=\s|$)")  # a comment after code on the same line
 # test inputs, not references (a lookup tool's fixtures, a skill's eval cases)
 SKIP_PARTS = {"evals", "fixtures", "fixture", "testdata", "node_modules", "build"}
 CROSSREF_TYPES = {
@@ -876,8 +877,9 @@ def _norm_title(t):
     return re.sub(r"[^a-z0-9]+", "", bib.plain(t).lower())
 
 
-def crossref_doi_for(entry):
-    """A DOI Crossref holds for this url-only entry's exact title, or None."""
+def crossref_doi_for(entry, skip=frozenset()):
+    """A DOI Crossref holds for this url-only entry's exact title, or None; a DOI in
+    `skip` (lower-cased: the entry's notdoi) is passed over for the next match."""
     title = bib.plain(entry["fields"].get("title", ""))
     if not title:
         return None
@@ -897,7 +899,10 @@ def crossref_doi_for(entry):
         y = ((item.get("issued") or {}).get("date-parts") or [[None]])[0][0]
         if year.isdigit() and y and abs(int(year) - int(y)) > 1:
             continue
-        return item.get("DOI")
+        doi = item.get("DOI")
+        if isinstance(doi, str) and doi.lower() in skip:
+            continue
+        return doi
     return None
 
 
@@ -909,11 +914,20 @@ def notdois(entry):
 
 
 def _prose_lines(path, body):
-    """The lines of a file that can cite a work: all of a text file, the comment
-    lines of a code file (the rest blanked, line numbers kept)."""
+    """The lines of a file that can cite a work: all of a text file, the comments of a
+    code file, whole-line or after code (the rest blanked, line numbers kept)."""
     ext = os.path.splitext(path)[1].lower()
     code = ext in CODE_EXT or ext in (".yml", ".yaml") or os.path.basename(path) in CODE_NAMES
-    return ["" if code and not COMMENT.match(ln) else ln for ln in body.split("\n")]
+    if not code:
+        return body.split("\n")
+    out = []
+    for ln in body.split("\n"):
+        if COMMENT.match(ln):
+            out.append(ln)
+            continue
+        m = TRAILING.search(ln)
+        out.append(ln[m.start() :] if m else "")
+    return out
 
 
 def _scan_doi(text):
@@ -1067,11 +1081,11 @@ def bib_check(repo, online=False):
                 )
             elif online:
                 try:
-                    found = crossref_doi_for(e)
+                    found = crossref_doi_for(e, notdois(e))
                 except (Failure, AttributeError, TypeError, IndexError) as x:
                     warns.append(f"{where}: no usable Crossref answer: {x}")
                     found = None
-                if found and found.lower() not in notdois(e):
+                if found:
                     warns.append(
                         f"{where}: Crossref has DOI {found} for a work with this title; it may be "
                         "a different work (a later chapter or article with the same title): "
@@ -1559,6 +1573,11 @@ def bib_self_test():
                                     "title": ["HOPNET"],
                                     "issued": {"date-parts": [[2007]]},
                                 },
+                                {
+                                    "DOI": "10.1007/978-3-540-30217-9_99",
+                                    "title": ["HOPNET"],
+                                    "issued": {"date-parts": [[2008]]},
+                                },
                             ]
                         }
                     }
@@ -1601,7 +1620,15 @@ def bib_self_test():
             write(BIB, with_not)
             f, w = run(online=True)
             expect(
-                "online: notdoi silences the title match for that DOI",
+                "online: notdoi silences the title match for that DOI, the next match warns",
+                f == []
+                and not any("Crossref has DOI 10.1007/978-3-540-30217-9_47" in x for x in w)
+                and any("Crossref has DOI 10.1007/978-3-540-30217-9_99" in x for x in w),
+            )
+            write(BIB, with_not.replace("30217-9_47}", "30217-9_47, 10.1007/978-3-540-30217-9_99}"))
+            f, w = run(online=True)
+            expect(
+                "online: notdoi listing every title match silences the warning",
                 f == [] and not any("Crossref has DOI" in x for x in w),
             )
             write(BIB, with_not.replace("30217-9_47}", "30217-9_48}"))
@@ -1703,8 +1730,8 @@ def bib_self_test():
             "(https://doi.org/10.5281/zenodo.7)\nARA [G02], see https://doi.org/10.1109/ICPPW.2002.1039715.\n"
             "Also `https://doi.org/10.1000/xyz1` and [Q99].\n",
             "docs/notes.md": "[G02] §3 again; [Q99] again.\n",
-            "src/a.cc": "// follows [R05] §4\nint v = arr[x1];\n",
-            "plan.yaml": "cells: [run1]\n# from [G02]\n",
+            "src/a.cc": "// follows [R05] §4\nint v = arr[x1];\nint w = 0; // and [G02] §2\n",
+            "plan.yaml": "cells: [run1]\n# from [G02]\nseeds: [s20] # per [G02]\n",
             "skills/s/evals/evals.json": '{"doi": "10.1000/evalonly", "k": "[E01]"}\n',
             "tools/t/fixtures/rec.json": '{"doi": "10.1000/fixtureonly"}\n',
         }.items():
@@ -1735,10 +1762,11 @@ def bib_self_test():
         expect("scan: a key the bib lacks", "[Q99]: NOT in the bib; README.md:3 (+1 more)" in text)
         expect("scan: a key in a code comment", "[R05]: in the bib; src/a.cc:1" in text)
         expect(
-            "scan: code outside comments and YAML values are not citations",
+            "scan: code and YAML values are not citations, a comment after them is",
             "[x1]" not in text
             and "[run1]" not in text
-            and "[G02]: in the bib; README.md:2 (+2 more)" in text,  # notes.md, the YAML comment
+            and "[s20]" not in text
+            and "[G02]: in the bib; README.md:2 (+4 more)" in text,  # notes.md, a.cc, the YAML
         )
         expect(
             "scan: evals and fixtures skipped",
