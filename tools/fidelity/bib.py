@@ -76,6 +76,7 @@ FIELD_ORDER = (
     "version",
     "doi",
     "url",
+    "notdoi",
     "note",
     "keywords",
 )
