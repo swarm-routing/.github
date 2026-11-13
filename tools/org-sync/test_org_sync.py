@@ -104,7 +104,7 @@ da = fresh()
 run("init", da, "--kind", "protocol", "--title", "ARA", "--dual", "core/", "--arena-id", "ARA")
 rd = read(os.path.join(da, "README.md"))
 check(
-    "https://swarm-routing.github.io/arena/ARA/" in rd,
+    "https://swarm-routing.github.io/projects/ARA/" in rd,
     "a protocol repo's badge row links its page on the site",
 )
 dn = fresh()

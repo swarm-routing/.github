@@ -16,7 +16,7 @@ DIR/<repo>/.github/):
 
     [settings]
     description = "One line, at most 350 characters."
-    homepage = "https://swarm-routing.github.io/arena/ARA/"   # "" for none
+    homepage = "https://swarm-routing.github.io/projects/ARA/"   # "" for none
     topics = ["manet", "ns-3"]          # lowercase-hyphenated, at most 20
     ruleset = "protocol"                # templates/rulesets/<profile>.json: protocol, tooling,
                                         # data, site, merge-only (no ruleset); "" for neither

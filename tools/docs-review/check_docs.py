@@ -8,7 +8,7 @@
 
 The standard is AntHocNet's README and docs map (#94): a title and the
 org-sync badge row; an explanation near the top; a link to the project's page
-on the site (https://swarm-routing.github.io/arena/<id>/), and to the ns-3
+on the site (https://swarm-routing.github.io/projects/<id>/), and to the ns-3
 image when the repo builds with it; a layout block that matches the tree;
 Epics, License and how-to-work-here sections; for a released repository (a
 `v*` tag or `zenodo_concept`), AntHocNet's citing: the DOI badge, CITATION.cff's
@@ -224,11 +224,14 @@ def check(repo, online=False, fetch=None):
         ]
         if not any(len(re.findall(r"[.!?](\s|$)", p)) >= 2 for p in prose):
             r.add("WARN", "README", "no explanation (a paragraph of 2+ sentences) near the top")
-        arena = f"{SITE}arena/{cfg['arena_id']}/" if cfg["arena_id"] else SITE
+        arena = f"{SITE}projects/{cfg['arena_id']}/" if cfg["arena_id"] else SITE
+        # the address until swarm-routing/swarm-routing.github.io#102; it redirects, and a README
+        # that still has it passes until its org-sync refresh lands (#361)
+        old = f"{SITE}arena/{cfg['arena_id']}/"
         game = f"{SITE}{cfg['arena_id']}/"
         if cfg["arena_id"] is None:
             pass  # no project page on the site (the skills repo)
-        elif arena in readme or (cfg["arena_id"] and game in readme):
+        elif arena in readme or (cfg["arena_id"] and (game in readme or old in readme)):
             r.add("PASS", "README", "links its page on the site")
         else:
             r.add("WARN", "README", f"no link to its page on the site: {arena}")
@@ -895,7 +898,7 @@ def self_test():
         "# ARA\n\n<!-- org-sync:begin badges -->\n[![CI](https://x/b.svg)](https://x/a)\n<!-- org-sync:end badges -->\n\n"
         "ARA is an ant-colony routing protocol for MANETs. It runs on ns-3 and in the browser. "
         "**Status: building.**\n\n"
-        "See [its space](https://swarm-routing.github.io/arena/ARA/), the image "
+        "See [its page](https://swarm-routing.github.io/projects/ARA/), the image "
         "`ghcr.io/swarm-routing/ns3-dev` and [AGENTS.md](AGENTS.md)\n\n"
         "```\ncore/   the core\n```\n\n## Epics\n\nx\n\n## License\n\n[LICENSING.md](LICENSING.md)\n"
     )
@@ -967,11 +970,23 @@ def self_test():
     r = repo(
         {
             "README.md": readme_ok.replace(
-                "https://swarm-routing.github.io/arena/ARA/", "https://example.org"
+                "https://swarm-routing.github.io/projects/ARA/", "https://example.org"
             )
         }
     )
     expect("no site link warns", has(r, "WARN", "page on the site"))
+    r = repo(
+        {
+            "README.md": readme_ok.replace(
+                "https://swarm-routing.github.io/projects/ARA/",
+                "https://swarm-routing.github.io/arena/ARA/",
+            )
+        }
+    )
+    expect(
+        "the page's old address still passes (it redirects, #361)",
+        has(r, "PASS", "links its page on the site"),
+    )
     r = repo({"README.md": readme_ok.replace("`ghcr.io/swarm-routing/ns3-dev`", "the image")})
     expect("a protocol repo without the image link warns", has(r, "WARN", "ns-3 image"))
     r = repo(
