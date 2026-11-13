@@ -1059,6 +1059,53 @@ project as top-level `bestpractices_project = "<id>"` in
 are answered. A repository that sets its own `badges` list also adds
 `"bestpractices"` to it, after `"scorecard"`.
 
+### OpenSSF Best Practices
+
+bestpractices.dev has no write API: every answer is saved by a person logged
+in to the site, and no workflow logs in, keeps a session or submits answers.
+`tools/bestpractices/bestpractices.py` does the rest, read-only (#391). The
+commands below run from the repository's checkout, with `swarm-routing/.github`
+checked out next to it (as `../.github`):
+
+- **Register.** `python3 -I ../.github/tools/bestpractices/bestpractices.py register swarm-routing/<repo> --dir .`
+  first asks the site whether the repository is registered. If not, it says
+  where to register (https://www.bestpractices.dev/en/projects/new; the site
+  has no pre-filled registration form): the maintainer registers it there,
+  logged in, then runs the command again. If it is, it prints the project id,
+  the `bestpractices_project = "<id>"` line for `.github/org-sync.toml`, and
+  the site's proposal links for that project
+  (`/en/projects/<id>/passing/edit?<criterion>_status=…`, each under 6000
+  characters, the owner-only criteria left out; `--answers FILE` proposes a
+  reviewed `.bestpractices.json`): the maintainer opens each one logged in,
+  reviews the proposed answers and saves. Nothing is saved by opening a link.
+- **Licence of the answers.** bestpractices.dev publishes what a project
+  submits under [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/), so
+  write nothing in a justification that cannot be released under it.
+- **Propose the answers.** `python3 -I ../.github/tools/bestpractices/bestpractices.py answers . --write` writes
+  `.bestpractices.json` at the repository's top level: every passing criterion
+  the repository gives evidence for, each justified by its full https URL on
+  `main`. Commit it in a PR; on the site, "Save (and continue)" with the robot
+  proposes those answers. The crypto criteria are N/A unless the code calls a
+  crypto library (`hashlib`, `hmac` and `secrets` count) or
+  `.github/org-sync.toml` sets `bestpractices_crypto = true`; `test_most`,
+  `tests_are_added` and `static_analysis_fixed` are left to the maintainer
+  too (coverage measured is not coverage of most code; a written test policy
+  is not proof it was followed).
+- **The maintainer answers the owner-only criteria** on the site:
+  `know_secure_design`, `know_common_errors`, `vulnerabilities_fixed_60_days`,
+  `vulnerabilities_critical_fixed`, `no_leaked_credentials`,
+  `report_responses`, `enhancement_responses`,
+  `vulnerability_report_response` (self-assessments, or facts behind the
+  Security tab). They are always `?` in the file, which the site ignores, as
+  is any criterion without evidence in the repository.
+- **The weekly check.** `bestpractices.yml` runs `python3 -I tools/bestpractices/bestpractices.py check` here: for
+  each public repository it reads the project's public JSON (one request a
+  second) and reports a registered repository without `bestpractices_project`,
+  answers on the site that disagree with `.bestpractices.json`, justifications
+  pointing at files no longer on `main`, and a lost level. It keeps one
+  `[bestpractices] N finding(s)` issue per repository, closed when clean. It is
+  report-only, never a required check; the fix is made on the site by a person.
+
 ## AI agents
 
 Every repo carries an `AGENTS.md` (what the repo is, build & verify, golden

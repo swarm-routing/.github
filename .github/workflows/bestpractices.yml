@@ -1,0 +1,98 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: bestpractices
+
+# Do the org's OpenSSF Best Practices entries (bestpractices.dev) still match
+# the repositories? Weekly, and on demand, tools/bestpractices/bestpractices.py
+# `check` reads each registered project's public JSON (no login, one request a
+# second) for every public repository that names `bestpractices_project` in
+# its .github/org-sync.toml, or that the site finds by its URL, and reports:
+# a registered repository without the key, answers that disagree with the
+# repository's .bestpractices.json, justification URLs at files no longer on
+# main, and a lost level. It keeps one issue per repository,
+# `[bestpractices] N finding(s)` (label chore): opened on drift, updated in
+# place when the findings change, closed when clean. The site has no write
+# API: a person fixes the answers there (CONTRIBUTING "OpenSSF Best
+# Practices"). Report-only: never a required check.
+#
+# Token: the org bot's, from .github/actions/bot-token as ai-files-review.yml
+# uses it (the GitHub App's installation token, else ORG_BOT_TOKEN), for
+# Issues: read and write on every repository. Without one, or with dry-run,
+# no issue is written. The token never runs on code from a pull request: pull
+# requests that change the tool run its self-test only.
+on:
+  schedule:
+    - cron: '37 7 * * 3'
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: 'Comma-separated NAME or NAME=ID (default: every public repo, looked up)'
+        type: string
+        default: ''
+      dry-run:
+        description: 'Report only; open, update or close no issue'
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - 'tools/bestpractices/**'
+      - '.github/workflows/bestpractices.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bestpractices-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: python3 -I tools/bestpractices/bestpractices.py --self-test
+      - name: Bot token
+        if: github.event_name != 'pull_request'
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: Check every registered project
+        if: github.event_name != 'pull_request'
+        env:
+          BESTPRACTICES_TOKEN: ${{ steps.bot.outputs.token }}
+          # reads (the org listing, config files, trees) work with the workflow's own token
+          GH_TOKEN: ${{ steps.bot.outputs.token || github.token }}
+        run: |
+          set -o pipefail
+          args=(check --issues)
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -z "$BESTPRACTICES_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): no issue is written"
+          python3 -I tools/bestpractices/bestpractices.py "${args[@]}" | tee "$RUNNER_TEMP/check.txt"
+      - name: Summary
+        if: ${{ always() && github.event_name != 'pull_request' }}
+        run: |
+          {
+            echo "### bestpractices"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/check.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"

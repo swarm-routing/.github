@@ -346,6 +346,7 @@ changing what the row names.
 | Give a workflow the bot's token, or check the org App's permissions | `.github/actions/bot-token`; CONTRIBUTING "The bot's GitHub App" |
 | Keep epic lists, org-managed files and protocol repositories' swarm-core pins current without hand PRs | `tools/org-bot/org_bot.py`, `org-bot.yml` |
 | Check that every release is on Zenodo, or archive a missed one | `tools/zenodo/zenodo.py`, `zenodo.yml` |
+| Register a repository for the OpenSSF Best Practices badge, or check its entry | `tools/bestpractices/bestpractices.py`, `bestpractices.yml` |
 | Hold a repo's README, AI files and docs/ to the org standard | `tools/docs-review/check_docs.py`, `ai_files_review.py`, `ai-files-review.yml` |
 | Check a diff against the org golden rules before review | `tools/protocol-review/check_invariants.py` |
 | See open PRs' CI and review threads, wait for CI, or merge PRs that fall behind | `tools/pr-status/pr_status.py` |
