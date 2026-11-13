@@ -698,7 +698,7 @@ def _degree(text):
     """The thesis type a lower-case degree text names (master first), else None."""
     if re.search(r"\bmaster|\bm\.?sc\b", text):
         return "mastersthesis"
-    if re.search(r"\b(?:phd|doctoral|doctorate)\b|\bph\.\s?d\.", text):
+    if re.search(r"\b(?:phd|doctoral|doctorate|doctor)\b|\bph\.\s?d\.", text):
         return "phdthesis"
     return None
 
@@ -973,7 +973,9 @@ def record_entry(url, key, role):
         return next((v for vs in values for v in vs if v), "")
 
     title = first(rec.get("title", []), tags.get("citation_title", []), tags.get("dc.title", []))
+    title = _clean(title, "title").replace(" :", ":")  # a catalogue's "Title : subtitle"
     authors = rec.get("creator") or tags.get("citation_author") or tags.get("dc.creator") or []
+    authors = [a for a in (_clean(a, "author") for a in authors) if a]
     year = _year(tags.get("citation_publication_date", []) + tags.get("citation_date", []))
     year = year or _year(rec.get("date", []))
     missing = [n for n, v in (("title", title), ("author", authors), ("year", year)) if not v]
@@ -1005,8 +1007,7 @@ def record_entry(url, key, role):
     publisher = first(
         rec.get("publisher", []), tags.get("citation_publisher", []), tags.get("dc.publisher", [])
     )
-    f = {"author": " and ".join(_clean(a, "author") for a in authors)}
-    f["title"] = _clean(re.sub(r"\s+:", ":", title), "title")
+    f = {"author": " and ".join(authors), "title": title}
     if kind in ("phdthesis", "mastersthesis"):
         school = first(
             rec.get("grantor", []), tags.get("citation_dissertation_institution", []), [publisher]
@@ -1552,6 +1553,13 @@ def record_self_test():
         "</head></html>",
         "https://example.org/notitle": '<html><head><meta name="citation_author" content="Doe, J.">'
         '<meta name="citation_publication_date" content="2001"></head></html>',
+        "https://example.org/blank": '<html><head><meta name="citation_title" content="<b> </b>">'
+        '<meta name="citation_author" content=""><meta name="citation_date" content="2001">'
+        "</head></html>",
+        "https://example.org/phd": '<html><head><meta name="citation_title" content="Long  title :  part">'
+        '<meta name="citation_author" content="Doe, J."><meta name="citation_date" content="1999">'
+        '<meta name="citation_dissertation_name" content="Doctor of Philosophy">'
+        '<meta name="citation_dissertation_institution" content="A University"></head></html>',
     }
 
     def fake(url):
@@ -1632,6 +1640,19 @@ def record_self_test():
         )
         code, out = record_entry("https://example.org/notitle", "P2", "background")
         expect("a record without a title is refused", code == 1 and "no record of title at" in out)
+        code, out = record_entry("https://example.org/blank", "P5", "background")
+        expect(
+            "an empty author and a markup-only title are missing, not an empty field",
+            code == 1 and "no record of title, author at" in out,
+        )
+        code, out = record_entry("https://example.org/phd", "D99", "background")
+        expect(
+            "Doctor of Philosophy is a doctoral thesis; the catalogue colon is closed up",
+            code == 0
+            and out.startswith("@phdthesis{D99,")
+            and "title    = {Long title: part}" in out
+            and "school   = {A University}" in out,
+        )
         code, out = record_entry("https://example.org/doi", "P3", "background")
         expect(
             "a page that names a DOI is refused: bib entry DOI instead",
