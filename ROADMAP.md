@@ -153,7 +153,8 @@ format frozen, paper-faithful with every deviation documented in its fidelity
 sheet, and the three gates passed (CONTRIBUTING invariant 6). For a shared
 component, which has no paper of its own: its public contract frozen with a
 deprecation policy (`ns3-swarm-core`: `kSwarmCoreApiVersion`, with two gated
-protocols on it unchanged; `ns3-tools`: marker contract v2 and the CLI), and
+protocols on it unchanged; `ns3-tools`: marker contract v1 and the CLI, maintainer decision
+2026-11-13, with contract v2 its 2.0.0), and
 the protocols that consume it green. This replaces the earlier per-phase
 release targets: this file keeps the phases and the cross-repo
 [release train](#the-release-train) below, and each repository's ladder says

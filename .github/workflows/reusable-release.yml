@@ -124,7 +124,7 @@ name: Reusable release
 #     workflow_dispatch:
 #       inputs:
 #         mode: { type: choice, options: [dry-run, bump], default: dry-run }
-#         increment: { type: choice, options: ['', PATCH, MINOR, MAJOR], default: '' }
+#         increment: { type: choice, options: [auto, PATCH, MINOR, MAJOR], default: auto }  # no empty option (actionlint)
 #     push:
 #       branches: [main]
 #   concurrency: { group: "release-${{ github.sha }}", cancel-in-progress: false }
@@ -135,7 +135,7 @@ name: Reusable release
 #       uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
 #       with:
 #         mode: ${{ inputs.mode }}           # empty on push: release
-#         increment: ${{ inputs.increment }} # empty on push and by default
+#         increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}  # '' on push and for auto
 #       secrets:
 #         BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
 #         BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
