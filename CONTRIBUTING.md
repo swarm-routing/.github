@@ -315,9 +315,15 @@ so it fixes only commits you authored; a commit someone else authored needs
 that author's own sign-off. The `dco` check (`reusable-dco.yml`, placed in every repository
 by org-sync as `.github/workflows/dco.yml`) lists any commit without a
 matching sign-off and prints these commands. Commits by the org's members and
-collaborators, the org App (`swarm-routing-bot[bot]`) and Dependabot are
-exempt, and so is a merge commit that adds nothing beyond its parents (an
-"Update branch" merge); a merge that resolves a conflict with new text or
+collaborators are exempt, and so is a commit by a GitHub bot account (a login
+ending in `[bot]` or a `…[bot]@users.noreply.github.com` author email, such as
+the `github-actions[bot]` release bump commit of `reusable-release.yml`) on a
+PR opened by one of the org's bots (the org App `swarm-routing-bot[bot]`,
+Dependabot, `github-actions[bot]`) or by a member, collaborator or anyone with
+write access. Anyone can write a bot's email into a commit, so a bot-authored
+commit on an outside contributor's PR is not exempt: it needs a sign-off like
+any other (#368). A merge commit that adds nothing beyond its parents (an
+"Update branch" merge) is exempt too; a merge that resolves a conflict with new text or
 carries a change of its own needs a sign-off like any other commit.
 Maintainer and agent commits are made from the maintainer's own account,
 under the licence grant already recorded in AntHocNet ADR-0028. **An AI agent

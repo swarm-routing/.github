@@ -17,7 +17,7 @@ labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style
 ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
 tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags; contributor copyright lines beneath the org line)
-tools/checks/check-dco.py       the DCO gate of reusable-dco.yml: every PR commit's Signed-off-by matches its author email (members, the org App, Dependabot and agent commits on a member's PR exempt, #212)
+tools/checks/check-dco.py       the DCO gate of reusable-dco.yml: every PR commit's Signed-off-by matches its author email (members, bot commits on a bot's or member's PR, and agent commits on a member's PR exempt, #212, #368)
 tools/checks/check-swarm-core-pin.py   a protocol's swarm-core pin: one commit everywhere, and swarm-core main's core/ (reusable-swarm-core-pin.yml)
 DCO                             the Developer Certificate of Origin 1.1, verbatim (CONTRIBUTING "Outside contributions")
 tools/org-sync/org_sync.py      applies templates/ to a repo and checks drift (`check --changed-only BASE`: only a PR's own drift fails, the base's warns); `seeds` / `reseed FILE` for the repo-owned seeds; CITATION.cff `references:` and the README's citing list from `docs/references.bib` once it has an entry, else `[[references]]` (#308); `coderabbit_path_filters`: a repository's own CodeRabbit path filters, rendered after the org's in the managed head (swarm-routing/AntHocNet#838) (+ test_org_sync.py)
