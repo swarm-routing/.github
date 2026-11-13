@@ -39,7 +39,12 @@ name: Reusable benchmark cell
 #            base=<ns3-dev ref>@<digest> base_tag=<ns3-dev tag>
 #            build_profile=<ns3-dev BUILD_PROFILE> modules=<name>@<commit>,...
 #
-# (one line; AntHocNet's field order, so its readers keep working). base= names
+# (one line; AntHocNet's field order, so its readers keep working), and
+# ` key=<64 hex>` after modules= when the caller passes `key`, the cell key
+# swarm-routing/ns3-tools' ns3-campaign computes over every pinned input
+# (ns3-tools#94); the artifact is then `benchmark-cell-<key>`, so a later
+# campaign finds the cell by its key and does not run it again. Without a key
+# the line and the artifact name are as before. base= names
 # the ns3-dev base by its immutable <version>-<profile>-<sha7> tag when the
 # registry has one for that digest, else by the image's own base tag. No other
 # 40-hex value appears in the line: swarm-routing/benchmarks' validate_run.py
@@ -138,6 +143,10 @@ on:
         description: "The cell name ([a-z0-9][a-z0-9._-]*), for the job name and the log"
         type: string
         default: ''
+      key:
+        description: "The cell key (64 hex) ns3-campaign computed over every pinned input; written into ##PROV## and the artifact name (benchmark-cell-<key>). Empty: neither"
+        type: string
+        default: ''
       modules:
         description: "Build mode: space-separated module specs from the checkout, `name=path` or `path`"
         type: string
@@ -170,6 +179,7 @@ jobs:
       ARGS_IN: ${{ inputs.args }}
       SEEDS: ${{ inputs.seeds }}
       CELL: ${{ inputs.cell }}
+      KEY: ${{ inputs.key }}
       MODULES: ${{ inputs.modules }}
       DEPS: ${{ inputs.dependencies }}
       STAGE: ${{ inputs.stage }}
@@ -191,6 +201,8 @@ jobs:
             || { echo "::error::harness must be a program name (got '$HARNESS')"; exit 1; }
           [ -z "$CELL" ] || [[ "$CELL" =~ ^[a-z0-9][a-z0-9._-]*$ ]] \
             || { echo "::error::cell must be [a-z0-9][a-z0-9._-]* (got '$CELL')"; exit 1; }
+          [ -z "$KEY" ] || [[ "$KEY" =~ ^[0-9a-f]{64}$ ]] \
+            || { echo "::error::key must be 64 hex (got '$KEY')"; exit 1; }
           args=$ARGS_IN
           if [ -n "$SEEDS" ]; then
             if ! [[ "$SEEDS" =~ ^([0-9]+)-([0-9]+)$ ]] || [ "${BASH_REMATCH[1]}" -lt 1 ] \
@@ -440,7 +452,7 @@ jobs:
           prov="##PROV## commit=$SOURCE_SHA ref=$GITHUB_REF_NAME run_id=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT"
           prov+=" image=$IMAGE profile=${NS3_PROFILE:-?} harness=$HARNESS"
           prov+=" base=$BASE_REF@$BASE_DIGEST base_tag=${BASE_TAG:-$BASE_REF} build_profile=$NS3_BUILD_PROFILE"
-          prov+=" modules=$MODULE_COMMITS"
+          prov+=" modules=$MODULE_COMMITS${KEY:+ key=$KEY}"
           echo "CELL_PROV=$prov" >> "$GITHUB_ENV"
           f="$GITHUB_WORKSPACE/results.txt"
           [ -f "$f" ] || : > "$f"
@@ -451,7 +463,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: benchmark-cell
+          name: ${{ inputs.key != '' && format('benchmark-cell-{0}', inputs.key) || 'benchmark-cell' }}
           path: |
             results.txt
             ns3-stderr.log

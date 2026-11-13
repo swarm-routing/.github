@@ -10,6 +10,8 @@ name: benchmark cell self-test
 # not the merge ref the run is dispatched at, so the pinned checkout and the
 # HEAD == source_sha check are exercised. The prebuilt mode (a campaign image
 # of the caller's repo) is proven by a protocol repo's caller (AntHocNet#905).
+# The cell is given a `key` (swarm-routing/ns3-tools#94): `check-key` proves
+# the artifact is named benchmark-cell-<key> and ##PROV## ends with key=<key>.
 #
 # Pull requests only: the cell runs the code at a commit it is given, and a
 # push or workflow_dispatch run would do that in the default branch's context
@@ -56,3 +58,25 @@ jobs:
       args: --scenario=paper --nNodes=20 --time=30 --protocols=olsr
       seeds: 1-2
       cell: selftest
+      key: 5e1f00000000000000000000000000000000000000000000000000000000c0de
+
+  check-key:
+    needs: cell
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        timeout-minutes: 5
+        with:
+          name: benchmark-cell-5e1f00000000000000000000000000000000000000000000000000000000c0de
+      - name: The key is in ##PROV## and the artifact name
+        run: |
+          set -euo pipefail
+          prov=$(grep '^##PROV##' results.txt | tail -n 1)
+          echo "$prov"
+          [[ "$prov" == *" key=5e1f00000000000000000000000000000000000000000000000000000000c0de" ]] || { echo "::error::##PROV## does not end with the key"; exit 1; }
