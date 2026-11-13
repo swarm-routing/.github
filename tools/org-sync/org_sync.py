@@ -726,8 +726,9 @@ def badge_lines(cfg, repo_dir):
         elif b == "docs" and cfg.get("docs_url"):
             out.append(f"[![Docs]({shield('docs', 'site', 'blue')})]({cfg['docs_url']})")
         elif b == "arena" and arena_id(cfg):
-            # the project's page on the org site (Colony Arena), as in site/hub/projects.json
-            url = f"https://swarm-routing.github.io/arena/{arena_id(cfg)}/"
+            # the project's page on the org site (Colony Arena), as in site/hub/projects.json;
+            # at /projects/<id>/ since swarm-routing/swarm-routing.github.io#102 (was /arena/<id>/)
+            url = f"https://swarm-routing.github.io/projects/{arena_id(cfg)}/"
             out.append(
                 f"[![Colony Arena: {arena_id(cfg)}]({shield('Colony Arena', 'project page', 'orange')})]({url})"
             )
