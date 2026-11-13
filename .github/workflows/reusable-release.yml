@@ -87,8 +87,9 @@ name: Reusable release
 #    "The bot's GitHub App"). The site's release-sync.yml redeploys Pages and
 #    proposes its hub-data and lock PRs. It is report-only: a failed dispatch
 #    is a warning and a line in the job summary, never a failed release (the
-#    site's weekly run catches a missed event). A private repository's caller
-#    passes `notify-site: false` (the site lists public repositories only);
+#    site's weekly run catches a missed event). A private repository never
+#    sends it, whatever `notify-site` says (the site lists public
+#    repositories only, and its Actions logs are public);
 #    release-selftest.yml passes it too, so no test sends an event.
 #
 # mode `dry-run` (or `dry-run: true`) bumps on the runner only, then builds,
@@ -220,7 +221,7 @@ on:
         type: boolean
         default: false
       notify-site:
-        description: "After a release is published, send repository_dispatch `org-release` to swarm-routing/swarm-routing.github.io (report-only); false for a private repository and in tests"
+        description: "After a release is published, send repository_dispatch `org-release` to swarm-routing/swarm-routing.github.io (report-only); false in tests; a private repository never sends it"
         type: boolean
         default: true
     secrets:
@@ -856,7 +857,9 @@ jobs:
       # needs Contents: write on the site. Report-only: a failed dispatch is a
       # warning and a summary line, and the site's weekly run catches it.
       - name: Tell the org site
-        if: ${{ inputs.notify-site }}
+        # never from a private repository, whatever notify-site says: the site's
+        # Actions logs are public, and the event names the repository
+        if: ${{ inputs.notify-site && !github.event.repository.private }}
         continue-on-error: true
         timeout-minutes: 3
         env:
