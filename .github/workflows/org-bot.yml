@@ -12,7 +12,11 @@ name: org-bot
 # - zenodo: `zenodo.py record --write` then `org_sync.py apply` in each
 #   repository with a CITATION.cff whose concept Zenodo holds but the
 #   repository does not name yet (a first release), so CITATION.cff's doi,
-#   zenodo_concept and the README DOI badge are never typed by hand (#232).
+#   zenodo_concept and the README DOI badge are never typed by hand (#232);
+# - swarm-core-pin: `check-swarm-core-pin.py --bump` in each protocol
+#   repository whose pin is stale after a swarm-core core/ change, on one PR
+#   per repository (org-bot/swarm-core-pin) updated in place (#208). Every
+#   three hours on its own as well: a stale pin blocks every PR there.
 # Daily, on every push to main that changes the templates or the generators,
 # and on demand. One PR per repository and task; the same change is never
 # proposed twice, and an older bot PR is closed as superseded. Where the
@@ -33,6 +37,7 @@ name: org-bot
 on:
   schedule:
     - cron: '17 4 * * *'
+    - cron: '41 */3 * * *'  # swarm-core-pin alone (#208)
   push:
     branches: [main]
     paths:
@@ -41,12 +46,13 @@ on:
       - 'tools/epics/**'
       - 'tools/org-bot/**'
       - 'tools/zenodo/**'
+      - 'tools/checks/check-swarm-core-pin.py'
   workflow_dispatch:
     inputs:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -70,7 +76,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      TASK: ${{ inputs.task || 'all' }}
+      TASK: ${{ inputs.task || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || 'all' }}
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:

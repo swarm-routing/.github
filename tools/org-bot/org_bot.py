@@ -4,10 +4,10 @@
 """Open the refresh PRs that keep every org repository in step with this one.
 
 Usage:
-  org_bot.py run [--task epics|org-sync|zenodo|all] [--repos A,B] [--dry-run]
+  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|all] [--repos A,B] [--dry-run]
   org_bot.py --self-test
 
-Three tasks, each a generator this repository already has, run on a fresh clone
+Four tasks, each a generator this repository already has, run on a fresh clone
 of each public repository (listed by `epics.py fetch`: the org listing, or
 ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
@@ -26,6 +26,14 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             renders the README DOI badge and the citing section, so no DOI
             is typed by hand (#232). A concept named two ways fails that
             repository, for the maintainer. Zenodo is only read.
+
+  swarm-core-pin  tools/checks/check-swarm-core-pin.py --bump, in each
+            repository whose core/CMakeLists.txt pins swarm-core: when
+            swarm-core main changed core/ since the pin, every occurrence of
+            the old commit becomes main's (#208). Its PR lives on one branch,
+            org-bot/swarm-core-pin, and is updated in place (pushed again, its
+            body rewritten) when swarm-core moves on before it merges.
+            ORG_BOT_SWARM_CORE overrides swarm-core's URL.
 
 When a run changes files, the bot opens one PR per repository and task:
 - the branch is `org-bot/<task>-<hash of the change>`;
@@ -74,6 +82,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 EPICS = os.path.join(ROOT, "tools", "epics", "epics.py")
 ORG_SYNC = os.path.join(ROOT, "tools", "org-sync", "org_sync.py")
 ZENODO = os.path.join(ROOT, "tools", "zenodo", "zenodo.py")
+PIN = os.path.join(ROOT, "tools", "checks", "check-swarm-core-pin.py")
+# swarm-core's git URL for the swarm-core-pin task (a local path in the self-test)
+SWARM_CORE = os.environ.get(
+    "ORG_BOT_SWARM_CORE", "https://github.com/swarm-routing/ns3-swarm-core.git"
+)
+# tasks whose PR lives on one branch, updated in place when the change moves on
+FIXED_BRANCH = {"swarm-core-pin"}
 ORG = "swarm-routing"
 BOT = ("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
 AUTO_MERGE = (
@@ -93,6 +108,15 @@ TASKS = {
         "what": "The org-managed files drifted from swarm-routing/.github `templates/`. "
         "Rendered with `tools/org-sync/org_sync.py apply`, which never overwrites a "
         "section this repository owns.",
+    },
+    "swarm-core-pin": {
+        "title": "chore(core): bump the swarm-core pin (org-bot)",
+        "what": "swarm-core `main` changed `core/` since this repository's pin, so its "
+        "`swarm-core / pin` check fails on every PR until the pin follows (#208). "
+        "Rewritten by swarm-routing/.github `tools/checks/check-swarm-core-pin.py --bump`: "
+        "every occurrence of the old commit becomes swarm-core `main`'s, and nothing "
+        "else changes. This repository's core tests and ns-3 suite run on this PR; when "
+        "swarm-core moves again before it merges, the bot updates this PR in place.",
     },
     "zenodo": {
         "title": "docs: record the zenodo concept doi (org-bot)",
@@ -176,7 +200,18 @@ def git_env(token):
 
 
 def branch_for(task, diff):
+    if task in FIXED_BRANCH:
+        return f"org-bot/{task}"
     return f"org-bot/{task}-{hashlib.sha256(diff.encode()).hexdigest()[:8]}"
+
+
+def pin_target(notes):
+    """The `pin-target: <sha>` line check-swarm-core-pin.py --bump printed, or None."""
+    for note in notes:
+        for line in (note or "").splitlines():
+            if line.startswith("pin-target:"):
+                return line.split(":", 1)[1].strip()
+    return None
 
 
 def apply_failed(returncode, stderr):
@@ -209,6 +244,22 @@ def generate(task, repo, clone, data, out):
                     data,
                 ],
             ]
+    elif task == "swarm-core-pin":
+        cmake = os.path.join(clone, "core", "CMakeLists.txt")
+        if not os.path.exists(cmake):
+            return None
+        with open(cmake) as fh:
+            if "SWARM_CORE_REF" not in fh.read():
+                return None  # no swarm-core pin in this repository
+        r = sh(
+            [sys.executable, "-I", PIN, "--bump", "--swarm-core", SWARM_CORE],
+            cwd=clone,
+            check=False,
+        )
+        if r.returncode:
+            raise Failure(f"check-swarm-core-pin.py --bump: {r.stdout.strip() or r.stderr.strip()}")
+        out.append(r.stdout.strip())
+        return out
     elif task == "zenodo":
         if not os.path.exists(os.path.join(clone, "CITATION.cff")):
             return None
@@ -315,11 +366,45 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
     mine = [
         p
         for p in open_prs
-        if p["head"]["ref"].startswith(f"org-bot/{task}-")
+        if (p["head"]["ref"].startswith(f"org-bot/{task}-") or p["head"]["ref"] == branch)
         and p["head"].get("repo", {}).get("full_name", full) == full
     ]
     same = [p for p in mine if p["head"]["ref"] == branch]
+    target = pin_target(notes) if task == "swarm-core-pin" else None
+    if target and not same:
+        # someone already opened a bump to this commit by hand: no duplicate (#208)
+        hand = [
+            p
+            for p in open_prs
+            if p not in mine
+            and "swarm-core pin" in (p.get("title") or "")
+            and target[:7] in (p.get("title") or "") + (p.get("body") or "")
+        ]
+        if hand:
+            print(f"{repo} {task}: already proposed by hand in #{hand[0]['number']}")
+            return {"number": hand[0]["number"], "branch": None, "hand": True}
     base = gh.api("GET", f"repos/{full}")["default_branch"]
+    if same and task in FIXED_BRANCH:
+        # one PR per repository, refreshed in place (#208): unchanged when it
+        # already carries this target, else the branch is pushed again
+        if target and target in (same[0].get("body") or ""):
+            note = queue(gh, full, base, same[0])
+            print(f"{repo} {task}: already proposed in #{same[0]['number']}; {note}")
+            return {"number": same[0]["number"], "branch": branch, "queue": note}
+        number = same[0]["number"]
+        sh(["git", "-C", clone, "checkout", "-q", "-b", branch], env=env)
+        sh(["git", "-C", clone, "add", "-A"], env=env)
+        msg = f"{TASKS[task]['title']}\n\nGenerated by swarm-routing/.github tools/org-bot ({run_url or 'local run'})."
+        sh(["git", "-C", clone, "commit", "-q", "-m", msg], env=env)
+        sh(["git", "-C", clone, "push", "-q", "origin", f"+HEAD:refs/heads/{branch}"], env=env)
+        gh.api(
+            "PATCH",
+            f"repos/{full}/pulls/{number}",
+            {"title": TASKS[task]["title"], "body": pr_body(task, notes, run_url)},
+        )
+        note = queue(gh, full, base, same[0])
+        print(f"{repo} {task}: updated #{number} on {branch}; {note}")
+        return {"number": number, "branch": branch, "queue": note, "updated": True}
     if same:
         note = queue(gh, full, base, same[0])
         print(f"{repo} {task}: already proposed in #{same[0]['number']}; {note}")
@@ -364,7 +449,7 @@ def run(args, gh=None, clone_url=None):
         print("org-bot: ORG_BOT_TOKEN is not set; dry run")
     gh = gh or GitHub(token)
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
-    tasks = ["epics", "org-sync", "zenodo"] if args.task == "all" else [args.task]
+    tasks = ["epics", "org-sync", "zenodo", "swarm-core-pin"] if args.task == "all" else [args.task]
     run_url = ""
     if os.environ.get("GITHUB_RUN_ID"):
         run_url = (
@@ -431,7 +516,9 @@ def main(argv=None):
     p.add_argument("--self-test", action="store_true")
     sub = p.add_subparsers(dest="cmd")
     r = sub.add_parser("run")
-    r.add_argument("--task", choices=["epics", "org-sync", "zenodo", "all"], default="all")
+    r.add_argument(
+        "--task", choices=["epics", "org-sync", "zenodo", "swarm-core-pin", "all"], default="all"
+    )
     r.add_argument("--repos", default="", help="comma-separated names (default: every public repo)")
     r.add_argument("--data", default="", help="saved `epics.py fetch` output instead of the API")
     r.add_argument("--dry-run", action="store_true")
@@ -956,6 +1043,107 @@ def self_test():
     finally:
         globals()["sh"] = real_sh
     check("zenodo: a refused record fails the repository", refused and "gamma" in refused)
+    # swarm-core-pin (#208): a stale pin gets one PR on org-bot/swarm-core-pin, a current
+    # one none, a repository with no pin is skipped, and a second swarm-core move
+    # updates that same PR (branch pushed again, body rewritten)
+    sc = os.path.join(work, "swarm-core")
+    os.makedirs(os.path.join(sc, "core"))
+
+    def sc_commit(text, msg):
+        with open(os.path.join(sc, "core", "a.h"), "w") as fh:
+            fh.write(text)
+        sh(["git", "-C", sc, "add", "-A"], env=env)
+        sh(["git", "-C", sc, "commit", "-q", "-m", msg], env=env)
+        return sh(["git", "-C", sc, "rev-parse", "HEAD"]).stdout.strip()
+
+    sh(["git", "init", "-q", "-b", "main", sc], env=env)
+    old = sc_commit("int a;\n", "core a")
+
+    def pinned_repo(name, pin):
+        src = os.path.join(work, "src", name)
+        files = {
+            "core/CMakeLists.txt": f'set(SWARM_CORE_REF "{pin}" CACHE STRING "swarm-core")\n',
+            "Makefile": f"SWARM_CORE_REF ?= {pin}\n",
+            ".github/workflows/licence.yml": f"  core-deps: swarm-routing/ns3-swarm-core@{pin}:core\n",
+        }
+        for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(src, rel)), exist_ok=True)
+            with open(os.path.join(src, rel), "w") as fh:
+                fh.write(text)
+        sh(["git", "init", "-q", "-b", "main", src], env=env)
+        sh(["git", "-C", src, "add", "-A"], env=env)
+        sh(["git", "-C", src, "commit", "-q", "-m", "init"], env=env)
+        sh(
+            ["git", "clone", "-q", "--bare", src, os.path.join(remotes, ORG, name + ".git")],
+            env=env,
+        )
+
+    pinned_repo("delta", old)
+    new = sc_commit("int a, b;\n", "core b")
+    pinned_repo("eps", new)
+    pdata = os.path.join(work, "pdata.json")
+    with open(pdata, "w") as fh:
+        json.dump(
+            {"org": ORG, "repos": [{"name": n, "epics": []} for n in ("alpha", "delta", "eps")]},
+            fh,
+        )
+    globals()["SWARM_CORE"] = sc
+    gh = FakeGitHub()
+    res, out = go(gh, task="swarm-core-pin", data=pdata)
+    git_dir = os.path.join(remotes, ORG, "delta.git")
+    shown = sh(
+        ["git", "--git-dir", git_dir, "show", "org-bot/swarm-core-pin:Makefile"], check=False
+    ).stdout
+    post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    check(
+        "swarm-core-pin: a stale pin gets one PR on the fixed branch, a current one none",
+        [r[0] for r in res] == ["delta", "eps"]
+        and res[0][2]["branch"] == "org-bot/swarm-core-pin"
+        and "eps swarm-core-pin: up to date" in out
+        and new in shown
+        and len(post) == 1
+        and post[0][2]["title"] == "chore(core): bump the swarm-core pin (org-bot)"
+        and f"pin-target: {new}" in post[0][2]["body"]
+        and "core b" in post[0][2]["body"],
+    )
+    newer = sc_commit("int a, b, c;\n", "core c")
+    open_pr = {
+        "number": 42,
+        "node_id": "PR_42",
+        "head": {"ref": "org-bot/swarm-core-pin", "repo": {"full_name": f"{ORG}/delta"}},
+        "body": f"pin-target: {new}",
+    }
+    gh = FakeGitHub(open_prs=[open_pr])
+    res, out = go(gh, task="swarm-core-pin", repos="delta", data=pdata)
+    shown = sh(["git", "--git-dir", git_dir, "show", "org-bot/swarm-core-pin:Makefile"]).stdout
+    patch = [c for c in gh.calls if c[0] == "PATCH" and c[1].endswith("/pulls/42")]
+    check(
+        "swarm-core-pin: a second move updates the same PR",
+        "updated #42" in out
+        and newer in shown
+        and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+        and patch
+        and f"pin-target: {newer}" in patch[0][2]["body"],
+    )
+    gh = FakeGitHub(open_prs=[{**open_pr, "body": f"pin-target: {newer}"}])
+    res, out = go(gh, task="swarm-core-pin", repos="delta", data=pdata)
+    check(
+        "swarm-core-pin: the same target is left alone",
+        "already proposed in #42" in out and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
+    )
+    hand_pr = {
+        "number": 7,
+        "head": {"ref": "claude/bump", "repo": {"full_name": f"{ORG}/delta"}},
+        "title": f"chore(core): bump the swarm-core pin to {newer[:7]}",
+        "body": "",
+    }
+    gh = FakeGitHub(open_prs=[hand_pr])
+    res, out = go(gh, task="swarm-core-pin", repos="delta", data=pdata)
+    check(
+        "swarm-core-pin: a hand-opened bump to the same commit gets no duplicate",
+        "already proposed by hand in #7" in out
+        and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
+    )
     # org_sync.py apply: exit 1 with only stdout is owned sections left alone; anything else fails
     check(
         "apply exit codes",

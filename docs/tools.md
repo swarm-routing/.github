@@ -68,11 +68,11 @@ python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE
 python3 -m json.tool labels.json >/dev/null
 python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
 python3 -I tools/checks/check-dco.py --self-test   # the DCO gate: signed, unsigned, mismatched, exempt (member, write access, bots, merges, agent commits on a member's PR), a real git history
-python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos
+python3 -I tools/checks/check-swarm-core-pin.py --self-test   # against a local swarm-core and fixture repos; --bump rewrites a stale pin everywhere (extra files included), leaves a current one, refuses a split one
 python3 -I tools/org-sync/test_org_sync.py   # org-sync against fixture repos (references: the seed, bib only, [[references]] only, both, a malformed bib)
 python3 -I tools/epics/epics.py --self-test     # the epic lists, on fixture data
 python3 -I tools/zenodo/zenodo.py --self-test   # the Zenodo check and archive, against a fake Zenodo (publish-release: first release, next version, idempotent re-run, refusal, retries; record: unrecorded, written, two concepts refused; bibtex: the entry, roles, the key from ORG_KEYS (= CONTRIBUTING's table), unrecorded, unreleased and unarchived)
-python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub (the zenodo task: record, then apply's badge)
+python3 -I tools/org-bot/org_bot.py --self-test # the refresh PRs, against local bare repos and a fake GitHub (the zenodo task: record, then apply's badge; the swarm-core-pin task: a stale pin gets one PR on org-bot/swarm-core-pin, a current one none, a second swarm-core move updates that PR, the same target is left alone, a hand-opened bump to the same commit gets no duplicate)
 python3 -I tools/docs-review/check_docs.py --self-test   # the docs standard and the AI-files facts, a passing and a failing fixture repo per check; a settings-only repo skips the badge row and the org sections; AGENTS.md over its size budget warns (own text, org-sync sections, a settings-only whole file)
 python3 -I tools/docs-review/check_docs.py ../AntHocNet --online   # read-only, a real repo's docs and AI files (issue states through gh)
 python3 -I tools/docs-review/ai_files_review.py --self-test   # the weekly review's issue sync, against local bare repos and a fake GitHub
