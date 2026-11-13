@@ -1051,7 +1051,13 @@ approved actions. The caller's job grants `security-events: write` and
 `id-token: write`. The `scorecard` badge (org-sync) appears with the workflow,
 and the first push to `main` after it lands publishes the first score. A low
 score is a finding to triage in an issue, not a build break. Whether a repo
-also fills the CII Best Practices questionnaire is decided per repo on #23.
+also fills the CII Best Practices questionnaire is decided per repo on #23. A
+repo registered at [bestpractices.dev](https://www.bestpractices.dev) names its
+project as top-level `bestpractices_project = "<id>"` in
+`.github/org-sync.toml`; the `bestpractices` badge (org-sync, after
+`scorecard`) then shows its level, `in progress` until the passing criteria
+are answered. A repository that sets its own `badges` list also adds
+`"bestpractices"` to it, after `"scorecard"`.
 
 ## AI agents
 

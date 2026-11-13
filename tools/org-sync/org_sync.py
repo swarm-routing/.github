@@ -132,7 +132,9 @@ def markers(path):
 # when the repository has a CITATION.cff (`citation = true` seeds one);
 # `scorecard` (OpenSSF Scorecard, #23) only where
 # .github/workflows/scorecard.yml runs it, so a private repository, which skips
-# that workflow (`skip = [".github/workflows/scorecard.yml"]`), never gets one.
+# that workflow (`skip = [".github/workflows/scorecard.yml"]`), never gets one;
+# `bestpractices` (OpenSSF Best Practices, #23) only when the config names the
+# repository's bestpractices.dev project as `bestpractices_project = "<id>"`.
 # `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security,
 # maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
@@ -142,7 +144,17 @@ SONAR_METRICS = {
     "sonar-security": ("Security Rating", "security_rating"),
     "sonar-maintainability": ("Maintainability Rating", "sqale_rating"),
 }
-BASE_BADGES = ["ci", "release", "doi", "cite", "licence", "conventional", "arena", "scorecard"]
+BASE_BADGES = [
+    "ci",
+    "release",
+    "doi",
+    "cite",
+    "licence",
+    "conventional",
+    "arena",
+    "scorecard",
+    "bestpractices",
+]
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
     "c-cpp": ["cxx", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -675,6 +687,12 @@ def zenodo_concept(cfg):
     return c if c.isdigit() else ""
 
 
+def bestpractices_project(cfg):
+    """The bestpractices.dev project id from `bestpractices_project`, digits only, else ''."""
+    p = str(cfg.get("bestpractices_project", "")).strip()
+    return p if p.isdigit() else ""
+
+
 def check_runs_badge(repo, label, job, logo):
     """A live badge for one job's check run on main (shields.io check-runs)."""
     q = f"nameFilter={quote(job)}&label={quote(label)}&logo={logo}"
@@ -800,6 +818,10 @@ def badge_lines(cfg, repo_dir):
                 f"[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/{repo}/badge)]"
                 f"(https://scorecard.dev/viewer/?uri=github.com/{repo})"
             )
+        elif b == "bestpractices" and bestpractices_project(cfg):
+            # the project's level on bestpractices.dev (in progress, passing, ...)
+            url = f"https://www.bestpractices.dev/projects/{bestpractices_project(cfg)}"
+            out.append(f"[![OpenSSF Best Practices]({url}/badge)]({url})")
         elif b == "claude-plugin":
             out.append(
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"

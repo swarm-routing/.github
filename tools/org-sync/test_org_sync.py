@@ -201,6 +201,35 @@ check(
     and run("check", dp)[0] == 0,
     "a repo that skips the Scorecard workflow (a private one) gets no badge and stays clean",
 )
+# OpenSSF Best Practices (#23): the badge only with a bestpractices.dev project id
+check(
+    "bestpractices.dev" not in rq,
+    "no Best Practices badge without bestpractices_project",
+)
+db = fresh()
+run("init", db, "--kind", "protocol", "--dual", "core/")
+edit(
+    db,
+    ".github/org-sync.toml",
+    'kind = "protocol"\n',
+    'kind = "protocol"\nbestpractices_project = "not-an-id"\n',
+)
+run("apply", db)
+check(
+    "bestpractices.dev" not in read(os.path.join(db, "README.md")),
+    "a bestpractices_project that is not a project id renders no badge",
+)
+edit(db, ".github/org-sync.toml", '"not-an-id"', '"16656"')
+run("apply", db)
+rb = read(os.path.join(db, "README.md"))
+check(
+    "[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16656/badge)]"
+    "(https://www.bestpractices.dev/projects/16656)"
+    in rb
+    and rb.index("securityscorecards") < rb.index("bestpractices.dev")
+    and run("check", db)[0] == 0,
+    "bestpractices_project renders the Best Practices badge after Scorecard, and check is clean",
+)
 
 # release, doi and cite: each only when its target exists
 GH_DESC = (
