@@ -906,16 +906,16 @@ on:
     inputs:
       mode: { type: choice, options: [dry-run, bump], default: dry-run }
       increment:
-        description: "Force the bump's size (MAJOR for 1.0.0); empty: from the commits"
+        description: "Force the bump's size (MAJOR for 1.0.0); auto: from the commits"
         type: choice
-        options: ['', PATCH, MINOR, MAJOR]
-        default: ''
+        options: [auto, PATCH, MINOR, MAJOR]   # a choice option cannot be empty (actionlint)
+        default: auto
 jobs:
   release:
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
     with:
       mode: ${{ inputs.mode }}
-      increment: ${{ inputs.increment }}
+      increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}   # auto, or a push: ''
 ```
 
 Any other value fails the run in its first job, before anything is built or
