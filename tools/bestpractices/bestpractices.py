@@ -119,10 +119,11 @@ OWNER_ONLY = {
 CRYPTO = [c for c in PASSING if c.startswith("crypto_")]
 LEVELS = ["passing", "silver", "gold"]
 
-# what in a source file means the software uses cryptography
+# what in a source file means the software uses cryptography; hashlib alone (a checksum of
+# a download) does not: the owner sets bestpractices_crypto = true if it is more than that
 CRYPTO_USE = re.compile(
     r"#\s*include\s*[<\"](openssl|sodium|mbedtls|wolfssl|gnutls|nettle|cryptopp|botan)\b"
-    r"|^\s*(import|from)\s+(ssl|hmac|hashlib|secrets|cryptography|Crypto|nacl|OpenSSL)\b",
+    r"|^\s*(import|from)\s+(ssl|hmac|secrets|cryptography|Crypto|nacl|OpenSSL)\b",
     re.M,
 )
 LICENCES = [  # (SPDX id, a phrase of its text); all OSI-approved
