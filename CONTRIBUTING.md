@@ -1066,11 +1066,18 @@ in to the site, and no workflow logs in, keeps a session or submits answers.
 `tools/bestpractices/bestpractices.py` does the rest, read-only (#391):
 
 - **Register.** `bestpractices.py register swarm-routing/<repo> --dir <checkout>`
-  first asks the site whether the repository is registered; if it is, it
-  prints the project id and the `bestpractices_project = "<id>"` line for
-  `.github/org-sync.toml`. If not, it prints a registration URL pre-filled with
-  the answers the repository shows; the maintainer opens it, logs in, saves,
-  and then adds that line.
+  first asks the site whether the repository is registered. If not, it prints
+  a registration URL pre-filled with the answers the repository shows; the
+  maintainer opens it, logs in and saves. If it is, it prints the project id,
+  the `bestpractices_project = "<id>"` line for `.github/org-sync.toml`, and
+  the site's proposal links for that project
+  (`/en/projects/<id>/passing/edit?<criterion>_status=…`, each under 6000
+  characters, the owner-only criteria left out; `--answers FILE` proposes a
+  reviewed `.bestpractices.json`): the maintainer opens each one logged in,
+  reviews the proposed answers and saves. Nothing is saved by opening a link.
+- **Licence of the answers.** bestpractices.dev publishes what a project
+  submits under [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/), so
+  write nothing in a justification that cannot be released under it.
 - **Propose the answers.** `bestpractices.py answers . --write` writes
   `.bestpractices.json` at the repository's top level: every passing criterion
   the repository gives evidence for, each justified by its full https URL on
