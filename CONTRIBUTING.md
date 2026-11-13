@@ -1056,7 +1056,8 @@ repo registered at [bestpractices.dev](https://www.bestpractices.dev) names its
 project as top-level `bestpractices_project = "<id>"` in
 `.github/org-sync.toml`; the `bestpractices` badge (org-sync, after
 `scorecard`) then shows its level, `in progress` until the passing criteria
-are answered.
+are answered. A repository that sets its own `badges` list also adds
+`"bestpractices"` to it, after `"scorecard"`.
 
 ## AI agents
 
