@@ -205,6 +205,26 @@ def branch_for(task, diff):
     return f"org-bot/{task}-{hashlib.sha256(diff.encode()).hexdigest()[:8]}"
 
 
+def branch_has(clone, branch, env):
+    """True when the PR branch already holds every file this run changed, as
+    generated: main may have gained a file that names the old pin since the
+    branch was pushed, and then the branch needs the refresh too (#208)."""
+    if sh(
+        ["git", "-C", clone, "fetch", "-q", "--depth", "1", "origin", branch], env=env, check=False
+    ).returncode:
+        return False
+    changed = sh(["git", "-C", clone, "diff", "--name-only"], env=env).stdout.split()
+    changed += sh(
+        ["git", "-C", clone, "ls-files", "--others", "--exclude-standard"], env=env
+    ).stdout.split()
+    for path in changed:
+        theirs = sh(["git", "-C", clone, "show", f"FETCH_HEAD:{path}"], env=env, check=False)
+        with open(os.path.join(clone, path), encoding="utf-8", errors="replace") as fh:
+            if theirs.returncode or theirs.stdout != fh.read():
+                return False
+    return True
+
+
 def pin_target(notes):
     """The `pin-target: <sha>` line check-swarm-core-pin.py --bump printed, or None."""
     for note in notes:
@@ -387,7 +407,7 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
     if same and task in FIXED_BRANCH:
         # one PR per repository, refreshed in place (#208): unchanged when it
         # already carries this target, else the branch is pushed again
-        if target and target in (same[0].get("body") or ""):
+        if target and target in (same[0].get("body") or "") and branch_has(clone, branch, env):
             note = queue(gh, full, base, same[0])
             print(f"{repo} {task}: already proposed in #{same[0]['number']}; {note}")
             return {"number": same[0]["number"], "branch": branch, "queue": note}
@@ -1130,6 +1150,26 @@ def self_test():
     check(
         "swarm-core-pin: the same target is left alone",
         "already proposed in #42" in out and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
+    )
+    # main gains a file naming the old pin while the PR is open: same target,
+    # but the branch lacks that file's bump, so it is refreshed (CodeRabbit, #359)
+    extra = os.path.join(work, "delta-extra")
+    sh(["git", "clone", "-q", os.path.join(remotes, ORG, "delta.git"), extra], env=env)
+    os.makedirs(os.path.join(extra, ".github", "workflows"), exist_ok=True)
+    with open(os.path.join(extra, ".github", "workflows", "bench.yml"), "w") as fh:
+        fh.write(f"        swarm-core=swarm-routing/ns3-swarm-core@{old}\n")
+    sh(["git", "-C", extra, "add", "-A"], env=env)
+    sh(["git", "-C", extra, "commit", "-q", "-m", "bench"], env=env)
+    sh(["git", "-C", extra, "push", "-q", "origin", "HEAD:main"], env=env)
+    gh = FakeGitHub(open_prs=[{**open_pr, "body": f"pin-target: {newer}"}])
+    res, out = go(gh, task="swarm-core-pin", repos="delta", data=pdata)
+    bench = sh(
+        ["git", "--git-dir", git_dir, "show", "org-bot/swarm-core-pin:.github/workflows/bench.yml"],
+        check=False,
+    ).stdout
+    check(
+        "swarm-core-pin: a new file naming the old pin refreshes the PR, same target",
+        "updated #42" in out and newer in bench,
     )
     hand_pr = {
         "number": 7,
