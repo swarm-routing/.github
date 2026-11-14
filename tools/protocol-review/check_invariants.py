@@ -36,6 +36,19 @@ adopting repo has), all keys optional:
     wire = ["core/include/ara/wire_*"]  # wire-format files (rule 3), fnmatch patterns
     wire_version = "kWireVersion"       # the version constant a wire change bumps
     sim_dirs = ["ns3/"]                 # simulator code: rule 5 applies, as a WARN
+    moving_refs = "warn"                # "fail" once the repo consumes releases (below)
+
+Moving dependency refs (swarm-routing/ns3-swarm-core#134, #411): an org
+dependency added on a ref that moves instead of a release. In a CMake file, a
+`GIT_TAG` that is not a literal `vX.Y.Z` (a commit, a branch, a variable such
+as `${SWARM_CORE_REF}`) or a `GIT_REPOSITORY` of a swarm-routing repository (a
+hand-rolled FetchContent instead of the release lock: `URL` + `URL_HASH` read
+from `swarm-core.lock`); in a workflow, a `name=swarm-routing/<repo>@<ref>`
+line under `dependencies:` whose ref is not `vX.Y.Z` (`canary-dependencies:`
+is where a moving ref belongs). Only added lines count. WARN today, while
+every protocol still builds on commit pins; a repository sets
+`moving_refs = "fail"` in `[review]` in the PR that switches it to the
+release lock, so a later regression fails.
 
 Generalised from AntHocNet's .claude/skills/protocol-review/check_invariants.sh
 (now anthocnet-review). Stdlib only.
@@ -86,6 +99,13 @@ METRIC = re.compile(r"\b(?:PDR|delivery ratio|throughput|delay|latency|overhead|
 PROTOCOL = re.compile(
     r"\b(?:AntHocNet|AODV|AOMDV|OLSR|DSDV|DSR|HWMP|GPSR|ARA|BeeAdHoc|Termite|HOPNET)\b", re.I
 )
+# moving dependency refs: a release tag, CMake's git fetch, an org dependency in a workflow
+RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
+GIT_TAG = re.compile(r"\bGIT_TAG\s+(\S+)")
+GIT_REPO_ORG = re.compile(r"\bGIT_REPOSITORY\s+\S*github\.com[/:]swarm-routing/", re.I)
+ORG_DEP = re.compile(r"(?:^|[\s|\"'])[\w-]+=swarm-routing/[\w.-]+@([^\s:'\"]+)")
+GIT_TAG_ALONE = re.compile(r"\bGIT_TAG\s*$")
+YAML_KEY = re.compile(r"^\s*-?\s*([A-Za-z0-9_-]+):")
 # what is not prose: inline code, link targets, issue and PR numbers
 NOT_PROSE = re.compile(r"`[^`]*`|\]\([^)]*\)|https?://\S+|\b[\w.-]*#\d+")
 # a line that is its own unit: a table row, a list item, a heading, a rule
@@ -114,6 +134,7 @@ def config(repo):
         "wire": rv.get("wire", []),
         "wire_version": rv.get("wire_version", ""),
         "sim_dirs": rv.get("sim_dirs", ["ns3/", "model/", "helper/"]),
+        "moving_refs": rv.get("moving_refs", "warn"),
     }
 
 
@@ -454,6 +475,59 @@ def check(repo, base="origin/main", pr_body=None):
     if any(f.startswith(".github/workflows/") for f in changed) and not (unpinned or retention):
         r.add("PASS", "rule 8: workflow actions pinned, retention within 7 days")
 
+    # moving dependency refs (swarm-routing/ns3-swarm-core#134): WARN, or FAIL by config
+    moving = []
+    for f in changed:
+        lines = numbered.get(f, [])
+        if not lines:
+            continue
+        if os.path.basename(f) == "CMakeLists.txt" or f.endswith(".cmake"):
+            try:
+                with open(os.path.join(repo, f), encoding="utf-8", errors="replace") as fh:
+                    whole = [ln.split("#", 1)[0] for ln in fh.read().splitlines()]
+            except OSError:
+                whole = []
+            for n, line in lines:
+                code = line.split("#", 1)[0]
+                m = GIT_TAG.search(code)
+                value = m.group(1) if m else None
+                if value is None and code.split():
+                    # CMake allows the value on the line after the keyword: an
+                    # unchanged `GIT_TAG` line above a changed value still counts
+                    prev = next((p for p in reversed(whole[: n - 1]) if p.strip()), "")
+                    if GIT_TAG_ALONE.search(prev):
+                        value = code.split()[0]
+                if value and not RELEASE_TAG.match(value.strip("\"')")):
+                    moving.append(f"{f}:{n}: GIT_TAG {value} is not a release tag")
+                if GIT_REPO_ORG.search(code):
+                    moving.append(
+                        f"{f}:{n}: an org repository fetched by git, not by its release lock "
+                        "(URL + URL_HASH)"
+                    )
+        elif f.startswith(".github/workflows/") and f.endswith((".yml", ".yaml")):
+            want = {n for n, _ in lines}
+            key = None
+            try:
+                with open(os.path.join(repo, f), encoding="utf-8", errors="replace") as fh:
+                    whole = fh.read().splitlines()
+            except OSError:
+                whole = []
+            for n, line in enumerate(whole, 1):
+                k = YAML_KEY.match(line)
+                if k:
+                    key = k.group(1)
+                if n not in want or key != "dependencies":
+                    continue
+                for m in ORG_DEP.finditer(line):
+                    if not RELEASE_TAG.match(m.group(1)):
+                        moving.append(
+                            f"{f}:{n}: dependency {m.group(0).strip(' |')}, not a release tag "
+                            "(a moving ref belongs in canary-dependencies)"
+                        )
+    if moving:
+        level = "FAIL" if cfg["moving_refs"] == "fail" else "WARN"
+        r.add(level, "dependencies: an org dependency on a moving ref, not a release", moving)
+
     # rule 9: nothing shipped depends on .claude/
     bad = []
     for f in changed:
@@ -754,6 +828,67 @@ def self_test():
 
     r = repo({}, {"README.md": "text\n"})
     expect("a docs-only diff has nothing to check", has(r, "PASS", "nothing in the diff"))
+
+    # moving dependency refs (swarm-routing/ns3-swarm-core#134): WARN, FAIL by config
+    fetch = (
+        "FetchContent_Declare(swarm_core_src\n"
+        "  GIT_REPOSITORY https://github.com/swarm-routing/ns3-swarm-core.git\n"
+        "  GIT_TAG ${SWARM_CORE_REF}\n  SOURCE_SUBDIR core)\n"
+    )
+    r = repo({}, {"core/CMakeLists.txt": fetch})
+    expect(
+        "moving refs: a git FetchContent of an org repo at a variable warns",
+        has(r, "WARN", "moving ref")
+        and "GIT_TAG ${SWARM_CORE_REF} is not a release tag" in "\n".join(r.lines)
+        and "fetched by git" in "\n".join(r.lines)
+        and not r.fail,
+    )
+    r = repo({}, {"core/CMakeLists.txt": fetch}, cfg='[review]\nmoving_refs = "fail"\n')
+    expect("moving refs: moving_refs = fail fails", has(r, "FAIL", "moving ref"))
+    r = repo({}, {"core/CMakeLists.txt": "  GIT_TAG " + "a" * 40 + "\n"})
+    expect("moving refs: a commit GIT_TAG warns", has(r, "WARN", "moving ref"))
+    r = repo({}, {"third/CMakeLists.txt": "  GIT_REPOSITORY https://x/y.git\n  GIT_TAG v1.9.5\n"})
+    expect(
+        "moving refs: a release-tag GIT_TAG of another project passes", not has(r, "WARN", "moving")
+    )
+    lock = "  URL https://github.com/${R}/releases/download/${T}/swarm-core-${V}.tar.gz\n"
+    r = repo({}, {"core/CMakeLists.txt": lock + "  URL_HASH SHA256=${H}\n"})
+    expect("moving refs: the release lock's URL + URL_HASH passes", not has(r, "WARN", "moving"))
+    wf = (
+        "jobs:\n  ci:\n    with:\n      dependencies: |\n"
+        "        swarm-core=swarm-routing/ns3-swarm-core@{0}\n"
+        "      canary-dependencies: |\n"
+        "        swarm-core=swarm-routing/ns3-swarm-core@main\n"
+        "      core-deps: swarm-routing/ns3-swarm-core@" + "b" * 40 + ":core\n"
+    )
+    r = repo({}, {".github/workflows/ns3.yml": wf.format("main")})
+    expect(
+        "moving refs: @main in dependencies warns, the canary and core-deps do not",
+        has(r, "WARN", "moving ref")
+        and "ns3.yml:5:" in "\n".join(r.lines)
+        and "ns3.yml:7:" not in "\n".join(r.lines)
+        and "ns3.yml:8:" not in "\n".join(r.lines),
+    )
+    for q in ('"', "'"):
+        quoted = "jobs:\n  ci:\n    with:\n      dependencies: {0}swarm-core=swarm-routing/ns3-swarm-core@main{0}\n"
+        r = repo({}, {".github/workflows/ns3.yml": quoted.format(q)})
+        expect(f"moving refs: a {q}-quoted inline dependency warns", has(r, "WARN", "moving ref"))
+    split = "FetchContent_Declare(x\n  GIT_REPOSITORY https://x/y.git\n  GIT_TAG\n    {0}\n)\n"
+    r = repo(
+        {"third/CMakeLists.txt": split.format("v1.0.0")},
+        {"third/CMakeLists.txt": split.format("main")},
+    )
+    expect(
+        "moving refs: a changed value under an unchanged GIT_TAG line warns",
+        has(r, "WARN", "moving ref") and "GIT_TAG main is not a release tag" in "\n".join(r.lines),
+    )
+    r = repo({}, {".github/workflows/ns3.yml": wf.format("v0.3.0")})
+    expect("moving refs: a release tag in dependencies passes", not has(r, "WARN", "moving"))
+    r = repo(
+        {".github/workflows/ns3.yml": wf.format("main")},
+        {".github/workflows/ns3.yml": wf.format("main") + "# a new comment\n"},
+    )
+    expect("moving refs: only added lines count", not has(r, "WARN", "moving"))
 
     for f in failures:
         print(f"FAIL: {f}")

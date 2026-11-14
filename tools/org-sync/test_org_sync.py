@@ -911,6 +911,43 @@ check(
     "the skills section is inserted when the heading has no blank line before it",
 )
 
+# 5b. The swarm-core dependencies section renders only where it is true
+#     (swarm-routing/ns3-swarm-core#134): none without a pin, the commit-pin text
+#     with SWARM_CORE_REF, the lock text with swarm-core.lock.
+d = fresh()
+run("init", d, "--kind", "protocol")
+check(
+    "org-sync:begin dependencies" not in read(os.path.join(d, "AGENTS.md")),
+    "no swarm-core pin: no dependencies section",
+)
+os.makedirs(os.path.join(d, "core"), exist_ok=True)
+write(
+    os.path.join(d, "core/CMakeLists.txt"),
+    'set(SWARM_CORE_REF "' + "a" * 40 + '" CACHE STRING "x")\n',
+)
+rc, out = run("plan", d)
+check("adopt     AGENTS.md#dependencies" in out, "a commit pin: the section is planned")
+run("apply", d)
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "<!-- org-sync:begin dependencies -->\n## How this repository gets swarm-core" in agents
+    and "fetches it with CMake\n  `FetchContent` at one commit" in agents
+    and agents.index("## How this repository gets") < agents.index("## Golden rules")
+    and run("check", d)[0] == 0,
+    "a commit pin: the pin text, before the golden rules, and check passes",
+)
+write(os.path.join(d, "swarm-core.lock"), "SWARM_CORE_REPO=swarm-routing/ns3-swarm-core\n")
+rc, out = run("check", d)
+check(rc == 1 and "AGENTS.md#dependencies" in out, "a lock added: the section drifts")
+run("apply", d)
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "`swarm-core.lock` names one swarm-core release" in agents
+    and "at one commit" not in agents
+    and run("check", d)[0] == 0,
+    "a lock: the lock text replaces the pin text",
+)
+
 # 6. The JSON item merges only the org's keys.
 p = os.path.join(d, ".claude/settings.json")
 write(p, '{"permissions": {"allow": ["Bash(ls)"]}}\n')
