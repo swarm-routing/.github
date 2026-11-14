@@ -73,7 +73,19 @@ name: Reusable ns-3 CI
 # Module specs are `name=path` (path relative to the caller's checkout) or a
 # bare path whose basename is the module name. The name must equal the
 # module's build_lib(LIBNAME ...). Dependencies are checked out and linked
-# first, in order.
+# first, in order. A dependency's ref is a branch or a tag (`git clone
+# --branch`), so `@vX.Y.Z` pins a released version.
+#
+# Dependency canary (#411; default off): pin `dependencies` to released tags
+# and name the moving refs (`@main`) in `canary-dependencies`, same form. On a
+# push, schedule or workflow_dispatch of the caller (never on a pull request or
+# in a merge queue), one extra leg, `ns-<first version> debug canary`, builds
+# and tests with `canary-dependencies` instead of `dependencies`. It has
+# continue-on-error, so it never fails the run, and it never runs on a PR, so
+# it is never a required check: a red canary on `main` says the next release
+# of a dependency will need work here. Coverage, Sonar and their artifacts stay
+# on the pinned legs. Add a `schedule:` to the caller's `on:` so the canary
+# runs while the caller's own `main` is quiet.
 on:
   workflow_call:
     inputs:
@@ -82,7 +94,11 @@ on:
         type: string
         required: true
       dependencies:
-        description: "Newline-separated `name=owner/repo@ref[:subdir]` modules to build first"
+        description: "Newline-separated `name=owner/repo@ref[:subdir]` modules to build first; ref is a branch or a tag"
+        type: string
+        default: ''
+      canary-dependencies:
+        description: "Same form as `dependencies`, for one non-blocking `canary` leg (first version, debug) on push, schedule and workflow_dispatch only, never on a PR: name moving refs (`@main`) here and released tags in `dependencies`; empty: no canary leg"
         type: string
         default: ''
       ns3-versions:
@@ -171,9 +187,11 @@ permissions:
 
 jobs:
   build:
-    name: ns-${{ matrix.version }} ${{ matrix.profile }}
+    name: ns-${{ matrix.version }} ${{ matrix.profile }}${{ matrix.deps == 'canary' && ' canary' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # the dependency canary (#411) reports, never fails the run
+    continue-on-error: ${{ matrix.deps == 'canary' }}
     permissions:
       contents: read
       packages: read
@@ -182,6 +200,9 @@ jobs:
       matrix:
         version: ${{ fromJSON(inputs.ns3-versions) }}
         profile: ${{ fromJSON(inputs.profiles) }}
+        deps: [pinned]
+        # one canary leg on the first version's debug image, outside PRs and the merge queue
+        include: ${{ fromJSON((inputs.canary-dependencies != '' && contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)) && format('[{{"version":{0},"profile":"debug","deps":"canary"}}]', toJSON(fromJSON(inputs.ns3-versions)[0])) || '[]') }}
     container:
       image: ghcr.io/swarm-routing/ns3-dev:${{ matrix.version }}-${{ matrix.profile }}
       credentials:
@@ -205,9 +226,9 @@ jobs:
           # SonarQube Cloud reads the history (blame, new code); the rest needs none
           fetch-depth: ${{ inputs.sonar && '0' || '1' }}
       - name: Check out dependencies
-        if: inputs.dependencies != ''
+        if: (matrix.deps == 'canary' && inputs.canary-dependencies || inputs.dependencies) != ''
         env:
-          DEPS: ${{ inputs.dependencies }}
+          DEPS: ${{ matrix.deps == 'canary' && inputs.canary-dependencies || inputs.dependencies }}
           TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -231,7 +252,7 @@ jobs:
           RUNS: ${{ inputs.run }}
           LSAN_SUPP: ${{ inputs.lsan-suppressions }}
           STRICT: ${{ inputs.strict-warnings }}
-          COVERAGE: ${{ (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] }}
+          COVERAGE: ${{ (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary' }}
         run: |
           set -euo pipefail
           args=()
@@ -300,7 +321,7 @@ jobs:
           done <<< "$PROGS"
           [ "$fails" = 0 ]
       - name: Coverage report (gcovr; report-only)
-        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
         env:
           EXCLUDE: ${{ inputs.coverage-exclude }}
           SONAR: ${{ inputs.sonar }}
@@ -336,7 +357,7 @@ jobs:
           { echo '### Coverage (report-only)'; echo '```'; cat "$GITHUB_WORKSPACE/coverage/summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: SonarQube Cloud — token, analysis method, compile database
         id: sonar
-        if: inputs.sonar && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        if: inputs.sonar && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -466,7 +487,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0]
+        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
         with:
           name: coverage
           path: coverage
@@ -477,7 +498,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: testpy-output-${{ matrix.version }}-${{ matrix.profile }}
+          name: testpy-output-${{ matrix.version }}-${{ matrix.profile }}${{ matrix.deps == 'canary' && '-canary' || '' }}
           path: testpy-output
           retention-days: 3
           if-no-files-found: ignore
