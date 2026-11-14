@@ -232,6 +232,9 @@ INSERT_AFTER = {
     # after the skills block, before the repository's own table (#277: what
     # CLAUDE.md held, so CLAUDE.md is only `@AGENTS.md`)
     ("AGENTS.md", "agent-defaults"): r"\n(?=\n?## Where to look\n)",
+    # how a protocol gets swarm-core (swarm-routing/ns3-swarm-core#134): after
+    # Build & verify, before the golden rules
+    ("AGENTS.md", "dependencies"): r"\n(?=\n?## Golden rules)",
     # an existing CODEOWNERS keeps its rules; the org's go last (the last match wins)
     (".github/CODEOWNERS", "codeowners"): r"\Z",
 }
@@ -276,6 +279,17 @@ def git_slug(repo_dir):
         return None
     m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$", url)
     return m.group(1) if m else None
+
+
+def swarm_core_mode(repo_dir):
+    """How the repository gets swarm-core's core/: "lock" (swarm-core.lock), "pin"
+    (a commit SWARM_CORE_REF in core/CMakeLists.txt) or None. The `dependencies`
+    section of AGENTS.md renders only where one holds, in the matching text, so
+    it never says what the repository cannot back (swarm-routing/ns3-swarm-core#134)."""
+    if os.path.exists(os.path.join(repo_dir, "swarm-core.lock")):
+        return "lock"
+    cmake = read(os.path.join(repo_dir, "core", "CMakeLists.txt")) or ""
+    return "pin" if re.search(r"^\s*set\(\s*SWARM_CORE_REF\b", cmake, re.M) else None
 
 
 class SettingsOnly(Exception):
@@ -327,6 +341,7 @@ def load_config(repo_dir, slug=None):
             "without double quotes or backslashes"
         )
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
+    cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
     cfg["references"] = check_references(cfg.get("references", []))
     if cfg["references"] and bib_references(repo_dir) is not None:
         print(
@@ -1103,6 +1118,10 @@ def items(cfg):
     ]
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))
+    if cfg.get("swarm_core_mode"):
+        # only where the repository builds on swarm-core, in the text that is true for it
+        mode = cfg["swarm_core_mode"]
+        out.append(("section", "AGENTS.md", f"agents/dependencies-{mode}.md", "dependencies"))
     if cfg["kind"] in CXX_KINDS:
         # Codecov and SonarQube Cloud settings for reusable-codecov.yml and the
         # reusable ns-3 CI's `sonar` input; the repository's own once written.
