@@ -7,7 +7,7 @@
     check_docs.py --self-test
 
 The standard is AntHocNet's README and docs map (#94): a title and the
-org-sync badge row; an explanation near the top; a link to the project's page
+org-sync badge table (grouped, #415; a badge outside it warns); an explanation near the top; a link to the project's page
 on the site (https://swarm-routing.github.io/projects/<id>/), and to the ns-3
 image when the repo builds with it; a layout block that matches the tree;
 Epics, License and how-to-work-here sections; for a released repository (a
@@ -58,6 +58,9 @@ import sys
 import tempfile
 import tomllib
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "org-sync"))
+from org_sync import BADGE_GROUPS  # noqa: E402  the README badge table's groups, one source
+
 SITE = "https://swarm-routing.github.io/"
 IMAGE = (
     "ghcr.io/swarm-routing/ns3-dev",
@@ -80,6 +83,11 @@ AGENTS_ORG_BUDGET = 23_200  # the org-sync sections (21,018 today, the same in e
 AGENTS_OWN_BUDGET = 16_300  # the repository's own text (AntHocNet's 14,810 the largest)
 AGENTS_SETTINGS_ONLY_BUDGET = 27_700  # a settings-only repository's whole file (.github's 25,102)
 ORG_SECTION = re.compile(r"<!-- org-sync:begin (\S+) -->.*?<!-- org-sync:end \1 -->\n?", re.S)
+# a linked badge image, [![alt](image)](link), in the managed table or outside it
+BADGE = re.compile(r"\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)")
+BADGE_HOST = re.compile(
+    r"shields\.io|/badges?[/.?]|badge\.svg|/badge\b|zenodo\.org/badge|skills\.sh/b/"
+)
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 LAYOUT = re.compile(r"^([A-Za-z0-9_.][\w./-]*/)\s{2,}\S")
 
@@ -192,6 +200,39 @@ def status(text):
     return m.group(1).lower() if m else None
 
 
+def badge_table(r, block):
+    """The managed badges are org-sync's table (#415): the `| Group | Badges |`
+    head, then one row per group with a badge, in BADGE_GROUPS' order."""
+    lines = block.strip("\n").splitlines()
+    titles = [t for t, _ in BADGE_GROUPS.values()]
+    rows = [re.fullmatch(r"\| (.+?) \| (.+) \|", ln) for ln in lines[2:]]
+    seen = [x.group(1) for x in rows if x]
+    if (
+        lines[:2] != ["| Group | Badges |", "| --- | --- |"]
+        or not rows
+        or not all(rows)
+        or any(t not in titles for t in seen)
+        or seen != sorted(seen, key=titles.index)
+        or len(set(seen)) != len(seen)
+        or not all(BADGE.search(x.group(2)) for x in rows)
+    ):
+        r.add(
+            "FAIL",
+            "README",
+            "the badges are not org-sync's grouped table (run org_sync.py apply)",
+        )
+        return
+    n = sum(len(BADGE.findall(x.group(2))) for x in rows)
+    r.add("PASS", "README", f"badge table: {n} badge(s) in {len(rows)} group(s): {', '.join(seen)}")
+
+
+def hand_badges(text):
+    """Badges written by hand outside the managed table, by alt text; a linked
+    image that is not a badge (a screenshot, a figure) is left alone."""
+    text = re.sub(r"```.*?```", "", text, flags=re.S)
+    return [alt or img for alt, img, _ in BADGE.findall(text) if BADGE_HOST.search(img)]
+
+
 def check(repo, online=False, fetch=None):
     cfg = config(repo)
     r = Report()
@@ -215,7 +256,17 @@ def check(repo, online=False, fetch=None):
         elif not m or "[![" not in m.group(1):
             r.add("FAIL", "README", "no org-sync badge row (run org_sync.py apply)")
         else:
-            r.add("PASS", "README", f"badge row with {m.group(1).count('[![')} badge(s)")
+            badge_table(r, m.group(1))
+        if m and not cfg["settings_only"]:
+            outside = hand_badges(readme[: m.start()] + readme[m.end() :])
+            if outside:
+                r.add(
+                    "WARN",
+                    "README",
+                    f"{len(outside)} badge(s) outside the org-sync table: give each a kind or an "
+                    "[[extra_badges]] entry in .github/org-sync.toml and delete it (org_sync.py apply)",
+                    outside,
+                )
         after = readme[m.end() :] if m else readme
         prose = [
             p
@@ -895,7 +946,7 @@ def self_test():
         "## What this repo is\n\n**Status: building.**\n\n```\ncore/   the core\nns3/   (planned) module\n```",
     )
     readme_ok = (
-        "# ARA\n\n<!-- org-sync:begin badges -->\n[![CI](https://x/b.svg)](https://x/a)\n<!-- org-sync:end badges -->\n\n"
+        "# ARA\n\n<!-- org-sync:begin badges -->\n| Group | Badges |\n| --- | --- |\n| Build | [![CI](https://x/b.svg)](https://x/a) |\n<!-- org-sync:end badges -->\n\n"
         "ARA is an ant-colony routing protocol for MANETs. It runs on ns-3 and in the browser. "
         "**Status: building.**\n\n"
         "See [its page](https://swarm-routing.github.io/projects/ARA/), the image "
@@ -938,12 +989,43 @@ def self_test():
     r = repo(
         {
             "README.md": readme_ok.replace(
-                "<!-- org-sync:begin badges -->\n[![CI](https://x/b.svg)](https://x/a)\n<!-- org-sync:end badges -->\n",
+                "<!-- org-sync:begin badges -->\n| Group | Badges |\n| --- | --- |\n| Build | [![CI](https://x/b.svg)](https://x/a) |\n<!-- org-sync:end badges -->\n",
                 "",
             )
         }
     )
     expect("no badge row fails", has(r, "FAIL", "badge row"))
+    expect(
+        "org-sync's table passes with its groups",
+        has(ok, "PASS", "badge table: 1 badge(s) in 1 group(s): Build"),
+    )
+    table = "| Group | Badges |\n| --- | --- |\n| Build | [![CI](https://x/b.svg)](https://x/a) |\n"
+    for name, bad in (
+        ("a badge row that is not a table", "[![CI](https://x/b.svg)](https://x/a)\n"),
+        ("an unknown group", table.replace("| Build |", "| Misc |")),
+        (
+            "groups out of order",
+            table + "| Quality | [![codecov](https://x/c.svg)](https://x/c) |\n"
+            "| Build | [![CI](https://x/d.svg)](https://x/d) |\n",
+        ),
+        ("a row without a badge", table + "| Trust | soon |\n"),
+    ):
+        r = repo({"README.md": readme_ok.replace(table, bad)})
+        expect(f"{name} fails", has(r, "FAIL", "not org-sync's grouped table"))
+    r = repo(
+        {
+            "README.md": readme_ok.replace(
+                "<!-- org-sync:end badges -->\n",
+                "<!-- org-sync:end badges -->\n[![Sponsor](https://img.shields.io/github/sponsors/x)]"
+                "(https://github.com/sponsors/x)\n[![Screenshot](docs/shot.png)](docs/shot.png)\n",
+            )
+        }
+    )
+    expect(
+        "a hand-written badge outside the table warns, naming it; a linked screenshot does not",
+        has(r, "WARN", "1 badge(s) outside the org-sync table")
+        and any(x["items"] == ["Sponsor"] for x in r.rows if x["level"] == "WARN"),
+    )
     r = repo(drop=("README.md",))
     expect("no README fails", has(r, "FAIL", "no README.md"))
     r = repo({"README.md": "ARA\n\n" + readme_ok})
@@ -1031,7 +1113,7 @@ def self_test():
     # a settings-only repository (the template source) skips both adopter checks (#320)
     bare = {
         "README.md": readme_ok.replace(
-            "<!-- org-sync:begin badges -->\n[![CI](https://x/b.svg)](https://x/a)\n<!-- org-sync:end badges -->\n",
+            "<!-- org-sync:begin badges -->\n| Group | Badges |\n| --- | --- |\n| Build | [![CI](https://x/b.svg)](https://x/a) |\n<!-- org-sync:end badges -->\n",
             "",
         ),
         "AGENTS.md": agents_ok.replace("## Agent skills", "## Skills"),

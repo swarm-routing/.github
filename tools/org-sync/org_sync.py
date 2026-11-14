@@ -154,6 +154,7 @@ BASE_BADGES = [
     "arena",
     "scorecard",
     "bestpractices",
+    "codespaces",
 ]
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -173,6 +174,28 @@ KIND_BADGES = {
     "site": ["docs"],
     "skills": ["claude-plugin"],
 }
+# The README badges are a table, one row per group (swarm-routing/.github#415):
+# every kind belongs to one group, a group's badges keep this order whatever the
+# order of a repository's `badges` list, and a group with no badge is left out.
+# `[[extra_badges]]` adds a repository's own badge to a group (after its kinds):
+#
+#   [[extra_badges]]
+#   group = "quality"    # build, quality, release, trust, stack or community
+#   alt = "Core coverage"
+#   image = "https://img.shields.io/endpoint?url=..."
+#   link = "https://github.com/..."
+BADGE_GROUPS = {
+    "build": ("Build", ["ci", "container-security", "hadolint", "trivy", "ghcr", "ns3dev"]),
+    "quality": ("Quality", [*SONAR_METRICS, "codecov", "coderabbit"]),
+    "release": ("Release", ["release", "doi", "cite", "licence"]),
+    "trust": ("Trust", ["scorecard", "bestpractices", "cosign"]),
+    "stack": ("Stack", ["cxx", "ns3", "python"]),
+    "community": (
+        "Community & docs",
+        ["docs", "arena", "claude-plugin", "codespaces", "conventional"],
+    ),
+}
+BADGE_TABLE_HEAD = "| Group | Badges |\n| --- | --- |\n"
 
 # Where an existing, unmarked section starts and stops, so `apply` can adopt
 # text that predates the markers: (file, section) -> (start regex, stop regex).
@@ -303,6 +326,7 @@ def load_config(repo_dir, slug=None):
             f"org-sync: {CONFIG}: coderabbit_path_filters must be a list of glob strings, "
             "without double quotes or backslashes"
         )
+    cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
     cfg["references"] = check_references(cfg.get("references", []))
     if cfg["references"] and bib_references(repo_dir) is not None:
         print(
@@ -311,6 +335,28 @@ def load_config(repo_dir, slug=None):
             file=sys.stderr,
         )
     return cfg
+
+
+def check_extra_badges(extras):
+    """`[[extra_badges]]`: each a known group, an alt text, an https image and a
+    link, none holding a character that would break the table or the link."""
+    bad = re.compile(r"[|\[\]()\x00-\x1f]")
+    if not isinstance(extras, list):
+        sys.exit(f"org-sync: {CONFIG}: extra_badges must be a list of tables")
+    for e in extras:
+        if (
+            not isinstance(e, dict)
+            or e.get("group") not in BADGE_GROUPS
+            or not all(isinstance(e.get(k), str) and e[k].strip() for k in ("alt", "image", "link"))
+            or not e["image"].startswith("https://")
+            or any(bad.search(e[k]) for k in ("alt", "image", "link"))
+        ):
+            sys.exit(
+                f"org-sync: {CONFIG}: each [[extra_badges]] needs group (one of "
+                f"{', '.join(BADGE_GROUPS)}), alt, an https image and a link, "
+                "without | [ ] ( ) or control characters"
+            )
+    return extras
 
 
 # --- citation ------------------------------------------------------------------
@@ -677,8 +723,11 @@ def calls_workflow(repo_dir, reusable):
 
 def uploads_coverage(cfg, repo_dir):
     """True when a workflow of the repository sends coverage to Codecov (the
-    reusable-codecov.yml job), so the badge never reads `unknown`."""
-    return calls_workflow(repo_dir, "reusable-codecov.yml")
+    reusable-codecov.yml job, or codecov-action itself as AntHocNet's quality.yml),
+    so the badge never reads `unknown`."""
+    return calls_workflow(repo_dir, "reusable-codecov.yml") or calls_workflow(
+        repo_dir, "codecov/codecov-action@"
+    )
 
 
 def zenodo_concept(cfg):
@@ -700,7 +749,24 @@ def check_runs_badge(repo, label, job, logo):
 
 
 def badge_lines(cfg, repo_dir):
-    repo, out = cfg["repo"], []
+    """The README badges: a table, one row per group that has one (BADGE_GROUPS)."""
+    rendered = badges_by_kind(cfg, repo_dir)
+    rows = []
+    for group, (title, kinds) in BADGE_GROUPS.items():
+        cells = [rendered[k] for k in kinds if k in rendered]
+        cells += [
+            f"[![{e['alt']}]({e['image']})]({e['link']})"
+            for e in cfg.get("extra_badges", [])
+            if e["group"] == group
+        ]
+        if cells:
+            rows.append(f"| {title} | {' '.join(cells)} |\n")
+    return BADGE_TABLE_HEAD + "".join(rows) if rows else ""
+
+
+def badges_by_kind(cfg, repo_dir):
+    """Each badge of the repository's `badges` list whose target exists, by kind."""
+    repo, out = cfg["repo"], {}
     names = []
     sonar = cfg.get("quality", {}).get("sonar", True)
     for b in cfg["badges"]:
@@ -715,81 +781,77 @@ def badge_lines(cfg, repo_dir):
             wf = cfg["ci_workflow"]
             if os.path.exists(os.path.join(repo_dir, ".github/workflows", wf)):
                 url = f"https://github.com/{repo}/actions/workflows/{wf}"
-                out.append(f"[![CI]({url}/badge.svg)]({url})")
+                out[b] = f"[![CI]({url}/badge.svg)]({url})"
         elif b == "release" and calls_workflow(repo_dir, "reusable-release.yml"):
-            out.append(
+            out[b] = (
                 f"[![Release](https://img.shields.io/github/v/release/{repo}?sort=semver&cacheSeconds=1800)]"
                 f"(https://github.com/{repo}/releases)"
             )
         elif b == "doi" and zenodo_concept(cfg):
             doi = f"10.5281/zenodo.{zenodo_concept(cfg)}"
-            out.append(f"[![DOI](https://zenodo.org/badge/DOI/{doi}.svg)](https://doi.org/{doi})")
+            out[b] = f"[![DOI](https://zenodo.org/badge/DOI/{doi}.svg)](https://doi.org/{doi})"
         elif b == "cite" and os.path.exists(os.path.join(repo_dir, "CITATION.cff")):
-            out.append(
-                "[![Cite](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)"
-            )
+            out[b] = "[![Cite](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)"
         elif b == "licence":
-            out.append(
+            out[b] = (
                 f"[![Licence: {licence_text(cfg)}]({shield('licence', licence_text(cfg), 'blue')})](LICENSING.md)"
             )
         elif b == "conventional":
-            out.append(
+            out[b] = (
                 f"[![Conventional Commits]({shield('Conventional Commits', '1.0.0', 'yellow')})]"
                 "(https://www.conventionalcommits.org)"
             )
         elif b == "cxx":
             cxx = cfg.get("cxx", "20")
-            out.append(
-                f"[![C++{cxx}]({shield('C++', str(cxx), 'blue')}?logo=cplusplus)](AGENTS.md)"
-            )
+            out[b] = f"[![C++{cxx}]({shield('C++', str(cxx), 'blue')}?logo=cplusplus)](AGENTS.md)"
         elif b == "ns3":
-            out.append(
+            out[b] = (
                 f"[![Runs on ns-3]({shield('runs on', 'ns-3', 'informational')})](https://www.nsnam.org)"
             )
         elif b == "python":
             py = cfg.get("python", "3.10")
-            out.append(
+            out[b] = (
                 f"[![Python {py}+]({shield('python', py + '+', 'blue')}?logo=python)](AGENTS.md)"
             )
         elif b == "ghcr" and cfg.get("image"):
             owner, name = repo.split("/")[0], cfg["image"]
-            out.append(
+            out[b] = (
                 f"[![GHCR: {name}]({shield('ghcr.io', f'{owner}/{name}', 'blue')}?logo=docker)]"
                 f"(https://github.com/orgs/{owner}/packages/container/package/{name})"
             )
         elif b == "cosign" and os.path.exists(os.path.join(repo_dir, "SECURITY.md")):
-            out.append(
+            out[b] = (
                 f"[![Images signed: cosign]({shield('images signed', 'cosign', 'success')})]"
                 "(SECURITY.md#verifying-what-it-ships)"
             )
         elif b == "docs" and cfg.get("docs_url"):
-            out.append(f"[![Docs]({shield('docs', 'site', 'blue')})]({cfg['docs_url']})")
+            out[b] = f"[![Docs]({shield('docs', 'site', 'blue')})]({cfg['docs_url']})"
         elif b == "arena" and arena_id(cfg):
             # the project's page on the org site (Colony Arena), as in site/hub/projects.json;
             # at /projects/<id>/ since swarm-routing/swarm-routing.github.io#102 (was /arena/<id>/)
             url = f"https://swarm-routing.github.io/projects/{arena_id(cfg)}/"
-            out.append(
+            out[b] = (
                 f"[![Colony Arena: {arena_id(cfg)}]({shield('Colony Arena', 'project page', 'orange')})]({url})"
             )
         elif b == "ns3dev":
-            out.append(
+            out[b] = (
                 f"[![Built on: ns3-dev]({shield('built on', 'ns3-dev image', 'blue')}?logo=docker)]"
                 "(https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev)"
             )
         elif b in SONAR_METRICS:
             alt, metric = SONAR_METRICS[b]
             key = sonar_key(cfg)
-            out.append(
+            out[b] = (
                 f"[![{alt}](https://sonarcloud.io/api/project_badges/measure?project={key}&metric={metric})]"
                 f"(https://sonarcloud.io/summary/new_code?id={key})"
             )
         elif b == "codecov" and uploads_coverage(cfg, repo_dir):
-            out.append(
+            out[b] = (
                 f"[![codecov](https://codecov.io/gh/{repo}/graph/badge.svg)](https://codecov.io/gh/{repo})"
             )
         elif b == "coderabbit":
             camp = quote(repo, safe="")
-            out.append(
+            out[b] = (
                 f"[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/{repo}"
                 f"?utm_source=oss&utm_medium=github&utm_campaign={camp}&labelColor=171717&color=FF570A"
                 "&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)"
@@ -798,7 +860,7 @@ def badge_lines(cfg, repo_dir):
             os.path.join(repo_dir, ".github/workflows/container-security.yml")
         ):
             url = f"https://github.com/{repo}/actions/workflows/container-security.yml"
-            out.append(f"[![Container Security (Hadolint & Trivy)]({url}/badge.svg)]({url})")
+            out[b] = f"[![Container Security (Hadolint & Trivy)]({url}/badge.svg)]({url})"
         elif b in ("hadolint", "trivy") and os.path.exists(
             os.path.join(repo_dir, ".github/workflows/container-security.yml")
         ):
@@ -809,25 +871,30 @@ def badge_lines(cfg, repo_dir):
             else:
                 img = check_runs_badge(repo, "Trivy", "trivy-config", "aquasecurity")
                 link = f"https://github.com/{repo}/security/code-scanning"
-            out.append(f"[![{b.capitalize()}]({img})]({link})")
+            out[b] = f"[![{b.capitalize()}]({img})]({link})"
         elif b == "scorecard" and os.path.exists(
             os.path.join(repo_dir, ".github/workflows/scorecard.yml")
         ):
             # the score the workflow publishes to the public OpenSSF API
-            out.append(
+            out[b] = (
                 f"[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/{repo}/badge)]"
                 f"(https://scorecard.dev/viewer/?uri=github.com/{repo})"
             )
         elif b == "bestpractices" and bestpractices_project(cfg):
             # the project's level on bestpractices.dev (in progress, passing, ...)
             url = f"https://www.bestpractices.dev/projects/{bestpractices_project(cfg)}"
-            out.append(f"[![OpenSSF Best Practices]({url}/badge)]({url})")
+            out[b] = f"[![OpenSSF Best Practices]({url}/badge)]({url})"
         elif b == "claude-plugin":
-            out.append(
+            out[b] = (
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
                 "(https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)"
             )
-    return "\n".join(out) + "\n" if out else ""
+        elif b == "codespaces" and os.path.isdir(os.path.join(repo_dir, ".devcontainer")):
+            out[b] = (
+                f"[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)]"
+                f"(https://codespaces.new/{repo}?quickstart=1)"
+            )
+    return out
 
 
 def licensing_rows(cfg):

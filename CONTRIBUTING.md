@@ -634,6 +634,20 @@ path), never *All repositories*. A repository may hold it as a secret of its
 the environment's secret takes the place of the passed one, and no job
 outside the environment reads it.
 
+The README badges are one org-sync table, `| Group | Badges |`, a row per group
+that has a badge (#415): **Build** (`ci`, `container-security`, `hadolint`,
+`trivy`, `ghcr`, `ns3dev`), **Quality** (the `sonar-*` badges, `codecov`,
+`coderabbit`), **Release** (`release`, `doi`, `cite`, `licence`), **Trust**
+(`scorecard`, `bestpractices`, `cosign`), **Stack** (`cxx`, `ns3`, `python`) and
+**Community & docs** (`docs`, `arena`, `claude-plugin`, `codespaces`,
+`conventional`), in that order within each row. A repository's `badges` list
+says which appear, never their order. A badge of the repository's own (a
+coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
+`.github/org-sync.toml` (`group`, `alt`, `image`, `link`), placed after its
+group's kinds, never a line written by hand next to the table: `check_docs.py`
+(the `docs-review` skill) fails a badge block that is not the table and warns
+on a badge outside it.
+
 A repository's README shows AntHocNet's three badges through org-sync, each
 only once its target exists: **Release** when a workflow calls
 `reusable-release.yml`, **Cite** when it has a `CITATION.cff`, and **DOI**
@@ -1151,10 +1165,10 @@ score is a finding to triage in an issue, not a build break. Whether a repo
 also fills the CII Best Practices questionnaire is decided per repo on #23. A
 repo registered at [bestpractices.dev](https://www.bestpractices.dev) names its
 project as top-level `bestpractices_project = "<id>"` in
-`.github/org-sync.toml`; the `bestpractices` badge (org-sync, after
-`scorecard`) then shows its level, `in progress` until the passing criteria
-are answered. A repository that sets its own `badges` list also adds
-`"bestpractices"` to it, after `"scorecard"`.
+`.github/org-sync.toml`; the `bestpractices` badge (org-sync, in the Trust
+row after Scorecard) then shows its level, `in progress` until the passing
+criteria are answered. A repository that sets its own `badges` list also adds
+`"bestpractices"` to it.
 
 ### OpenSSF Best Practices
 
