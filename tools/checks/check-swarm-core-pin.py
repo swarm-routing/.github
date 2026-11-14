@@ -249,6 +249,7 @@ def check_lock_files():
     if prefix != LOCK_PREFIX or values[f"{prefix}_REPO"] != SWARM_CORE_REPO:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_REPO={SWARM_CORE_REPO}")
     tag, version = values[f"{prefix}_TAG"], values[f"{prefix}_VERSION"]
+    commit = values[f"{prefix}_COMMIT"]
     asset = ASSET.format(version=version)
     if values.get(f"{prefix}_ASSET") != asset:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_ASSET={asset}")
@@ -274,10 +275,17 @@ def check_lock_files():
         rel = path.replace(os.sep, "/")
         for n, ref in lines_matching(path, CORE_DEP):
             deps += 1
-            if ref != tag:
+            if ref not in (tag, commit):
                 errors.append(f"{rel}:{n}: core-deps names swarm-core {ref}, not {tag}")
+        with open(path, encoding="utf-8") as f:
+            # a benchmark cell's build mode checks out a 40-hex commit (#409), so
+            # it takes the commit the tag names; reusable-ns3-ci.yml clones with
+            # `git clone --branch`, which takes the tag and not a commit
+            bench = "reusable-benchmark-cell.yml" in f.read()
         for n, ref, key in dep_lines(path):
-            ok = (tag, "main") if key == "canary-dependencies" else (tag,)
+            ok = (commit,) if bench else (tag,)
+            if key == "canary-dependencies":
+                ok += ("main",)
             if ref not in ok:
                 errors.append(f"{rel}:{n}: the ns-3 dependency names swarm-core {ref}, not {tag}")
     if not deps:
@@ -353,7 +361,11 @@ def bump_lock(releases):
     for path, patterns in pin_places():
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
-        new = [retag(line, patterns, tag, newest) for line in lines]
+        old_commit = values[f"{prefix}_COMMIT"]
+        new = [
+            retag(retag(line, patterns, tag, newest), patterns, old_commit, commit)
+            for line in lines
+        ]
         if new != lines:
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.writelines(new)
@@ -592,6 +604,11 @@ def self_test():
                 f"        swarm-core=swarm-routing/ns3-swarm-core@{canary or 'main'}\n"
                 f"      core-deps: swarm-routing/ns3-swarm-core@{tag}:core\n",
                 "results/cell.txt": f"##PROV## swarm-core@{tag}\n",
+                ".github/workflows/bench.yml": "    uses: swarm-routing/.github/.github/workflows/"
+                "reusable-benchmark-cell.yml@main\n      dependencies: |\n"
+                "        swarm-core=swarm-routing/ns3-swarm-core@"
+                + release_lock.parse_text(text)[1][f"{LOCK_PREFIX}_COMMIT"]
+                + "\n",
             }
             for p_, body in files.items():
                 os.makedirs(os.path.dirname(os.path.join(d, p_)) or d, exist_ok=True)
@@ -624,6 +641,19 @@ def self_test():
         )
         rc, out = golock(locked("lock-canary", "v0.3.0", canary="v0.2.9"))
         check("lock: a canary on another tag is refused", rc == 1 and "ns3.yml:7:" in out)
+        incommit = locked("lock-ns3commit", "v0.3.0")
+        with open(os.path.join(incommit, LOCK), encoding="utf-8") as f:
+            pinned = release_lock.parse_text(f.read())[1][f"{LOCK_PREFIX}_COMMIT"]
+        ns3p = os.path.join(incommit, ".github", "workflows", "ns3.yml")
+        with open(ns3p, encoding="utf-8") as f:
+            body = f.read()
+        with open(ns3p, "w", encoding="utf-8") as f:
+            f.write(body.replace("ns3-swarm-core@v0.3.0\n", f"ns3-swarm-core@{pinned}\n", 1))
+        rc, out = golock(incommit)
+        check(
+            "lock: the ns-3 CI's dependency takes the tag, not the commit (git clone --branch)",
+            rc == 1 and "ns3.yml:5:" in out,
+        )
         rc, out = golock(locked("lock-make", "v0.3.0", make="v0.2.0"))
         check("lock: the Makefile on another tag", rc == 1 and "Makefile:1:" in out)
         rc, out = golock(locked("lock-cmake", "v0.3.0", cmake_reads=False))
@@ -655,6 +685,7 @@ def self_test():
         check("lock: a hash that is not the release's", rc == 1 and "SHA256SUMS" in out)
 
         # a new release: the check fails, --bump writes the lock for it and moves the tag
+        new_commit("four")
         release_lock.make_release(
             rel, SWARM_CORE_REPO, "v0.4.0", {"swarm-core-0.4.0.tar.gz": b"four"}, env
         )
@@ -680,7 +711,9 @@ def self_test():
             and "@v0.4.0\n" in ns3
             and open(os.path.join(current, "Makefile"), encoding="utf-8").read()
             == "SWARM_CORE_REF?=v0.4.0\n"
-            and "@main\n" in ns3,
+            and "@main\n" in ns3
+            and release_lock.parse_text(lock_text)[1]["SWARM_CORE_COMMIT"]
+            in open(os.path.join(current, ".github", "workflows", "bench.yml")).read(),
         )
         rc, out = golock(current)
         check("lock: …after which the check passes", rc == 0)

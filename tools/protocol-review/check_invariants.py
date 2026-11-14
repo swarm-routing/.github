@@ -44,7 +44,8 @@ dependency added on a ref that moves instead of a release. In a CMake file, a
 as `${SWARM_CORE_REF}`) or a `GIT_REPOSITORY` of a swarm-routing repository (a
 hand-rolled FetchContent instead of the release lock: `URL` + `URL_HASH` read
 from `swarm-core.lock`); in a workflow, a `name=swarm-routing/<repo>@<ref>`
-line under `dependencies:` whose ref is not `vX.Y.Z` (`canary-dependencies:`
+line under `dependencies:` whose ref is neither `vX.Y.Z` nor a 40-hex commit
+(a benchmark cell's build mode takes the lock's commit; `canary-dependencies:`
 is where a moving ref belongs). Only added lines count. WARN today, while
 every protocol still builds on commit pins; a repository sets
 `moving_refs = "fail"` in `[review]` in the PR that switches it to the
@@ -104,6 +105,7 @@ RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
 GIT_TAG = re.compile(r"\bGIT_TAG\s+(\S+)")
 GIT_REPO_ORG = re.compile(r"\bGIT_REPOSITORY\s+\S*github\.com[/:]swarm-routing/", re.I)
 ORG_DEP = re.compile(r"(?:^|[\s|\"'])[\w-]+=swarm-routing/[\w.-]+@([^\s:'\"]+)")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
 GIT_TAG_ALONE = re.compile(r"\bGIT_TAG\s*$")
 YAML_KEY = re.compile(r"^\s*-?\s*([A-Za-z0-9_-]+):")
 # what is not prose: inline code, link targets, issue and PR numbers
@@ -519,7 +521,9 @@ def check(repo, base="origin/main", pr_body=None):
                 if n not in want or key != "dependencies":
                     continue
                 for m in ORG_DEP.finditer(line):
-                    if not RELEASE_TAG.match(m.group(1)):
+                    # a release tag, or a 40-hex commit (immutable: a benchmark
+                    # cell's build mode wants one, swarm-routing/.github#409)
+                    if not RELEASE_TAG.match(m.group(1)) and not COMMIT.match(m.group(1)):
                         moving.append(
                             f"{f}:{n}: dependency {m.group(0).strip(' |')}, not a release tag "
                             "(a moving ref belongs in canary-dependencies)"
@@ -884,6 +888,10 @@ def self_test():
     )
     r = repo({}, {".github/workflows/ns3.yml": wf.format("v0.3.0")})
     expect("moving refs: a release tag in dependencies passes", not has(r, "WARN", "moving"))
+    r = repo({}, {".github/workflows/bench.yml": wf.format("c" * 40)})
+    expect(
+        "moving refs: a commit in a workflow's dependencies passes", not has(r, "WARN", "moving")
+    )
     r = repo(
         {".github/workflows/ns3.yml": wf.format("main")},
         {".github/workflows/ns3.yml": wf.format("main") + "# a new comment\n"},
