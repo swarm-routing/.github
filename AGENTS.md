@@ -317,10 +317,11 @@ because the issue threads were thorough. Caveman the chat, not the record.
   it from Zenodo. After a public repository's release publishes, confirm the
   site saw it: a `[release-sync] <repo> <tag>` issue opens in
   `swarm-routing/swarm-routing.github.io` and a `release-sync.yml` run for
-  that release ends green. If no issue appears within an hour, or no run for
-  it is green, dispatch the site's `release-sync.yml` with `repository`
-  (`owner/repo`) and `tag` and check that run (CONTRIBUTING "Cutting a
-  release"); its weekly Monday run is only the backstop.
+  that release ends green. If, an hour after the release, no issue has
+  opened or no run for it has ended green, dispatch the site's
+  `release-sync.yml` with `repository` (`owner/repo`) and `tag` and check
+  that run (CONTRIBUTING "Cutting a release"); its weekly Monday run is only
+  the backstop.
 - Cite a paper in a public issue, PR or doc by its `https://doi.org/<DOI>`
   link, read from its record (`lit-search` confirms it), or, for a work with
   no DOI, by its publisher's or institution's page; never point into or name

@@ -892,15 +892,17 @@ actor), so the bump goes through a PR and the tag follows the merge
    the site lists). Whoever cut the release checks that the issue opened and
    that a `release-sync.yml` run for that release ended green: the ticket
    step runs even when the hub-data or lock step failed, so an issue alone
-   does not prove the site is current. If no issue appears within an hour,
-   or no run for the release is green (failed, cancelled or still pending),
-   dispatch the site's `release-sync.yml` by hand with `repository`
+   does not prove the site is current. If, an hour after the release, no
+   issue has opened or no run for the release has ended green (it failed,
+   was cancelled or is still pending), dispatch the site's `release-sync.yml` by hand with `repository`
    (`owner/repo`) and `tag`, and check that run: every step is idempotent,
    so a second run completes what is missing, and it leaves the existing
    issue alone, so the run that opened it stays red and the green recovery
    run is what counts. A green run has only dispatched the Pages redeploy
-   (`pages.yml`), not waited for it: look at that `pages.yml` run too. The
-   weekly Monday run is only the backstop. AntHocNet v2.7.0 (2026-11-13), cut
+   (`pages.yml`), not waited for it: look at that `pages.yml` run too. Do
+   not dispatch earlier: the site's runs share one concurrency group, which
+   keeps a single pending run, so an early dispatch can replace another
+   release's waiting run. The weekly Monday run is only the backstop. AntHocNet v2.7.0 (2026-11-13), cut
    just before its dispatch landed, reached the site only that way
    (swarm-routing/swarm-routing.github.io#134,
    swarm-routing/swarm-routing.github.io#135).
