@@ -103,7 +103,8 @@ PROTOCOL = re.compile(
 RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
 GIT_TAG = re.compile(r"\bGIT_TAG\s+(\S+)")
 GIT_REPO_ORG = re.compile(r"\bGIT_REPOSITORY\s+\S*github\.com[/:]swarm-routing/", re.I)
-ORG_DEP = re.compile(r"(?:^|[\s|])[\w-]+=swarm-routing/[\w.-]+@([^\s:'\"]+)")
+ORG_DEP = re.compile(r"(?:^|[\s|\"'])[\w-]+=swarm-routing/[\w.-]+@([^\s:'\"]+)")
+GIT_TAG_ALONE = re.compile(r"\bGIT_TAG\s*$")
 YAML_KEY = re.compile(r"^\s*-?\s*([A-Za-z0-9_-]+):")
 # what is not prose: inline code, link targets, issue and PR numbers
 NOT_PROSE = re.compile(r"`[^`]*`|\]\([^)]*\)|https?://\S+|\b[\w.-]*#\d+")
@@ -481,11 +482,23 @@ def check(repo, base="origin/main", pr_body=None):
         if not lines:
             continue
         if os.path.basename(f) == "CMakeLists.txt" or f.endswith(".cmake"):
+            try:
+                with open(os.path.join(repo, f), encoding="utf-8", errors="replace") as fh:
+                    whole = [ln.split("#", 1)[0] for ln in fh.read().splitlines()]
+            except OSError:
+                whole = []
             for n, line in lines:
                 code = line.split("#", 1)[0]
                 m = GIT_TAG.search(code)
-                if m and not RELEASE_TAG.match(m.group(1).strip("\"')")):
-                    moving.append(f"{f}:{n}: GIT_TAG {m.group(1)} is not a release tag")
+                value = m.group(1) if m else None
+                if value is None and code.split():
+                    # CMake allows the value on the line after the keyword: an
+                    # unchanged `GIT_TAG` line above a changed value still counts
+                    prev = next((p for p in reversed(whole[: n - 1]) if p.strip()), "")
+                    if GIT_TAG_ALONE.search(prev):
+                        value = code.split()[0]
+                if value and not RELEASE_TAG.match(value.strip("\"')")):
+                    moving.append(f"{f}:{n}: GIT_TAG {value} is not a release tag")
                 if GIT_REPO_ORG.search(code):
                     moving.append(
                         f"{f}:{n}: an org repository fetched by git, not by its release lock "
@@ -855,6 +868,19 @@ def self_test():
         and "ns3.yml:5:" in "\n".join(r.lines)
         and "ns3.yml:7:" not in "\n".join(r.lines)
         and "ns3.yml:8:" not in "\n".join(r.lines),
+    )
+    for q in ('"', "'"):
+        quoted = "jobs:\n  ci:\n    with:\n      dependencies: {0}swarm-core=swarm-routing/ns3-swarm-core@main{0}\n"
+        r = repo({}, {".github/workflows/ns3.yml": quoted.format(q)})
+        expect(f"moving refs: a {q}-quoted inline dependency warns", has(r, "WARN", "moving ref"))
+    split = "FetchContent_Declare(x\n  GIT_REPOSITORY https://x/y.git\n  GIT_TAG\n    {0}\n)\n"
+    r = repo(
+        {"third/CMakeLists.txt": split.format("v1.0.0")},
+        {"third/CMakeLists.txt": split.format("main")},
+    )
+    expect(
+        "moving refs: a changed value under an unchanged GIT_TAG line warns",
+        has(r, "WARN", "moving ref") and "GIT_TAG main is not a release tag" in "\n".join(r.lines),
     )
     r = repo({}, {".github/workflows/ns3.yml": wf.format("v0.3.0")})
     expect("moving refs: a release tag in dependencies passes", not has(r, "WARN", "moving"))
