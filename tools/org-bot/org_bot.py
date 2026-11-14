@@ -29,8 +29,9 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
   swarm-core-pin  tools/checks/check-swarm-core-pin.py --bump, in each
             repository whose core/CMakeLists.txt pins swarm-core: when
-            swarm-core main changed core/ since the pin, every occurrence of
-            the old commit becomes main's (#208). Its PR lives on one branch,
+            swarm-core main changed core/ since the pin, the old commit
+            becomes main's on the pin lines only (#208; never in recorded
+            results, docs or campaign plans, #407). Its PR lives on one branch,
             org-bot/swarm-core-pin, and is updated in place (pushed again, its
             body rewritten) when swarm-core moves on before it merges.
             ORG_BOT_SWARM_CORE overrides swarm-core's URL.
@@ -114,8 +115,10 @@ TASKS = {
         "what": "swarm-core `main` changed `core/` since this repository's pin, so its "
         "`swarm-core / pin` check fails on every PR until the pin follows (#208). "
         "Rewritten by swarm-routing/.github `tools/checks/check-swarm-core-pin.py --bump`: "
-        "every occurrence of the old commit becomes swarm-core `main`'s, and nothing "
-        "else changes. This repository's core tests and ns-3 suite run on this PR; when "
+        "the old commit becomes swarm-core `main`'s on the pin lines only (`SWARM_CORE_REF` "
+        "in `core/CMakeLists.txt` and the `Makefile`, the workflows' `core-deps` and ns-3 "
+        "dependency lines); recorded results, docs and campaign plans are never touched "
+        "(#407). This repository's core tests and ns-3 suite run on this PR; when "
         "swarm-core moves again before it merges, the bot updates this PR in place.",
     },
     "zenodo": {

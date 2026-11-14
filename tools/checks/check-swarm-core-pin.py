@@ -24,12 +24,15 @@ blobs into a temporary directory. Output is one line per finding and a summary
 line (AntHocNet ADR-0014). Stdlib only.
 
 `--bump` (org-bot's swarm-core-pin task, #208) does what the check asks for:
-when swarm-core main changed `core/` since the pin, it rewrites every
-occurrence of the pinned commit under the repository root (the places above,
-and any other file naming it, such as a benchmark workflow's dependency) to
-main's commit, and prints the files, a `pin-target: <sha>` line and the
-swarm-core commits on `core/` since the pin. A pin the files disagree on is
-left to a person (exit 1).
+when swarm-core main changed `core/` since the pin, it rewrites the pinned
+commit to main's in the places above only, on the lines the check reads (the
+`SWARM_CORE_REF` lines, and every workflow's `core-deps` and ns-3 dependency
+lines, a benchmark workflow's included), and prints the files, a
+`pin-target: <sha>` line and the swarm-core commits on `core/` since the pin.
+No other file or line changes: a recorded cell's `##PROV##`, a doc or a
+campaign plan naming the old commit records what a run used, and recorded
+data is never rewritten (#407). A pin the files disagree on is left to a
+person (exit 1).
 
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
   check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--bump]
@@ -132,12 +135,24 @@ def check_main(pin, url):
     return [], main
 
 
+def pin_places():
+    """(path, the patterns whose lines hold the pin): the places the check reads.
+    core/CMakeLists.txt is handled whole by bump(), as CMAKE_PIN may span lines."""
+    places = [("Makefile", [MAKE_PIN])]
+    places += [
+        (p.replace(os.sep, "/"), [CORE_DEP, NS3_DEP])
+        for p in sorted(glob.glob(".github/workflows/*.y*ml"))
+    ]
+    return [(p, pats) for p, pats in places if os.path.exists(p)]
+
+
 def bump(url):
     """--bump (org-bot's swarm-core-pin task, #208): when swarm-core main changed
-    core/ since the pin, rewrite every occurrence of the pinned commit under the
-    cwd (the check's places and any other file that names it, such as a
-    benchmark workflow's dependency) to main's commit. A pin the files disagree
-    on is left to a person. 0: bumped or already current; 1: refused."""
+    core/ since the pin, rewrite the pinned commit to main's on the pin lines of
+    the check's places only (pin_places), never in any other file or line:
+    recorded cells, docs and campaign plans name the commit a run used (#407).
+    A pin the files disagree on is left to a person. 0: bumped or already
+    current; 1: refused."""
     pin, errors = check_files()
     for e in errors:
         print(f"FAIL {e}")
@@ -152,19 +167,25 @@ def bump(url):
         print(f"swarm-core pin: current, core/ at {pin[:7]} is swarm-core main's")
         return 0
     changed = []
-    for root, dirs, files in os.walk("."):
-        dirs[:] = sorted(d for d in dirs if d not in (".git", "build"))
-        for name in sorted(files):
-            path = os.path.join(root, name)
-            try:
-                with open(path, encoding="utf-8") as f:
-                    text = f.read()
-            except (UnicodeDecodeError, OSError):
-                continue
-            if pin in text:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text.replace(pin, main))
-                changed.append(os.path.relpath(path).replace(os.sep, "/"))
+    with open(CMAKE, encoding="utf-8", newline="") as f:
+        text = f.read()
+    m = CMAKE_PIN.search(text)  # the one the check read; it may span lines
+    with open(CMAKE, "w", encoding="utf-8", newline="") as f:
+        f.write(text[: m.start(1)] + main + text[m.end(1) :])
+    changed.append(CMAKE)
+    for path, patterns in pin_places():
+        with open(path, encoding="utf-8", newline="") as f:
+            lines = f.readlines()
+        new = [
+            line.replace(pin, main)
+            if any(m.group(1) == pin for pat in patterns for m in pat.finditer(line))
+            else line
+            for line in lines
+        ]
+        if new != lines:
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.writelines(new)
+            changed.append(path)
     print(f"swarm-core pin: bumped {pin[:7]} -> {main[:7]} in {len(changed)} file(s)")
     print(f"pin-target: {main}")
     for c in changed:
@@ -283,7 +304,7 @@ def self_test():
         rc, out = go(protocol(os.path.join(t, "new"), c, c, c), url)
         check("bumped pin: ok", rc == 0)
 
-        # --bump (#208): a stale pin is rewritten everywhere, extra files included
+        # --bump (#208): a stale pin is rewritten in every pin place, extra workflows included
         stale = protocol(os.path.join(t, "bump"), a, a, a, ("main", a))
         with open(os.path.join(stale, ".github", "workflows", "bench.yml"), "w") as f:
             f.write(f"        swarm-core=swarm-routing/ns3-swarm-core@{a}\n")
@@ -294,7 +315,7 @@ def self_test():
                 with open(os.path.join(root, name)) as f:
                     names += [name] if a in f.read() else []
         check(
-            "--bump rewrites the stale pin in every file, extra ones included",
+            "--bump rewrites the stale pin in every pin place, a benchmark workflow included",
             rc == 0
             and not names
             and f"pin-target: {c}" in out
@@ -303,6 +324,40 @@ def self_test():
         )
         rc, out = go(stale, url)
         check("…after which the check passes", rc == 0)
+
+        # #407: recorded data naming the old pin is never rewritten, only the pin places
+        rec = protocol(os.path.join(t, "recorded"), a, a, a, ("main", a))
+        kept = {
+            "results/cells/anchor/cell-1.txt": f"##PROV## base=sha256:x modules=swarm-core@{a}\n",
+            "docs/benchmarks/anchor.md": f"Ran on swarm-core `{a}`.\n",
+            "tools/bench/campaigns/anchor.yaml": f"pins:\n  swarm-core: {a}\n",
+            "README.md": f"Pinned at {a}.\n",
+            ".github/workflows/notes.yml": f"# recorded with swarm-core {a}\n",
+        }
+        for p, text in kept.items():
+            os.makedirs(os.path.dirname(os.path.join(rec, p)), exist_ok=True)
+            with open(os.path.join(rec, p), "w", encoding="utf-8") as f:
+                f.write(text)
+        rc, out = go(rec, url, bump_mode=True)
+        same = []
+        for p, text in kept.items():
+            with open(os.path.join(rec, p), encoding="utf-8") as f:
+                same += [p] if f.read() == text else []
+        check(
+            "--bump leaves recorded cells, docs, plans and other files byte-identical (#407)",
+            rc == 0 and same == list(kept) and not any(p in out for p in kept),
+        )
+        rc, out = go(rec, url)
+        check("…and still moves every pin place, so the check passes", rc == 0)
+
+        split = protocol(os.path.join(t, "split-cmake"), a, a, a)
+        with open(os.path.join(split, CMAKE), "w", encoding="utf-8") as f:
+            f.write(f'set(SWARM_CORE_REF\n    "{a}"\n    CACHE STRING "swarm-core commit")\n')
+        rc, out = go(split, url, bump_mode=True)
+        with open(os.path.join(split, CMAKE), encoding="utf-8") as f:
+            moved = c in f.read()
+        rc2, _ = go(split, url)
+        check("--bump rewrites a CMake pin split over lines", rc == 0 and moved and rc2 == 0)
         rc, out = go(stale, url, bump_mode=True)
         check("--bump on a current pin changes nothing", rc == 0 and "current" in out)
         rc, out = go(protocol(os.path.join(t, "split"), a, b, a), url, bump_mode=True)
@@ -342,7 +397,7 @@ def main(argv=None):
     p.add_argument(
         "--bump",
         action="store_true",
-        help="rewrite a stale pin to swarm-core main's commit everywhere it is named (#208)",
+        help="rewrite a stale pin to swarm-core main's commit in the pin places only (#208, #407)",
     )
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
