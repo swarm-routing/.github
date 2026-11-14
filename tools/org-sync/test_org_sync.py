@@ -162,7 +162,7 @@ quality = next(r for r in rows if r.startswith("| Quality |"))
 check(
     quality.index("alert_status") < quality.index("coderabbit")
     and "Build | [![Built on: ns3-dev]" in block.group(1)
-    and "[![C++20]" in next(r for r in rows if r.startswith("| Stack |")),
+    and "[![C++23]" in next(r for r in rows if r.startswith("| Stack |")),
     "each badge sits in its group: SonarQube before CodeRabbit in Quality, ns3-dev in Build, C++ in Stack",
 )
 db2 = fresh()

@@ -119,6 +119,13 @@ is the long form.
    `["3.48"]`), on images
    `ns3-containers` publishes once (history) or builds on request. A
    published number pins a versioned `-<sha7>` image instead, never `latest`.
+   **C++ follows the same release**: every org `core/` and module targets the
+   C++ standard of the ns-3 release we support, ns-3's own
+   `CMAKE_CXX_STANDARD_MINIMUM` (C++23 from ns-3.46, so C++23 today), and
+   moves when ns-3 raises it (maintainer decision 2026-11-14;
+   swarm-core's `ci.yml` `cxx-standard` job checks its `core/` against the
+   image, and `swarm::core` passes the standard on to every protocol core:
+   swarm-routing/ns3-swarm-core#141, its `docs/api-policy.md` "C++ standard").
 
 ## Issues
 
