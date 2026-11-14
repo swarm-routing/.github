@@ -644,7 +644,7 @@ def self_test():
         rc, out = golock(nohash)
         check(
             "lock: SWARM_CORE_SHA256 is required, another asset's hash is not enough",
-            rc == 1 and "want SWARM_CORE_SHA256" in out,
+            rc == 1 and "SWARM_CORE_SHA256" in out and "needs" in out,
         )
         bad = locked("lock-hash", "v0.3.0")
         with open(os.path.join(bad, LOCK), encoding="utf-8") as f:

@@ -95,6 +95,8 @@ def parse_text(text, name="lock"):
     shas = sha_keys(prefix, values)
     if not shas:
         raise LockError(f"{name}: no *_SHA256 key")
+    if f"{prefix}_ASSET" in values and f"{prefix}_SHA256" not in values:
+        raise LockError(f"{name}: {prefix}_ASSET needs {prefix}_SHA256, its hash")
     for k in shas:
         if not HEX64.match(values[k]):
             raise LockError(f"{name}: {k} is not a 64-character sha256")
@@ -367,6 +369,7 @@ def self_test():
             (text.replace(c1, c1[:39]), "40-character"),
             (text + "LIB_TAG=v0.1.0\n", "given twice"),
             (text + "nonsense\n", "not KEY=VALUE"),
+            (text.replace("LIB_SHA256=", "LIB_OTHER_SHA256="), "needs LIB_SHA256"),
         ):
             try:
                 parse_text(broken)
