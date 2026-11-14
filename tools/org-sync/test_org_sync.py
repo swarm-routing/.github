@@ -200,6 +200,15 @@ try:
 except SystemExit as e:
     bad_extra = "extra_badges" in str(e)
 check(bad_extra, "an extra badge in an unknown group is a config error")
+edit(db2, ".github/org-sync.toml", 'group = "misc"', 'group = "quality"')
+edit(db2, ".github/org-sync.toml", "endpoint?url=x", "core coverage.svg")
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        org_sync.load_config(db2)
+    bad_extra = False
+except SystemExit as e:
+    bad_extra = "extra_badges" in str(e)
+check(bad_extra, "whitespace in an extra badge's image is a config error")
 with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
     f.write(
         "      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1\n"

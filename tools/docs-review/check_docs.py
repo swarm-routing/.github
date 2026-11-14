@@ -205,7 +205,7 @@ def badge_table(r, block):
     head, then one row per group with a badge, in BADGE_GROUPS' order."""
     lines = block.strip("\n").splitlines()
     titles = [t for t, _ in BADGE_GROUPS.values()]
-    rows = [re.fullmatch(r"\| (.+?) \| (.+) \|", ln) for ln in lines[2:]]
+    rows = [re.fullmatch(r"\| ([^|]+) \| ([^|]+) \|", ln) for ln in lines[2:]]
     seen = [x.group(1) for x in rows if x]
     if (
         lines[:2] != ["| Group | Badges |", "| --- | --- |"]
@@ -1009,6 +1009,7 @@ def self_test():
             "| Build | [![CI](https://x/d.svg)](https://x/d) |\n",
         ),
         ("a row without a badge", table + "| Trust | soon |\n"),
+        ("a third column", table.replace("(https://x/a) |", "(https://x/a) | extra |")),
     ):
         r = repo({"README.md": readme_ok.replace(table, bad)})
         expect(f"{name} fails", has(r, "FAIL", "not org-sync's grouped table"))

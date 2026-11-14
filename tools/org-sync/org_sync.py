@@ -339,7 +339,8 @@ def load_config(repo_dir, slug=None):
 
 def check_extra_badges(extras):
     """`[[extra_badges]]`: each a known group, an alt text, an https image and a
-    link, none holding a character that would break the table or the link."""
+    link, none holding a character that would break the table or the link
+    (whitespace, too, in the image and the link)."""
     bad = re.compile(r"[|\[\]()\x00-\x1f]")
     if not isinstance(extras, list):
         sys.exit(f"org-sync: {CONFIG}: extra_badges must be a list of tables")
@@ -350,11 +351,12 @@ def check_extra_badges(extras):
             or not all(isinstance(e.get(k), str) and e[k].strip() for k in ("alt", "image", "link"))
             or not e["image"].startswith("https://")
             or any(bad.search(e[k]) for k in ("alt", "image", "link"))
+            or any(re.search(r"\s", e[k]) for k in ("image", "link"))
         ):
             sys.exit(
                 f"org-sync: {CONFIG}: each [[extra_badges]] needs group (one of "
                 f"{', '.join(BADGE_GROUPS)}), alt, an https image and a link, "
-                "without | [ ] ( ) or control characters"
+                "without | [ ] ( ) or control characters, and no whitespace in image or link"
             )
     return extras
 
