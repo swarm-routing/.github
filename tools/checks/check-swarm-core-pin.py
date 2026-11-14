@@ -136,8 +136,9 @@ def check_main(pin, url):
 
 
 def pin_places():
-    """(path, the patterns whose lines hold the pin): the places the check reads."""
-    places = [(CMAKE, [CMAKE_PIN]), ("Makefile", [MAKE_PIN])]
+    """(path, the patterns whose lines hold the pin): the places the check reads.
+    core/CMakeLists.txt is handled whole by bump(), as CMAKE_PIN may span lines."""
+    places = [("Makefile", [MAKE_PIN])]
     places += [
         (p.replace(os.sep, "/"), [CORE_DEP, NS3_DEP])
         for p in sorted(glob.glob(".github/workflows/*.y*ml"))
@@ -166,6 +167,12 @@ def bump(url):
         print(f"swarm-core pin: current, core/ at {pin[:7]} is swarm-core main's")
         return 0
     changed = []
+    with open(CMAKE, encoding="utf-8", newline="") as f:
+        text = f.read()
+    m = CMAKE_PIN.search(text)  # the one the check read; it may span lines
+    with open(CMAKE, "w", encoding="utf-8", newline="") as f:
+        f.write(text[: m.start(1)] + main + text[m.end(1) :])
+    changed.append(CMAKE)
     for path, patterns in pin_places():
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
@@ -342,6 +349,15 @@ def self_test():
         )
         rc, out = go(rec, url)
         check("…and still moves every pin place, so the check passes", rc == 0)
+
+        split = protocol(os.path.join(t, "split-cmake"), a, a, a)
+        with open(os.path.join(split, CMAKE), "w", encoding="utf-8") as f:
+            f.write(f'set(SWARM_CORE_REF\n    "{a}"\n    CACHE STRING "swarm-core commit")\n')
+        rc, out = go(split, url, bump_mode=True)
+        with open(os.path.join(split, CMAKE), encoding="utf-8") as f:
+            moved = c in f.read()
+        rc2, _ = go(split, url)
+        check("--bump rewrites a CMake pin split over lines", rc == 0 and moved and rc2 == 0)
         rc, out = go(stale, url, bump_mode=True)
         check("--bump on a current pin changes nothing", rc == 0 and "current" in out)
         rc, out = go(protocol(os.path.join(t, "split"), a, b, a), url, bump_mode=True)
