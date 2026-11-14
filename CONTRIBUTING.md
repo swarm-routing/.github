@@ -45,8 +45,11 @@ is the long form.
    (the failing check names each place to change), until org-bot does it
    (#208). A repository with a release lock, `swarm-core.lock`
    (`tools/checks/release_lock.py`, swarm-routing/ns3-swarm-core#134), is
-   checked against swarm-core's releases instead: every pin place names the
-   lock's tag (a `canary-dependencies:` block may name `main`, #411), the lock
+   checked against swarm-core's releases instead: the `Makefile` and the ns-3
+   CI's dependency name the lock's tag (a `canary-dependencies:` block may
+   name `main`, #411), `core-deps` and a benchmark cell's dependency the
+   commit the tag names (this rule pins the boundary by commit; a cell's build
+   mode takes a commit), the lock
    verifies against the release, and the check goes red only when a newer
    release is out, never between releases. Contributions are accepted under the licence of the directory they
    land in (inbound = outbound, below). Write clean implementations against public ns-3 interfaces rather
