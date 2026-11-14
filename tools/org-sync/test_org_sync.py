@@ -142,6 +142,82 @@ check(
     "codecov.io/gh/swarm-routing/demo/graph/badge.svg" in read(os.path.join(da, "README.md")),
     "the Codecov badge appears once a workflow uploads coverage",
 )
+# the badges are a table, one row per group, a fixed order within a group (#415)
+grouped = {k for _, kinds in org_sync.BADGE_GROUPS.values() for k in kinds}
+every = set(org_sync.BASE_BADGES) | {k for ks in org_sync.KIND_BADGES.values() for k in ks}
+check(
+    every - {"sonar"} <= grouped and set(org_sync.SONAR_METRICS) <= grouped,
+    "every badge kind belongs to a group",
+)
+block = re.search(r"<!-- org-sync:begin badges -->\n(.*?)<!-- org-sync:end badges -->", rd, re.S)
+rows = block.group(1).splitlines()
+check(
+    rows[:2] == ["| Group | Badges |", "| --- | --- |"]
+    and [r.split(" | ")[0] for r in rows[2:]]
+    == ["| Build", "| Quality", "| Release", "| Trust", "| Stack", "| Community & docs"]
+    and all(r.endswith(" |") and r.count(" | ") == 1 for r in rows[2:]),
+    "a protocol repo's badges render as a two-column table, one row per group",
+)
+quality = next(r for r in rows if r.startswith("| Quality |"))
+check(
+    quality.index("alert_status") < quality.index("coderabbit")
+    and "Build | [![Built on: ns3-dev]" in block.group(1)
+    and "[![C++23]" in next(r for r in rows if r.startswith("| Stack |")),
+    "each badge sits in its group: SonarQube before CodeRabbit in Quality, ns3-dev in Build, C++ in Stack",
+)
+db2 = fresh()
+run("init", db2, "--kind", "protocol", "--dual", "core/")
+edit(
+    db2,
+    ".github/org-sync.toml",
+    'kind = "protocol"\n',
+    'kind = "protocol"\nbadges = ["conventional", "licence", "codespaces"]\n',
+)
+os.makedirs(os.path.join(db2, ".devcontainer"))
+with open(os.path.join(db2, ".github/org-sync.toml"), "a") as f:
+    f.write(
+        '\n[[extra_badges]]\ngroup = "quality"\nalt = "Core coverage"\n'
+        'image = "https://img.shields.io/endpoint?url=x"\nlink = "https://example.org/ci"\n'
+    )
+run("apply", db2)
+rows2 = read(os.path.join(db2, "README.md")).split("<!-- org-sync:begin badges -->\n")[1]
+rows2 = rows2.split("<!-- org-sync:end badges -->")[0].splitlines()
+check(
+    rows2[2].startswith("| Quality | [![Core coverage](https://img.shields.io/endpoint?url=x)]")
+    and rows2[3].startswith("| Release | [![Licence")
+    and rows2[4].startswith("| Community & docs | [![Open in GitHub Codespaces]")
+    and rows2[4].index("codespaces.new") < rows2[4].index("conventionalcommits")
+    and len(rows2) == 5
+    and run("check", db2)[0] == 0,
+    "a repo's own badges list picks the badges, the groups order them; extra_badges join their"
+    " group; codespaces with a .devcontainer; empty groups are left out",
+)
+edit(db2, ".github/org-sync.toml", 'group = "quality"', 'group = "misc"')
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        org_sync.load_config(db2)
+    bad_extra = False
+except SystemExit as e:
+    bad_extra = "extra_badges" in str(e)
+check(bad_extra, "an extra badge in an unknown group is a config error")
+edit(db2, ".github/org-sync.toml", 'group = "misc"', 'group = "quality"')
+edit(db2, ".github/org-sync.toml", "endpoint?url=x", "core coverage.svg")
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        org_sync.load_config(db2)
+    bad_extra = False
+except SystemExit as e:
+    bad_extra = "extra_badges" in str(e)
+check(bad_extra, "whitespace in an extra badge's image is a config error")
+with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
+    f.write(
+        "      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1\n"
+    )
+run("apply", da)
+check(
+    "codecov.io/gh/swarm-routing/demo/graph/badge.svg" in read(os.path.join(da, "README.md")),
+    "codecov-action called directly (AntHocNet's quality.yml) also turns on the Codecov badge",
+)
 dz = fresh()
 run("init", dz, "--kind", "protocol", "--dual", "core/")
 with open(os.path.join(dz, ".github/org-sync.toml"), "a") as f:
