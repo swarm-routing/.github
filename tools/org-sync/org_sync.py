@@ -753,7 +753,9 @@ def badge_lines(cfg, repo_dir):
                 "(https://www.conventionalcommits.org)"
             )
         elif b == "cxx":
-            cxx = cfg.get("cxx", "20")
+            # default: the C++ standard of the ns-3 release the org supports
+            # (CONTRIBUTING invariant 7); a repo still behind it sets `cxx`
+            cxx = cfg.get("cxx", "23")
             out.append(
                 f"[![C++{cxx}]({shield('C++', str(cxx), 'blue')}?logo=cplusplus)](AGENTS.md)"
             )
