@@ -34,9 +34,26 @@ campaign plan naming the old commit records what a run used, and recorded
 data is never rewritten (#407). A pin the files disagree on is left to a
 person (exit 1).
 
+Lock mode (swarm-routing/ns3-swarm-core#134), used when the repository has
+`swarm-core.lock` (a release lock, `release_lock.py` beside this file): the
+pin is a swarm-core **release**, not a commit. The check fails when the lock
+does not verify against the release (the tag names the commit, the hash is
+`swarm-core-<ver>.tar.gz`'s in the release's `SHA256SUMS`), when
+`core/CMakeLists.txt` does not read the lock or still sets a commit
+`SWARM_CORE_REF`, when the Makefile's `SWARM_CORE_REF` or a workflow's
+`core-deps` or ns-3 dependency names another ref than the lock's tag (a
+`canary-dependencies:` block may name `main`, swarm-routing/.github#411), and
+when a **newer swarm-core release** exists; swarm-core `main` moving is not a
+finding. `--bump` then writes the lock for the newest release (every value
+read from it) and moves the tag on the same pin lines, nothing else. A
+repository without a lock keeps the commit mode above.
+
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
-  check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--bump]
+  check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--bump]
   check-swarm-core-pin.py --self-test
+
+`--releases` (default https://github.com) is where lock mode reads tags and
+release assets; the self-test passes a `file://` tree.
 """
 
 from __future__ import annotations
@@ -49,8 +66,16 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script's dir
+import release_lock  # noqa: E402
+
 SWARM_CORE = "https://github.com/swarm-routing/ns3-swarm-core.git"
+SWARM_CORE_REPO = "swarm-routing/ns3-swarm-core"
 CMAKE = "core/CMakeLists.txt"
+LOCK = "swarm-core.lock"
+LOCK_PREFIX = "SWARM_CORE"
+ASSET = "swarm-core-{version}.tar.gz"
+KEY = re.compile(r"^\s*([A-Za-z0-9_-]+):")
 SHA = r"[0-9a-f]{40}"
 CMAKE_PIN = re.compile(rf'^\s*set\(\s*SWARM_CORE_REF\s+"({SHA})"', re.M)
 MAKE_PIN = re.compile(r"^\s*SWARM_CORE_REF\s*[?:]?=\s*(\S+)", re.M)
@@ -193,6 +218,150 @@ def bump(url):
     print("swarm-core commits on core/ since the pin:")
     for line in log:
         print(f"  {line}")
+    return 0
+
+
+# --- lock mode (swarm-routing/ns3-swarm-core#134) -----------------------------------
+
+
+def dep_lines(path):
+    """(line number, ref, YAML key the line sits under) for each ns-3 dependency line."""
+    out, key = [], None
+    with open(path, encoding="utf-8") as f:
+        for n, line in enumerate(f, 1):
+            m = KEY.match(line)
+            if m:
+                key = m.group(1)
+            out += [(n, d.group(1), key) for d in NS3_DEP.finditer(line)]
+    return out
+
+
+def check_lock_files():
+    """(prefix, values, errors): the lock and the pin places that disagree with it."""
+    try:
+        prefix, values = release_lock.parse(LOCK)
+    except (release_lock.LockError, OSError) as e:
+        return None, None, [str(e)]
+    errors = []
+    if prefix != LOCK_PREFIX or values[f"{prefix}_REPO"] != SWARM_CORE_REPO:
+        errors.append(f"{LOCK}: want {LOCK_PREFIX}_REPO={SWARM_CORE_REPO}")
+    tag, version = values[f"{prefix}_TAG"], values[f"{prefix}_VERSION"]
+    asset = ASSET.format(version=version)
+    if values.get(f"{prefix}_ASSET") != asset:
+        errors.append(f"{LOCK}: want {LOCK_PREFIX}_ASSET={asset}")
+    if not os.path.exists(CMAKE):
+        errors.append(f"{CMAKE}: missing")
+    else:
+        with open(CMAKE, encoding="utf-8") as f:
+            text = f.read()
+        if LOCK not in text:
+            errors.append(f"{CMAKE}: does not read {LOCK}")
+        if CMAKE_PIN.search(text):
+            errors.append(f"{CMAKE}: still sets a commit SWARM_CORE_REF; the lock replaces it")
+    if os.path.exists("Makefile"):
+        for n, ref in lines_matching("Makefile", MAKE_PIN):
+            if ref != tag and not ref.startswith("$("):
+                errors.append(f"Makefile:{n}: SWARM_CORE_REF is {ref}, not {tag}")
+    deps = 0
+    for path in sorted(glob.glob(".github/workflows/*.y*ml")):
+        rel = path.replace(os.sep, "/")
+        for n, ref in lines_matching(path, CORE_DEP):
+            deps += 1
+            if ref != tag:
+                errors.append(f"{rel}:{n}: core-deps names swarm-core {ref}, not {tag}")
+        for n, ref, key in dep_lines(path):
+            ok = (tag, "main") if key == "canary-dependencies" else (tag,)
+            if ref not in ok:
+                errors.append(f"{rel}:{n}: the ns-3 dependency names swarm-core {ref}, not {tag}")
+    if not deps:
+        errors.append(f".github/workflows: no core-deps entry for swarm-core (want @{tag}:core)")
+    return prefix, values, errors
+
+
+def run_lock(releases):
+    prefix, values, errors = check_lock_files()
+    newest = None
+    if values:
+        try:
+            errors += release_lock.verify(prefix, values, releases)
+            newest, _ = release_lock.latest(releases, values[f"{prefix}_REPO"])
+        except release_lock.LockError as e:
+            errors.append(str(e))
+        tag = values[f"{prefix}_TAG"]
+        if newest and release_lock.version_key(newest) > release_lock.version_key(tag):
+            errors.append(
+                f"swarm-core {newest} is released; {LOCK} names {tag}: bump the lock and "
+                f"every pin place to {newest} (org-bot's swarm-core-pin task opens that PR)"
+            )
+    for e in errors:
+        print(f"FAIL {e}")
+    if errors:
+        print(f"swarm-core pin (lock): {len(errors)} problem(s)")
+        return 1
+    print(f"swarm-core pin (lock): ok, {LOCK} names {tag}, the newest swarm-core release")
+    return 0
+
+
+def bump_lock(releases):
+    """--bump in lock mode: when a newer swarm-core release exists, write the lock
+    for it (every value read from the release) and move the tag on the pin lines."""
+    prefix, values, errors = check_lock_files()
+    if values:
+        try:
+            errors += release_lock.verify(prefix, values, releases)
+        except release_lock.LockError as e:
+            errors.append(str(e))
+    for e in errors:
+        print(f"FAIL {e}")
+    if not values or errors:
+        print("swarm-core pin (lock): not bumped (fix the lock by hand first)")
+        return 1
+    repo, tag = values[f"{prefix}_REPO"], values[f"{prefix}_TAG"]
+    try:
+        newest, commit = release_lock.latest(releases, repo)
+        if not newest or release_lock.version_key(newest) <= release_lock.version_key(tag):
+            print(f"swarm-core pin (lock): current, {LOCK} names {tag}, the newest release")
+            return 0
+        with open(LOCK, encoding="utf-8") as f:
+            header = "".join(line for line in f if line.lstrip().startswith("#"))
+        text = release_lock.render(prefix, repo, newest, ASSET, releases, header)
+    except release_lock.LockError as e:
+        print(f"FAIL {e}")
+        return 1
+    with open(LOCK, "w", encoding="utf-8") as f:
+        f.write(text)
+    changed = [LOCK]
+    for path, patterns in pin_places():
+        with open(path, encoding="utf-8", newline="") as f:
+            lines = f.readlines()
+        new = [
+            line.replace(f"@{tag}", f"@{newest}").replace(f"= {tag}", f"= {newest}")
+            if any(m.group(1) == tag for pat in patterns for m in pat.finditer(line))
+            else line
+            for line in lines
+        ]
+        if new != lines:
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.writelines(new)
+            changed.append(path)
+    between = sorted(
+        (
+            t
+            for t in release_lock.tags(releases, repo)
+            if release_lock.version_key(t)
+            and release_lock.version_key(tag)
+            < release_lock.version_key(t)
+            <= release_lock.version_key(newest)
+        ),
+        key=release_lock.version_key,
+    )
+    print(f"swarm-core pin (lock): bumped {tag} -> {newest} in {len(changed)} file(s)")
+    print(f"pin-target: {commit}")
+    for c in changed:
+        print(f"  {c}")
+    print("swarm-core releases since the lock (their notes: the release pages):")
+    for t in between:
+        print(f"  {t}: https://github.com/{repo}/releases/tag/{t}")
     return 0
 
 
@@ -383,6 +552,106 @@ def self_test():
             rc == 1 and "Makefile: no SWARM_CORE_REF" in out and "no core-deps entry" in out,
         )
 
+        # lock mode (swarm-routing/ns3-swarm-core#134): the pin is a release
+        rel = os.path.join(t, "rel")
+        base = "file://" + rel
+        env = dict(os.environ)
+        new_commit = release_lock.fixture_repo(rel, SWARM_CORE_REPO, env)
+        release_lock.make_release(
+            rel, SWARM_CORE_REPO, "v0.3.0", {"swarm-core-0.3.0.tar.gz": b"three"}, env
+        )
+
+        def locked(name, tag, cmake_reads=True, ns3_ref=None, canary=None, make=None):
+            d = os.path.join(t, name)
+            text = release_lock.render(LOCK_PREFIX, SWARM_CORE_REPO, tag, ASSET, base, "# lock\n")
+            files = {
+                LOCK: text,
+                CMAKE: f"file(STRINGS ${{CMAKE_CURRENT_LIST_DIR}}/../{LOCK} x)\n"
+                if cmake_reads
+                else "project(x)\n",
+                "Makefile": f"SWARM_CORE_REF ?= {make or tag}\n",
+                ".github/workflows/licence.yml": "jobs:\n  headers:\n    with:\n"
+                f"      core-deps: swarm-routing/ns3-swarm-core@{tag}:core\n",
+                ".github/workflows/ns3.yml": "jobs:\n  ci:\n    with:\n      dependencies: |\n"
+                f"        swarm-core=swarm-routing/ns3-swarm-core@{ns3_ref or tag}\n"
+                "      canary-dependencies: |\n"
+                f"        swarm-core=swarm-routing/ns3-swarm-core@{canary or 'main'}\n"
+                f"      core-deps: swarm-routing/ns3-swarm-core@{tag}:core\n",
+                "results/cell.txt": f"##PROV## swarm-core@{tag}\n",
+            }
+            for p_, body in files.items():
+                os.makedirs(os.path.dirname(os.path.join(d, p_)) or d, exist_ok=True)
+                with open(os.path.join(d, p_), "w", encoding="utf-8") as f:
+                    f.write(body)
+            return d
+
+        def golock(repo, bump_mode=False):
+            import contextlib
+            import io
+
+            out, here = io.StringIO(), os.getcwd()
+            try:
+                os.chdir(repo)
+                with contextlib.redirect_stdout(out):
+                    rc = main(["--releases", base] + (["--bump"] if bump_mode else []))
+            finally:
+                os.chdir(here)
+            return rc, out.getvalue()
+
+        current = locked("lock-ok", "v0.3.0")
+        rc, out = golock(current)
+        check("lock: newest release, every place on its tag: ok", rc == 0 and "lock): ok" in out)
+        rc, out = golock(current, bump_mode=True)
+        check("lock: --bump on the newest release changes nothing", rc == 0 and "current" in out)
+        rc, out = golock(locked("lock-ns3", "v0.3.0", ns3_ref="main"))
+        check(
+            "lock: the ns-3 dependency on main is refused outside canary-dependencies",
+            rc == 1 and "ns3.yml:5: the ns-3 dependency names swarm-core main" in out,
+        )
+        rc, out = golock(locked("lock-canary", "v0.3.0", canary="v0.2.9"))
+        check("lock: a canary on another tag is refused", rc == 1 and "ns3.yml:7:" in out)
+        rc, out = golock(locked("lock-make", "v0.3.0", make="v0.2.0"))
+        check("lock: the Makefile on another tag", rc == 1 and "Makefile:1:" in out)
+        rc, out = golock(locked("lock-cmake", "v0.3.0", cmake_reads=False))
+        check("lock: core/CMakeLists.txt must read the lock", rc == 1 and "does not read" in out)
+        bad = locked("lock-hash", "v0.3.0")
+        with open(os.path.join(bad, LOCK), encoding="utf-8") as f:
+            body = f.read()
+        with open(os.path.join(bad, LOCK), "w", encoding="utf-8") as f:
+            f.write(re.sub(r"SHA256=\w+", "SHA256=" + "0" * 64, body))
+        rc, out = golock(bad)
+        check("lock: a hash that is not the release's", rc == 1 and "SHA256SUMS" in out)
+
+        # a new release: the check fails, --bump writes the lock for it and moves the tag
+        release_lock.make_release(
+            rel, SWARM_CORE_REPO, "v0.4.0", {"swarm-core-0.4.0.tar.gz": b"four"}, env
+        )
+        rc, out = golock(current)
+        check("lock: a newer release fails the check", rc == 1 and "v0.4.0 is released" in out)
+        rc, out = golock(current, bump_mode=True)
+        with open(os.path.join(current, LOCK), encoding="utf-8") as f:
+            lock_text = f.read()
+        with open(os.path.join(current, "results", "cell.txt"), encoding="utf-8") as f:
+            cell = f.read()
+        with open(os.path.join(current, ".github", "workflows", "ns3.yml"), encoding="utf-8") as f:
+            ns3 = f.read()
+        check(
+            "lock: --bump writes the new release's lock and tag, recorded data untouched",
+            rc == 0
+            and "SWARM_CORE_TAG=v0.4.0" in lock_text
+            and lock_text.startswith("# lock\n")
+            and "pin-target:" in out
+            and "v0.4.0:" in out
+            and cell == "##PROV## swarm-core@v0.3.0\n"
+            and "@v0.4.0\n" in ns3
+            and "@main\n" in ns3,
+        )
+        rc, out = golock(current)
+        check("lock: …after which the check passes", rc == 0)
+        new_commit("unreleased")  # main moves, no release: no finding in lock mode
+        rc, out = golock(current)
+        check("lock: swarm-core main moving is no finding", rc == 0)
+
     for f in failures:
         print(f"FAIL: {f}")
     print(
@@ -399,10 +668,17 @@ def main(argv=None):
         action="store_true",
         help="rewrite a stale pin to swarm-core main's commit in the pin places only (#208, #407)",
     )
+    p.add_argument(
+        "--releases",
+        default=release_lock.GITHUB,
+        help="lock mode: where swarm-core's tags and release assets are read",
+    )
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
     if a.self_test:
         return self_test()
+    if os.path.exists(LOCK):
+        return bump_lock(a.releases) if a.bump else run_lock(a.releases)
     return bump(a.swarm_core) if a.bump else run(a.swarm_core)
 
 

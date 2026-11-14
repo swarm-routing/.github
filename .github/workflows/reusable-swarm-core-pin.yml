@@ -10,7 +10,11 @@ name: Reusable swarm-core pin
 # that disagree; and fails when swarm-core main's core/ differs from the
 # pinned commit's, saying to bump the pin (the ns-3 build follows swarm-core
 # main, swarm-core golden rule 12, so the two must be the same code).
-# The checker is tools/checks/check-swarm-core-pin.py in swarm-routing/.github.
+# A repository with a release lock, swarm-core.lock (swarm-routing/ns3-swarm-core#134),
+# is checked in lock mode instead: one release tag everywhere, the lock verified
+# against the release, and red only when a newer swarm-core release is out.
+# The checker is tools/checks/check-swarm-core-pin.py in swarm-routing/.github
+# (with tools/checks/release_lock.py).
 # Caller:
 #   jobs:
 #     swarm-core:
