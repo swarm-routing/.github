@@ -88,6 +88,10 @@ PIN = os.path.join(ROOT, "tools", "checks", "check-swarm-core-pin.py")
 SWARM_CORE = os.environ.get(
     "ORG_BOT_SWARM_CORE", "https://github.com/swarm-routing/ns3-swarm-core.git"
 )
+# where the task reads swarm-core's tags and release assets for a repository with a
+# release lock, swarm-core.lock (swarm-routing/ns3-swarm-core#134; a file:// tree in
+# the self-test)
+SWARM_CORE_RELEASES = os.environ.get("ORG_BOT_SWARM_CORE_RELEASES", "https://github.com")
 # tasks whose PR lives on one branch, updated in place when the change moves on
 FIXED_BRANCH = {"swarm-core-pin"}
 ORG = "swarm-routing"
@@ -112,14 +116,18 @@ TASKS = {
     },
     "swarm-core-pin": {
         "title": "chore(core): bump the swarm-core pin (org-bot)",
-        "what": "swarm-core `main` changed `core/` since this repository's pin, so its "
-        "`swarm-core / pin` check fails on every PR until the pin follows (#208). "
-        "Rewritten by swarm-routing/.github `tools/checks/check-swarm-core-pin.py --bump`: "
-        "the old commit becomes swarm-core `main`'s on the pin lines only (`SWARM_CORE_REF` "
-        "in `core/CMakeLists.txt` and the `Makefile`, the workflows' `core-deps` and ns-3 "
-        "dependency lines); recorded results, docs and campaign plans are never touched "
-        "(#407). This repository's core tests and ns-3 suite run on this PR; when "
-        "swarm-core moves again before it merges, the bot updates this PR in place.",
+        "what": "This repository's swarm-core pin is behind, so its `swarm-core / pin` check "
+        "fails on every PR until the pin follows (#208): with a commit pin, swarm-core "
+        "`main` changed `core/`; with a release lock (`swarm-core.lock`, "
+        "swarm-routing/ns3-swarm-core#134), a newer swarm-core release is out, and "
+        "nothing happens between releases. Rewritten by swarm-routing/.github "
+        "`tools/checks/check-swarm-core-pin.py --bump`: the old commit or tag becomes the "
+        "new one on the pin lines only (`SWARM_CORE_REF` in `core/CMakeLists.txt` and the "
+        "`Makefile`, or the lock written from the release, every value read from it; the "
+        "workflows' `core-deps` and ns-3 dependency lines); recorded results, docs and "
+        "campaign plans are never touched (#407). This repository's core tests and ns-3 "
+        "suite run on this PR; when swarm-core moves again before it merges, the bot "
+        "updates this PR in place.",
     },
     "zenodo": {
         "title": "docs: record the zenodo concept doi (org-bot)",
@@ -272,10 +280,12 @@ def generate(task, repo, clone, data, out):
         if not os.path.exists(cmake):
             return None
         with open(cmake) as fh:
-            if "SWARM_CORE_REF" not in fh.read():
-                return None  # no swarm-core pin in this repository
+            text = fh.read()
+        if "SWARM_CORE_REF" not in text and "swarm-core.lock" not in text:
+            return None  # no swarm-core pin in this repository
         r = sh(
-            [sys.executable, "-I", PIN, "--bump", "--swarm-core", SWARM_CORE],
+            [sys.executable, "-I", PIN, "--bump", "--swarm-core", SWARM_CORE]
+            + ["--releases", SWARM_CORE_RELEASES],
             cwd=clone,
             check=False,
         )
@@ -1186,6 +1196,77 @@ def self_test():
         "swarm-core-pin: a hand-opened bump to the same commit gets no duplicate",
         "already proposed by hand in #7" in out
         and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
+    )
+    # swarm-core-pin on a release lock (swarm-routing/ns3-swarm-core#134): a lock behind
+    # the newest release gets the PR, a current one none, and none between releases
+    sys.path.insert(0, os.path.dirname(PIN))
+    import release_lock
+
+    rel = os.path.join(work, "releases")
+    sc_repo = "swarm-routing/ns3-swarm-core"
+    sc_more = release_lock.fixture_repo(rel, sc_repo, env)
+    release_lock.make_release(rel, sc_repo, "v0.3.0", {"swarm-core-0.3.0.tar.gz": b"3"}, env)
+    rbase = "file://" + rel
+
+    def locked_repo(name):
+        src = os.path.join(work, "src", name)
+        lock = release_lock.render(
+            "SWARM_CORE", sc_repo, "v0.3.0", "swarm-core-{version}.tar.gz", rbase
+        )
+        files = {
+            "swarm-core.lock": lock,
+            "core/CMakeLists.txt": "file(STRINGS ../swarm-core.lock lock)\n",
+            "Makefile": "SWARM_CORE_REF ?= v0.3.0\n",
+            ".github/workflows/licence.yml": "  core-deps: swarm-routing/ns3-swarm-core@v0.3.0:core\n",
+        }
+        for rel_, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(src, rel_)), exist_ok=True)
+            with open(os.path.join(src, rel_), "w") as fh:
+                fh.write(text)
+        sh(["git", "init", "-q", "-b", "main", src], env=env)
+        sh(["git", "-C", src, "add", "-A"], env=env)
+        sh(["git", "-C", src, "commit", "-q", "-m", "init"], env=env)
+        sh(
+            ["git", "clone", "-q", "--bare", src, os.path.join(remotes, ORG, name + ".git")],
+            env=env,
+        )
+
+    locked_repo("zeta")
+    ldata = os.path.join(work, "ldata.json")
+    with open(ldata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": "zeta", "epics": []}]}, fh)
+    globals()["SWARM_CORE_RELEASES"] = rbase
+    sc_more("main moves, no release")
+    gh = FakeGitHub()
+    res, out = go(gh, task="swarm-core-pin", data=ldata)
+    check(
+        "swarm-core-pin, lock: no PR between releases, however main moves",
+        "zeta swarm-core-pin: up to date" in out
+        and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
+    )
+    _, v4 = release_lock.make_release(
+        rel, sc_repo, "v0.4.0", {"swarm-core-0.4.0.tar.gz": b"4"}, env
+    )
+    gh = FakeGitHub()
+    res, out = go(gh, task="swarm-core-pin", data=ldata)
+    lock_shown = sh(
+        [
+            "git",
+            "--git-dir",
+            os.path.join(remotes, ORG, "zeta.git"),
+            "show",
+            "org-bot/swarm-core-pin:swarm-core.lock",
+        ],
+        check=False,
+    ).stdout
+    post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    check(
+        "swarm-core-pin, lock: a new release gets one PR with the lock read from it",
+        len(post) == 1
+        and "SWARM_CORE_TAG=v0.4.0" in lock_shown
+        and v4["swarm-core-0.4.0.tar.gz"] in lock_shown
+        and "pin-target:" in post[0][2]["body"]
+        and "v0.4.0" in post[0][2]["body"],
     )
     # org_sync.py apply: exit 1 with only stdout is owned sections left alone; anything else fails
     check(
