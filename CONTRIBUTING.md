@@ -731,8 +731,13 @@ lines of the repository's own after the end marker, stay the repository's
   the repository's OAI-PMH record (ETD-MS, which names the degree and its
   grantor, else Dublin Core) give an entry with the url (the handle's) and no
   `doi`; a field the record lacks stays out (a thesis whose record states no
-  degree is `@misc`), and a page that names a DOI is refused for `bib entry
-  DOI` (#342). `bib check --online`
+  degree is `@misc`), and `bib entry --url` refuses a page that names a DOI:
+  that work takes `bib entry DOI` (#342). One exception, for a thesis only: when its repository record
+  names neither the degree nor the grantor, the entry may take its type
+  (`@phdthesis`, `@mastersthesis`) and its `school` from the thesis's own
+  title page, and its `note` says so (for example "degree and school from the
+  title page; the record names neither"); every other field still comes from
+  the record (maintainer decision 2026-11-14 on #342). `bib check --online`
   suggests a DOI for a url-only entry by its title; that match may be another
   work with the same title (a later chapter or article), so check its type and
   year before adopting it. When it is another work, the entry says so with
