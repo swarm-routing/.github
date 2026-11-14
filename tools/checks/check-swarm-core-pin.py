@@ -76,6 +76,9 @@ LOCK = "swarm-core.lock"
 LOCK_PREFIX = "SWARM_CORE"
 ASSET = "swarm-core-{version}.tar.gz"
 KEY = re.compile(r"^\s*([A-Za-z0-9_-]+):")
+# core/CMakeLists.txt reads the lock on a line that is not a comment
+LOCK_READ = re.compile(r"^[^#\n]*file\(\s*(STRINGS|READ)\b[^#\n]*swarm-core\.lock", re.M)
+HARD_RELEASE = re.compile(r"ns3-swarm-core/releases/download/v\d|swarm-core-\d+\.\d+\.\d+\.tar")
 SHA = r"[0-9a-f]{40}"
 CMAKE_PIN = re.compile(rf'^\s*set\(\s*SWARM_CORE_REF\s+"({SHA})"', re.M)
 MAKE_PIN = re.compile(r"^\s*SWARM_CORE_REF\s*[?:]?=\s*(\S+)", re.M)
@@ -249,13 +252,17 @@ def check_lock_files():
     asset = ASSET.format(version=version)
     if values.get(f"{prefix}_ASSET") != asset:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_ASSET={asset}")
+    if f"{prefix}_SHA256" not in values:
+        errors.append(f"{LOCK}: want {LOCK_PREFIX}_SHA256, the hash of {asset}")
     if not os.path.exists(CMAKE):
         errors.append(f"{CMAKE}: missing")
     else:
         with open(CMAKE, encoding="utf-8") as f:
             text = f.read()
-        if LOCK not in text:
-            errors.append(f"{CMAKE}: does not read {LOCK}")
+        if not LOCK_READ.search(text):
+            errors.append(f"{CMAKE}: does not read {LOCK} (file(STRINGS ...) or file(READ ...))")
+        if HARD_RELEASE.search(text):
+            errors.append(f"{CMAKE}: names a swarm-core release itself; take it from {LOCK}")
         if CMAKE_PIN.search(text):
             errors.append(f"{CMAKE}: still sets a commit SWARM_CORE_REF; the lock replaces it")
     if os.path.exists("Makefile"):
@@ -276,6 +283,18 @@ def check_lock_files():
     if not deps:
         errors.append(f".github/workflows: no core-deps entry for swarm-core (want @{tag}:core)")
     return prefix, values, errors
+
+
+def retag(line, patterns, old, new):
+    """The line with every pin match naming `old` rewritten to `new`, on the
+    matched span only, whatever the spacing around it."""
+    spans = sorted(
+        {m.span(1) for pat in patterns for m in pat.finditer(line) if m.group(1) == old},
+        reverse=True,
+    )
+    for a, b in spans:
+        line = line[:a] + new + line[b:]
+    return line
 
 
 def run_lock(releases):
@@ -334,12 +353,7 @@ def bump_lock(releases):
     for path, patterns in pin_places():
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
-        new = [
-            line.replace(f"@{tag}", f"@{newest}").replace(f"= {tag}", f"= {newest}")
-            if any(m.group(1) == tag for pat in patterns for m in pat.finditer(line))
-            else line
-            for line in lines
-        ]
+        new = [retag(line, patterns, tag, newest) for line in lines]
         if new != lines:
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.writelines(new)
@@ -614,6 +628,24 @@ def self_test():
         check("lock: the Makefile on another tag", rc == 1 and "Makefile:1:" in out)
         rc, out = golock(locked("lock-cmake", "v0.3.0", cmake_reads=False))
         check("lock: core/CMakeLists.txt must read the lock", rc == 1 and "does not read" in out)
+        mention = locked("lock-comment", "v0.3.0")
+        with open(os.path.join(mention, CMAKE), "w", encoding="utf-8") as f:
+            f.write(f"# reads {LOCK} (not really)\nset(URL swarm-core-0.3.0.tar.gz)\n")
+        rc, out = golock(mention)
+        check(
+            "lock: a comment naming the lock is no read, a release in CMake is refused",
+            rc == 1 and "does not read" in out and "names a swarm-core release" in out,
+        )
+        nohash = locked("lock-nohash", "v0.3.0")
+        with open(os.path.join(nohash, LOCK), encoding="utf-8") as f:
+            body = f.read()
+        with open(os.path.join(nohash, LOCK), "w", encoding="utf-8") as f:
+            f.write(body.replace("SWARM_CORE_SHA256=", "SWARM_CORE_OTHER_SHA256="))
+        rc, out = golock(nohash)
+        check(
+            "lock: SWARM_CORE_SHA256 is required, another asset's hash is not enough",
+            rc == 1 and "want SWARM_CORE_SHA256" in out,
+        )
         bad = locked("lock-hash", "v0.3.0")
         with open(os.path.join(bad, LOCK), encoding="utf-8") as f:
             body = f.read()
@@ -626,6 +658,8 @@ def self_test():
         release_lock.make_release(
             rel, SWARM_CORE_REPO, "v0.4.0", {"swarm-core-0.4.0.tar.gz": b"four"}, env
         )
+        with open(os.path.join(current, "Makefile"), "w", encoding="utf-8") as f:
+            f.write("SWARM_CORE_REF?=v0.3.0\n")  # no spaces: --bump must still move it
         rc, out = golock(current)
         check("lock: a newer release fails the check", rc == 1 and "v0.4.0 is released" in out)
         rc, out = golock(current, bump_mode=True)
@@ -644,6 +678,8 @@ def self_test():
             and "v0.4.0:" in out
             and cell == "##PROV## swarm-core@v0.3.0\n"
             and "@v0.4.0\n" in ns3
+            and open(os.path.join(current, "Makefile"), encoding="utf-8").read()
+            == "SWARM_CORE_REF?=v0.4.0\n"
             and "@main\n" in ns3,
         )
         rc, out = golock(current)
