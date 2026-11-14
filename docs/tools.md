@@ -119,7 +119,13 @@ clang-format-18 --style=file:.clang-format --dump-config >/dev/null
 
 A change to `reusable-ns3-ci.yml` is validated by running its step scripts in
 an `ns3-dev` image against `swarm-routing/ns3-containers`' `test/fixtures/`
-module (see that repo's AGENTS.md), then by a caller repo's PR. A change to
+module (see that repo's AGENTS.md), then by a caller repo's PR (a change to
+the dependency canary, `canary-dependencies` (#411), also by a
+`workflow_dispatch` of that caller's branch, since the canary leg never runs
+on a PR: the PR run must show no `canary` leg, the dispatch one, non-blocking).
+Callers pin `dependencies` to released tags (`@vX.Y.Z`; `git clone --branch`
+takes a tag) and name `@main` in `canary-dependencies`, with a `schedule:` in
+their `on:`. A change to
 `reusable-benchmark-cell.yml` runs `benchmark-cell-selftest.yml` on its PR (one
 build-mode cell); its prebuilt mode is proven by a protocol repo's caller. A change to
 `reusable-ns3-image.yml` runs `ns3-image-selftest.yml` on its PR (build and
