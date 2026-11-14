@@ -249,6 +249,7 @@ def check_lock_files():
     if prefix != LOCK_PREFIX or values[f"{prefix}_REPO"] != SWARM_CORE_REPO:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_REPO={SWARM_CORE_REPO}")
     tag, version = values[f"{prefix}_TAG"], values[f"{prefix}_VERSION"]
+    commit = values[f"{prefix}_COMMIT"]
     asset = ASSET.format(version=version)
     if values.get(f"{prefix}_ASSET") != asset:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_ASSET={asset}")
@@ -274,10 +275,12 @@ def check_lock_files():
         rel = path.replace(os.sep, "/")
         for n, ref in lines_matching(path, CORE_DEP):
             deps += 1
-            if ref != tag:
+            if ref not in (tag, commit):
                 errors.append(f"{rel}:{n}: core-deps names swarm-core {ref}, not {tag}")
         for n, ref, key in dep_lines(path):
-            ok = (tag, "main") if key == "canary-dependencies" else (tag,)
+            # the tag, or the commit it names (a benchmark cell's build mode takes
+            # a 40-hex commit, swarm-routing/.github#409); a canary may follow main
+            ok = (tag, commit, "main") if key == "canary-dependencies" else (tag, commit)
             if ref not in ok:
                 errors.append(f"{rel}:{n}: the ns-3 dependency names swarm-core {ref}, not {tag}")
     if not deps:
@@ -353,7 +356,11 @@ def bump_lock(releases):
     for path, patterns in pin_places():
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
-        new = [retag(line, patterns, tag, newest) for line in lines]
+        old_commit = values[f"{prefix}_COMMIT"]
+        new = [
+            retag(retag(line, patterns, tag, newest), patterns, old_commit, commit)
+            for line in lines
+        ]
         if new != lines:
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.writelines(new)
@@ -592,6 +599,10 @@ def self_test():
                 f"        swarm-core=swarm-routing/ns3-swarm-core@{canary or 'main'}\n"
                 f"      core-deps: swarm-routing/ns3-swarm-core@{tag}:core\n",
                 "results/cell.txt": f"##PROV## swarm-core@{tag}\n",
+                ".github/workflows/bench.yml": "      dependencies: |\n"
+                "        swarm-core=swarm-routing/ns3-swarm-core@"
+                + release_lock.parse_text(text)[1][f"{LOCK_PREFIX}_COMMIT"]
+                + "\n",
             }
             for p_, body in files.items():
                 os.makedirs(os.path.dirname(os.path.join(d, p_)) or d, exist_ok=True)
@@ -655,6 +666,7 @@ def self_test():
         check("lock: a hash that is not the release's", rc == 1 and "SHA256SUMS" in out)
 
         # a new release: the check fails, --bump writes the lock for it and moves the tag
+        new_commit("four")
         release_lock.make_release(
             rel, SWARM_CORE_REPO, "v0.4.0", {"swarm-core-0.4.0.tar.gz": b"four"}, env
         )
@@ -680,7 +692,9 @@ def self_test():
             and "@v0.4.0\n" in ns3
             and open(os.path.join(current, "Makefile"), encoding="utf-8").read()
             == "SWARM_CORE_REF?=v0.4.0\n"
-            and "@main\n" in ns3,
+            and "@main\n" in ns3
+            and release_lock.parse_text(lock_text)[1]["SWARM_CORE_COMMIT"]
+            in open(os.path.join(current, ".github", "workflows", "bench.yml")).read(),
         )
         rc, out = golock(current)
         check("lock: …after which the check passes", rc == 0)
