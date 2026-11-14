@@ -277,10 +277,15 @@ def check_lock_files():
             deps += 1
             if ref not in (tag, commit):
                 errors.append(f"{rel}:{n}: core-deps names swarm-core {ref}, not {tag}")
+        with open(path, encoding="utf-8") as f:
+            # a benchmark cell's build mode checks out a 40-hex commit (#409), so
+            # it takes the commit the tag names; reusable-ns3-ci.yml clones with
+            # `git clone --branch`, which takes the tag and not a commit
+            bench = "reusable-benchmark-cell.yml" in f.read()
         for n, ref, key in dep_lines(path):
-            # the tag, or the commit it names (a benchmark cell's build mode takes
-            # a 40-hex commit, swarm-routing/.github#409); a canary may follow main
-            ok = (tag, commit, "main") if key == "canary-dependencies" else (tag, commit)
+            ok = (commit,) if bench else (tag,)
+            if key == "canary-dependencies":
+                ok += ("main",)
             if ref not in ok:
                 errors.append(f"{rel}:{n}: the ns-3 dependency names swarm-core {ref}, not {tag}")
     if not deps:
@@ -599,7 +604,8 @@ def self_test():
                 f"        swarm-core=swarm-routing/ns3-swarm-core@{canary or 'main'}\n"
                 f"      core-deps: swarm-routing/ns3-swarm-core@{tag}:core\n",
                 "results/cell.txt": f"##PROV## swarm-core@{tag}\n",
-                ".github/workflows/bench.yml": "      dependencies: |\n"
+                ".github/workflows/bench.yml": "    uses: swarm-routing/.github/.github/workflows/"
+                "reusable-benchmark-cell.yml@main\n      dependencies: |\n"
                 "        swarm-core=swarm-routing/ns3-swarm-core@"
                 + release_lock.parse_text(text)[1][f"{LOCK_PREFIX}_COMMIT"]
                 + "\n",
@@ -635,6 +641,19 @@ def self_test():
         )
         rc, out = golock(locked("lock-canary", "v0.3.0", canary="v0.2.9"))
         check("lock: a canary on another tag is refused", rc == 1 and "ns3.yml:7:" in out)
+        incommit = locked("lock-ns3commit", "v0.3.0")
+        with open(os.path.join(incommit, LOCK), encoding="utf-8") as f:
+            pinned = release_lock.parse_text(f.read())[1][f"{LOCK_PREFIX}_COMMIT"]
+        ns3p = os.path.join(incommit, ".github", "workflows", "ns3.yml")
+        with open(ns3p, encoding="utf-8") as f:
+            body = f.read()
+        with open(ns3p, "w", encoding="utf-8") as f:
+            f.write(body.replace("ns3-swarm-core@v0.3.0\n", f"ns3-swarm-core@{pinned}\n", 1))
+        rc, out = golock(incommit)
+        check(
+            "lock: the ns-3 CI's dependency takes the tag, not the commit (git clone --branch)",
+            rc == 1 and "ns3.yml:5:" in out,
+        )
         rc, out = golock(locked("lock-make", "v0.3.0", make="v0.2.0"))
         check("lock: the Makefile on another tag", rc == 1 and "Makefile:1:" in out)
         rc, out = golock(locked("lock-cmake", "v0.3.0", cmake_reads=False))
