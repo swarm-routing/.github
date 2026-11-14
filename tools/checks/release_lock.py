@@ -102,26 +102,52 @@ def parse_text(text, name="lock"):
 
 
 def parse(path):
-    with open(path, encoding="utf-8") as f:
-        return parse_text(f.read(), os.path.basename(path))
+    """A lock file below the current directory (a relative path only: the lock is
+    read from the repository it pins, never from elsewhere)."""
+    here = os.path.realpath(os.getcwd())
+    full = os.path.realpath(os.path.join(here, path))
+    if os.path.isabs(path) or not full.startswith(here + os.sep):
+        raise LockError(f"{path}: give the lock as a path below the current directory")
+    with open(full, encoding="utf-8") as f:
+        return parse_text(f.read(), os.path.basename(full))
 
 
 def sha_keys(prefix, values):
     return sorted(k for k in values if k.endswith("_SHA256"))
 
 
+REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+ASSET_NAME = re.compile(r"^[A-Za-z0-9_.+-]+$")
+
+
+def checked_base(base):
+    """GitHub, or a file:// tree (the self-tests); nothing else is fetched from."""
+    base = base.rstrip("/")
+    if base != GITHUB and not base.startswith("file:///"):
+        raise LockError(f"--base {base}: only {GITHUB} or a file:// tree")
+    return base
+
+
+def checked_repo(repo):
+    if not REPO.match(repo) or ".." in repo:
+        raise LockError(f"{repo}: not owner/name")
+    return repo
+
+
 def git_url(base, repo):
-    return f"{base.rstrip('/')}/{repo}.git"
+    return f"{checked_base(base)}/{checked_repo(repo)}.git"
 
 
 def download_url(base, repo, tag, asset):
-    return f"{base.rstrip('/')}/{repo}/releases/download/{tag}/{asset}"
+    if not SEMVER.match(tag) or not ASSET_NAME.match(asset):
+        raise LockError(f"{tag}/{asset}: not a release tag and asset name")
+    return f"{checked_base(base)}/{checked_repo(repo)}/releases/download/{tag}/{asset}"
 
 
 def tags(base, repo):
     """{tag: commit} for the repository's tags, annotated tags peeled (git ls-remote)."""
     r = subprocess.run(
-        ["git", "ls-remote", "--tags", git_url(base, repo)], capture_output=True, text=True
+        ["git", "ls-remote", "--tags", "--", git_url(base, repo)], capture_output=True, text=True
     )
     if r.returncode:
         raise LockError(f"git ls-remote {git_url(base, repo)}: {r.stderr.strip()}")
@@ -141,8 +167,9 @@ def tags(base, repo):
 
 def sha256sums(base, repo, tag):
     """{asset: sha256} from the release's SHA256SUMS, or None when it has none."""
+    url = download_url(base, repo, tag, "SHA256SUMS")
     try:
-        with urllib.request.urlopen(download_url(base, repo, tag, "SHA256SUMS"), timeout=60) as r:
+        with urllib.request.urlopen(url, timeout=60) as r:  # GitHub or file:// only
             text = r.read().decode("utf-8")
     except (urllib.error.URLError, OSError):
         return None
@@ -353,6 +380,25 @@ def self_test():
         except LockError as e:
             got = str(e)
         check("render refuses a release with no SHA256SUMS", "no SHA256SUMS" in got)
+        for bad_base in ("http://example.com", "https://evil.example"):
+            try:
+                tags(bad_base, repo)
+                got = ""
+            except LockError as e:
+                got = str(e)
+            check(f"only GitHub or file:// is fetched from: {bad_base}", "only" in got)
+        try:
+            tags(base, "--upload-pack=x/y")
+            got = ""
+        except LockError as e:
+            got = str(e)
+        check("a repository that is not owner/name", "not owner/name" in got)
+        try:
+            parse("/etc/passwd")
+            got = ""
+        except LockError as e:
+            got = str(e)
+        check("a lock outside the current directory is refused", "below the current" in got)
         check(
             "verify a tag that does not exist",
             verify(prefix, dict(values, LIB_TAG="v9.9.9", LIB_VERSION="9.9.9"), base)[0].endswith(
