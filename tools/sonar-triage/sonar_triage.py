@@ -830,19 +830,19 @@ def self_test():
         srv.shutdown()
     # 5001 findings: every page read; a page that comes back empty early: refused
     st = copy.deepcopy(base)
-    for n in range(4997):
+    for n in range(4998):
         st["issues"][f"M{n}"] = issue(f"M{n}", "python:S1244", "tools/m.py", n + 1)
     srv = fake_sonar(st, token)
     try:
         sonar = Sonar(f"http://127.0.0.1:{srv.server_address[1]}", "")
         rows = findings(data, "demo", sonar, out=lambda *_: None)
-        check_(len(rows) == 5001, f"5000 issues and a hotspot: {len(rows)}")
+        check_(len(rows) == 5002, f"5001 issues (page 51) and a hotspot: {len(rows)}")
         st["report_total"] = 6000
         try:
             findings(data, "demo", sonar, out=lambda *_: None)
             check_(False, "an empty page before the total should refuse")
         except Refusal as e:
-            check_("empty after 5000 of 6000" in str(e), str(e))
+            check_("empty after 5001 of 6000" in str(e), str(e))
     finally:
         srv.shutdown()
 
@@ -860,7 +860,7 @@ def self_test():
     finally:
         srv.shutdown()
     print(
-        "ok   findings: every page (5001), recorded or not; an early empty page and a search"
+        "ok   findings: every page (5001 issues), recorded or not; an early empty page and a search"
         " over the API's limit refused;"
         " entry: the API's fields, TOML-escaped, the branch kept, refusals"
     )
