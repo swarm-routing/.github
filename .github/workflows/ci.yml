@@ -45,6 +45,8 @@ jobs:
         run: python3 -I tools/epics/epics.py --self-test
       - name: zenodo self-test (tools/zenodo)
         run: python3 -I tools/zenodo/zenodo.py --self-test
+      - name: release-check self-test (tools/release)
+        run: python3 -I tools/release/release_check.py --self-test
       - name: sonar-triage self-test (tools/sonar-triage)
         run: python3 -I tools/sonar-triage/sonar_triage.py --self-test
       - name: bestpractices self-test (tools/bestpractices)
