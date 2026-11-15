@@ -139,7 +139,8 @@ with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
     f.write("    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main\n")
 run("apply", da)
 check(
-    "codecov.io/gh/swarm-routing/demo/graph/badge.svg" in read(os.path.join(da, "README.md")),
+    "codecov.io/gh/swarm-routing/demo/branch/main/graph/badge.svg"
+    in read(os.path.join(da, "README.md")),
     "the Codecov badge appears once a workflow uploads coverage",
 )
 # the badges are a table, one row per group, a fixed order within a group (#415)
@@ -215,7 +216,8 @@ with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
     )
 run("apply", da)
 check(
-    "codecov.io/gh/swarm-routing/demo/graph/badge.svg" in read(os.path.join(da, "README.md")),
+    "codecov.io/gh/swarm-routing/demo/branch/main/graph/badge.svg"
+    in read(os.path.join(da, "README.md")),
     "codecov-action called directly (AntHocNet's quality.yml) also turns on the Codecov badge",
 )
 dz = fresh()
@@ -337,6 +339,19 @@ edit(
     ".github/org-sync.toml",
     'kind = "protocol"\n',
     'kind = "protocol"\ncitation = true\nzenodo_concept = "not-read-from-zenodo"\n',
+)
+write(
+    os.path.join(dr, ".github/workflows/release.yml"),
+    "# releases are cut by swarm-routing/.github's reusable-release.yml, elsewhere\n",
+)
+run("apply", dr)
+check(
+    "github/v/release" not in read(os.path.join(dr, "README.md")),
+    "a workflow that only names reusable-release.yml in a comment gives no release badge",
+)
+write(
+    os.path.join(dr, ".github/workflows/release.yml"),
+    "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main # the org's\n",
 )
 run("apply", dr)
 rr = read(os.path.join(dr, "README.md"))
