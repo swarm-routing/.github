@@ -282,7 +282,9 @@ def bump(text, base=GITHUB, name="lock"):
     old_sums, new_sums = sha256sums(base, repo, tag), sha256sums(base, repo, newest)
     if old_sums is None:
         raise LockError(f"{name}: {repo} release {tag} has no SHA256SUMS asset")
-    by_hash = {h: a for a, h in old_sums.items()}
+    by_hash = {}
+    for a, h in old_sums.items():
+        by_hash.setdefault(h, []).append(a)
     new = {
         f"{prefix}_TAG": newest,
         f"{prefix}_COMMIT": commit,
@@ -291,9 +293,16 @@ def bump(text, base=GITHUB, name="lock"):
     asset_key = f"{prefix}_ASSET"
     for k in sha_keys(prefix, values):
         old = values[asset_key] if k == f"{prefix}_SHA256" and asset_key in values else None
-        old = old or by_hash.get(values[k])
         if old is None:
-            raise LockError(f"{name}: {k} is no asset's sha256 in {tag}'s SHA256SUMS")
+            named = by_hash.get(values[k], [])
+            if not named:
+                raise LockError(f"{name}: {k} is no asset's sha256 in {tag}'s SHA256SUMS")
+            if len(named) > 1:  # identical contents: which one the consumer fetches is unknown
+                raise LockError(
+                    f"{name}: {k} is the sha256 of {', '.join(sorted(named))} in {tag}: "
+                    "ambiguous; bump this lock by hand"
+                )
+            old = named[0]
         if old_ver not in old:
             raise LockError(f"{name}: {k}'s asset {old} does not carry the version {old_ver}")
         moved = old.replace(old_ver, new_ver)
@@ -497,6 +506,20 @@ def self_test():
             and f"LIB_SHA256={s2['lib-0.2.0.tar.gz']}\n" in out2,
         )
         check("bump: a current lock is left", bump(out, base)[0] is None)
+        twins = "dup/lib"
+        more = fixture_repo(t, twins, env)
+        make_release(
+            t, twins, "v1.0.0", {"a-1.0.0.tar.gz": b"same", "b-1.0.0.tar.gz": b"same"}, env
+        )
+        more("two")
+        make_release(t, twins, "v1.1.0", {"a-1.1.0.tar.gz": b"x", "b-1.1.0.tar.gz": b"y"}, env)
+        twin = render("D", twins, "v1.0.0", "a-{version}.tar.gz", base).replace("D_ASSET=", "#")
+        try:
+            bump(twin, base)
+            got = ""
+        except LockError as e:
+            got = str(e)
+        check("bump: a hash two assets share is refused, not guessed (#481)", "ambiguous" in got)
         commit("four")
         make_release(t, repo, "v0.4.0", {"lib-renamed-0.4.0.tar.gz": b"four"}, env)
         try:

@@ -385,15 +385,28 @@ def may_lock(gh, full):
     )
 
 
+def pages(gh, path, limit=10):
+    """Every item of a paged list (100 a page, at most `limit` pages; GitHub lists a
+    PR's first 3000 files)."""
+    items = []
+    for page in range(1, limit + 1):
+        got = gh.api("GET", f"{path}&page={page}") or []
+        if not isinstance(got, list):
+            break
+        items += got
+        if len(got) < 100:
+            break
+    return items
+
+
 def held_locks(gh, full, locks):
     """{lock: why} for each lock an open PR not from org-bot already changes (a hand
     bump, #478): the task leaves those alone rather than open a competing PR."""
     held = {}
-    for p in gh.api("GET", f"repos/{full}/pulls?state=open&per_page=100") or []:
+    for p in pages(gh, f"repos/{full}/pulls?state=open&per_page=100"):
         if p["head"]["ref"].startswith("org-bot/"):
             continue
-        files = gh.api("GET", f"repos/{full}/pulls/{p['number']}/files?per_page=100") or []
-        for f in files:
+        for f in pages(gh, f"repos/{full}/pulls/{p['number']}/files?per_page=100", 30):
             name = f.get("filename") if isinstance(f, dict) else None
             if name in locks and name not in held:
                 held[name] = f"#{p['number']} changes it ({p.get('title') or ''})"
@@ -596,12 +609,59 @@ def supersede(gh, full, olds, number):
         gh.api("DELETE", f"repos/{full}/git/refs/heads/{old['head']['ref']}")
 
 
+def close_stale(gh, repo, task, notes, dry_run):
+    """Nothing to bump (every lock current, or held by a hand PR): an open bot PR on the
+    task's fixed branch carries a bump that must not merge beside the hand PR, so it is
+    closed (#478)."""
+    full = f"{ORG}/{repo}"
+    branch = branch_for(task, "")
+    held = [n for n in notes if n and " left alone, " in n]
+    if dry_run:
+        print(f"{repo} {task}: up to date")
+        return None
+    mine = [
+        p
+        for p in pages(gh, f"repos/{full}/pulls?state=open&per_page=100")
+        if p["head"]["ref"] == branch and p["head"].get("repo", {}).get("full_name", full) == full
+    ]
+    for p in mine:
+        why = "; ".join(held) or "every lock is already on its newest release"
+        gh.api(
+            "POST",
+            f"repos/{full}/issues/{p['number']}/comments",
+            {"body": f"Closed by org-bot: nothing left for it to bump ({why})."},
+        )
+        gh.api("PATCH", f"repos/{full}/pulls/{p['number']}", {"state": "closed"})
+        gh.api("DELETE", f"repos/{full}/git/refs/heads/{branch}")
+    print(f"{repo} {task}: up to date{closed_note(mine).replace('superseded', 'stale')}")
+    return {"number": None, "closed": [p["number"] for p in mine]} if mine else None
+
+
+def branch_only(clone, branch, env):
+    """The fetched PR branch changes no file beyond this run's change: a lock dropped
+    from the bump (held by a hand PR since) makes the branch stale (#478)."""
+    if sh(
+        ["git", "-C", clone, "fetch", "-q", "--depth", "1", "origin", branch], env=env, check=False
+    ).returncode:
+        return False
+    theirs = set(
+        sh(["git", "-C", clone, "diff", "--name-only", "HEAD", "FETCH_HEAD"]).stdout.split()
+    )
+    ours = set(sh(["git", "-C", clone, "diff", "--name-only"]).stdout.split())
+    ours |= set(
+        sh(["git", "-C", clone, "ls-files", "--others", "--exclude-standard"]).stdout.split()
+    )
+    return theirs <= ours
+
+
 def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
     """One PR for the change in `clone`, unless the same change is already open.
     `also`: other tasks whose open bot PRs this one carries, closed as superseded (#429)."""
     diff = sh(["git", "-C", clone, "diff"]).stdout
     status = sh(["git", "-C", clone, "status", "--porcelain"]).stdout
     if not status.strip():
+        if task == "release-lock":
+            return close_stale(gh, repo, task, notes, dry_run)
         print(f"{repo} {task}: up to date")
         return None
     stat = sh(["git", "-C", clone, "diff", "--stat"]).stdout.strip().splitlines()
@@ -647,7 +707,10 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
             target
             and target in (same[0].get("body") or "")
             and branch_has(clone, branch, env)
-            and not (task == "release-lock" and stale_red(gh, full, base, same[0]))
+            and not (
+                task == "release-lock"
+                and (not branch_only(clone, branch, env) or stale_red(gh, full, base, same[0]))
+            )
         ):
             supersede(gh, full, carried, same[0]["number"])
             note = queue(gh, full, base, same[0])
@@ -2264,6 +2327,30 @@ def self_test():
         "release-lock: the same target is left alone",
         "already proposed in #42" in out and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
     )
+    extra = os.path.join(work, "nu-extra")  # the branch carries more than this run's change
+    sh(
+        [
+            "git",
+            "clone",
+            "-q",
+            "-b",
+            "org-bot/release-lock",
+            os.path.join(remotes, ORG, "nu.git"),
+            extra,
+        ],
+        env=env,
+    )
+    with open(os.path.join(extra, "other.lock"), "w") as fh:
+        fh.write("dropped from the bump since\n")
+    sh(["git", "-C", extra, "add", "-A"], env=env)
+    sh(["git", "-C", extra, "commit", "-q", "-m", "x"], env=env)
+    sh(["git", "-C", extra, "push", "-q", "origin", "HEAD:org-bot/release-lock"], env=env)
+    gh = FakeGitHub([bot_pr])
+    res, out = go(gh, task="release-lock", data=ndata)
+    check(
+        "release-lock: a branch with a file beyond this run's change is rebuilt (#481)",
+        "updated #42 on org-bot/release-lock" in out and not shown("nu", "other.lock"),
+    )
     red = {
         f"repos/{ORG}/nu/compare/main...org-bot/release-lock": {"behind_by": 3},
         f"repos/{ORG}/nu/commits/f00d/check-runs?per_page=100": {
@@ -2293,7 +2380,7 @@ def self_test():
         "head": {"ref": "claude/ns3-tools", "repo": {"full_name": f"{ORG}/xi"}},
     }
     gh = RouteGitHub(
-        {f"repos/{ORG}/xi/pulls/7/files?per_page=100": [{"filename": "ns3-tools.lock"}]},
+        {f"repos/{ORG}/xi/pulls/7/files?per_page=100&page=1": [{"filename": "ns3-tools.lock"}]},
         open_prs=[hand],
     )
     res, out = go(gh, task="release-lock", data=xdata)
@@ -2301,6 +2388,17 @@ def self_test():
         "release-lock: a lock an open hand PR changes is left alone",
         "xi release-lock: up to date" in out
         and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
+    )
+    xbot = dict(bot_pr, head={**bot_pr["head"], "repo": {"full_name": f"{ORG}/xi"}})
+    gh = RouteGitHub(
+        {f"repos/{ORG}/xi/pulls/7/files?per_page=100&page=1": [{"filename": "ns3-tools.lock"}]},
+        open_prs=[hand, xbot],
+    )
+    res, out = go(gh, task="release-lock", data=xdata)
+    check(
+        "release-lock: the bot's open bump closes once a hand PR holds the lock (#481)",
+        ("PATCH", f"repos/{ORG}/xi/pulls/42", {"state": "closed"}) in gh.calls
+        and "closed #42 as stale" in out,
     )
     # #429-style carry: drifted templates ride along, the org-sync PR stays open
     sync_pr = {
