@@ -862,7 +862,7 @@ line = 1570
 decision = "falsepositive"
 reason = "FP-repofile"
 
-# ---- swarm-routing/.github (36)
+# ---- swarm-routing/.github (39)
 
 [[issue]]
 project = "swarm-routing_.github"
@@ -1190,9 +1190,27 @@ reason = "FP-cli"
 
 [[issue]]
 project = "swarm-routing_.github"
+key = "AaHd0kr7GhjC-EaUGIcw"
+rule = "pythonsecurity:S8705"
+file = "tools/release/release_check.py"
+line = 78
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHd0kr7GhjC-EaUGIcx"
+rule = "pythonsecurity:S8707"
+file = "tools/release/release_check.py"
+line = 128
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
 key = "AaHdlVO1SajQlY95tE94"
 rule = "pythonsecurity:S8707"
 file = "tools/sonar-triage/sonar_triage.py"
-line = 75
+line = 87
 decision = "falsepositive"
 reason = "FP-cli"
