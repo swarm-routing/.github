@@ -203,11 +203,12 @@ class GitHub:
     def zipball(self, repo, tag):
         return self.run(f"repos/{repo}/zipball/{tag}", raw=True)
 
-    def org_repos(self, org):
+    def org_repos(self, org, archived=False):
+        """The org's public repositories, not forks; archived ones only with archived=True."""
         return [
             r["name"]
             for r in self.paged(f"orgs/{org}/repos?type=public")
-            if not r.get("archived") and not r.get("fork") and not r.get("private")
+            if (archived or not r.get("archived")) and not r.get("fork") and not r.get("private")
         ]
 
 
@@ -1125,24 +1126,38 @@ def archived_rows(gh, zen, org, names):
     return sorted(rows, key=lambda r: r[0].lower())
 
 
-def render_table(rows):
-    lines = [TABLE_BEGIN, "| Repository | Concept DOI | Newest version |", "|---|---|---|"]
-    lines += [f"| {n} | {doi_link(c)} | {v} {doi_link(d)} |" for n, c, v, d in rows]
-    return "\n".join(lines + [TABLE_END])
+def table_row(name, cdoi, ver, doi):
+    return f"| {name} | {doi_link(cdoi)} | {ver} {doi_link(doi)} |"
+
+
+def render_table(lines):
+    """The block around sorted row lines."""
+    head = [TABLE_BEGIN, "| Repository | Concept DOI | Newest version |", "|---|---|---|"]
+    return "\n".join(
+        head + sorted(lines, key=lambda ln: ln.split("|")[1].strip().lower()) + [TABLE_END]
+    )
 
 
 def cmd_table(args, gh, zen):
     """Print, check or write FILE's archived-releases block; the exit code."""
-    names = args.repos.split(",") if args.repos else gh.org_repos(args.org)
-    block = render_table(archived_rows(gh, zen, args.org, names))
+    # every public repository, archived ones too: an archived repository's
+    # releases stay on Zenodo, so its row stays
+    names = args.repos.split(",") if args.repos else gh.org_repos(args.org, archived=True)
+    lines = [table_row(*r) for r in archived_rows(gh, zen, args.org, names)]
     if not (args.check or args.write):
-        print(block)
+        print(render_table(lines))
         return 0
     with open(args.file, encoding="utf-8") as fh:
         text = fh.read()
     m = TABLE_BLOCK.search(text)
     if not m:
         raise Failure(f"{args.file}: no zenodo:archived:begin/end markers")
+    if args.repos:  # only the named repositories' rows are compared or rewritten
+        picked = {n.split("/")[-1] for n in names}
+        lines += [
+            ln for ln in m.group(0).splitlines()[3:-1] if ln.split("|")[1].strip() not in picked
+        ]
+    block = render_table(lines)
     if m.group(0) == block:
         print(f"{args.file}: the archived-releases table matches Zenodo")
         return 0
@@ -1511,7 +1526,8 @@ def self_test():
             self.reads.append((path, ref))
             return self.toml if path == ".github/org-sync.toml" else self.cff
 
-        def org_repos(self, org):
+        def org_repos(self, org, archived=False):
+            self.archived = archived
             return ["R"]
 
         def zipball(self, repo, tag):
@@ -2393,6 +2409,21 @@ def self_test():
     )
     rc, err, out = table(FakeGitHub(rel), doc, check=True)
     check("table: --check after --write is clean", rc == 0 and "matches Zenodo" in out)
+    gh_ = FakeGitHub(rel)
+    table(gh_)
+    check("table: archived repositories keep their rows", gh_.archived is True)
+    other = "| Q | [10.5281/zenodo.7](https://doi.org/10.5281/zenodo.7) | v2.0.0 [10.5281/zenodo.8](https://doi.org/10.5281/zenodo.8) |"
+    with open(doc, "w") as fh:
+        fh.write(got.replace(row, other + "\n" + row))
+    rc, err, out = table(FakeGitHub(rel), doc, check=True, repos="R")
+    check("table: --repos compares only the named rows", rc == 0 and "matches Zenodo" in out)
+    rc, err, out = table(FakeGitHub(rel), doc, check=True)
+    check(
+        "table: unfiltered, a row Zenodo does not confirm is drift",
+        rc == 1 and "not on Zenodo:    | Q |" in out,
+    )
+    with open(doc, "w") as fh:
+        fh.write(got)
     st.reset(versions=("v1.0.0", "v1.1.0", "v1.2.0"))
     rc, err, out = table(FakeGitHub(rel), doc, check=True)
     check("table: a new release is drift", rc == 1 and "v1.2.0 [10.0/z.103]" in out)
