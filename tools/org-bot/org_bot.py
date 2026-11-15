@@ -36,6 +36,15 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             body rewritten) when swarm-core moves on before it merges.
             ORG_BOT_SWARM_CORE overrides swarm-core's URL.
 
+  org-sync and swarm-core-pin never leave two PRs that each fail the other's
+  required check (#429: on 2026-11-14 every protocol repository held a pin
+  bump red on `check / org-sync` and a template refresh red on `swarm-core /
+  pin`). When either task changes a repository, the other generator runs on
+  the same clone too; if it also changes something, both changes go in one PR
+  on org-bot/swarm-core-pin (the pin task's fixed branch, updated in place),
+  and the bot's open org-sync PR there is closed as superseded. A repository
+  where only one of them changes anything gets that task's PR as before.
+
 When a run changes files, the bot opens one PR per repository and task:
 - the branch is `org-bot/<task>-<hash of the change>`;
 - the title is a lowercase Conventional Commit;
@@ -94,6 +103,8 @@ SWARM_CORE = os.environ.get(
 SWARM_CORE_RELEASES = os.environ.get("ORG_BOT_SWARM_CORE_RELEASES", "https://github.com")
 # tasks whose PR lives on one branch, updated in place when the change moves on
 FIXED_BRANCH = {"swarm-core-pin"}
+# tasks whose PRs would each fail the other's required check: carried in one PR (#429)
+PAIRED = {"org-sync": "swarm-core-pin", "swarm-core-pin": "org-sync"}
 ORG = "swarm-routing"
 BOT = ("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
 AUTO_MERGE = (
@@ -380,8 +391,21 @@ def queue(gh, full, base, pr):
     return "auto-merge on: enters the merge queue once green"
 
 
-def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
-    """One PR for the change in `clone`, unless the same change is already open."""
+def supersede(gh, full, olds, number):
+    """Close the bot's older PRs `olds` as superseded by #number, deleting their branches."""
+    for old in olds:
+        gh.api(
+            "POST",
+            f"repos/{full}/issues/{old['number']}/comments",
+            {"body": f"Superseded by #{number}, which carries the newer generated change."},
+        )
+        gh.api("PATCH", f"repos/{full}/pulls/{old['number']}", {"state": "closed"})
+        gh.api("DELETE", f"repos/{full}/git/refs/heads/{old['head']['ref']}")
+
+
+def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
+    """One PR for the change in `clone`, unless the same change is already open.
+    `also`: other tasks whose open bot PRs this one carries, closed as superseded (#429)."""
     diff = sh(["git", "-C", clone, "diff"]).stdout
     status = sh(["git", "-C", clone, "status", "--porcelain"]).stdout
     if not status.strip():
@@ -403,6 +427,12 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
         and p["head"].get("repo", {}).get("full_name", full) == full
     ]
     same = [p for p in mine if p["head"]["ref"] == branch]
+    carried = [
+        p
+        for p in open_prs
+        if any(p["head"]["ref"].startswith(f"org-bot/{t}") for t in also)
+        and p["head"].get("repo", {}).get("full_name", full) == full
+    ]
     target = pin_target(notes) if task == "swarm-core-pin" else None
     if target and not same:
         # someone already opened a bump to this commit by hand: no duplicate (#208)
@@ -421,8 +451,11 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
         # one PR per repository, refreshed in place (#208): unchanged when it
         # already carries this target, else the branch is pushed again
         if target and target in (same[0].get("body") or "") and branch_has(clone, branch, env):
+            supersede(gh, full, carried, same[0]["number"])
             note = queue(gh, full, base, same[0])
-            print(f"{repo} {task}: already proposed in #{same[0]['number']}; {note}")
+            print(
+                f"{repo} {task}: already proposed in #{same[0]['number']}{closed_note(carried)}; {note}"
+            )
             return {"number": same[0]["number"], "branch": branch, "queue": note}
         number = same[0]["number"]
         sh(["git", "-C", clone, "checkout", "-q", "-b", branch], env=env)
@@ -435,8 +468,9 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
             f"repos/{full}/pulls/{number}",
             {"title": TASKS[task]["title"], "body": pr_body(task, notes, run_url)},
         )
+        supersede(gh, full, carried, number)
         note = queue(gh, full, base, same[0])
-        print(f"{repo} {task}: updated #{number} on {branch}; {note}")
+        print(f"{repo} {task}: updated #{number} on {branch}{closed_note(carried)}; {note}")
         return {"number": number, "branch": branch, "queue": note, "updated": True}
     if same:
         note = queue(gh, full, base, same[0])
@@ -459,20 +493,45 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url):
             "body": pr_body(task, notes, run_url),
         },
     )
-    for old in mine:
-        gh.api(
-            "POST",
-            f"repos/{full}/issues/{old['number']}/comments",
-            {"body": f"Superseded by #{pr['number']}, which carries the newer generated change."},
-        )
-        gh.api("PATCH", f"repos/{full}/pulls/{old['number']}", {"state": "closed"})
-        gh.api("DELETE", f"repos/{full}/git/refs/heads/{old['head']['ref']}")
-    closed = (
-        f"; closed {', '.join('#' + str(o['number']) for o in mine)} as superseded" if mine else ""
-    )
+    supersede(gh, full, mine + carried, pr["number"])
+    closed = closed_note(mine + carried)
     note = queue(gh, full, base, {**pr, "head": {"ref": branch}})
     print(f"{repo} {task}: opened #{pr['number']} from {branch}{closed}; {note}")
     return {"number": pr["number"], "branch": branch, "queue": note}
+
+
+def closed_note(prs):
+    return f"; closed {', '.join('#' + str(o['number']) for o in prs)} as superseded" if prs else ""
+
+
+def snapshot(clone):
+    """The clone's working-tree change, to tell whether a generator changed anything."""
+    return (
+        sh(["git", "-C", clone, "diff"]).stdout
+        + sh(["git", "-C", clone, "status", "--porcelain"]).stdout
+    )
+
+
+def pair(task, repo, clone, data, notes):
+    """#429: after `task` changed the clone, run its partner on the same clone. Returns
+    (task to propose under, notes, tasks whose open PRs this one carries)."""
+    partner = PAIRED.get(task)
+    if not partner or not snapshot(clone).strip():
+        return task, notes, ()
+    before = snapshot(clone)
+    try:
+        extra = generate(partner, repo, clone, data, [])
+    except Failure as e:  # the partner's own run reports it; this PR goes on alone
+        return task, notes + [f"{partner} not carried: {e}"], ()
+    if extra is None or snapshot(clone) == before:
+        return task, notes, ()
+    head = (
+        f"This PR also carries the {partner} change (#429), so neither required check "
+        "(`check / org-sync`, `swarm-core / pin`) holds it:"
+    )
+    notes = notes + [head] + extra
+    # one PR on the pin task's fixed branch, updated in place; the open org-sync PR closes
+    return "swarm-core-pin", notes, ("org-sync",)
 
 
 def run(args, gh=None, clone_url=None):
@@ -532,8 +591,13 @@ def run(args, gh=None, clone_url=None):
                 notes = generate(task, repo, clone, data, [])
                 if notes is None:
                     continue
+                as_task, notes, also = pair(task, repo, clone, data, notes)
                 results.append(
-                    (repo, task, propose(gh, repo, task, clone, notes, env, dry_run, run_url))
+                    (
+                        repo,
+                        task,
+                        propose(gh, repo, as_task, clone, notes, env, dry_run, run_url, also),
+                    )
                 )
         except Failure as e:
             failed.append(repo)
@@ -1196,6 +1260,86 @@ def self_test():
         "swarm-core-pin: a hand-opened bump to the same commit gets no duplicate",
         "already proposed by hand in #7" in out
         and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
+    )
+    # #429: the 2026-11-14 deadlock. A stale pin and drifted templates in one repository,
+    # with the bot's two open PRs (the pin bump red on `check / org-sync`, the refresh red
+    # on `swarm-core / pin`): either task now carries both changes in one PR on
+    # org-bot/swarm-core-pin and closes the org-sync PR; one change alone keeps its own PR
+    pinned_repo("theta", old)
+    pinned_repo("iota", newer)
+    tdata = os.path.join(work, "tdata.json")
+    with open(tdata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": n, "epics": []} for n in ("theta", "iota")]}, fh)
+
+    def drift_generate(task, repo, clone, data_, out):
+        if task != "org-sync":
+            return real_generate(task, repo, clone, data_, out)
+        with open(os.path.join(clone, "SYNCED.md"), "w") as fh:
+            fh.write("templates\n")
+        return ["org-sync generated"]
+
+    git_dir = os.path.join(remotes, ORG, "theta.git")
+    pin_pr = {
+        "number": 50,
+        "node_id": "PR_50",
+        "head": {"ref": "org-bot/swarm-core-pin", "repo": {"full_name": f"{ORG}/theta"}},
+        "body": f"pin-target: {newer}",
+    }
+    sync_pr = {
+        "number": 51,
+        "node_id": "PR_51",
+        "head": {"ref": "org-bot/org-sync-0badf00d", "repo": {"full_name": f"{ORG}/theta"}},
+        "body": "",
+    }
+    sh(
+        ["git", "--git-dir", git_dir, "update-ref", "refs/heads/org-bot/swarm-core-pin", "main"],
+        env=env,
+    )
+    for task in ("org-sync", "swarm-core-pin"):
+        globals()["generate"] = drift_generate
+        try:
+            gh = FakeGitHub(open_prs=[pin_pr, sync_pr])
+            res, out = go(gh, task=task, repos="theta", data=tdata)
+        finally:
+            globals()["generate"] = real_generate
+        files = sh(
+            ["git", "--git-dir", git_dir, "diff", "--name-only", "main", "org-bot/swarm-core-pin"],
+            check=False,
+        ).stdout.split()
+        closed = [c for c in gh.calls if c[0] == "PATCH" and c[1].endswith("/pulls/51")]
+        body = [c for c in gh.calls if c[0] == "PATCH" and c[1].endswith("/pulls/50")]
+        check(
+            f"#429 deadlock, {task} run: one PR carries the pin bump and the templates",
+            res
+            and res[0][2]["branch"] == "org-bot/swarm-core-pin"
+            and res[0][2]["number"] == 50
+            and sorted(files)
+            == [".github/workflows/licence.yml", "Makefile", "SYNCED.md", "core/CMakeLists.txt"]
+            and closed
+            and closed[0][2] == {"state": "closed"}
+            and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
+        )
+        check(
+            f"#429 deadlock, {task} run: the PR body says it carries both",
+            task == "swarm-core-pin"
+            and not body  # the org-sync run already pushed it
+            or (
+                body
+                and "(#429)" in body[0][2]["body"]
+                and f"pin-target: {newer}" in body[0][2]["body"]
+            ),
+        )
+    globals()["generate"] = drift_generate
+    try:
+        gh = FakeGitHub()
+        res, out = go(gh, task="org-sync", repos="iota", data=tdata)
+    finally:
+        globals()["generate"] = real_generate
+    check(
+        "#429: a current pin leaves the template refresh its own PR",
+        res
+        and res[0][2]["branch"].startswith("org-bot/org-sync-")
+        and not [c for c in gh.calls if c[0] == "PATCH"],
     )
     # swarm-core-pin on a release lock (swarm-routing/ns3-swarm-core#134): a lock behind
     # the newest release gets the PR, a current one none, and none between releases

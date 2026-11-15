@@ -17,6 +17,8 @@ name: org-bot
 #   repository whose pin is stale after a swarm-core core/ change, on one PR
 #   per repository (org-bot/swarm-core-pin) updated in place (#208). Every
 #   three hours on its own as well: a stale pin blocks every PR there.
+#   When the same repository also needs a template refresh, both go in that
+#   one PR, so neither waits on the other's required check (#429).
 # Daily, on every push to main that changes the templates or the generators,
 # and on demand. One PR per repository and task; the same change is never
 # proposed twice, and an older bot PR is closed as superseded. Where the
