@@ -181,6 +181,7 @@ DEFAULT_REPOS = [
     "BeeAdHoc",
     "Termite",
     "HOPNET",
+    "vcpkg-registry",
 ]
 FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "error"}
 SEVERITIES = ("critical", "major", "minor", "trivial", "nitpick", "info")
