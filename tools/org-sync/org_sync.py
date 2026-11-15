@@ -142,6 +142,13 @@ def markers(path):
 # that workflow (`skip = [".github/workflows/scorecard.yml"]`), never gets one;
 # `bestpractices` (OpenSSF Best Practices, #23) only when the config names the
 # repository's bestpractices.dev project as `bestpractices_project = "<id>"`.
+# `vcpkg` (swarm-routing/.github#436) only when the config names the
+# repository's ports in swarm-routing/vcpkg-registry, `vcpkg_ports = ["<port>"]`:
+# one badge per port, its version read live from the port's vcpkg.json on the
+# registry's main (shields' /vcpkg/ badge reads only microsoft/vcpkg). `pypi`
+# only when the config names a PyPI project, `pypi_project = "<name>"`: set it
+# after the project's first publish (before it, shields shows "package not
+# found").
 # `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security,
 # maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
@@ -156,6 +163,8 @@ BASE_BADGES = [
     "release",
     "doi",
     "cite",
+    "vcpkg",
+    "pypi",
     "licence",
     "conventional",
     "arena",
@@ -193,7 +202,7 @@ KIND_BADGES = {
 BADGE_GROUPS = {
     "build": ("Build", ["ci", "container-security", "hadolint", "trivy", "ghcr", "ns3dev"]),
     "quality": ("Quality", [*SONAR_METRICS, "codecov", "coderabbit"]),
-    "release": ("Release", ["release", "doi", "cite", "licence"]),
+    "release": ("Release", ["release", "doi", "cite", "vcpkg", "pypi", "licence"]),
     "trust": ("Trust", ["scorecard", "bestpractices", "cosign"]),
     "stack": ("Stack", ["cxx", "ns3", "python"]),
     "community": (
@@ -871,6 +880,36 @@ def zenodo_concept(cfg):
     return c if c.isdigit() else ""
 
 
+VCPKG_REGISTRY = "swarm-routing/vcpkg-registry"
+PORT_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def vcpkg_ports(cfg):
+    """The repository's ports in swarm-routing/vcpkg-registry (`vcpkg_ports`), valid names only."""
+    ports = cfg.get("vcpkg_ports", [])
+    return (
+        [p for p in ports if isinstance(p, str) and PORT_NAME.fullmatch(p)]
+        if isinstance(ports, list)
+        else []
+    )
+
+
+def vcpkg_badge(port):
+    """A port's version on the registry's main, as a shields dynamic JSON badge."""
+    raw = f"https://raw.githubusercontent.com/{VCPKG_REGISTRY}/main/ports/{port}/vcpkg.json"
+    q = quote('$["version-semver"]', safe="")
+    url = f"https://img.shields.io/badge/dynamic/json?url={quote(raw, safe='')}&query={q}&label={quote('vcpkg ' + port)}"
+    return f"[![vcpkg: {port}]({url})](https://github.com/{VCPKG_REGISTRY}/tree/main/ports/{port})"
+
+
+def pypi_project(cfg):
+    """The PyPI project name from `pypi_project` (PEP 508 name characters), else ''."""
+    name = cfg.get("pypi_project", "")
+    return (
+        name if isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) else ""
+    )
+
+
 def bestpractices_project(cfg):
     """The bestpractices.dev project id from `bestpractices_project`, digits only, else ''."""
     p = str(cfg.get("bestpractices_project", "")).strip()
@@ -942,6 +981,14 @@ def badges_by_kind(cfg, repo_dir):
             out[b] = f"[![DOI](https://zenodo.org/badge/DOI/{doi}.svg)](https://doi.org/{doi})"
         elif b == "cite" and os.path.exists(os.path.join(repo_dir, "CITATION.cff")):
             out[b] = "[![Cite](https://img.shields.io/badge/cite-CITATION.cff-blue)](CITATION.cff)"
+        elif b == "vcpkg" and vcpkg_ports(cfg):
+            out[b] = " ".join(vcpkg_badge(port) for port in vcpkg_ports(cfg))
+        elif b == "pypi" and pypi_project(cfg):
+            name = pypi_project(cfg)
+            out[b] = (
+                f"[![PyPI](https://img.shields.io/pypi/v/{name}?label=PyPI)]"
+                f"(https://pypi.org/project/{name}/)"
+            )
         elif b == "licence":
             out[b] = (
                 f"[![Licence: {licence_text(cfg)}]({shield('licence', licence_text(cfg), 'blue')})](LICENSING.md)"
