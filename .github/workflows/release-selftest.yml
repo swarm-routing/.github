@@ -55,6 +55,7 @@ jobs:
       working-directory: tools/release/fixture
       dry-run: true
       notify-site: false   # no org-release event from a test (#388)
+      notify-org: false    # nor to org-bot (#479)
 
   check:
     needs: release
@@ -133,6 +134,7 @@ jobs:
       dry-run: true
       increment: MAJOR
       notify-site: false
+      notify-org: false
 
   check-major:
     needs: release-major
