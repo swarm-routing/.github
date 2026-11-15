@@ -644,6 +644,7 @@ ORG_REPOS = (
     "papers",
     "skills",
     "swarm-routing.github.io",
+    "vcpkg-registry",
     ".github",
 )
 FOREIGN = re.compile(
