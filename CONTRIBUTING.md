@@ -321,7 +321,8 @@ A consumer names a **release** of its dependency, never a moving ref:
   (`reusable-ns3-ci.yml` clones with `git clone --branch`, which takes a tag,
   not a commit). `core-deps` (rule 1 pins the licence boundary by commit) and a
   benchmark cell's `dependencies:` (`reusable-benchmark-cell.yml`'s build mode
-  checks out a commit, #409) name the commit the tag names. ns3-tools'
+  checks out a commit, #409) name the commit the tag names (the check also
+  accepts the tag on a `core-deps` line: the lock ties the two together). ns3-tools'
   `routing-bench` is named by an ns3-tools release tag in `dependencies:`.
 - **The canary.** `canary-dependencies:` of `reusable-ns3-ci.yml` names the same
   dependencies at `@main`: one non-blocking leg on push, schedule and dispatch,
@@ -342,8 +343,9 @@ A consumer names a **release** of its dependency, never a moving ref:
 
 - **`swarm-core / pin`** (`reusable-swarm-core-pin.yml`,
   `tools/checks/check-swarm-core-pin.py`): with a lock, it verifies the lock
-  against the release (tag, commit, asset and SHA256), checks that every place
-  above names the tag or, where stated, its commit, and fails when a newer
+  against the release (tag, commit, asset and SHA256), checks that the
+  `Makefile` and the ns-3 CI name the tag, a benchmark cell's dependency the
+  commit and `core-deps` the commit or the tag, and fails when a newer
   swarm-core release is out; between releases nothing moves.
 - **The moving-ref check** (`tools/protocol-review/check_invariants.py`, the
   `protocol-review` skill): on the lines a diff adds, a CMake `GIT_TAG` that is
@@ -370,9 +372,16 @@ with this repository checked out next to the consumer:
 python3 -I ../.github/tools/checks/release_lock.py verify swarm-core.lock
 python3 -I ../.github/tools/checks/check-swarm-core-pin.py          # the check as CI runs it
 python3 -I ../.github/tools/checks/check-swarm-core-pin.py --bump   # what org-bot would write
+python3 -I ../.github/tools/checks/release_lock.py latest swarm-core.lock      # locked vs newest release
+# write a lock for the newest release (a switch PR; a bump keeps the lock's header comment)
+tag=$(gh api repos/swarm-routing/ns3-swarm-core/releases/latest --jq .tag_name)
 python3 -I ../.github/tools/checks/release_lock.py render --prefix SWARM_CORE \
-    --repo swarm-routing/ns3-swarm-core --tag vX.Y.Z --asset 'swarm-core-{version}.tar.gz'
+    --repo swarm-routing/ns3-swarm-core --tag "$tag" --asset 'swarm-core-{version}.tar.gz' \
+    > swarm-core.lock.new && mv swarm-core.lock.new swarm-core.lock
 ```
+
+`render` prints the lock on stdout and refuses a tag that is not a release with
+a `SHA256SUMS` line for the asset, so a failed run leaves the old lock in place.
 
 A switch from the commit pin to the lock is one PR per repository: write the
 lock with `render`, replace the git `FetchContent` with the lock reader, move
