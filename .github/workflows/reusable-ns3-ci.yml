@@ -411,6 +411,11 @@ jobs:
           json.dump(keep, open(out, "w"), indent=1)
           print(f"sonar: {len(keep)} compile commands of this repository")
           PY
+          # absolute: the scanner resolves sonar.cfamily.compile-commands against
+          # its working directory ($GITHUB_WORKSPACE), not projectBaseDir, so the
+          # properties file's relative build/compile_commands.json is not found
+          # there and the analysis fails ("NoSuchFileException")
+          echo "compile-commands=$src/build/compile_commands.json" >> "$GITHUB_OUTPUT"
           # The scan action downloads the scanner and verifies its signature
           # with gpg; the ns3-dev images carry none of the three tools.
           for tool in unzip curl gpg; do
@@ -483,7 +488,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         with:
           projectBaseDir: src
-          args: ${{ steps.pycov.outputs.args }}
+          args: -Dsonar.cfamily.compile-commands=${{ steps.sonar.outputs.compile-commands }} ${{ steps.pycov.outputs.args }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
