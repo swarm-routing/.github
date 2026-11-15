@@ -280,7 +280,7 @@ the order is now reversed. `ns3-tools` releases `v1.0.0` now, freezing its
 CLI and today's marker contract v1; marker contract v2 (wave C) becomes its
 `2.0.0`, and the campaign release of wave B a minor after 1.0 (`v1.1.0`;
 ns3-tools' own ladder, its `docs/roadmap.md`, has the versions; the labels
-`release:v1.1.0` and `release:v2.0.0` exist for it). `ns3-swarm-core`
+`release:v1.1.0`, `release:v1.2.0` and `release:v2.0.0` exist for it; on 2026-11-15 the maintainer re-planned it: `v1.1.0` ships what merged since `v1.0.0`, and the families-and-metrics scope moved to `v1.2.0`). `ns3-swarm-core`
 reaches `1.0.0` only after AntHocNet runs on it
 (swarm-routing/ns3-swarm-core#14). `ns3-containers` gets a first release,
 `v1.0.0`, that versions its image pipeline. Both 1.0.0s released now are
