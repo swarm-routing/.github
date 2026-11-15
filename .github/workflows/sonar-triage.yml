@@ -1,0 +1,56 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: sonar-triage
+
+# Records the reviewed SonarQube Cloud verdicts of tools/sonar-triage/
+# decisions.toml where the quality gate reads them (#425): `plan` checks every
+# entry against the live finding (read-only, refuses on any mismatch);
+# `apply` marks each open one false positive / won't fix (accept) / SAFE with
+# its reason as a comment. Only the keys in the file are touched. Needs the
+# SONAR_TOKEN secret to be a user token with "Administer Issues" on each
+# project; an analysis token gets HTTP 403 and the run fails saying so.
+# To add a verdict: an entry in decisions.toml by PR, then dispatch plan, then apply.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan: read-only check of every entry; apply: plan, then transition and comment'
+        type: choice
+        options: [plan, apply]
+        default: plan
+      repos:
+        description: 'Comma-separated repository names (default: every entry in the file)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test
+        run: python3 -I tools/sonar-triage/sonar_triage.py --self-test
+      - name: ${{ inputs.mode }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          MODE: ${{ inputs.mode }}
+          REPOS: ${{ inputs.repos }}
+        run: |
+          set -euo pipefail
+          [ -n "$SONAR_TOKEN" ] || echo "::warning::SONAR_TOKEN is not set: plan is read-only and apply refuses"
+          python3 -I tools/sonar-triage/sonar_triage.py "$MODE" --repos "$REPOS"
