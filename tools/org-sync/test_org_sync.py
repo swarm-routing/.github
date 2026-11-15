@@ -320,7 +320,7 @@ edit(
     dv,
     ".github/org-sync.toml",
     'kind = "protocol"\n',
-    'kind = "protocol"\nvcpkg_ports = ["swarm-core", "Not A Port"]\npypi_project = "ns3-tools"\n',
+    'kind = "protocol"\nvcpkg_ports = ["swarm-core", "Not A Port", "trailing\\n"]\npypi_project = "ns3-tools"\n',
 )
 run("apply", dv)
 rv = read(os.path.join(dv, "README.md"))
@@ -333,6 +333,7 @@ check(
     and "(https://github.com/swarm-routing/vcpkg-registry/tree/main/ports/swarm-core)"
     in release_row
     and "Not A Port" not in rv
+    and "trailing" not in rv
     and "[![PyPI](https://img.shields.io/pypi/v/ns3-tools?label=PyPI)](https://pypi.org/project/ns3-tools/)"
     in release_row
     and release_row.index("vcpkg") < release_row.index("PyPI") < release_row.index("Licence")

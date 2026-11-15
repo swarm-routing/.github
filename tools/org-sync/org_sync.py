@@ -882,14 +882,14 @@ def zenodo_concept(cfg):
 
 
 VCPKG_REGISTRY = "swarm-routing/vcpkg-registry"
-PORT_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+PORT_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 def vcpkg_ports(cfg):
     """The repository's ports in swarm-routing/vcpkg-registry (`vcpkg_ports`), valid names only."""
     ports = cfg.get("vcpkg_ports", [])
     return (
-        [p for p in ports if isinstance(p, str) and PORT_NAME.match(p)]
+        [p for p in ports if isinstance(p, str) and PORT_NAME.fullmatch(p)]
         if isinstance(ports, list)
         else []
     )
