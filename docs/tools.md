@@ -106,7 +106,7 @@ python3 -I tools/repo-settings/repo_settings.py --self-test   # plan, check, app
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
 python3 -I tools/sonar-triage/sonar_triage.py findings --repos ns3-tools   # read-only, no token: the open findings and which decisions.toml records
-python3 -I tools/sonar-triage/sonar_triage.py entry <KEY> --reason FP-cli   # read-only: the [[issue]] block for a key, every field from the API
+python3 -I tools/sonar-triage/sonar_triage.py entry "$KEY" --reason FP-cli   # read-only, KEY a key findings printed: the [[issue]] block for it, every field from the API
 python3 -I tools/sonar-triage/sonar_triage.py plan   # read-only, no token: every decisions.toml entry against the live finding
 python3 -I tools/zenodo/zenodo.py orphans --repos benchmarks,ARA   # read-only, released repos without a concept
 python3 -I tools/zenodo/zenodo.py create --repo swarm-routing/benchmarks --tag v0.1.0   # read-only without --publish and ZENODO_TOKEN: what it would create
