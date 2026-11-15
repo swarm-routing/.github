@@ -388,8 +388,61 @@ lock with `render`, replace the git `FetchContent` with the lock reader, move
 the Makefile, `core-deps`, the ns-3 and benchmark dependencies as above, add
 `canary-dependencies:`, set `moving_refs = "fail"`, add the lock to `make dist`,
 and update AGENTS.md (swarm-routing/ARA#159 is a worked example). Later steps:
-`find_package(swarm-core CONFIG)` from an installed release, then a vcpkg
-registry (swarm-routing/ns3-swarm-core#135).
+`find_package(swarm-core CONFIG)` from an installed release, then the vcpkg
+registry (below, swarm-routing/ns3-swarm-core#135).
+
+### Outside the org: the vcpkg registry
+
+A project outside the org takes the simulator-free C++ cores from the org's
+vcpkg git registry, [swarm-routing/vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry)
+(epic #436, maintainer decision 2026-11-15). In-org repositories keep the
+lock above: the registry is for consumers outside the org, and later for the
+site's WebAssembly build (swarm-routing/swarm-routing.github.io#153).
+
+- **What is a port.** One per released core: `swarm-core` today; `ara-core`,
+  `beeadhoc-core`, `termite-core`, `hopnet-core` and `anthocnet-core` wait in
+  the registry's `templates/` until their repository's first release that
+  installs `core/` as a CMake package (`<name>-core`, imported target
+  `<name>::core`, `find_dependency(swarm-core)`). Each port downloads a
+  published release asset and checks it by SHA512; CI installs every port on
+  `x64-linux` and `wasm32-emscripten` and builds a `find_package` consumer.
+  The ns-3 modules are not ports (#440).
+- **Using it.** The registry in the consumer's `vcpkg-configuration.json`
+  (next to a default registry with its baseline), the port in `vcpkg.json`,
+  then `find_package(<name>-core CONFIG REQUIRED)` with vcpkg's toolchain
+  file. Its `vcpkg-configuration.json` (each baseline a commit the consumer
+  chooses and moves on purpose):
+
+  ```json
+  {
+    "default-registry": {
+      "kind": "git",
+      "repository": "https://github.com/microsoft/vcpkg",
+      "baseline": "<a microsoft/vcpkg commit>"
+    },
+    "registries": [
+      {
+        "kind": "git",
+        "repository": "https://github.com/swarm-routing/vcpkg-registry",
+        "baseline": "<a commit of the registry's main>",
+        "packages": ["swarm-core"]
+      }
+    ]
+  }
+  ```
+
+  Before a library's 1.0 any minor may break its API, so the consumer pins
+  the version with `overrides` in `vcpkg.json`
+  (`"overrides": [{ "name": "swarm-core", "version": "0.4.0" }]`; a
+  `version>=` constraint is only a minimum).
+- **How a port is bumped.** Never by hand-typed hashes. A repository that
+  releases a C++ library passes `vcpkg-ports: <port> ...` to
+  `reusable-release.yml` (#439); after publish its `vcpkg` job runs the
+  registry's `tools/port_bump.py bump --port <port> --tag vX.Y.Z` (the asset
+  named in the portfile, checked against the release's `SHA256SUMS`, its
+  SHA512, the version, the git-tree, `versions/`) and the org bot opens or
+  updates the PR from `bot/vcpkg-<repository>`. For a missed release a
+  person runs the same command and opens the PR.
 
 ## Outside contributions
 

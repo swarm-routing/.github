@@ -338,6 +338,7 @@ changing what the row names.
 | Change the CI every protocol repo runs | `.github/workflows/reusable-ns3-ci.yml` |
 | Build a protocol's release or campaign image | `.github/workflows/reusable-ns3-image.yml` |
 | Run one benchmark cell of any protocol repository | `.github/workflows/reusable-benchmark-cell.yml` |
+| Publish a C++ core as a vcpkg port, or consume one from outside the org | swarm-routing/vcpkg-registry; `reusable-release.yml` input `vcpkg-ports`; CONTRIBUTING "Dependencies" |
 | Cut a release of any org repository, or change how releases are made | `.github/workflows/reusable-release.yml` |
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
