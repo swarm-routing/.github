@@ -211,8 +211,13 @@ class Sonar:
                 )
             chunk = got.get(field, [])
             rows += chunk
-            if len(rows) >= total or not chunk:
+            if len(rows) >= total:
                 return rows
+            if not chunk:
+                raise Refusal(
+                    f"{path} {params}: page {page} is empty after {len(rows)} of {total} "
+                    "results; the list would be incomplete"
+                )
             page += 1
 
     def hotspot(self, key):
@@ -801,6 +806,24 @@ def self_test():
         check_(not [c for c in st["calls"] if c[0] == "POST"], "findings and entry post nothing")
     finally:
         srv.shutdown()
+    # 5001 findings: every page read; a page that comes back empty early: refused
+    st = copy.deepcopy(base)
+    for n in range(4997):
+        st["issues"][f"M{n}"] = issue(f"M{n}", "python:S1244", "tools/m.py", n + 1)
+    srv = fake_sonar(st, token)
+    try:
+        sonar = Sonar(f"http://127.0.0.1:{srv.server_address[1]}", "")
+        rows = findings(data, "demo", sonar, out=lambda *_: None)
+        check_(len(rows) == 5001, f"5000 issues and a hotspot: {len(rows)}")
+        st["report_total"] = 6000
+        try:
+            findings(data, "demo", sonar, out=lambda *_: None)
+            check_(False, "an empty page before the total should refuse")
+        except Refusal as e:
+            check_("empty after 5000 of 6000" in str(e), str(e))
+    finally:
+        srv.shutdown()
+
     # a search larger than the API pages through is refused, not cut short
     st = copy.deepcopy(base)
     st["report_total"] = MAX_RESULTS + 1
@@ -815,7 +838,8 @@ def self_test():
     finally:
         srv.shutdown()
     print(
-        "ok   findings: every page, recorded or not, a search over the API's limit refused;"
+        "ok   findings: every page (5001), recorded or not; an early empty page and a search"
+        " over the API's limit refused;"
         " entry: the API's fields, TOML-escaped, the branch kept, refusals"
     )
 
