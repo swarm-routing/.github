@@ -410,9 +410,31 @@ site's WebAssembly build (swarm-routing/swarm-routing.github.io#153).
 - **Using it.** The registry in the consumer's `vcpkg-configuration.json`
   (next to a default registry with its baseline), the port in `vcpkg.json`,
   then `find_package(<name>-core CONFIG REQUIRED)` with vcpkg's toolchain
-  file; the registry's README has the snippets. Before a library's 1.0 any
-  minor may break its API, so the consumer pins the version with
-  `overrides` (a `version>=` constraint is only a minimum).
+  file. Its `vcpkg-configuration.json` (each baseline a commit the consumer
+  chooses and moves on purpose):
+
+  ```json
+  {
+    "default-registry": {
+      "kind": "git",
+      "repository": "https://github.com/microsoft/vcpkg",
+      "baseline": "<a microsoft/vcpkg commit>"
+    },
+    "registries": [
+      {
+        "kind": "git",
+        "repository": "https://github.com/swarm-routing/vcpkg-registry",
+        "baseline": "<a commit of the registry's main>",
+        "packages": ["swarm-core"]
+      }
+    ]
+  }
+  ```
+
+  Before a library's 1.0 any minor may break its API, so the consumer pins
+  the version with `overrides` in `vcpkg.json`
+  (`"overrides": [{ "name": "swarm-core", "version": "0.4.0" }]`; a
+  `version>=` constraint is only a minimum).
 - **How a port is bumped.** Never by hand-typed hashes. A repository that
   releases a C++ library passes `vcpkg-ports: <port> ...` to
   `reusable-release.yml` (#439); after publish its `vcpkg` job runs the
