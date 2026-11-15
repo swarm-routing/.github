@@ -39,11 +39,12 @@ name: Reusable ns-3 CI
 #   coverage         gcov on this repo's modules on the debug leg of the first
 #                    version; gcovr table in the job log and summary, Cobertura
 #                    XML + HTML as an artifact; report-only, no threshold (#24).
-#                    Branches gcov adds for exception edges and branches the
-#                    compiler proves unreachable are left out of the count
-#                    (gcovr --exclude-throw-branches --exclude-unreachable-branches,
-#                    input coverage-branch-filter, default on; decision of
-#                    2026-11-15, #425): they are not conditions a test can take
+#                    coverage-branch-filter (default off, rule 10) leaves out
+#                    the branches gcov adds for exception edges and the ones
+#                    gcovr's heuristic judges unreachable (gcovr
+#                    --exclude-throw-branches --exclude-unreachable-branches;
+#                    decision of 2026-11-15, #425). A heuristic: what remains
+#                    is closer to the testable conditions, not proof that each is
 #   determinism      programs with a `{seed}` placeholder: their stdout (where
 #                    the marker lines go) for seed 1 twice must be byte-identical,
 #                    for seed 2 it must differ (org invariant 5, #26). stderr
@@ -143,9 +144,9 @@ on:
         type: string
         default: '(.*/)?(test|examples)/'
       coverage-branch-filter:
-        description: "Leave gcov's exception-edge and unreachable branches out of the coverage report (gcovr --exclude-throw-branches --exclude-unreachable-branches; #425). false: every gcov branch, the count before 2026-11-15"
+        description: "Leave gcov's exception-edge branches, and those gcovr's heuristic judges unreachable, out of the coverage report (gcovr --exclude-throw-branches --exclude-unreachable-branches; #425). Default false: every gcov branch, as before"
         type: boolean
-        default: true
+        default: false
       sonar:
         description: "SonarQube Cloud CI analysis on the coverage leg (implies coverage); needs secret SONAR_TOKEN and the repo's sonar-project.properties"
         type: boolean
