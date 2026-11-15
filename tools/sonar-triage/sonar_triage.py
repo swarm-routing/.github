@@ -7,13 +7,24 @@ Usage:
   sonar_triage.py validate [--file F]            the decisions file alone, offline
   sonar_triage.py plan  [--file F] [--repos A,B] read-only: every entry against the live issue
   sonar_triage.py apply [--file F] [--repos A,B] plan, then transition and comment each entry
+  sonar_triage.py findings --repos A,B [--file F] [--branch B]
+                                                 read-only: the open findings, and which are recorded
+  sonar_triage.py entry KEY --reason R [--decision D] [--file F] [--branch B]
+                                                 read-only: the entry for KEY, every field from the API
   sonar_triage.py --self-test                    against a fake SonarQube Cloud
 
 The decisions file (default: decisions.toml beside this script) is the
 reviewed record: one `[[issue]]` or `[[hotspot]]` per SonarQube Cloud key,
 with the project, the rule, the file and line it was reviewed at, the
 decision and a reason id from its `[reasons]` table (swarm-routing/.github#425).
-Keys are read from the public API when an entry is written, never typed.
+Keys are read from the public API when an entry is written, never typed:
+`findings` lists a repository's open issues and hotspots on the branch
+(default main) with whether the file records each, and `entry` prints the
+`[[issue]]` or `[[hotspot]]` block for one key, its project, rule, file and
+line as the API returns them (`--decision` falsepositive, the default, or
+wontfix for an issue; SAFE, the default, ACKNOWLEDGED or FIXED for a hotspot).
+`entry` refuses a key already in the file and a reason id not in its
+`[reasons]` (add the reason first). Both read without a token.
 
 `plan` fetches each entry's issue (`api/issues/search?issues=KEY`) or hotspot
 (`api/hotspots/show`) and refuses the whole run on any mismatch: the key is
@@ -52,6 +63,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_FILE = os.path.join(HERE, "decisions.toml")
 HOST = "https://sonarcloud.io"
+MAX_RESULTS = 10000  # api/issues/search and api/hotspots/search page through no more
 ISSUE_DECISIONS = {"falsepositive": "FALSE-POSITIVE", "wontfix": "WONTFIX"}
 HOTSPOT_DECISIONS = {"SAFE", "ACKNOWLEDGED", "FIXED"}
 ISSUE_FIELDS = ("project", "key", "rule", "file", "line", "decision", "reason")
@@ -170,6 +182,43 @@ class Sonar:
             params["branch"] = branch
         got = self.call("GET", "api/issues/search", params).get("issues", [])
         return got[0] if got else None
+
+    def search(self, project, branch):
+        """Every open issue and every hotspot to review of a project on a branch."""
+        issues, hotspots = [], []
+        issues = self.pages(
+            "api/issues/search",
+            {"componentKeys": project, "branch": branch, "resolved": "false"},
+            "issues",
+        )
+        hotspots = self.pages(
+            "api/hotspots/search",
+            {"projectKey": project, "branch": branch, "status": "TO_REVIEW"},
+            "hotspots",
+        )
+        return issues, hotspots
+
+    def pages(self, path, params, field):
+        """Every row of a paged search, or a Refusal when the API cannot list them all."""
+        rows, page = [], 1
+        while True:
+            got = self.call("GET", path, {**params, "ps": 100, "p": page})
+            total = got.get("paging", {}).get("total", 0)
+            if total > MAX_RESULTS:
+                raise Refusal(
+                    f"{path} {params}: {total} results, more than the {MAX_RESULTS} the API "
+                    "pages through; narrow the search (a branch, a rule) before listing"
+                )
+            chunk = got.get(field, [])
+            rows += chunk
+            if len(rows) >= total:
+                return rows
+            if not chunk:
+                raise Refusal(
+                    f"{path} {params}: page {page} is empty after {len(rows)} of {total} "
+                    "results; the list would be incomplete"
+                )
+            page += 1
 
     def hotspot(self, key):
         try:
@@ -363,7 +412,7 @@ def fake_sonar(state, token):
             u = urllib.parse.urlparse(self.path)
             q = dict(urllib.parse.parse_qsl(u.query))
             state["calls"].append(("GET", u.path, q, self.headers.get("Authorization")))
-            if u.path == "/api/issues/search":
+            if u.path == "/api/issues/search" and "issues" in q:
                 i = state["issues"].get(q.get("issues"))
                 if i is not None:
                     i = dict(i)
@@ -372,6 +421,32 @@ def fake_sonar(state, token):
                     elif i["status"] in ("OPEN", "CONFIRMED", "REOPENED"):
                         i["transitions"] = list(state["transitions"])
                 return self.send(200, {"issues": [i] if i else []})
+            if u.path == "/api/issues/search" and "componentKeys" in q:
+                got = [
+                    i
+                    for i in state["issues"].values()
+                    if i["project"] == q["componentKeys"]
+                    and i["status"] in ("OPEN", "CONFIRMED", "REOPENED")
+                ]
+                p = int(q.get("p", 1))
+                total = state.get("report_total", len(got))
+                return self.send(
+                    200, {"issues": got[100 * (p - 1) : 100 * p], "paging": {"total": total}}
+                )
+            if u.path == "/api/hotspots/search":
+                got = [
+                    {
+                        "key": h["key"],
+                        "project": h["project"]["key"],
+                        "component": h["component"]["key"],
+                        "ruleKey": h["rule"]["key"],
+                        "line": h["line"],
+                        "status": h["status"],
+                    }
+                    for h in state["hotspots"].values()
+                    if h["project"]["key"] == q["projectKey"] and h["status"] == q["status"]
+                ]
+                return self.send(200, {"hotspots": got, "paging": {"total": len(got)}})
             if u.path == "/api/hotspots/show":
                 h = state["hotspots"].get(q.get("hotspot"))
                 return (
@@ -415,6 +490,99 @@ def fake_sonar(state, token):
     srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
+
+
+def fields(kind, live):
+    """(project, rule, file, line) of a live issue or hotspot."""
+    if kind == "issue":
+        project, component, rule = live.get("project"), live.get("component", ""), live.get("rule")
+    else:
+        project = live.get("project")
+        project = project.get("key") if isinstance(project, dict) else project
+        component = live.get("component")
+        component = component.get("key", "") if isinstance(component, dict) else component or ""
+        rule = live.get("rule")
+        rule = rule.get("key") if isinstance(rule, dict) else live.get("ruleKey", rule)
+    path = component.split(":", 1)[1] if ":" in component else component
+    return project, rule, path, live.get("line") or 0
+
+
+def findings(data, repos, sonar, branch="main", out=print):
+    """A line per open finding of each repository, and the entry that records it, if any."""
+    recorded = {e["key"]: (k, e) for k, e in entries(data, "")}
+    rows = []
+    for repo in [r.strip() for r in repos.split(",") if r.strip()]:
+        project = f"swarm-routing_{repo}"
+        issues, hotspots = sonar.search(project, branch)
+        for kind, live in [("issue", i) for i in issues] + [("hotspot", h) for h in hotspots]:
+            _, rule, path, line = fields(kind, live)
+            k = recorded.get(live["key"])
+            note = "-"
+            if k:
+                e = k[1]
+                note = f"recorded: {e.get('decision') or e.get('resolution')} ({e['reason']})"
+            rows.append((repo, kind, live["key"], rule, f"{path}:{line}", note))
+    out("| repo | kind | key | rule | at | decisions.toml |")
+    out("| --- | --- | --- | --- | --- | --- |")
+    for r in rows:
+        out("| " + " | ".join(f"`{c}`" if i in (2, 3, 4) else c for i, c in enumerate(r)) + " |")
+    todo = sum(1 for r in rows if r[5] == "-")
+    out(f"\nTotal: {len(rows)} open, {len(rows) - todo} recorded, {todo} not recorded")
+    return rows
+
+
+def toml_str(text):
+    """A TOML basic string: quote and backslash escaped, control characters and
+    DEL as \\uXXXX, every other character (outside the BMP too) as itself."""
+    out = []
+    for ch in str(text):
+        if ch in ('"', "\\"):
+            out.append("\\" + ch)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+def entry(data, key, reason, decision, sonar, branch="main"):
+    """The TOML block that records KEY, every field read from the API."""
+    if key in {e["key"] for _, e in entries(data, "")}:
+        raise Refusal(f"{key}: already in the decisions file")
+    if reason not in data.get("reasons", {}):
+        raise Refusal(f"reason {reason!r} is not in [reasons]: add its text there first")
+    live, kind = sonar.issue(key, branch), "issue"
+    if live is None:
+        live, kind = sonar.hotspot(key), "hotspot"
+    if live is None:
+        raise Refusal(f"{key}: no such issue or hotspot on {branch}")
+    project, rule, path, line = fields(kind, live)
+    if kind == "issue":
+        decision = decision or "falsepositive"
+        if decision not in ISSUE_DECISIONS:
+            raise Refusal(f"an issue's decision is one of {', '.join(ISSUE_DECISIONS)}")
+        last = f"decision = {toml_str(decision)}"
+    else:
+        decision = decision or "SAFE"
+        if decision not in HOTSPOT_DECISIONS:
+            raise Refusal(
+                f"a hotspot's resolution is one of {', '.join(sorted(HOTSPOT_DECISIONS))}"
+            )
+        last = f"resolution = {toml_str(decision)}"
+    q = toml_str
+    lines = [
+        f"[[{kind}]]",
+        f"project = {q(project)}",
+        f"key = {q(key)}",
+        f"rule = {q(rule)}",
+        f"file = {q(path)}",
+        f"line = {int(line)}",
+        last,
+        f"reason = {q(reason)}",
+    ]
+    if kind == "issue" and branch and branch != "main":
+        lines.append(f"branch = {q(branch)}")  # plan and apply read the issue on this branch
+    return "\n".join(lines)
 
 
 def self_test():
@@ -597,6 +765,106 @@ def self_test():
     print("ok   --repos: another repository's entries only")
 
     # the real file validates
+    # findings and entry: read-only, every field from the API
+    st = copy.deepcopy(base)
+    for n in range(120):  # a second page of issues
+        st["issues"][f"P{n}"] = issue(f"P{n}", "python:S1244", "tools/p.py", n + 1)
+    srv = fake_sonar(st, token)
+    try:
+        sonar = Sonar(f"http://127.0.0.1:{srv.server_address[1]}", "")
+        buf = []
+        rows = findings(data, "demo", sonar, out=buf.append)
+        by = {r[2]: r for r in rows}
+        check_(len(rows) == 124, f"every page read: {len(rows)}")
+        check_(by["K1"][5] == "recorded: falsepositive (FP-cli)" and by["K9"][5] == "-", by["K9"])
+        check_(by["H1"][1] == "hotspot" and by["H1"][4] == "tools/b.py:7", by["H1"])
+        check_(buf[-1].endswith("124 open, 3 recorded, 121 not recorded"), buf[-1])
+        block = entry(data, "K9", "FP-cli", None, sonar)
+        parsed = tomllib.loads(block)["issue"][0]
+        check_(
+            parsed
+            == {"project": "swarm-routing_demo", "key": "K9", "rule": "pythonsecurity:S2083",
+                "file": "tools/z.py", "line": 5, "decision": "falsepositive", "reason": "FP-cli"},
+            parsed,
+        )  # fmt: skip
+        merged = copy.deepcopy(data)
+        merged["issue"].append(parsed)
+        check_(validate(merged) == [], "the printed entry validates in the file")
+        for args, want in (
+            (("K1", "FP-cli", None), "already in the decisions file"),
+            (("K9", "FP-new", None), "not in [reasons]"),
+            (("K9", "FP-cli", "ignore"), "decision is one of"),
+            (("NOPE", "FP-cli", None), "no such issue or hotspot"),
+        ):
+            try:
+                entry(data, *args, sonar)
+                check_(False, f"entry {args} should refuse")
+            except Refusal as e:
+                check_(want in str(e), f"{args}: {e}")
+        # a reason id and a path that need escaping, and another branch, round-trip
+        odd = copy.deepcopy(data)
+        odd["reasons"]['FP-"q"\\x'] = "a reason id with a quote and a backslash"
+        st["issues"]["K9"]["component"] = 'swarm-routing_demo:tools/we"ird\\name.py'
+        got = tomllib.loads(entry(odd, "K9", 'FP-"q"\\x', None, sonar, "feature"))["issue"][0]
+        check_(
+            got["reason"] == 'FP-"q"\\x'
+            and got["file"] == 'tools/we"ird\\name.py'
+            and got["branch"] == "feature",
+            got,
+        )
+        # the printed entry, added to the file, makes plan read the issue on its branch
+        odd["issue"].append(got)
+        st["calls"].clear()
+        run(odd, "", sonar, False, out=lambda *_: None)
+        k9 = [c for c in st["calls"] if c[2].get("issues") == "K9"]
+        check_(k9 and k9[0][2].get("branch") == "feature", k9)
+        for text in ("FP-\U0001f600", "tab\there", "del\x7fend", "nl\nx"):
+            check_(tomllib.loads(f"v = {toml_str(text)}")["v"] == text, f"toml_str({text!r})")
+        check_(
+            "branch" not in tomllib.loads(entry(data, "K9", "FP-cli", None, sonar))["issue"][0],
+            "main is the default branch, not written",
+        )
+        st["issues"]["K9"]["component"] = "swarm-routing_demo:tools/z.py"
+        check_(not [c for c in st["calls"] if c[0] == "POST"], "findings and entry post nothing")
+    finally:
+        srv.shutdown()
+    # 5001 findings: every page read; a page that comes back empty early: refused
+    st = copy.deepcopy(base)
+    for n in range(4998):
+        st["issues"][f"M{n}"] = issue(f"M{n}", "python:S1244", "tools/m.py", n + 1)
+    srv = fake_sonar(st, token)
+    try:
+        sonar = Sonar(f"http://127.0.0.1:{srv.server_address[1]}", "")
+        rows = findings(data, "demo", sonar, out=lambda *_: None)
+        check_(len(rows) == 5002, f"5001 issues (page 51) and a hotspot: {len(rows)}")
+        st["report_total"] = 6000
+        try:
+            findings(data, "demo", sonar, out=lambda *_: None)
+            check_(False, "an empty page before the total should refuse")
+        except Refusal as e:
+            check_("empty after 5001 of 6000" in str(e), str(e))
+    finally:
+        srv.shutdown()
+
+    # a search larger than the API pages through is refused, not cut short
+    st = copy.deepcopy(base)
+    st["report_total"] = MAX_RESULTS + 1
+    srv = fake_sonar(st, token)
+    try:
+        sonar = Sonar(f"http://127.0.0.1:{srv.server_address[1]}", "")
+        try:
+            findings(data, "demo", sonar, out=lambda *_: None)
+            check_(False, "a search over the API's limit should refuse")
+        except Refusal as e:
+            check_("more than the 10000" in str(e), str(e))
+    finally:
+        srv.shutdown()
+    print(
+        "ok   findings: every page (5001 issues), recorded or not; an early empty page and a search"
+        " over the API's limit refused;"
+        " entry: the API's fields, TOML-escaped, the branch kept, refusals"
+    )
+
     with open(DEFAULT_FILE, "rb") as f:
         real = tomllib.load(f)
     errs = validate(real)
@@ -614,15 +882,32 @@ def main(argv=None):
         self_test()
         return 0
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("command", choices=("validate", "plan", "apply"))
+    ap.add_argument("command", choices=("validate", "plan", "apply", "findings", "entry"))
+    ap.add_argument("key", nargs="?", help="entry: the finding's key, from findings")
     ap.add_argument("--file", default=DEFAULT_FILE)
     ap.add_argument("--repos", default="", help="comma-separated repository names")
+    ap.add_argument("--branch", default="main", help="findings, entry: the branch (default main)")
+    ap.add_argument("--reason", help="entry: a reason id of the file's [reasons]")
+    ap.add_argument(
+        "--decision",
+        help="entry: falsepositive (default) or wontfix; a hotspot: SAFE (default), ACKNOWLEDGED, FIXED",
+    )
     a = ap.parse_args(argv)
+    if a.command == "findings" and not a.repos:
+        ap.error("findings needs --repos")
+    if a.command == "entry" and not (a.key and a.reason):
+        ap.error("entry needs KEY and --reason")
     try:
         data = load(a.file)
         if a.command == "validate":
             n = len(data.get("issue", [])) + len(data.get("hotspot", []))
             print(f"{a.file}: {n} entries, valid")
+            return 0
+        if a.command == "findings":
+            findings(data, a.repos, Sonar(token=""), a.branch)
+            return 0
+        if a.command == "entry":
+            print(entry(data, a.key, a.reason, a.decision, Sonar(token=""), a.branch))
             return 0
         run(data, a.repos, Sonar(), a.command == "apply")
     except Refusal as e:
