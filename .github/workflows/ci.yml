@@ -39,6 +39,8 @@ jobs:
         run: python3 -I tools/checks/release_lock.py --self-test
       - name: org-sync self-test (tools/org-sync)
         run: python3 -I tools/org-sync/test_org_sync.py
+      - name: the org profile's badge table is today's render (org_sync.py profile)
+        run: python3 -I tools/org-sync/org_sync.py profile . --check
       - name: epics self-test (tools/epics)
         run: python3 -I tools/epics/epics.py --self-test
       - name: zenodo self-test (tools/zenodo)

@@ -6,6 +6,13 @@
 Usage: org_sync.py {init,plan,apply,conflicts,check,seeds,settings} [REPO_DIR] [options]
        org_sync.py reseed FILE [REPO_DIR]
        org_sync.py citation-refs [REPO_DIR] [--check]
+       org_sync.py profile [REPO_DIR] [--check]
+
+`profile` (swarm-routing/.github only) renders the org's badge table into
+profile/README.md, between `<!-- org-sync:begin badges -->` and its end
+marker: the groups of a repository's table, filled from PROFILE_BADGES, each
+badge live or a fixed fact, never a typed number; `--check` exits 1 when the
+section is not today's render.
 
 The repository describes itself in `.github/org-sync.toml` (`init` writes it).
 Each managed item is one of:
@@ -262,6 +269,111 @@ def shield(label, message, color):
         return quote(s.replace("-", "--").replace("_", "__"), safe="")
 
     return f"https://img.shields.io/badge/{esc(label)}-{esc(message)}-{color}"
+
+
+PROFILE = "profile/README.md"
+PROFILE_BADGES = {  # the org profile's table (`profile`), by group: (alt, image, link)
+    "build": [
+        (
+            "CI: org tooling",
+            "https://github.com/swarm-routing/.github/actions/workflows/ci.yml/badge.svg",
+            "https://github.com/swarm-routing/.github/actions/workflows/ci.yml",
+        ),
+        (
+            "GHCR: ns3-dev",
+            shield("ghcr.io", "swarm-routing/ns3-dev", "blue") + "?logo=docker",
+            "https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev",
+        ),
+    ],
+    "release": [
+        (
+            "AntHocNet release",
+            "https://img.shields.io/github/v/release/swarm-routing/AntHocNet?sort=semver&label=AntHocNet&cacheSeconds=1800",
+            "https://github.com/swarm-routing/AntHocNet/releases",
+        ),
+        (
+            "AntHocNet DOI",
+            "https://zenodo.org/badge/DOI/10.5281/zenodo.20981979.svg",
+            "https://doi.org/10.5281/zenodo.20981979",
+        ),
+        (
+            "Archived releases: Zenodo",
+            shield("archived releases", "Zenodo", "blue"),
+            "https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#archived-releases",
+        ),
+        (
+            "Licence: core/ and tooling MIT OR GPL-2.0-only, the rest GPL-2.0-only",
+            shield(
+                "licence", "core/ and tooling MIT OR GPL-2.0-only, the rest GPL-2.0-only", "blue"
+            ),
+            "https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md",
+        ),
+    ],
+    "trust": [
+        (
+            "OpenSSF Scorecard: AntHocNet",
+            "https://api.securityscorecards.dev/projects/github.com/swarm-routing/AntHocNet/badge",
+            "https://scorecard.dev/viewer/?uri=github.com/swarm-routing/AntHocNet",
+        ),
+        (
+            "OpenSSF Best Practices: AntHocNet",
+            "https://www.bestpractices.dev/projects/16656/badge",
+            "https://www.bestpractices.dev/projects/16656",
+        ),
+        (
+            "Images signed: cosign",
+            shield("images signed", "cosign", "success"),
+            "https://github.com/swarm-routing/ns3-containers/blob/main/SECURITY.md",
+        ),
+    ],
+    "stack": [
+        (
+            "Runs on ns-3",
+            shield("runs on", "ns-3", "informational"),
+            "https://www.nsnam.org",
+        ),
+        (
+            "C++23",
+            shield("C++", "23", "blue") + "?logo=cplusplus",
+            "https://github.com/swarm-routing/ns3-swarm-core",
+        ),
+        (
+            "In the browser: WebAssembly",
+            shield("in the browser", "WebAssembly", "informational") + "?logo=webassembly",
+            "https://swarm-routing.github.io/pipeline/",
+        ),
+    ],
+    "community": [
+        (
+            "Colony Arena",
+            "https://img.shields.io/website?url=https%3A%2F%2Fswarm-routing.github.io&label=Colony%20Arena",
+            "https://swarm-routing.github.io",
+        ),
+        (
+            "Claude Code plugin",
+            "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com"
+            "%2Fswarm-routing%2Fskills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version"
+            "&label=Claude%20Code%20plugin&color=blueviolet",
+            "https://github.com/swarm-routing/skills",
+        ),
+        (
+            "Open handoffs",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Ahandoff"
+            "%20is%3Aopen&label=open%20handoffs",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Ahandoff+state%3Aopen&type=issues",
+        ),
+        (
+            "Conventional Commits",
+            shield("Conventional Commits", "1.0.0", "yellow"),
+            "https://www.conventionalcommits.org",
+        ),
+        (
+            "Sponsor",
+            "https://img.shields.io/github/sponsors/danieljoppi?label=sponsor&logo=githubsponsors&color=ea4aaa",
+            "https://github.com/sponsors/danieljoppi",
+        ),
+    ],
+}
 
 
 # --- configuration -----------------------------------------------------------
@@ -779,6 +891,16 @@ def badge_lines(cfg, repo_dir):
         if cells:
             rows.append(f"| {title} | {' '.join(cells)} |\n")
     return BADGE_TABLE_HEAD + "".join(rows) if rows else ""
+
+
+def profile_badge_lines():
+    """The org profile's badge table: BADGE_GROUPS' titles and order, PROFILE_BADGES' badges."""
+    rows = [
+        f"| {title} | {' '.join(f'[![{a}]({i})]({u})' for a, i, u in PROFILE_BADGES[g])} |\n"
+        for g, (title, _) in BADGE_GROUPS.items()
+        if PROFILE_BADGES.get(g)
+    ]
+    return BADGE_TABLE_HEAD + "".join(rows)
 
 
 def badges_by_kind(cfg, repo_dir):
@@ -1851,6 +1973,28 @@ def cmd_citation_refs(a):
     return 0
 
 
+def cmd_profile(a):
+    path = os.path.join(a.repo, PROFILE)
+    cur = read(path)
+    if cur is None:
+        print(f"org-sync profile: no {PROFILE}")
+        return 1
+    pat = re.compile(r"(<!-- org-sync:begin badges -->\n).*?(<!-- org-sync:end badges -->)", re.S)
+    if not pat.search(cur):
+        print(f"org-sync profile: {PROFILE} has no org-sync badges markers")
+        return 1
+    new = pat.sub(lambda m: m.group(1) + profile_badge_lines() + m.group(2), cur, count=1)
+    if new == cur:
+        print(f"org-sync profile: {PROFILE} badges up to date")
+        return 0
+    if a.check:
+        print(f"org-sync profile: {PROFILE} badges drifted; run `org_sync.py profile` and commit")
+        return 1
+    write(a.repo, PROFILE, new)
+    print(f"org-sync profile: {PROFILE} badges rewritten")
+    return 0
+
+
 def cmd_settings(a):
     cfg = load_config(a.repo)
     repo = cfg["repo"]
@@ -1899,6 +2043,7 @@ def main(argv=None):
         "reseed",
         "settings",
         "citation-refs",
+        "profile",
     ):
         s = sub.add_parser(name)
         if name == "reseed":
@@ -1922,6 +2067,8 @@ def main(argv=None):
                 nargs="*",
                 help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)",
             )
+        if name == "profile":
+            s.add_argument("--check", action="store_true", help="change nothing; exit 1 on drift")
         if name == "citation-refs":
             s.add_argument(
                 "--check",
