@@ -25,14 +25,17 @@ not. `apply` runs `plan` first, then per open entry posts
 `api/issues/do_transition` (`falsepositive`; `wontfix`, or `accept` where
 SonarQube Cloud offers that instead) or `api/hotspots/change_status`
 (REVIEWED + SAFE/ACKNOWLEDGED/FIXED), then `api/issues/add_comment` with the
-reason (a hotspot takes the comment in the same call). Nothing outside the
-file is read for change or touched.
+reason (a hotspot takes the comment in the same call). An issue already
+resolved as its entry says but without a comment linking the review (its
+comment failed after the transition) gets that comment on the next apply,
+once. Nothing outside the file is read for change or touched.
 
 The token comes from the environment only (SONAR_TOKEN, sent as a Bearer
 header, never printed). Transitions need a user token of a user with
 "Administer Issues" (hotspots: "Administer Security Hotspots") on each
 project; an HTTP 401/403 stops the run with that message. SONAR_HOST_URL
-overrides https://sonarcloud.io (the self-test's fake). The summary is a
+overrides https://sonarcloud.io (the self-test's fake); the token is only
+sent over https, or to a loopback address. The summary is a
 Markdown table on stdout (and appended to $GITHUB_STEP_SUMMARY when set).
 Exit 0 on success, 1 on a refusal or a failed call, 2 on usage.
 """
@@ -131,6 +134,10 @@ class Sonar:
     def __init__(self, host=None, token=None):
         self.host = (host or os.environ.get("SONAR_HOST_URL") or HOST).rstrip("/")
         self.token = token if token is not None else os.environ.get("SONAR_TOKEN", "")
+        u = urllib.parse.urlparse(self.host)
+        loopback = u.hostname in ("127.0.0.1", "localhost", "::1")
+        if self.token and u.scheme != "https" and not loopback:
+            raise Refusal(f"{self.host}: the token is only sent over https")
 
     def call(self, method, path, params):
         data = urllib.parse.urlencode(params)
@@ -281,8 +288,24 @@ def run(data, repos, sonar, apply, out=print):
                     },
                 )
             rows[i] = (kind, e, "applied", t)
+        # A transition whose comment failed (the issue is resolved, the
+        # reason missing): add the comment only, never twice.
+        for i, (kind, e, state, t) in enumerate(rows):
+            if kind == "issue" and state == "done" and not commented(sonar, e):
+                text = f"{data['reasons'][e['reason']]} (reviewed: {TRACKER})"
+                sonar.call("POST", "api/issues/add_comment", {"issue": e["key"], "text": text})
+                rows[i] = (kind, e, "commented", t)
     table(rows, out)
     return rows
+
+
+def commented(sonar, e):
+    """True when the issue already carries a comment linking the review."""
+    live = sonar.issue(e["key"], e.get("branch", "main")) or {}
+    return any(
+        TRACKER in (c.get("markdown") or "") + (c.get("htmlText") or "")
+        for c in live.get("comments") or []
+    )
 
 
 def table(rows, out):
@@ -374,7 +397,13 @@ def fake_sonar(state, token):
                     i.update(status="RESOLVED", resolution=res)
                 return self.send(200, {"issue": i})
             if u.path == "/api/issues/add_comment":
+                if state.get("fail_comment"):
+                    state["fail_comment"] = False
+                    return self.send(500, {"errors": [{"msg": "boom"}]})
                 state["comments"].append((q["issue"], q["text"]))
+                state["issues"][q["issue"]].setdefault("comments", []).append(
+                    {"markdown": q["text"]}
+                )
                 return self.send(200, {})
             if u.path == "/api/hotspots/change_status":
                 h = state["hotspots"][q["hotspot"]]
@@ -533,6 +562,33 @@ def self_test():
     except Refusal as e:
         check_("SONAR_TOKEN" in str(e), str(e))
     print("ok   no token: plan read-only, apply refuses")
+
+    # a comment that failed after its transition is added on the re-run, once
+    st = copy.deepcopy(base)
+    st["fail_comment"] = True
+    try:
+        go(st, True)
+        check_(False, "the failed comment must stop the run")
+    except Refusal:
+        pass
+    check_(st["issues"]["K1"]["resolution"] == "FALSE-POSITIVE", "K1 transitioned")
+    rows, _ = go(st, True)
+    states = {r[1]["key"]: r[2] for r in rows}
+    check_(states["K1"] == "commented", states)
+    rows, _ = go(st, True)
+    check_({r[2] for r in rows} == {"done"}, rows)
+    k1 = [c for c in st["comments"] if c[0] == "K1"]
+    check_(len(k1) == 1, f"one comment on K1: {k1}")
+    print("ok   a comment lost after its transition: added on the re-run, never twice")
+
+    # the token only over https (loopback excepted, for this self-test)
+    try:
+        Sonar("http://sonar.example", token)
+        check_(False, "plain http with a token must refuse")
+    except Refusal as e:
+        check_("https" in str(e) and token not in str(e), str(e))
+    Sonar("http://sonar.example", "")  # read-only, no token: allowed
+    print("ok   the token is only sent over https")
 
     # --repos filters
     st = copy.deepcopy(base)
