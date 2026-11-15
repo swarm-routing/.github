@@ -58,11 +58,17 @@ import urllib.request
 
 SITE = "swarm-routing/swarm-routing.github.io"
 REGISTRY = "swarm-routing/vcpkg-registry"
-REUSABLE = re.compile(r"uses:\s*swarm-routing/\.github/\.github/workflows/reusable-release\.yml@")
-VCPKG_PORTS = re.compile(r"^\s*vcpkg-ports:\s*[\"']?([a-z0-9 -]+?)[\"']?\s*(?:#.*)?$", re.M)
-BUILD_INPUT = re.compile(r"^\s+build:\s*\S", re.M)
+REUSABLE = re.compile(
+    r"^[ \t]*(?:-[ \t]*)?uses:[ \t]*swarm-routing/\.github/\.github/workflows/reusable-release\.yml@",
+    re.M,
+)
 DIST_TARGET = re.compile(r"^dist\s*:", re.M)
-SHIPPED = re.compile(r"(?i)\b(shipped|released|done)\b")
+WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
+KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):[ \t]*(.*?)[ \t]*$")
+SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
+NOT_SHIPPED = re.compile(
+    r"(?i)\b(?:not|un)[ -]?(?:yet[ -])?(?:shipped|released)\b|\b(?:planned|upcoming|next)\b"
+)
 
 
 class Gh:
@@ -76,6 +82,10 @@ class Gh:
             raise RuntimeError(f"gh api {path}: {r.stderr.strip()}")
         return json.loads(r.stdout or "null")
 
+    def get_all(self, path):
+        """Every page of a list endpoint (100 a page), or None for a 404."""
+        return paged(self.get, path)
+
     def url(self, url):
         """The JSON at a public URL, or None for a 404."""
         try:
@@ -85,6 +95,20 @@ class Gh:
             if e.code == 404:
                 return None
             raise
+
+
+def paged(get, path, limit=50):
+    """Every page of a list endpoint through get(path); None when the first is a 404."""
+    out = []
+    sep = "&" if "?" in path else "?"
+    for page in range(1, limit + 1):
+        chunk = get(f"{path}{sep}per_page=100&page={page}")
+        if chunk is None:
+            return None if page == 1 else out
+        out.extend(chunk)
+        if len(chunk) < 100:
+            break
+    return out
 
 
 class Report:
@@ -107,6 +131,49 @@ def read(path):
         return None
 
 
+def with_inputs(text):
+    """{input: value} of every `with:` block of a job that calls
+    reusable-release.yml, read by indentation (stdlib, no YAML parser): a
+    commented line is not a key, a key belongs to the block it is indented
+    under, and a block scalar (`|`, `>-`) takes its indented lines, joined by
+    spaces."""
+    lines = text.splitlines()
+    out = {}
+
+    def indent(ln):
+        return len(ln) - len(ln.lstrip(" "))
+
+    def live(ln):
+        return bool(ln.strip()) and not ln.lstrip().startswith("#")
+
+    for i, ln in enumerate(lines):
+        if not REUSABLE.match(ln):
+            continue
+        # `uses:` and `with:` are siblings: the same indentation (a `- uses:` counts its dash)
+        level = indent(ln.replace("- ", "  ", 1))
+        k = i + 1
+        while k < len(lines) and (not live(lines[k]) or indent(lines[k]) >= level):
+            if not (live(lines[k]) and indent(lines[k]) == level and WITH.match(lines[k])):
+                k += 1
+                continue
+            base, k = level, k + 1
+            while k < len(lines) and (not live(lines[k]) or indent(lines[k]) > base):
+                m = KEY.match(lines[k])
+                if not (live(lines[k]) and m):
+                    k += 1
+                    continue
+                key, val, at = m.group(1), re.sub(r"[ \t]+#.*$", "", m.group(2)), indent(lines[k])
+                k += 1
+                if val[:1] in ("|", ">"):
+                    body = []
+                    while k < len(lines) and (not lines[k].strip() or indent(lines[k]) > at):
+                        body.append(lines[k].strip())
+                        k += 1
+                    val = " ".join(b for b in body if b)
+                out[key] = val.strip().strip("\"'")
+    return out
+
+
 def caller_workflows(texts):
     """[(name, text)] of the workflows that call reusable-release.yml."""
     return [(n, t) for n, t in texts if REUSABLE.search(t)]
@@ -121,9 +188,10 @@ def local_workflows(repo_dir):
     return out
 
 
-def commitizen(repo_dir):
-    """(file, table) of the Commitizen config, or (None, None)."""
+def commitizen(repo_dir, wd=""):
+    """(file, table) of the Commitizen config in the working directory, or (None, None)."""
     for name in (".cz.toml", "pyproject.toml"):
+        name = os.path.join(wd, name) if wd else name
         text = read(os.path.join(repo_dir, name))
         if text is None:
             continue
@@ -161,9 +229,18 @@ def ready(repo_dir, repo, version, gh):
             "caller: no workflow calls reusable-release.yml (copy the caller from its "
             "comment block)",
         )
-    name, cz = commitizen(repo_dir)
+    inputs = {}
+    for _, t in callers:
+        inputs.update(with_inputs(t))
+    wd = inputs.get("working-directory", "").strip("./")
+    if wd:
+        r.add("OK", f"working-directory: {wd} (the Commitizen config and make dist are read there)")
+    name, cz = commitizen(repo_dir, wd)
     if cz is None:
-        r.add("FAIL", "commitizen: no .cz.toml and no [tool.commitizen] in pyproject.toml")
+        r.add(
+            "FAIL",
+            f"commitizen: no .cz.toml and no [tool.commitizen] in {wd or '.'}/pyproject.toml",
+        )
     elif "_error" in cz:
         r.add("FAIL", f"commitizen: {name} does not parse: {cz['_error']}")
     elif cz.get("tag_format") != "v$version":
@@ -174,8 +251,8 @@ def ready(repo_dir, repo, version, gh):
             f"commitizen: {name}, version {cz.get('version', '?')}, "
             f"major_version_zero = {str(cz.get('major_version_zero', False)).lower()}",
         )
-    has_build = any(BUILD_INPUT.search(t) for _, t in callers)
-    if DIST_TARGET.search(read(os.path.join(repo_dir, "Makefile")) or ""):
+    has_build = bool(inputs.get("build"))
+    if DIST_TARGET.search(read(os.path.join(repo_dir, wd, "Makefile")) or ""):
         r.add("OK", "build: make dist")
     elif has_build:
         r.add("OK", "build: the caller's own build: input")
@@ -196,9 +273,11 @@ def ready(repo_dir, repo, version, gh):
         )
     if repo and version:
         label = f"release:v{version}"
-        issues = gh.get(f"repos/{repo}/issues?state=open&per_page=100&labels={label}") or []
-        issues = [i for i in issues if "pull_request" not in i]
-        if issues:
+        listed = gh.get_all(f"repos/{repo}/issues?state=open&labels={label}")
+        issues = [i for i in listed or [] if "pull_request" not in i]
+        if listed is None:
+            r.add("FAIL", f"scope: cannot read {repo}'s issues (wrong --repo, or no access)")
+        elif issues:
             r.add(
                 "FAIL",
                 f"scope: {len(issues)} open issue(s) labelled {label}: "
@@ -245,6 +324,15 @@ def lock_values(text):
     return out
 
 
+def bumps_lock(gh, repo, pull, lock, prefix, tag):
+    """The PR changes this lock, and the lock on its head names the tag."""
+    files = gh.get_all(f"repos/{repo}/pulls/{pull['number']}/files") or []
+    if not any(f.get("filename") == lock for f in files):
+        return False
+    head = lock_values(contents_text(gh, repo, lock, ref=pull["head"]["sha"]) or "")
+    return head.get(f"{prefix}_TAG") == tag
+
+
 def after(repo, tag, org, gh, consumers=None):
     r = Report()
     owner, name = repo.split("/", 1)
@@ -272,7 +360,7 @@ def after(repo, tag, org, gh, consumers=None):
             r.add("OK", f"release: {tag} published, {len(assets)} asset(s)")
     # the site's release-sync ticket (CONTRIBUTING "Cutting a release", step 6)
     want = f"[release-sync] {name} {tag}"
-    issues = gh.get(f"repos/{SITE}/issues?state=all&per_page=100&sort=created") or []
+    issues = gh.get_all(f"repos/{SITE}/issues?state=all&sort=created") or []
     hit = [i for i in issues if i.get("title", "").strip() == want]
     if hit:
         r.add("OK", f"site: {SITE}#{hit[0]['number']} {want}")
@@ -287,7 +375,7 @@ def after(repo, tag, org, gh, consumers=None):
         candidates = [{"full_name": c if "/" in c else f"{org}/{c}"} for c in consumers]
     else:
         try:
-            candidates = gh.get(f"orgs/{org}/repos?per_page=100&type=public") or []
+            candidates = gh.get_all(f"orgs/{org}/repos?type=public") or []
         except RuntimeError as e:
             candidates = []
             r.add(
@@ -312,12 +400,12 @@ def after(repo, tag, org, gh, consumers=None):
             if have == tag:
                 r.add("OK", f"lock: {where} locks {tag}")
                 continue
-            pulls = gh.get(f"repos/{c['full_name']}/pulls?state=open&per_page=100") or []
+            pulls = gh.get_all(f"repos/{c['full_name']}/pulls?state=open") or []
             bump = [
                 p
                 for p in pulls
                 if p["head"]["ref"].startswith("org-bot/")
-                and re.search(r"pin|lock", p["head"]["ref"] + " " + p["title"], re.I)
+                and bumps_lock(gh, c["full_name"], p, entry["name"], prefix, tag)
             ]
             if bump:
                 r.add(
@@ -338,9 +426,10 @@ def after(repo, tag, org, gh, consumers=None):
         if isinstance(entry, dict) and entry.get("name", "").endswith((".yml", ".yaml")):
             flows.append((entry["name"], contents_text(gh, repo, entry["path"], ref=tag) or ""))
     callers = caller_workflows(flows) or [(n, t) for n, t in flows if n == "release.yml"]
-    ports = sorted(
-        {p for _, t in callers for m in VCPKG_PORTS.finditer(t) for p in m.group(1).split()}
-    )
+    inputs = {}
+    for _, t in callers:
+        inputs.update(with_inputs(t))
+    ports = sorted(set(inputs.get("vcpkg-ports", "").split()))
     if ports:
         baseline = json.loads(contents_text(gh, REGISTRY, "versions/baseline.json") or "{}")
         for port in ports:
@@ -363,7 +452,9 @@ def after(repo, tag, org, gh, consumers=None):
                 )
     if any(re.search(r"(?i)pypi", t) for _, t in callers):
         project = None
-        for path in ("python/pyproject.toml", "pyproject.toml"):
+        wd = inputs.get("working-directory", "").strip("./")
+        paths = [f"{wd}/pyproject.toml"] if wd else []
+        for path in dict.fromkeys(paths + ["python/pyproject.toml", "pyproject.toml"]):
             text = contents_text(gh, repo, path, ref=tag)
             if text:
                 project = tomllib.loads(text).get("project", {}).get("name")
@@ -382,7 +473,7 @@ def after(repo, tag, org, gh, consumers=None):
     roadmap = contents_text(gh, repo, "docs/roadmap.md")
     if roadmap is not None:
         rows = ladder_row(roadmap, tag)
-        if rows and any(SHIPPED.search(row) for row in rows):
+        if any(SHIPPED.search(row) and not NOT_SHIPPED.search(row) for row in rows):
             r.add("OK", f"ladder: docs/roadmap.md marks {tag} shipped")
         else:
             r.add(
@@ -406,7 +497,15 @@ class FakeGh:
         self.routes, self.urls = routes, urls or {}
 
     def get(self, path):
-        return self.routes.get(path)
+        m = re.match(r"^(.*)[?&]per_page=100&page=(\d+)$", path)
+        if not m:
+            return self.routes.get(path)
+        rows = self.routes.get(m.group(1))  # a list route, served 100 a page
+        n = int(m.group(2))
+        return None if rows is None else rows[100 * (n - 1) : 100 * n]
+
+    def get_all(self, path):
+        return paged(self.get, path)
 
     def url(self, url):
         return self.urls.get(url)
@@ -453,7 +552,7 @@ def self_test():
                 fh.write(t)
         gh = FakeGh(
             {
-                "repos/o/r/issues?state=open&per_page=100&labels=release:v0.4.0": [
+                "repos/o/r/issues?state=open&labels=release:v0.4.0": [
                     {"number": 7},
                     {"number": 9, "pull_request": {}},
                 ],
@@ -500,6 +599,67 @@ def self_test():
         expect("ready: a tag_format without v fails", has(rep, "FAIL", "tag_format"))
         expect("ready: no make dist and no build: input fails", has(rep, "FAIL", "build:"))
         expect("ready: no --version warns on the ladder", has(rep, "WARN", "pass --version"))
+    flow = (
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-latest\n"
+        "  release:\n"
+        "    # uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n"
+        "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n"
+        "    with:\n"
+        "      working-directory: python   # the package\n"
+        "      vcpkg-ports: >-\n"
+        "        swarm-core\n"
+        "        ara-core\n"
+        "      # build: make wheel\n"
+        "  other:\n"
+        "    with:\n"
+        "      build: not ours\n"
+    )
+    got = with_inputs(flow)
+    expect(
+        "with_inputs: the caller's inputs, a folded block, comments and other jobs left out",
+        got == {"working-directory": "python", "vcpkg-ports": "swarm-core ara-core"},
+    )
+    expect(
+        "with_inputs: a commented-out caller is no caller",
+        not with_inputs(
+            "jobs:\n  r:\n    # uses: swarm-routing/.github/.github/workflows/"
+            "reusable-release.yml@main\n    with:\n      build: x\n"
+        )
+        and not caller_workflows(
+            [
+                (
+                    "a.yml",
+                    "#  uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n",
+                )
+            ]
+        ),
+    )
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, ".github", "workflows"))
+        os.makedirs(os.path.join(d, "python"))
+        files = {
+            ".github/workflows/release.yml": flow,
+            "python/pyproject.toml": '[tool.commitizen]\nversion = "1.0.0"\ntag_format = "v$version"\n',
+            "Makefile": "dist:\n\ttrue\n",
+        }
+        for p, t in files.items():
+            with open(os.path.join(d, p), "w", encoding="utf-8") as fh:
+                fh.write(t)
+        rep = quiet(ready, d, "o/gone", "1.1.0", FakeGh({}))
+        expect(
+            "ready: the working-directory's Commitizen config",
+            has(rep, "OK", "python/pyproject.toml, version 1.0.0"),
+        )
+        expect(
+            "ready: make dist is looked for in the working-directory, a `build:` job is no input",
+            has(rep, "FAIL", "build: no `dist:` target"),
+        )
+        expect(
+            "ready: an unreadable --repo fails the scope, never OK",
+            has(rep, "FAIL", "cannot read o/gone's issues") and not has(rep, "OK", "scope"),
+        )
     with tempfile.TemporaryDirectory() as d:
         rep = quiet(ready, d, None, "0.1.0", FakeGh({}))
         expect(
@@ -521,10 +681,10 @@ def self_test():
                 {"name": "r-0.4.0.intoto.jsonl"},
             ],
         },
-        f"repos/{SITE}/issues?state=all&per_page=100&sort=created": [
+        f"repos/{SITE}/issues?state=all&sort=created": [
             {"number": 155, "title": "[release-sync] r v0.4.0"}
         ],
-        "orgs/o/repos?per_page=100&type=public": [
+        "orgs/o/repos?type=public": [
             {"full_name": "o/a"},
             {"full_name": "o/b"},
             {"full_name": "o/c"},
@@ -535,7 +695,7 @@ def self_test():
         "repos/o/a/contents/swarm-core.lock": b64(lock_new),
         "repos/o/b/contents": [{"name": "swarm-core.lock"}],
         "repos/o/b/contents/swarm-core.lock": b64(lock_old),
-        "repos/o/b/pulls?state=open&per_page=100": [
+        "repos/o/b/pulls?state=open": [
             {
                 "number": 3,
                 "title": "chore: apply the org templates (org-bot)",
@@ -544,9 +704,12 @@ def self_test():
             {
                 "number": 4,
                 "title": "chore(core): bump the swarm-core pin (org-bot)",
-                "head": {"ref": "org-bot/swarm-core-pin"},
+                "head": {"ref": "org-bot/swarm-core-pin", "sha": "c0ffee"},
             },
         ],
+        "repos/o/b/pulls/3/files": [{"filename": ".github/workflows/org-sync.yml"}],
+        "repos/o/b/pulls/4/files": [{"filename": "swarm-core.lock"}, {"filename": "Makefile"}],
+        "repos/o/b/contents/swarm-core.lock?ref=c0ffee": b64(lock_new),
         "repos/o/c/contents": [{"name": "other.lock"}],
         "repos/o/c/contents/other.lock": b64("X_REPO=o/elsewhere\nX_TAG=v1.0.0\n"),
         "repos/o/r/contents/.github/workflows?ref=v0.4.0": [
@@ -583,8 +746,8 @@ def self_test():
 
     routes["repos/o/r/releases/tags/v0.4.0"] = {"draft": False, "assets": [{"name": "x.tar.gz"}]}
     del routes[f"repos/{REGISTRY}/pulls?state=open&head=swarm-routing:bot/vcpkg-r"]
-    routes[f"repos/{SITE}/issues?state=all&per_page=100&sort=created"] = []
-    routes["repos/o/b/pulls?state=open&per_page=100"] = []
+    routes[f"repos/{SITE}/issues?state=all&sort=created"] = []
+    routes["repos/o/b/pulls?state=open"] = []
     routes["repos/o/r/contents/docs/roadmap.md"] = b64("| v0.4.0 | shipped 2026-11-15 |\n")
     rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(routes))
     expect(
@@ -610,6 +773,26 @@ def self_test():
 
     rep = quiet(after, "o/r", "v0.4.0", "o", Refused(routes))
     expect("after: an org listing refused warns and names --repos", has(rep, "WARN", "--repos"))
+    # an org-bot PR that changes the lock, but to another tag, is not the bump
+    routes["repos/o/b/pulls?state=open"] = [
+        {"number": 5, "title": "x", "head": {"ref": "org-bot/swarm-core-pin", "sha": "beef"}}
+    ]
+    routes["repos/o/b/pulls/5/files"] = [{"filename": "swarm-core.lock"}]
+    routes["repos/o/b/contents/swarm-core.lock?ref=beef"] = b64(lock_old)
+    rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(routes), ["b"])
+    expect(
+        "after: an org-bot PR whose lock names another tag is not the bump",
+        has(rep, "WARN", "no org-bot bump PR open"),
+    )
+    routes["repos/o/r/contents/docs/roadmap.md"] = b64("| v0.4.0 | not shipped yet |\n")
+    rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(routes), [])
+    expect("after: 'not shipped' is not shipped", has(rep, "WARN", "does not mark v0.4.0"))
+    # pagination: the site issue on the second page
+    routes[f"repos/{SITE}/issues?state=all&sort=created"] = [
+        {"number": n, "title": f"other {n}"} for n in range(150)
+    ] + [{"number": 999, "title": "[release-sync] r v0.4.0"}]
+    rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(routes), [])
+    expect("after: a list read past its first page", has(rep, "OK", f"{SITE}#999"))
     rep = quiet(after, "o/r", "v9.9.9", "o", FakeGh({}))
     expect("after: no release fails", has(rep, "FAIL", "no published GitHub release v9.9.9"))
 
