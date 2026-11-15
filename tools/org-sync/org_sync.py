@@ -729,13 +729,20 @@ def sonar_key(cfg):
 
 
 def calls_workflow(repo_dir, reusable):
-    """True when a workflow of the repository calls this reusable workflow."""
+    """True when a workflow of the repository calls this reusable workflow (or
+    action): a YAML comment naming it does not count (the site's release-sync.yml
+    describes reusable-release.yml, and the site has no release, so its badge read
+    "no releases found")."""
     wfdir = os.path.join(repo_dir, ".github/workflows")
     try:
         names = sorted(os.listdir(wfdir))
     except OSError:
         return False
-    return any(reusable in (read(os.path.join(wfdir, n)) or "") for n in names)
+    return any(
+        reusable in line.split("#", 1)[0]
+        for n in names
+        for line in (read(os.path.join(wfdir, n)) or "").splitlines()
+    )
 
 
 def uploads_coverage(cfg, repo_dir):
@@ -865,8 +872,11 @@ def badges_by_kind(cfg, repo_dir):
                 f"(https://sonarcloud.io/summary/new_code?id={key})"
             )
         elif b == "codecov" and uploads_coverage(cfg, repo_dir):
+            # main named: Codecov's own default branch can be stale (AntHocNet's
+            # still read `master`, so the branchless badge said "unknown")
             out[b] = (
-                f"[![codecov](https://codecov.io/gh/{repo}/graph/badge.svg)](https://codecov.io/gh/{repo})"
+                f"[![codecov](https://codecov.io/gh/{repo}/branch/main/graph/badge.svg)]"
+                f"(https://codecov.io/gh/{repo}/tree/main)"
             )
         elif b == "coderabbit":
             camp = quote(repo, safe="")

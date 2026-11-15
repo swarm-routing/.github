@@ -7,7 +7,8 @@
     check_docs.py --self-test
 
 The standard is AntHocNet's README and docs map (#94): a title and the
-org-sync badge table (grouped, #415; a badge outside it warns); an explanation near the top; a link to the project's page
+org-sync badge table (grouped, #415; a badge outside it, or one badge or one
+metric twice, fails); an explanation near the top; a link to the project's page
 on the site (https://swarm-routing.github.io/projects/<id>/), and to the ns-3
 image when the repo builds with it; a layout block that matches the tree;
 Epics, License and how-to-work-here sections; for a released repository (a
@@ -57,6 +58,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+from urllib.parse import unquote
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "org-sync"))
 from org_sync import BADGE_GROUPS  # noqa: E402  the README badge table's groups, one source
@@ -85,6 +87,8 @@ AGENTS_SETTINGS_ONLY_BUDGET = 27_700  # a settings-only repository's whole file 
 ORG_SECTION = re.compile(r"<!-- org-sync:begin (\S+) -->.*?<!-- org-sync:end \1 -->\n?", re.S)
 # a linked badge image, [![alt](image)](link), in the managed table or outside it
 BADGE = re.compile(r"\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)")
+# any image: Markdown, linked or not, or an HTML <img>, for the badges written by hand
+ANY_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)|<img\b[^>]*?\bsrc=\"([^\"]+)\"")
 BADGE_HOST = re.compile(
     r"shields\.io|/badges?[/.?]|badge\.svg|/badge\b|zenodo\.org/badge|skills\.sh/b/"
 )
@@ -226,11 +230,53 @@ def badge_table(r, block):
     r.add("PASS", "README", f"badge table: {n} badge(s) in {len(rows)} group(s): {', '.join(seen)}")
 
 
-def hand_badges(text):
-    """Badges written by hand outside the managed table, by alt text; a linked
-    image that is not a badge (a screenshot, a figure) is left alone."""
+def readme_badges(text):
+    """Every badge image of a README, as (alt, image): Markdown (linked or not) or
+    an HTML <img>; an image that is not a badge (a screenshot, a figure) and a
+    code block are left alone."""
     text = re.sub(r"```.*?```", "", text, flags=re.S)
-    return [alt or img for alt, img, _ in BADGE.findall(text) if BADGE_HOST.search(img)]
+    out = []
+    for m in ANY_IMAGE.finditer(text):
+        img = m.group(2) or m.group(3)
+        if BADGE_HOST.search(img):
+            out.append((m.group(1) or "", img))
+    return out
+
+
+def hand_badges(text):
+    """Badges written by hand outside the managed table, by alt text."""
+    return [alt or img for alt, img in readme_badges(text)]
+
+
+def badge_metric(img):
+    """What a badge measures, so that two badges of one metric are seen as one
+    too many: any coverage badge (Codecov, a coverage endpoint) is `coverage`,
+    the release and the DOI are themselves, a static shields badge is its label
+    (`runs on: ns-3` and `runs on: ns-3 · WebAssembly` are one), anything else its
+    image URL."""
+    low = unquote(img).lower()
+    if "codecov.io" in low or "coverage" in low:
+        return "coverage"
+    if "/github/v/release/" in low:
+        return "release"
+    if "zenodo.org/badge/doi/" in low:
+        return "doi"
+    m = re.search(r"img\.shields\.io/badge/((?:[^-/]|--)+)-", img)
+    if m:
+        return "shield: " + unquote(m.group(1)).replace("--", "-").replace("_", " ").lower()
+    return img
+
+
+def duplicate_badges(text):
+    """Badges that repeat an image or a metric of an earlier one, by alt text."""
+    seen, dup = {}, []
+    for alt, img in readme_badges(text):
+        key = badge_metric(img)
+        if key in seen:
+            dup.append(f"{alt or img} (repeats {seen[key]})")
+        else:
+            seen[key] = alt or img
+    return dup
 
 
 def check(repo, online=False, fetch=None):
@@ -261,11 +307,20 @@ def check(repo, online=False, fetch=None):
             outside = hand_badges(readme[: m.start()] + readme[m.end() :])
             if outside:
                 r.add(
-                    "WARN",
+                    "FAIL",
                     "README",
                     f"{len(outside)} badge(s) outside the org-sync table: give each a kind or an "
                     "[[extra_badges]] entry in .github/org-sync.toml and delete it (org_sync.py apply)",
                     outside,
+                )
+            dup = duplicate_badges(readme)
+            if dup:
+                r.add(
+                    "FAIL",
+                    "README",
+                    f"{len(dup)} badge(s) repeat a badge or its metric: keep one (drop the kind from "
+                    "`badges`, or the [[extra_badges]] entry, in .github/org-sync.toml)",
+                    dup,
                 )
         after = readme[m.end() :] if m else readme
         prose = [
@@ -1023,10 +1078,50 @@ def self_test():
         }
     )
     expect(
-        "a hand-written badge outside the table warns, naming it; a linked screenshot does not",
-        has(r, "WARN", "1 badge(s) outside the org-sync table")
-        and any(x["items"] == ["Sponsor"] for x in r.rows if x["level"] == "WARN"),
+        "a hand-written badge outside the table fails, naming it; a linked screenshot does not",
+        has(r, "FAIL", "1 badge(s) outside the org-sync table")
+        and any(x["items"] == ["Sponsor"] for x in r.rows if x["level"] == "FAIL"),
     )
+    for name, after in (
+        (
+            "an unlinked badge after the table",
+            "![Top language](https://img.shields.io/github/languages/top/x)\n",
+        ),
+        (
+            "an HTML badge after the table",
+            '<a href="#"><img src="https://img.shields.io/badge/a-b-blue" alt="A"></a>\n',
+        ),
+    ):
+        r = repo(
+            {
+                "README.md": readme_ok.replace(
+                    "<!-- org-sync:end badges -->\n", "<!-- org-sync:end badges -->\n" + after
+                )
+            }
+        )
+        expect(f"{name} fails", has(r, "FAIL", "1 badge(s) outside the org-sync table"))
+    cov = "[![codecov](https://codecov.io/gh/x/y/branch/main/graph/badge.svg)](https://codecov.io/gh/x/y)"
+    ns3 = "[![Runs on ns-3](https://img.shields.io/badge/runs%20on-ns--3-informational)](https://www.nsnam.org)"
+    for name, row, item in (
+        ("the same badge twice", f"| Quality | {cov} {cov} |\n", "codecov (repeats codecov)"),
+        (
+            "two coverage badges (Codecov and a coverage endpoint)",
+            f"| Quality | {cov} [![Core coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fx%2Fcoverage.json)](https://x) |\n",
+            "Core coverage (repeats codecov)",
+        ),
+        (
+            "two badges of one shields label",
+            f"| Stack | {ns3} [![Simulators](https://img.shields.io/badge/runs%20on-ns--3%20%C2%B7%20WebAssembly-informational)](#) |\n",
+            "Simulators (repeats Runs on ns-3)",
+        ),
+    ):
+        r = repo({"README.md": readme_ok.replace(table, table + row)})
+        expect(
+            f"{name} fails, naming the repeat",
+            has(r, "FAIL", "repeat a badge or its metric")
+            and any(item in x["items"] for x in r.rows if x["level"] == "FAIL"),
+        )
+    expect("one badge per metric passes", not has(ok, "FAIL", "repeat a badge"))
     r = repo(drop=("README.md",))
     expect("no README fails", has(r, "FAIL", "no README.md"))
     r = repo({"README.md": "ARA\n\n" + readme_ok})

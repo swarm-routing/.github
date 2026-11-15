@@ -750,8 +750,12 @@ says which appear, never their order. A badge of the repository's own (a
 coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
 `.github/org-sync.toml` (`group`, `alt`, `image`, `link`), placed after its
 group's kinds, never a line written by hand next to the table: `check_docs.py`
-(the `docs-review` skill) fails a badge block that is not the table and warns
-on a badge outside it.
+(the `docs-review` skill) fails a badge block that is not the table, a badge
+outside it (Markdown, linked or not, or HTML), and a badge that repeats another
+or its metric (two coverage badges, two `runs on` shields, the release twice):
+keep one. The `codecov` badge names `main` (Codecov's own default branch can
+be stale and then reads "unknown"), and the `release` badge needs a workflow
+that calls `reusable-release.yml`, not one that only names it in a comment.
 
 A repository's README shows AntHocNet's three badges through org-sync, each
 only once its target exists: **Release** when a workflow calls
