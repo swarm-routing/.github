@@ -1,0 +1,1188 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+#
+# Reviewed SonarQube Cloud verdicts, applied by sonar_triage.py through the
+# sonar-triage workflow (swarm-routing/.github#425). One entry per finding
+# KEY, read from the public API (api/issues/search, api/hotspots/search),
+# never typed. `plan` refuses if a key's project, rule, file or line no longer
+# match, so a moved finding is re-reviewed, not silently marked.
+#
+# To record a new false positive: review it in its tracking issue, add its
+# entry here by PR (the key from the API, the reason id below), merge, then
+# dispatch sonar-triage with mode plan, then apply.
+#
+# decision: falsepositive (the finding is wrong) or wontfix (true as stated,
+# accepted for the reason given; SonarQube Cloud may call it `accept`).
+
+[reasons]
+FP-cli = "The value is an argument the invoker passes to a command-line tool they run themselves, on their own machine or as a literal in a workflow file; the script runs with the invoker's own rights, so the path, git ref or URL it names reaches nothing the invoker could not reach directly. No trust boundary is crossed, and where the tool's job is to read the named path or fetch the named URL, confining it would break the tool."
+FP-repofile = "The content comes from a committed, reviewed file of the same repository, the same trust as the script; a PR that could plant a bad value could change the script."
+FP-redos = "The regex is a pattern from the repository's own schemas/manifest.schema.json; every pattern there is anchored with no nested quantifier (worst case quadratic on a short manifest field), and the strings matched are fields of the PR's own run."
+FP-basename = "The manifest's source.path is reduced to os.path.basename and joined to the cell's own directory, which must then hold exactly manifest.json and that file; it cannot name a path outside the run."
+FP-validated = "Every path component is checked before use: the plan name by NAME (^[a-z0-9]([a-z0-9-]*[a-z0-9])?$), each cell by CELL (^[a-z0-9][a-z0-9._-]*$, no slash); the date is the tool's own state.json and the run id an integer from the GitHub API."
+FP-walk = "The file names come from os.walk over the output directory itself."
+FP-gitpaths = "The paths are git diff --name-only / ls-files output of the bot's own temporary clone (always relative, inside the work tree) and os.path.join(clone, <constant>)."
+FP-argv = "subprocess.run with an argument list, no shell; the values are repository names from the org listing and the bot's own constants."
+FP-guarded = "The test server resolves the request under the absolute site root and refuses anything not startsWith(root + sep) before any fs call, and listens on 127.0.0.1 only; the scanner does not recognise the guard."
+FP-hash = "pip install --require-hashes pins every distribution by hash; --only-binary :all: would break the build (paginate==0.5.7 in the mkdocs lock is sdist-only)."
+FP-local = "pip install ./python builds this repository's own package from the checkout; its build backend is this repository's reviewed code."
+FP-curl = "curl ... | python3 -c '<inline code>' pipes a registry token response as data into inline code; nothing downloaded is executed."
+FP-literal = "what is a string literal at every TakeStreams(...) call site (\"wifi channel\", \"mobility\", ...)."
+FP-image = "image passed IMAGE_RE (ghcr.io/...@sha256:<64 hex>) before registry_config is reached, and the token request is anonymous."
+FP-display = "dispatch_command only builds the command line recorded in the manifest (with shlex.quote); it is never executed."
+FP-chmod = "0o755 on the generated kit's .sh scripts, which the kit's reader runs; the kit holds no secret."
+FP-root = "ns3-dev is a build image run as a GitHub Actions container:, whose workspace mounts and actions need root; it runs no service."
+FP-float = "An exact test for zero of a counter parsed from the harness's text, where zero is printed exactly ('nothing happened'); a tolerance would change verdicts, and scenario_check's verdicts must stay byte-identical to AntHocNet's script (test_scenario_check_corpus.py)."
+
+# ---- swarm-routing/benchmarks (15)
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLpdqTrsVVLTT2Vt"
+rule = "pythonsecurity:S8705"
+file = "tools/import_anthocnet.py"
+line = 67
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLpdqTrsVVLTT2Vs"
+rule = "pythonsecurity:S8705"
+file = "tools/import_anthocnet.py"
+line = 136
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLpdqTrsVVLTT2Vu"
+rule = "pythonsecurity:S8707"
+file = "tools/import_anthocnet.py"
+line = 208
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHDK80BSMDHqgwrSXbO"
+rule = "pythonsecurity:S2631"
+file = "tools/validate_run.py"
+line = 168
+decision = "falsepositive"
+reason = "FP-redos"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHDK80BSMDHqgwrSXbQ"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 202
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHDK80BSMDHqgwrSXbS"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 296
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHDK80BSMDHqgwrSXbR"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 385
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLonqTrsVVLTT2Vl"
+rule = "pythonsecurity:S6549"
+file = "tools/validate_run.py"
+line = 682
+decision = "falsepositive"
+reason = "FP-basename"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLonqTrsVVLTT2Vq"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 689
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLonqTrsVVLTT2Vm"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 865
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLonqTrsVVLTT2Vp"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 866
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLonqTrsVVLTT2Vr"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 868
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLonqTrsVVLTT2Vn"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 874
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHNmLonqTrsVVLTT2Vo"
+rule = "pythonsecurity:S8707"
+file = "tools/validate_run.py"
+line = 905
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_benchmarks"
+key = "AaHDK80BSMDHqgwrSXbP"
+rule = "pythonsecurity:S8705"
+file = "tools/validate_run.py"
+line = 918
+decision = "falsepositive"
+reason = "FP-cli"
+
+# ---- swarm-routing/ns3-containers (3)
+
+[[issue]]
+project = "swarm-routing_ns3-containers"
+key = "AaHCpRUw_FA1jxz_VUWM"
+rule = "docker:S6471"
+file = "docker/Dockerfile"
+line = 34
+decision = "wontfix"
+reason = "FP-root"
+
+[[issue]]
+project = "swarm-routing_ns3-containers"
+key = "AaHCpRUy_FA1jxz_VUWN"
+rule = "pythonsecurity:S8707"
+file = "tools/ns3_matrix.py"
+line = 343
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-containers"
+key = "AaHT8Uo5QzGMKbFHRcEm"
+rule = "pythonsecurity:S8707"
+file = "tools/ns3_matrix.py"
+line = 373
+decision = "falsepositive"
+reason = "FP-cli"
+
+# ---- swarm-routing/ns3-tools (43)
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yI5GiVmDmX-dPOP"
+rule = "githubactions:S8482"
+file = ".github/workflows/campaign-cell.yml"
+line = 85
+decision = "falsepositive"
+reason = "FP-curl"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ5ISIHBt2A0IKkO"
+rule = "githubactions:S8541"
+file = ".github/workflows/python.yml"
+line = 39
+decision = "wontfix"
+reason = "FP-local"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yIoGiVmDmX-dPON"
+rule = "cppsecurity:S5145"
+file = "ns3/routing-bench/model/routing-bench-run.cc"
+line = 124
+decision = "falsepositive"
+reason = "FP-literal"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yIEGiVmDmX-dPOL"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/bench_parse.py"
+line = 744
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4uSIHBt2A0IKkJ"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/bench_parse.py"
+line = 772
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4uSIHBt2A0IKkH"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/bench_parse.py"
+line = 783
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4uSIHBt2A0IKkI"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/bench_parse.py"
+line = 804
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yG9GiVmDmX-dPNu"
+rule = "pythonsecurity:S6350"
+file = "python/ns3_tool/campaign.py"
+line = 426
+decision = "falsepositive"
+reason = "FP-display"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yG9GiVmDmX-dPNt"
+rule = "pythonsecurity:S2083"
+file = "python/ns3_tool/campaign.py"
+line = 808
+decision = "falsepositive"
+reason = "FP-validated"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yG9GiVmDmX-dPNp"
+rule = "pythonsecurity:S2083"
+file = "python/ns3_tool/campaign.py"
+line = 1038
+decision = "falsepositive"
+reason = "FP-validated"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yG9GiVmDmX-dPNq"
+rule = "pythonsecurity:S2083"
+file = "python/ns3_tool/campaign.py"
+line = 1044
+decision = "falsepositive"
+reason = "FP-validated"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yG9GiVmDmX-dPNr"
+rule = "pythonsecurity:S2083"
+file = "python/ns3_tool/campaign.py"
+line = 1059
+decision = "falsepositive"
+reason = "FP-validated"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yG9GiVmDmX-dPNs"
+rule = "pythonsecurity:S2083"
+file = "python/ns3_tool/campaign.py"
+line = 1091
+decision = "falsepositive"
+reason = "FP-validated"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHUGiVmDmX-dPNy"
+rule = "pythonsecurity:S7044"
+file = "python/ns3_tool/change_plan.py"
+line = 483
+decision = "falsepositive"
+reason = "FP-image"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4qSIHBt2A0IKkB"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/comparator_view.py"
+line = 48
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4qSIHBt2A0IKkC"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/comparator_view.py"
+line = 84
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yH5GiVmDmX-dPOJ"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/diagnose.py"
+line = 116
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4xSIHBt2A0IKkL"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/native_view.py"
+line = 72
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yILGiVmDmX-dPOM"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/native_view.py"
+line = 76
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4xSIHBt2A0IKkM"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/native_view.py"
+line = 182
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ3JSIHBt2A0IKj7"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/pool_runs.py"
+line = 80
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ3JSIHBt2A0IKj8"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/pool_runs.py"
+line = 162
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yGvGiVmDmX-dPNn"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/scaffold.py"
+line = 196
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yGvGiVmDmX-dPNo"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/scaffold.py"
+line = 197
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN2"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 1882
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN3"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 1902
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN4"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 1914
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN6"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2198
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN7"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2214
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN8"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2376
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN9"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2514
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN-"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2549
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPN_"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2653
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPOB"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2900
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPOC"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 2928
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPOD"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 3063
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPOE"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 3107
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPOF"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 3136
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yHtGiVmDmX-dPOG"
+rule = "python:S1244"
+file = "python/ns3_tool/scenario_check.py"
+line = 3273
+decision = "falsepositive"
+reason = "FP-float"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHdX_EX07pFJPuuYqN0"
+rule = "pythonsecurity:S8705"
+file = "python/ns3_tool/sweep.py"
+line = 296
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHc9yGoGiVmDmX-dPNm"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/sweep.py"
+line = 472
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4mSIHBt2A0IKj-"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/sweep_summary.py"
+line = 118
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-tools"
+key = "AaHCpQ4mSIHBt2A0IKj9"
+rule = "pythonsecurity:S8707"
+file = "python/ns3_tool/sweep_summary.py"
+line = 448
+decision = "falsepositive"
+reason = "FP-cli"
+
+# ---- swarm-routing/swarm-routing.github.io (30)
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwqdsVbiEti3VhG"
+rule = "githubactions:S8541"
+file = ".github/workflows/pages.yml"
+line = 76
+decision = "falsepositive"
+reason = "FP-hash"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwqdsVbiEti3VhH"
+rule = "githubactions:S8541"
+file = ".github/workflows/pages.yml"
+line = 94
+decision = "falsepositive"
+reason = "FP-hash"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwadsVbiEti3Vg0"
+rule = "pythonsecurity:S8707"
+file = "site/anthocnet/shell/api_index.py"
+line = 62
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwldsVbiEti3VhE"
+rule = "pythonsecurity:S8707"
+file = "site/anthocnet/site-manifest.py"
+line = 33
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwldsVbiEti3VhC"
+rule = "pythonsecurity:S8707"
+file = "site/anthocnet/site-manifest.py"
+line = 44
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwldsVbiEti3VhD"
+rule = "pythonsecurity:S8707"
+file = "site/anthocnet/site-manifest.py"
+line = 53
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwldsVbiEti3Vg_"
+rule = "pythonsecurity:S2083"
+file = "site/anthocnet/site-manifest.py"
+line = 57
+decision = "falsepositive"
+reason = "FP-walk"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwldsVbiEti3VhB"
+rule = "pythonsecurity:S8707"
+file = "site/anthocnet/site-manifest.py"
+line = 57
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwldsVbiEti3VhA"
+rule = "pythonsecurity:S2083"
+file = "site/anthocnet/site-manifest.py"
+line = 63
+decision = "falsepositive"
+reason = "FP-walk"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwldsVbiEti3VhF"
+rule = "pythonsecurity:S8707"
+file = "site/anthocnet/site-manifest.py"
+line = 63
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nZDj-dY_5OfWMmf"
+rule = "jssecurity:S2083"
+file = "site/anthocnet/test/ants.test.mjs"
+line = 38
+decision = "falsepositive"
+reason = "FP-guarded"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nZDj-dY_5OfWMmh"
+rule = "jssecurity:S6549"
+file = "site/anthocnet/test/ants.test.mjs"
+line = 38
+decision = "falsepositive"
+reason = "FP-guarded"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nZDj-dY_5OfWMmi"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/ants.test.mjs"
+line = 38
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nZDj-dY_5OfWMmj"
+rule = "jssecurity:S2083"
+file = "site/anthocnet/test/ants.test.mjs"
+line = 40
+decision = "falsepositive"
+reason = "FP-guarded"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nZDj-dY_5OfWMmg"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/ants.test.mjs"
+line = 40
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUvwdsVbiEti3VgX"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/bench.test.mjs"
+line = 40
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHTxzGGjq6bq6pSFr4G"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/experiment.test.mjs"
+line = 72
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwCdsVbiEti3Vgg"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/labs.mjs"
+line = 19
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUv1dsVbiEti3Vga"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/levels.mjs"
+line = 19
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUvzdsVbiEti3VgZ"
+rule = "jssecurity:S8703"
+file = "site/anthocnet/test/live-smoke.mjs"
+line = 36
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nX1j-dY_5OfWMmd"
+rule = "jssecurity:S2083"
+file = "site/anthocnet/test/smoke.mjs"
+line = 48
+decision = "falsepositive"
+reason = "FP-guarded"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nX1j-dY_5OfWMmc"
+rule = "jssecurity:S6549"
+file = "site/anthocnet/test/smoke.mjs"
+line = 48
+decision = "falsepositive"
+reason = "FP-guarded"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHT_nX1j-dY_5OfWMmb"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/smoke.mjs"
+line = 48
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUv6dsVbiEti3Vgc"
+rule = "jssecurity:S2083"
+file = "site/anthocnet/test/smoke.mjs"
+line = 50
+decision = "falsepositive"
+reason = "FP-guarded"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUv6dsVbiEti3Vge"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/smoke.mjs"
+line = 50
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUv6dsVbiEti3Vgd"
+rule = "jssecurity:S8707"
+file = "site/anthocnet/test/smoke.mjs"
+line = 486
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwidsVbiEti3Vg9"
+rule = "pythonsecurity:S8707"
+file = "site/anthocnet/tools/config_fields.py"
+line = 243
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwjdsVbiEti3Vg-"
+rule = "javascript:S2612"
+file = "site/anthocnet/tools/export-kit.mjs"
+line = 30
+decision = "wontfix"
+reason = "FP-chmod"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwxdsVbiEti3VhL"
+rule = "pythonsecurity:S2083"
+file = "tools/render_hub.py"
+line = 1569
+decision = "falsepositive"
+reason = "FP-repofile"
+
+[[issue]]
+project = "swarm-routing_swarm-routing.github.io"
+key = "AaHCpUwxdsVbiEti3VhK"
+rule = "pythonsecurity:S2083"
+file = "tools/render_hub.py"
+line = 1570
+decision = "falsepositive"
+reason = "FP-repofile"
+
+# ---- swarm-routing/.github (36)
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHVNSZxC8kp_Xpxz1i6"
+rule = "pythonsecurity:S8707"
+file = "tools/bestpractices/bestpractices.py"
+line = 152
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHVNSZxC8kp_Xpxz1i3"
+rule = "pythonsecurity:S8705"
+file = "tools/bestpractices/bestpractices.py"
+line = 169
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHVNSZxC8kp_Xpxz1i4"
+rule = "pythonsecurity:S8705"
+file = "tools/bestpractices/bestpractices.py"
+line = 177
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHVNSZxC8kp_Xpxz1i7"
+rule = "pythonsecurity:S8707"
+file = "tools/bestpractices/bestpractices.py"
+line = 940
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHVNSZxC8kp_Xpxz1i5"
+rule = "pythonsecurity:S8707"
+file = "tools/bestpractices/bestpractices.py"
+line = 1041
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEceDe7xtNTqKgC"
+rule = "pythonsecurity:S8707"
+file = "tools/checks/check-headers.py"
+line = 214
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEWeDe7xtNTqKf8"
+rule = "pythonsecurity:S8707"
+file = "tools/docs-review/check_docs.py"
+line = 111
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEeeDe7xtNTqKgJ"
+rule = "pythonsecurity:S8707"
+file = "tools/epics/epics.py"
+line = 168
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEeeDe7xtNTqKgG"
+rule = "pythonsecurity:S8707"
+file = "tools/epics/epics.py"
+line = 311
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEeeDe7xtNTqKgI"
+rule = "pythonsecurity:S8707"
+file = "tools/epics/epics.py"
+line = 320
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEeeDe7xtNTqKgF"
+rule = "pythonsecurity:S8705"
+file = "tools/epics/epics.py"
+line = 328
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEeeDe7xtNTqKgH"
+rule = "pythonsecurity:S8707"
+file = "tools/epics/epics.py"
+line = 548
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHQs0-mvciLoEsK3_8B"
+rule = "pythonsecurity:S8707"
+file = "tools/fidelity/bib.py"
+line = 236
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHT8tHepwGOAvZzNZt6"
+rule = "pythonsecurity:S8703"
+file = "tools/fidelity/fidelity.py"
+line = 838
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHQs1A-vciLoEsK3_8F"
+rule = "pythonsecurity:S8707"
+file = "tools/fidelity/fidelity.py"
+line = 1071
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHQs1A-vciLoEsK3_8D"
+rule = "pythonsecurity:S8707"
+file = "tools/fidelity/fidelity.py"
+line = 1081
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHQs1A-vciLoEsK3_8C"
+rule = "pythonsecurity:S8705"
+file = "tools/fidelity/fidelity.py"
+line = 1090
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHQs1A-vciLoEsK3_8E"
+rule = "pythonsecurity:S8707"
+file = "tools/fidelity/fidelity.py"
+line = 1114
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEaeDe7xtNTqKgB"
+rule = "pythonsecurity:S8707"
+file = "tools/fidelity/fidelity.py"
+line = 2609
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEaeDe7xtNTqKgA"
+rule = "pythonsecurity:S8707"
+file = "tools/fidelity/fidelity.py"
+line = 2629
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHTrJkmpEqpRtwXtU7a"
+rule = "pythonsecurity:S8707"
+file = "tools/images/retention.py"
+line = 342
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHTrJkmpEqpRtwXtU7Z"
+rule = "pythonsecurity:S8707"
+file = "tools/images/retention.py"
+line = 350
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHTgqyqnYPxfCH32Oty"
+rule = "pythonsecurity:S8707"
+file = "tools/images/rolling_tags.py"
+line = 149
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEKeDe7xtNTqKfz"
+rule = "pythonsecurity:S6350"
+file = "tools/org-bot/org_bot.py"
+line = 148
+decision = "falsepositive"
+reason = "FP-argv"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEKeDe7xtNTqKf1"
+rule = "pythonsecurity:S8705"
+file = "tools/org-bot/org_bot.py"
+line = 148
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEKeDe7xtNTqKfy"
+rule = "pythonsecurity:S6350"
+file = "tools/org-bot/org_bot.py"
+line = 166
+decision = "falsepositive"
+reason = "FP-argv"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHS6kjaPwz_j5xXC5yT"
+rule = "pythonsecurity:S2083"
+file = "tools/org-bot/org_bot.py"
+line = 233
+decision = "falsepositive"
+reason = "FP-gitpaths"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHS6kjaPwz_j5xXC5yU"
+rule = "pythonsecurity:S6549"
+file = "tools/org-bot/org_bot.py"
+line = 280
+decision = "falsepositive"
+reason = "FP-gitpaths"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHS6kjaPwz_j5xXC5yS"
+rule = "pythonsecurity:S2083"
+file = "tools/org-bot/org_bot.py"
+line = 282
+decision = "falsepositive"
+reason = "FP-gitpaths"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHNo06zfZUsx-RmKkqY"
+rule = "pythonsecurity:S6549"
+file = "tools/org-bot/org_bot.py"
+line = 297
+decision = "falsepositive"
+reason = "FP-gitpaths"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHNo06zfZUsx-RmKkqZ"
+rule = "pythonsecurity:S6549"
+file = "tools/org-bot/org_bot.py"
+line = 308
+decision = "falsepositive"
+reason = "FP-gitpaths"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEKeDe7xtNTqKf0"
+rule = "pythonsecurity:S6549"
+file = "tools/org-bot/org_bot.py"
+line = 312
+decision = "falsepositive"
+reason = "FP-gitpaths"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQESeDe7xtNTqKf4"
+rule = "pythonsecurity:S8705"
+file = "tools/protocol-review/check_invariants.py"
+line = 119
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQESeDe7xtNTqKf5"
+rule = "pythonsecurity:S8707"
+file = "tools/protocol-review/check_invariants.py"
+line = 564
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHCpQEGeDe7xtNTqKfx"
+rule = "pythonsecurity:S8705"
+file = "tools/zenodo/zenodo.py"
+line = 153
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHM7J-QOc4YV0WnKwNW"
+rule = "pythonsecurity:S8707"
+file = "tools/zenodo/zenodo.py"
+line = 1156
+decision = "falsepositive"
+reason = "FP-cli"
