@@ -1048,7 +1048,12 @@ actor), so the bump goes through a PR and the tag follows the merge
    `ORG_BOT_TOKEN`, else `GITHUB_TOKEN`), so CI runs on it. With
    `GITHUB_TOKEN` no CI starts, and the org's Actions policy
    (`can_approve_pull_request_reviews: false`, which also covers creating
-   PRs) refuses the PR, so the App (or `ORG_BOT_TOKEN`) is needed. Nothing is tagged or published. If
+   PRs) refuses the PR, so the App (or `ORG_BOT_TOKEN`) is needed. Nothing is tagged or published.
+   **The ladder gate** (#430): where the repository keeps a ladder
+   (`docs/roadmap.md`), a bump or dry-run whose version has no row there
+   fails before anything is proposed (`release_check.py ladder`, the same
+   check `ready` makes); add the version and its exit criteria in a PR
+   first. A repository with no ladder gets a warning. If
    `main` moves before the merge, `bump` runs again on the new tip: org-bot's
    `release-rebuild` task (hourly) dispatches the caller with mode `bump` and
    the `increment` the PR was opened with (the PR body's `release-increment`
