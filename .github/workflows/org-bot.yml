@@ -19,6 +19,12 @@ name: org-bot
 #   three hours on its own as well: a stale pin blocks every PR there.
 #   When the same repository also needs a template refresh, both go in that
 #   one PR, so neither waits on the other's required check (#429).
+# - release-lock (daily, and hourly with `release`): every other root
+#   `<name>.lock` (AntHocNet's ns3-tools.lock) moved to its dependency's newest
+#   release by `release_lock.py bump --write`, one PR per repository on
+#   org-bot/release-lock, updated in place; the consumer's CI judges it and the
+#   merge queue lands it only when green; a lock a hand PR changes is left
+#   alone (#478).
 # - release-rebuild (hourly, `release`): a repository whose open bot/release
 #   PR is behind its base gets its release caller dispatched with mode bump
 #   again, with the increment the PR records, so the PR is rebuilt (#430);
@@ -27,7 +33,7 @@ name: org-bot
 #   shipped) and, here, the archived-releases table (zenodo.py table), every
 #   DOI read from Zenodo, in one auto-merge PR per repository; then what
 #   release_check.py after still finds, as one comment on the site's
-#   [release-sync] issue (#465).
+#   [release-sync] issue (#465); release-lock runs in the same hourly group.
 # Daily, on every push to main that changes the templates or the generators,
 # and on demand. One PR per repository and task; the same change is never
 # proposed twice, and an older bot PR is closed as superseded. Where the
@@ -60,12 +66,13 @@ on:
       - 'tools/org-bot/**'
       - 'tools/zenodo/**'
       - 'tools/checks/check-swarm-core-pin.py'
+      - 'tools/checks/release_lock.py'
   workflow_dispatch:
     inputs:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release, release-rebuild, release-aftercare]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, release-rebuild, release-aftercare]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'

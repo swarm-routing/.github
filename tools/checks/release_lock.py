@@ -21,7 +21,14 @@ hash of an asset in the release's `SHA256SUMS` (the asset `<P>_ASSET` names, whe
 given). `latest` prints the newest published release of the lock's repository
 (the highest `vX.Y.Z` tag whose `SHA256SUMS` downloads), so a check can say a
 newer release exists. `render` writes a lock for a release, every value read
-from it (the commit from git, the hash from `SHA256SUMS`), never typed. Nothing
+from it (the commit from git, the hash from `SHA256SUMS`), never typed. `bump`
+moves an existing lock to the newest release (org-bot's `release-lock` task,
+swarm-routing/.github#478): every line but the release's own values is kept, and
+each `*_SHA256` follows its asset, found by its hash in the locked release's
+`SHA256SUMS` and named the same in the new one with the version moved
+(`routing-bench-0.2.0.tar.gz` -> `routing-bench-0.3.0.tar.gz`); an asset the new
+release no longer has under that name (renamed or dropped) is refused, for a
+person to bump with the consumer's code that names it. Nothing
 here clones a repository or reads a token. Stdlib only, one summary line per
 result (AntHocNet ADR-0014).
 
@@ -29,6 +36,7 @@ Usage:
   release_lock.py show LOCK
   release_lock.py verify LOCK [--base URL]
   release_lock.py latest LOCK [--base URL]
+  release_lock.py bump LOCK [--base URL] [--write]
   release_lock.py render --prefix P --repo OWNER/NAME --tag vX.Y.Z --asset NAME [--base URL]
   release_lock.py --self-test
 
@@ -103,13 +111,19 @@ def parse_text(text, name="lock"):
     return prefix, values
 
 
-def parse(path):
-    """A lock file below the current directory (a relative path only: the lock is
-    read from the repository it pins, never from elsewhere)."""
+def lock_path(path):
+    """The real path of a lock below the current directory (a relative path only: the
+    lock is read from, and bump writes, the repository it pins, never elsewhere)."""
     here = os.path.realpath(os.getcwd())
     full = os.path.realpath(os.path.join(here, path))
     if os.path.isabs(path) or not full.startswith(here + os.sep):
         raise LockError(f"{path}: give the lock as a path below the current directory")
+    return full
+
+
+def parse(path):
+    """A lock file below the current directory (lock_path)."""
+    full = lock_path(path)
     with open(full, encoding="utf-8") as f:
         return parse_text(f.read(), os.path.basename(full))
 
@@ -251,6 +265,68 @@ def render(prefix, repo, tag, asset_template, base=GITHUB, header=""):
         f"{prefix}_SHA256={sums[asset]}",
     ]
     return header + "\n".join(lines) + "\n"
+
+
+def bump(text, base=GITHUB, name="lock"):
+    """(new text, old tag, new tag, new commit) moving the lock `text` to the newest
+    release, or (None, old tag, old tag, old commit) when it is current. Comments, key
+    order and every other line stay; LockError when an asset cannot be followed."""
+    prefix, values = parse_text(text, name)
+    repo, tag = values[f"{prefix}_REPO"], values[f"{prefix}_TAG"]
+    newest, commit = latest(base, repo)
+    if newest is None:
+        raise LockError(f"{name}: {repo} has no published release")
+    if version_key(newest) <= version_key(tag):
+        return None, tag, tag, values[f"{prefix}_COMMIT"]
+    old_ver, new_ver = tag[1:], newest[1:]
+    old_sums, new_sums = sha256sums(base, repo, tag), sha256sums(base, repo, newest)
+    if old_sums is None:
+        raise LockError(f"{name}: {repo} release {tag} has no SHA256SUMS asset")
+    by_hash = {}
+    for a, h in old_sums.items():
+        by_hash.setdefault(h, []).append(a)
+    new = {
+        f"{prefix}_TAG": newest,
+        f"{prefix}_COMMIT": commit,
+        f"{prefix}_VERSION": new_ver,
+    }
+    asset_key = f"{prefix}_ASSET"
+    for k in sha_keys(prefix, values):
+        old = values[asset_key] if k == f"{prefix}_SHA256" and asset_key in values else None
+        if old is None:
+            named = by_hash.get(values[k], [])
+            if not named:
+                raise LockError(f"{name}: {k} is no asset's sha256 in {tag}'s SHA256SUMS")
+            if len(named) > 1:  # identical contents: which one the consumer fetches is unknown
+                raise LockError(
+                    f"{name}: {k} is the sha256 of {', '.join(sorted(named))} in {tag}: "
+                    "ambiguous; bump this lock by hand"
+                )
+            old = named[0]
+        if old_ver not in old:
+            raise LockError(f"{name}: {k}'s asset {old} does not carry the version {old_ver}")
+        moved = old.replace(old_ver, new_ver)
+        if moved not in new_sums:
+            raise LockError(
+                f"{name}: {repo} {newest} has no {moved} ({k}, {old} in {tag}): the asset "
+                "was renamed or dropped; bump this lock by hand, with the code that names it"
+            )
+        new[k] = new_sums[moved]
+        if k == f"{prefix}_SHA256" and asset_key in values:
+            new[asset_key] = moved
+    lines = []
+    for raw in text.splitlines(keepends=True):
+        key = raw.split("=", 1)[0].strip()
+        if "=" in raw and not raw.lstrip().startswith("#") and key in new:
+            eol = "\n" if raw.endswith("\n") else ""
+            raw = f"{raw[: len(raw) - len(raw.lstrip())]}{key}={new[key]}{eol}"
+        lines.append(raw)
+    out = "".join(lines)
+    p2, v2 = parse_text(out, name)
+    problems = verify(p2, v2, base)
+    if problems:
+        raise LockError(f"{name}: the bumped lock does not verify: {'; '.join(problems)}")
+    return out, tag, newest, commit
 
 
 # --- self-test: a file:// tree with a git repository and release assets ------------
@@ -409,6 +485,50 @@ def self_test():
             ),
         )
 
+        # bump (#478): the ns3-tools.lock shape follows each asset to the new release
+        multi = (
+            f"# header\nNT_REPO={repo}\nNT_TAG=v0.1.0\nNT_COMMIT={c1}\nNT_VERSION=0.1.0\n"
+            f"TAR_SHA256={s1['lib-0.1.0.tar.gz']}\n"
+        )
+        out, old, newest, ncommit = bump(multi, base)
+        check(
+            "bump: comments kept, every release value and hash read from the new release",
+            out.startswith("# header\nNT_REPO=")
+            and (old, newest, ncommit) == ("v0.1.0", "v0.2.0", c2)
+            and f"TAR_SHA256={s2['lib-0.2.0.tar.gz']}\n" in out
+            and "NT_VERSION=0.2.0\n" in out
+            and verify(*parse_text(out), base) == [],
+        )
+        out2, *_ = bump(text, base)  # the swarm-core.lock shape: <P>_ASSET moves too
+        check(
+            "bump: <P>_ASSET and <P>_SHA256 move together",
+            "LIB_ASSET=lib-0.2.0.tar.gz\n" in out2
+            and f"LIB_SHA256={s2['lib-0.2.0.tar.gz']}\n" in out2,
+        )
+        check("bump: a current lock is left", bump(out, base)[0] is None)
+        twins = "dup/lib"
+        more = fixture_repo(t, twins, env)
+        make_release(
+            t, twins, "v1.0.0", {"a-1.0.0.tar.gz": b"same", "b-1.0.0.tar.gz": b"same"}, env
+        )
+        more("two")
+        make_release(t, twins, "v1.1.0", {"a-1.1.0.tar.gz": b"x", "b-1.1.0.tar.gz": b"y"}, env)
+        twin = render("D", twins, "v1.0.0", "a-{version}.tar.gz", base).replace("D_ASSET=", "#")
+        try:
+            bump(twin, base)
+            got = ""
+        except LockError as e:
+            got = str(e)
+        check("bump: a hash two assets share is refused, not guessed (#481)", "ambiguous" in got)
+        commit("four")
+        make_release(t, repo, "v0.4.0", {"lib-renamed-0.4.0.tar.gz": b"four"}, env)
+        try:
+            bump(out, base)
+            got = ""
+        except LockError as e:
+            got = str(e)
+        check("bump: a renamed asset is refused, for a person", "renamed or dropped" in got)
+
     for f in failures:
         print(f"FAIL: {f}")
     print(f"release_lock.py self-test: {'ok' if not failures else f'{len(failures)} failed'}")
@@ -419,10 +539,12 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true")
     sub = p.add_subparsers(dest="cmd")
-    for name in ("show", "verify", "latest"):
+    for name in ("show", "verify", "latest", "bump"):
         s = sub.add_parser(name)
         s.add_argument("lock")
         s.add_argument("--base", default=GITHUB)
+        if name == "bump":
+            s.add_argument("--write", action="store_true", help="write the lock in place")
     r = sub.add_parser("render")
     for opt in ("--prefix", "--repo", "--tag", "--asset"):
         r.add_argument(opt, required=True)
@@ -434,9 +556,25 @@ def main(argv=None):
         if a.cmd == "render":
             sys.stdout.write(render(a.prefix, a.repo, a.tag, a.asset, a.base))
             return 0
-        if a.cmd not in ("show", "verify", "latest"):
+        if a.cmd not in ("show", "verify", "latest", "bump"):
             p.error("a command, or --self-test")
         prefix, values = parse(a.lock)
+        if a.cmd == "bump":
+            full = lock_path(a.lock)
+            with open(full, encoding="utf-8") as f:
+                out, old, newest, commit = bump(f.read(), a.base, os.path.basename(full))
+            if out is None:
+                print(f"{a.lock}: {values[f'{prefix}_REPO']} {old}: current")
+                return 0
+            if a.write:
+                with open(full, "w", encoding="utf-8") as f:
+                    f.write(out)
+            print(
+                f"{a.lock}: {values[f'{prefix}_REPO']} {old} -> {newest} ({commit[:7]})"
+                + ("" if a.write else " (not written: --write)")
+            )
+            print(f"lock-target: {a.lock}@{newest}")
+            return 0
         repo, tag = values[f"{prefix}_REPO"], values[f"{prefix}_TAG"]
         if a.cmd == "show":
             print(f"{a.lock}: {repo} {tag} ({values[f'{prefix}_COMMIT']})")
