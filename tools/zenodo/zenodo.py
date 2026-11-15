@@ -14,6 +14,7 @@ Usage:
   zenodo.py record --repo OWNER/NAME --checkout DIR [--concept ID] [--write]
   zenodo.py bibtex REPO [--key K] [--role R]    a release's concept record as a BibTeX @software
   zenodo.py table FILE [--org ORG] [--repos A,B] [--check | --write]   CONTRIBUTING's archived-releases table
+  zenodo.py shipped --repo OWNER/NAME --checkout DIR [--check | --write]   the roadmap's shipped releases, DOI rows
   zenodo.py fake-zenodo --port-file F           the self-test's fake Zenodo, for release-selftest.yml
   zenodo.py --self-test
 
@@ -119,6 +120,24 @@ AntHocNet's v2.6.1 was):
   --check exits 1 and names the rows that differ (the nightly zenodo.yml, and
   org-bot's `release-aftercare` writes it). A DOI is never typed: a concept
   Zenodo does not confirm fails the command. Reads only; no token.
+- `shipped` writes what a release leaves to be recorded in a repository's
+  checkout (swarm-routing/.github#430, #465), every DOI read from Zenodo:
+  - `docs/roadmap.md`: the block between `releases:shipped:begin` and
+    `releases:shipped:end`, one line per published release, newest first:
+    the tag, the date, the release link and the Zenodo version DOI. A
+    release Zenodo has not archived yet is left out until it is (the line
+    appears with its DOI or not at all); one older than the concept's first
+    version (it predates the record) is listed without a DOI. A ladder with
+    no markers gets a `## Shipped releases` section with the block at its
+    end, once; the rest of the file is never touched.
+  - `CONTRIBUTING.md`, where it keeps a version-DOI table (rows
+    `| vX.Y.Z | `10.5281/zenodo.N` | [record N](https://zenodo.org/records/N) ...`,
+    AntHocNet's): a row for each archived version newer than its last row,
+    appended after it; existing rows and their notes are left alone.
+  The concept is the checkout's (CITATION.cff, else `zenodo_concept`); a
+  repository with none is left alone. Without a flag it prints what it would
+  write; --write writes it; --check exits 1 when anything would change.
+  org-bot's `release-aftercare` task runs it with --write. Reads only; no token.
 
 Every Zenodo call is retried with exponential backoff (5 s, doubling, 5
 tries; Retry-After honoured, as seconds or a date, up to 300 s): a 429
@@ -1176,6 +1195,120 @@ def cmd_table(args, gh, zen):
     return 0
 
 
+SHIPPED_BEGIN = "<!-- releases:shipped:begin (zenodo.py shipped --write; never edit by hand) -->"
+SHIPPED_END = "<!-- releases:shipped:end -->"
+SHIPPED_BLOCK = re.compile(
+    r"<!-- releases:shipped:begin[^>]*-->\n.*?<!-- releases:shipped:end -->", re.S
+)
+DOI_ROW = re.compile(
+    r"^\| v(\d+\.\d+\.\d+) \| `10\.5281/zenodo\.(\d+)` \| \[record \2\]\(https://zenodo\.org/records/\2\)",
+    re.M,
+)
+
+
+def semver(v):
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", v or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def shipped_block(repo, releases, versions):
+    """The roadmap's shipped block: each release, newest first, with its version DOI."""
+    archived = {norm(v["version"]): v["doi"] for v in versions if v.get("doi")}
+    known = [semver(v) for v in archived if semver(v)]
+    first = min(known) if known else None
+    lines = []
+    for r in sorted(releases, key=lambda r: r["published"], reverse=True):
+        tag, day = r["tag"], r["published"][:10]
+        link = f"[release](https://github.com/{repo}/releases/tag/{tag})"
+        doi = archived.get(norm(tag))
+        if doi:
+            lines.append(f"- **{tag}** shipped {day} ({link}, Zenodo version DOI {doi_link(doi)})")
+        elif first and semver(tag) and semver(tag) < first:
+            lines.append(f"- **{tag}** shipped {day} ({link}; before the Zenodo record)")
+        # else: not archived yet, so it waits for its DOI (never typed, never guessed)
+    return "\n".join([SHIPPED_BEGIN, *lines, SHIPPED_END])
+
+
+def with_shipped(text, block):
+    if SHIPPED_BLOCK.search(text):
+        return SHIPPED_BLOCK.sub(lambda _: block, text, count=1)
+    return (
+        text.rstrip("\n")
+        + "\n\n## Shipped releases\n\nEvery published release with its Zenodo version DOI, "
+        "read from Zenodo by swarm-routing/.github `tools/zenodo/zenodo.py shipped` "
+        "(org-bot's `release-aftercare` task); never edit the block by hand.\n\n" + block + "\n"
+    )
+
+
+def with_doi_rows(text, versions):
+    """CONTRIBUTING's version-DOI table with a row for each newer archived version."""
+    rows = list(DOI_ROW.finditer(text))
+    if not rows:
+        return text, []
+    last = max(rows, key=lambda m: semver(m.group(1)))
+    top = semver(last.group(1))
+    new = sorted(
+        (
+            (semver(v["version"]), v)
+            for v in versions
+            if semver(v["version"])
+            and semver(v["version"]) > top
+            and DOI_RE.search(v.get("doi", ""))
+        ),
+        key=lambda x: x[0],
+    )
+    if not new:
+        return text, []
+    add = []
+    for ver, v in new:
+        n = DOI_RE.search(v["doi"]).group(1)
+        add.append(
+            f"| v{'.'.join(map(str, ver))} | `10.5281/zenodo.{n}` | "
+            f"[record {n}](https://zenodo.org/records/{n}) |"
+        )
+    end = text.index("\n", last.end()) if "\n" in text[last.end() :] else len(text)
+    return text[:end] + "\n" + "\n".join(add) + text[end:], add
+
+
+def cmd_shipped(args, gh, zen):
+    """Write (or check) a checkout's roadmap shipped block and DOI rows; the exit code."""
+    repo, root = args.repo, args.checkout
+    concept, _ = recorded_concept(gh, repo)
+    if not concept:
+        print(f"{repo}: no Zenodo concept recorded; nothing to write")
+        return 0
+    versions, _ = zen.versions(concept)
+    releases = gh.releases(repo)
+    changed = []
+    for rel, make in (
+        (
+            "docs/roadmap.md",
+            lambda t: (with_shipped(t, shipped_block(repo, releases, versions)), None),
+        ),
+        ("CONTRIBUTING.md", lambda t: with_doi_rows(t, versions)),
+    ):
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        new, rows = make(text)
+        if new == text:
+            print(f"{repo} {rel}: matches Zenodo")
+            continue
+        what = (
+            f"{len(rows)} version DOI row(s): " + ", ".join(r.split(" |")[0][2:] for r in rows)
+            if rows
+            else "the shipped releases block"
+        )
+        changed.append(rel)
+        print(f"{repo} {rel}: {'writes' if args.write else 'would write'} {what}")
+        if args.write:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(new)
+    return 1 if args.check and changed else 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true")
@@ -1253,6 +1386,13 @@ def main(argv=None):
     tm.add_argument("--check", action="store_true", help="exit 1 when the block differs")
     tm.add_argument("--write", action="store_true", help="rewrite the block")
     t.add_argument("--api", help=argparse.SUPPRESS)
+    sp = sub.add_parser("shipped")
+    sp.add_argument("--repo", required=True)
+    sp.add_argument("--checkout", required=True, help="the repository's checkout")
+    spm = sp.add_mutually_exclusive_group()
+    spm.add_argument("--check", action="store_true", help="exit 1 when anything would change")
+    spm.add_argument("--write", action="store_true", help="write docs/roadmap.md, CONTRIBUTING.md")
+    sp.add_argument("--api", help=argparse.SUPPRESS)
     f = sub.add_parser("fake-zenodo")
     f.add_argument("--port-file", required=True)
     args = p.parse_args(argv)
@@ -1273,6 +1413,8 @@ def main(argv=None):
         if args.json:
             print(json.dumps(found))
         return 0
+    if args.cmd == "shipped":  # public records only: never sends the token
+        return cmd_shipped(args, gh, Zenodo(args.api or ZENODO[False], log=sys.stderr))
     if args.cmd == "table":  # public records only: never sends the token
         return cmd_table(args, gh, Zenodo(args.api or ZENODO[False], log=sys.stderr))
     if args.cmd == "bibtex":  # public records only: never sends the token
@@ -2449,6 +2591,79 @@ def self_test():
     st.search = []
     rc, err, out = table(FakeGitHub(rel, 'doi: "10.5281/zenodo.101"\n'))
     check("table: a version, not a concept, refused", rc is None and "not a concept" in err)
+
+    # shipped: the roadmap's shipped block and CONTRIBUTING's DOI rows (#430, #465)
+    def shipped(gh, root, **kw):
+        ns = argparse.Namespace(repo="org/R", checkout=root, check=False, write=False)
+        for k, v in kw.items():
+            setattr(ns, k, v)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            return cmd_shipped(ns, gh, Zenodo(base, backoff=0)), out.getvalue()
+
+    sroot = os.path.join(tmp, "shipped")
+    os.makedirs(os.path.join(sroot, "docs"))
+    ladder = "# Roadmap\n\n| v1.2.0 | planned |\n"
+    contrib = (
+        "| Target | DOI | Resolves to |\n|---|---|---|\n"
+        "| v1.0.0 | `10.5281/zenodo.1` | [record 1](https://zenodo.org/records/1) — the first |\n\nAfter.\n"
+    )
+    for name, text in (("docs/roadmap.md", ladder), ("CONTRIBUTING.md", contrib)):
+        with open(os.path.join(sroot, name), "w") as fh:
+            fh.write(text)
+    st.reset(versions=("v1.0.0", "v1.1.0"))
+    for v in st.versions:
+        v["doi"] = "10.5281/zenodo." + v["id"]
+    rc, out = shipped(FakeGitHub(rel), sroot, check=True)
+    check(
+        "shipped: --check reports both files, writes nothing",
+        rc == 1
+        and "docs/roadmap.md: would write" in out
+        and "CONTRIBUTING.md: would write 1 version DOI row(s): v1.1.0" in out
+        and open(os.path.join(sroot, "docs/roadmap.md")).read() == ladder,
+    )
+    rc, out = shipped(FakeGitHub(rel), sroot, write=True)
+    road = open(os.path.join(sroot, "docs/roadmap.md")).read()
+    con = open(os.path.join(sroot, "CONTRIBUTING.md")).read()
+    check(
+        "shipped: the block appended once, archived releases with their DOI, the unarchived left out",
+        rc == 0
+        and road.startswith(ladder.rstrip("\n") + "\n\n## Shipped releases\n")
+        and "- **v1.1.0** shipped 2026-10-10 ([release](https://github.com/org/R/releases/tag/v1.1.0), "
+        "Zenodo version DOI [10.5281/zenodo.102](https://doi.org/10.5281/zenodo.102))"
+        in road
+        and "v1.2.0** shipped" not in road
+        and road.index("v1.1.0** shipped") < road.index("v1.0.0** shipped"),
+    )
+    check(
+        "shipped: a DOI row appended after the last, the old row's note kept",
+        con
+        == contrib.replace(
+            "the first |\n",
+            "the first |\n| v1.1.0 | `10.5281/zenodo.102` | [record 102](https://zenodo.org/records/102) |\n",
+        ),
+    )
+    rc, out = shipped(FakeGitHub(rel), sroot, check=True)
+    check("shipped: --check after --write is clean", rc == 0 and out.count("matches Zenodo") == 2)
+    st.versions.append(
+        {"id": "103", "metadata": {"version": "v1.2.0"}, "doi": "10.5281/zenodo.103"}
+    )
+    rc, out = shipped(FakeGitHub(rel), sroot, write=True)
+    road2 = open(os.path.join(sroot, "docs/roadmap.md")).read()
+    check(
+        "shipped: once Zenodo has the DOI, the release joins the block in place",
+        rc == 0
+        and road2.count("## Shipped releases") == 1
+        and road2.index("v1.2.0** shipped") < road2.index("v1.1.0** shipped")
+        and "zenodo.103" in open(os.path.join(sroot, "CONTRIBUTING.md")).read(),
+    )
+    check(
+        "shipped: a release before the record is listed without a DOI",
+        "v1.0.0** shipped 2026-10-01 ([release](https://github.com/org/R/releases/tag/v1.0.0); before the Zenodo record)"
+        in shipped_block("org/R", rel, [{"version": "v1.1.0", "doi": "10.5281/zenodo.101"}]),
+    )
+    rc, out = shipped(FakeGitHub(rel, "title: x\n"), sroot, write=True)
+    check("shipped: no concept, nothing written", rc == 0 and "no Zenodo concept" in out)
     # a local checkout's files
     with open(os.path.join(tmp, "CITATION.cff"), "w") as fh:
         fh.write(NEW)

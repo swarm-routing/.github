@@ -19,6 +19,15 @@ name: org-bot
 #   three hours on its own as well: a stale pin blocks every PR there.
 #   When the same repository also needs a template refresh, both go in that
 #   one PR, so neither waits on the other's required check (#429).
+# - release-rebuild (hourly, `release`): a repository whose open bot/release
+#   PR is behind its base gets its release caller dispatched with mode bump
+#   again, with the increment the PR records, so the PR is rebuilt (#430);
+# - release-aftercare (hourly, `release`): for a release younger than 14 days,
+#   the roadmap's shipped block and CONTRIBUTING's DOI rows (zenodo.py
+#   shipped) and, here, the archived-releases table (zenodo.py table), every
+#   DOI read from Zenodo, in one auto-merge PR per repository; then what
+#   release_check.py after still finds, as one comment on the site's
+#   [release-sync] issue (#465).
 # Daily, on every push to main that changes the templates or the generators,
 # and on demand. One PR per repository and task; the same change is never
 # proposed twice, and an older bot PR is closed as superseded. Where the
@@ -40,6 +49,7 @@ on:
   schedule:
     - cron: '17 4 * * *'
     - cron: '41 */3 * * *'  # swarm-core-pin alone (#208)
+    - cron: '23 * * * *'    # release-rebuild and release-aftercare (#430, #465)
   push:
     branches: [main]
     paths:
@@ -54,7 +64,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release, release-rebuild, release-aftercare]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -78,7 +88,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      TASK: ${{ inputs.task || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || 'all' }}
+      TASK: ${{ inputs.task || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'release') || 'all' }}
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:

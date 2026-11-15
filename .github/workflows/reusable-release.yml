@@ -19,7 +19,12 @@ name: Reusable release
 #    the PR `chore(release): bump version A to B`. It pushes with the org
 #    GitHub App's token (.github/actions/bot-token: BOT_APP_ID /
 #    BOT_APP_PRIVATE_KEY, else ORG_BOT_TOKEN, else GITHUB_TOKEN), so CI runs
-#    on the PR. Nothing is built, tagged or published.
+#    on the PR. Its body ends with `<!-- release-increment: X -->` (the
+#    `increment` it was bumped with, `auto` when empty): when the default
+#    branch moves while it is open, org-bot's `release-rebuild` task
+#    dispatches the caller with mode `bump` and that increment again, which
+#    rebuilds `bot/release` on the new tip (#430). Nothing is built, tagged
+#    or published.
 # 2. Merging that PR is the release (mode `release`, a push to the default
 #    branch). The `route` job releases only a commit that is the merge of a
 #    PR whose head is `<owner>/<repo>:bot/release` (GET
@@ -1146,6 +1151,7 @@ jobs:
       VER: ${{ needs.build.outputs.version }}
       OLD: ${{ needs.build.outputs.old-version }}
       BASE: ${{ needs.route.outputs.base }}
+      INCREMENT: ${{ inputs.increment }}
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -1202,9 +1208,11 @@ jobs:
             echo
             echo "**Merging this PR releases v${VER}.** The release workflow runs on the merge: it builds, attests and verifies the merged commit, tags it v${VER} and publishes the GitHub release (swarm-routing/.github \`reusable-release.yml\`)."
             echo
-            echo "If \`${BASE}\` moves before the merge, dispatch the release workflow with mode \`bump\` again: it rebuilds this branch on the new tip."
+            echo "If \`${BASE}\` moves before the merge, org-bot's \`release-rebuild\` task dispatches the release workflow with mode \`bump\` again within the hour, with the same \`increment\`, and that rebuilds this branch on the new tip (swarm-routing/.github#430); a dispatch by hand does the same."
             echo
             echo "Opened by run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+            # read by org-bot's release-rebuild, so a rebuild keeps the size asked for
+            echo "<!-- release-increment: ${INCREMENT:-auto} -->"
           } > "$body"
           export GH_TOKEN="$token"
           n="$(gh pr list --repo "$GITHUB_REPOSITORY" --head bot/release --base "$BASE" --state open --json number --jq '.[0].number // empty')"
