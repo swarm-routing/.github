@@ -51,7 +51,7 @@ is the long form.
    commit the tag names (this rule pins the boundary by commit; a cell's build
    mode takes a commit), the lock
    verifies against the release, and the check goes red only when a newer
-   release is out, never between releases. Contributions are accepted under the licence of the directory they
+   release is out, never between releases (§ Dependencies). Contributions are accepted under the licence of the directory they
    land in (inbound = outbound, below). Write clean implementations against public ns-3 interfaces rather
    than copying from ns-3's `src/aodv`, `src/olsr` & co.; third-party code keeps
    its own licence and lands only with its provenance recorded.
@@ -295,6 +295,92 @@ defaults in `templates/agents/agent-defaults.md`).
   commits (#212) is ignored.
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
+
+## Dependencies
+
+How one org repository builds on another's code (swarm-routing/ns3-swarm-core#134,
+maintainer decision 2026-11-14). Every protocol's `core/` builds on swarm-core's
+`core/`, and its ns-3 module on swarm-core and ns3-tools' `routing-bench`.
+
+### A release lock, not a commit pin
+
+A consumer names a **release** of its dependency, never a moving ref:
+
+- **The lock.** `swarm-core.lock` at the repository root names one swarm-core
+  release: `SWARM_CORE_REPO`, `SWARM_CORE_TAG`, `SWARM_CORE_COMMIT` (the commit
+  the tag names), `SWARM_CORE_VERSION`, `SWARM_CORE_ASSET` and
+  `SWARM_CORE_SHA256` (the asset's line in the release's `SHA256SUMS`). Every
+  value is read from the release by `tools/checks/release_lock.py render`,
+  never typed. `core/CMakeLists.txt` reads the lock and fetches the asset with
+  CMake `FetchContent` `URL` + `URL_HASH`, `SOURCE_SUBDIR core`,
+  `DOWNLOAD_EXTRACT_TIMESTAMP FALSE` (CMake 3.24+), so a wrong or replaced
+  tarball fails the configure step. `make dist` ships the lock with the
+  release asset.
+- **Where the release is named.** The `Makefile` (`SWARM_CORE_REF`, the include
+  check's fetch) and the ns-3 CI's `dependencies:` name the lock's tag
+  (`reusable-ns3-ci.yml` clones with `git clone --branch`, which takes a tag,
+  not a commit). `core-deps` (rule 1 pins the licence boundary by commit) and a
+  benchmark cell's `dependencies:` (`reusable-benchmark-cell.yml`'s build mode
+  checks out a commit, #409) name the commit the tag names. ns3-tools'
+  `routing-bench` is named by an ns3-tools release tag in `dependencies:`.
+- **The canary.** `canary-dependencies:` of `reusable-ns3-ci.yml` names the same
+  dependencies at `@main`: one non-blocking leg on push, schedule and dispatch,
+  never on a pull request (#411). A red canary on `main` means the next release
+  of a dependency needs work here; it never blocks a merge.
+- **Development against an unreleased dependency.** `-DSWARM_CORE_DIR=<checkout>/core`
+  builds `core/` on a local checkout instead of the lock; nothing committed
+  names it.
+- **The commit pin it replaces.** Before the lock, `core/CMakeLists.txt` set
+  `SWARM_CORE_REF` to a swarm-core commit fetched with `GIT_REPOSITORY` +
+  `GIT_TAG`, and the `swarm-core / pin` check went red whenever swarm-core
+  `main` changed `core/`, blocking every protocol PR until a bump (rule 1,
+  #208). A repository without `swarm-core.lock` is still checked that way.
+  ARA, BeeAdHoc, Termite and HOPNET consume releases since swarm-core v0.3.0;
+  AntHocNet pins no swarm-core yet.
+
+### Checks
+
+- **`swarm-core / pin`** (`reusable-swarm-core-pin.yml`,
+  `tools/checks/check-swarm-core-pin.py`): with a lock, it verifies the lock
+  against the release (tag, commit, asset and SHA256), checks that every place
+  above names the tag or, where stated, its commit, and fails when a newer
+  swarm-core release is out; between releases nothing moves.
+- **The moving-ref check** (`tools/protocol-review/check_invariants.py`, the
+  `protocol-review` skill): on the lines a diff adds, a CMake `GIT_TAG` that is
+  not a literal `vX.Y.Z`, a git `FetchContent` of a swarm-routing repository
+  (instead of the lock's `URL` + `URL_HASH`), or a workflow `dependencies:` ref
+  that is neither a release tag nor a 40-hex commit (#414). It warns by
+  default; `[review] moving_refs = "fail"` in `.github/org-sync.toml` makes it
+  fail, set in the PR that switches a repository to its lock. A moving ref
+  belongs in `canary-dependencies:`.
+- The org-managed AGENTS.md section `dependencies` (`templates/agents/dependencies-lock.md`,
+  `dependencies-pin.md`) states which of the two a repository uses; org-sync
+  picks the text by the presence of `swarm-core.lock`.
+
+### Bumping
+
+Never by hand. When a newer swarm-core release is out, `swarm-core / pin` goes
+red and org-bot's `swarm-core-pin` task runs `check-swarm-core-pin.py --bump`:
+it writes the lock from the new release and moves the old tag to the new tag
+and the old commit to the new commit on the pin lines only, then opens one PR
+on `org-bot/swarm-core-pin` (#208, #407). To check or reproduce it locally,
+with this repository checked out next to the consumer:
+
+```bash
+python3 -I ../.github/tools/checks/release_lock.py verify swarm-core.lock
+python3 -I ../.github/tools/checks/check-swarm-core-pin.py          # the check as CI runs it
+python3 -I ../.github/tools/checks/check-swarm-core-pin.py --bump   # what org-bot would write
+python3 -I ../.github/tools/checks/release_lock.py render --prefix SWARM_CORE \
+    --repo swarm-routing/ns3-swarm-core --tag vX.Y.Z --asset 'swarm-core-{version}.tar.gz'
+```
+
+A switch from the commit pin to the lock is one PR per repository: write the
+lock with `render`, replace the git `FetchContent` with the lock reader, move
+the Makefile, `core-deps`, the ns-3 and benchmark dependencies as above, add
+`canary-dependencies:`, set `moving_refs = "fail"`, add the lock to `make dist`,
+and update AGENTS.md (swarm-routing/ARA#159 is a worked example). Later steps:
+`find_package(swarm-core CONFIG)` from an installed release, then a vcpkg
+registry (swarm-routing/ns3-swarm-core#135).
 
 ## Outside contributions
 
