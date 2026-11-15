@@ -928,7 +928,12 @@ def badges_by_kind(cfg, repo_dir):
             if os.path.exists(os.path.join(repo_dir, ".github/workflows", wf)):
                 url = f"https://github.com/{repo}/actions/workflows/{wf}"
                 out[b] = f"[![CI]({url}/badge.svg)]({url})"
-        elif b == "release" and calls_workflow(repo_dir, "reusable-release.yml"):
+        elif b == "release" and (
+            # the org's reusable release, or a release.yml of the repository's own
+            # (AntHocNet's, which names reusable-release.yml only in a comment)
+            calls_workflow(repo_dir, "reusable-release.yml")
+            or os.path.exists(os.path.join(repo_dir, ".github/workflows/release.yml"))
+        ):
             out[b] = (
                 f"[![Release](https://img.shields.io/github/v/release/{repo}?sort=semver&cacheSeconds=1800)]"
                 f"(https://github.com/{repo}/releases)"
