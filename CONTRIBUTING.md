@@ -977,18 +977,30 @@ lines of the repository's own after the end marker, stay the repository's
 
 ### Archived releases
 
-Read from Zenodo; the concept DOI resolves to the newest version.
+Rendered from Zenodo by `python3 -I tools/zenodo/zenodo.py table CONTRIBUTING.md
+--write` (#428): one row per org repository with a concept, its concept DOI
+(which resolves to the newest version) and its newest version with that
+version's DOI, every DOI as Zenodo returns it; never edit the block by hand.
+The nightly `zenodo.yml` runs `table --check` and reports drift (a warning
+and its job summary), so a release that is not in the table yet shows up the
+next morning. Every older version is on the concept's Zenodo page
+(AntHocNet's CONTRIBUTING lists its own); benchmarks v0.1.0 failed on the
+rate limit and was archived from its tag by `zenodo.py create` on 2026-11-11
+(#226).
 
-| Repository | Concept DOI | Versions |
+<!-- zenodo:archived:begin (zenodo.py table --write; never edit by hand) -->
+| Repository | Concept DOI | Newest version |
 |---|---|---|
-| AntHocNet | [10.5281/zenodo.20981979](https://doi.org/10.5281/zenodo.20981979) | every release to v2.6.1 (its CONTRIBUTING lists them) |
-| ns3-swarm-core | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v0.1.0 [10.5281/zenodo.24138629](https://doi.org/10.5281/zenodo.24138629) |
-| ns3-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v0.1.0 [10.5281/zenodo.24136069](https://doi.org/10.5281/zenodo.24136069) |
-| ARA | [10.5281/zenodo.24125198](https://doi.org/10.5281/zenodo.24125198) | v0.1.0 [10.5281/zenodo.24125199](https://doi.org/10.5281/zenodo.24125199) |
+| AntHocNet | [10.5281/zenodo.20981979](https://doi.org/10.5281/zenodo.20981979) | v2.7.0 [10.5281/zenodo.24213888](https://doi.org/10.5281/zenodo.24213888) |
+| ARA | [10.5281/zenodo.24125198](https://doi.org/10.5281/zenodo.24125198) | v0.2.0 [10.5281/zenodo.24202635](https://doi.org/10.5281/zenodo.24202635) |
 | BeeAdHoc | [10.5281/zenodo.24124821](https://doi.org/10.5281/zenodo.24124821) | v0.1.0 [10.5281/zenodo.24124822](https://doi.org/10.5281/zenodo.24124822) |
-| Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
+| benchmarks | [10.5281/zenodo.24145189](https://doi.org/10.5281/zenodo.24145189) | v0.1.0 [10.5281/zenodo.24145190](https://doi.org/10.5281/zenodo.24145190) |
 | HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.1.0 [10.5281/zenodo.24125266](https://doi.org/10.5281/zenodo.24125266) |
-| benchmarks | [10.5281/zenodo.24145189](https://doi.org/10.5281/zenodo.24145189) | v0.1.0 [10.5281/zenodo.24145190](https://doi.org/10.5281/zenodo.24145190) (failed on the rate limit, archived from its tag by `zenodo.py create` on 2026-11-11, #226) |
+| ns3-containers | [10.5281/zenodo.24202109](https://doi.org/10.5281/zenodo.24202109) | v1.0.0 [10.5281/zenodo.24202110](https://doi.org/10.5281/zenodo.24202110) |
+| ns3-swarm-core | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v0.4.0 [10.5281/zenodo.24238876](https://doi.org/10.5281/zenodo.24238876) |
+| ns3-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v1.0.0 [10.5281/zenodo.24202229](https://doi.org/10.5281/zenodo.24202229) |
+| Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
+<!-- zenodo:archived:end -->
 
 ### Cutting a release
 
