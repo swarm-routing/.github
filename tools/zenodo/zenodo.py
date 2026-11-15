@@ -13,6 +13,7 @@ Usage:
             [--concept ID] [--date YYYY-MM-DD] [--publish] [--sandbox]
   zenodo.py record --repo OWNER/NAME --checkout DIR [--concept ID] [--write]
   zenodo.py bibtex REPO [--key K] [--role R]    a release's concept record as a BibTeX @software
+  zenodo.py table FILE [--org ORG] [--repos A,B] [--check | --write]   CONTRIBUTING's archived-releases table
   zenodo.py fake-zenodo --port-file F           the self-test's fake Zenodo, for release-selftest.yml
   zenodo.py --self-test
 
@@ -107,6 +108,17 @@ AntHocNet's v2.6.1 was):
   release, or with releases none of which is on Zenodo, is exit 1 with the
   reason: a DOI is never composed or guessed. Reads only; it needs no token;
   retry notes go to stderr, so stdout is the entry alone.
+- `table` renders the archived-releases table (CONTRIBUTING "Archived
+  releases", swarm-routing/.github#428) between the `zenodo:archived:begin`
+  and `zenodo:archived:end` markers of FILE: one row per org repository whose
+  concept is recorded (CITATION.cff, else `zenodo_concept`) or found on Zenodo
+  (a record linking a release tag), sorted by name, with the concept DOI and
+  the newest version and its DOI, all read from the concept record Zenodo
+  returns (the concept resolves to its newest version). Without a flag it
+  prints the table; --write rewrites the block (nothing else in FILE);
+  --check exits 1 and names the rows that differ (the nightly zenodo.yml, and
+  org-bot's `release-aftercare` writes it). A DOI is never typed: a concept
+  Zenodo does not confirm fails the command. Reads only; no token.
 
 Every Zenodo call is retried with exponential backoff (5 s, doubling, 5
 tries; Retry-After honoured, as seconds or a date, up to 300 s): a 429
@@ -1077,6 +1089,78 @@ def cmd_bibtex(args, gh, zen, now):
     return text
 
 
+TABLE_BEGIN = "<!-- zenodo:archived:begin (zenodo.py table --write; never edit by hand) -->"
+TABLE_END = "<!-- zenodo:archived:end -->"
+TABLE_BLOCK = re.compile(
+    r"<!-- zenodo:archived:begin[^>]*-->\n.*?<!-- zenodo:archived:end -->", re.S
+)
+
+
+def doi_link(doi):
+    return f"[{doi}](https://doi.org/{doi})"
+
+
+def archived_rows(gh, zen, org, names):
+    """[(name, conceptdoi, version, doi)] for each repository with a concept on Zenodo."""
+    rows = []
+    for n in names:
+        repo = n if "/" in n else f"{org}/{n}"
+        concept, why = recorded_concept(gh, repo)
+        if not concept:
+            tags = [r["tag"] for r in reversed(gh.releases(repo))]  # newest first
+            concept, why = zenodo_concept_for(zen, repo, tags) if tags else (None, "")
+        if not concept:
+            continue  # unreleased, or released without a concept: `orphans` reports that
+        rec = zen.call("GET", f"/records/{concept}")  # the concept resolves to its newest version
+        if str(rec.get("conceptrecid", "")) != str(concept):
+            raise Failure(
+                f"{repo}: Zenodo {concept} ({why}) is not a concept record "
+                f"(it belongs to concept {rec.get('conceptrecid')}); no row"
+            )
+        cdoi, doi = rec.get("conceptdoi", ""), rec.get("doi", "")
+        ver = (rec.get("metadata") or {}).get("version", "")
+        if cdoi != f"10.5281/zenodo.{concept}" or not doi or not ver:
+            raise Failure(f"{repo}: Zenodo concept {concept} lacks its DOI, a version or its DOI")
+        rows.append((repo.split("/", 1)[1], cdoi, ver if ver[:1] in "vV" else f"v{ver}", doi))
+    return sorted(rows, key=lambda r: r[0].lower())
+
+
+def render_table(rows):
+    lines = [TABLE_BEGIN, "| Repository | Concept DOI | Newest version |", "|---|---|---|"]
+    lines += [f"| {n} | {doi_link(c)} | {v} {doi_link(d)} |" for n, c, v, d in rows]
+    return "\n".join(lines + [TABLE_END])
+
+
+def cmd_table(args, gh, zen):
+    """Print, check or write FILE's archived-releases block; the exit code."""
+    names = args.repos.split(",") if args.repos else gh.org_repos(args.org)
+    block = render_table(archived_rows(gh, zen, args.org, names))
+    if not (args.check or args.write):
+        print(block)
+        return 0
+    with open(args.file, encoding="utf-8") as fh:
+        text = fh.read()
+    m = TABLE_BLOCK.search(text)
+    if not m:
+        raise Failure(f"{args.file}: no zenodo:archived:begin/end markers")
+    if m.group(0) == block:
+        print(f"{args.file}: the archived-releases table matches Zenodo")
+        return 0
+    have = set(m.group(0).splitlines()[3:-1])
+    want = set(block.splitlines()[3:-1])
+    if args.check:
+        for ln in sorted(want - have):
+            print(f"missing or stale: {ln}")
+        for ln in sorted(have - want):
+            print(f"not on Zenodo:    {ln}")
+        print(f"{args.file}: drift; `zenodo.py table {args.file} --write` renders it")
+        return 1
+    with open(args.file, "w", encoding="utf-8") as fh:
+        fh.write(text[: m.start()] + block + text[m.end() :])
+    print(f"{args.file}: wrote {len(want - have)} row(s) from Zenodo")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--self-test", action="store_true")
@@ -1144,6 +1228,16 @@ def main(argv=None):
     b.add_argument("--role", default="tool", help=f"keywords: one of {', '.join(BIB_ROLES)}")
     b.add_argument("--org", default="swarm-routing", help=argparse.SUPPRESS)
     b.add_argument("--api", help=argparse.SUPPRESS)
+    t = sub.add_parser("table")
+    t.add_argument("file", help="the Markdown file with the zenodo:archived markers")
+    t.add_argument("--org", default="swarm-routing")
+    t.add_argument(
+        "--repos", default="", help="comma-separated names (default: the org's public repos)"
+    )
+    tm = t.add_mutually_exclusive_group()
+    tm.add_argument("--check", action="store_true", help="exit 1 when the block differs")
+    tm.add_argument("--write", action="store_true", help="rewrite the block")
+    t.add_argument("--api", help=argparse.SUPPRESS)
     f = sub.add_parser("fake-zenodo")
     f.add_argument("--port-file", required=True)
     args = p.parse_args(argv)
@@ -1164,6 +1258,8 @@ def main(argv=None):
         if args.json:
             print(json.dumps(found))
         return 0
+    if args.cmd == "table":  # public records only: never sends the token
+        return cmd_table(args, gh, Zenodo(args.api or ZENODO[False], log=sys.stderr))
     if args.cmd == "bibtex":  # public records only: never sends the token
         cmd_bibtex(args, gh, Zenodo(args.api or ZENODO[False], log=sys.stderr), None)
         return 0
@@ -2253,6 +2349,75 @@ def self_test():
     st.reset()
     got, err, out = bib(FakeGitHub(rel, NEW + 'doi: "10.5281/zenodo.101"\n'))
     check("bibtex: a version, not a concept, refused", got is None and "not a concept" in err)
+
+    # table: CONTRIBUTING's archived-releases block, every DOI read from Zenodo (#428)
+    def table(gh, path="-", **kw):
+        ns = argparse.Namespace(file=path, org="org", repos="", check=False, write=False)
+        for k, v in kw.items():
+            setattr(ns, k, v)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                return cmd_table(ns, gh, Zenodo(base, backoff=0)), None, out.getvalue()
+            except Failure as e:
+                return None, str(e), out.getvalue()
+
+    st.reset()
+    row = "| R | [10.5281/zenodo.100](https://doi.org/10.5281/zenodo.100) | v1.1.0 [10.0/z.102](https://doi.org/10.0/z.102) |"
+    rc, err, out = table(FakeGitHub(rel))
+    check("table: printed, the newest version", rc == 0 and row in out and TABLE_BEGIN in out)
+    check("table: Zenodo only read", all(c[0] == "GET" for c in st.calls))
+    doc = os.path.join(tmp, "CONTRIBUTING.md")
+    stale = (
+        "# Doc\n\nBefore.\n\n" + TABLE_BEGIN + "\n| Repository | Concept DOI | Newest version |\n"
+        "|---|---|---|\n| R | [10.5281/zenodo.100](https://doi.org/10.5281/zenodo.100) | "
+        "v1.0.0 [10.0/z.101](https://doi.org/10.0/z.101) |\n" + TABLE_END + "\n\nAfter.\n"
+    )
+    with open(doc, "w") as fh:
+        fh.write(stale)
+    rc, err, out = table(FakeGitHub(rel), doc, check=True)
+    check(
+        "table: --check reports the stale row",
+        rc == 1 and f"missing or stale: {row}" in out and "not on Zenodo:    | R |" in out,
+    )
+    check("table: --check writes nothing", open(doc).read() == stale)
+    rc, err, out = table(FakeGitHub(rel), doc, write=True)
+    got = open(doc).read()
+    check(
+        "table: --write renders the block alone",
+        rc == 0
+        and got.startswith("# Doc\n\nBefore.\n\n" + TABLE_BEGIN)
+        and got.endswith(TABLE_END + "\n\nAfter.\n")
+        and row in got
+        and "v1.0.0" not in got,
+    )
+    rc, err, out = table(FakeGitHub(rel), doc, check=True)
+    check("table: --check after --write is clean", rc == 0 and "matches Zenodo" in out)
+    st.reset(versions=("v1.0.0", "v1.1.0", "v1.2.0"))
+    rc, err, out = table(FakeGitHub(rel), doc, check=True)
+    check("table: a new release is drift", rc == 1 and "v1.2.0 [10.0/z.103]" in out)
+    st.reset()
+    with open(os.path.join(tmp, "nomark.md"), "w") as fh:
+        fh.write("no block\n")
+    rc, err, out = table(FakeGitHub(rel), os.path.join(tmp, "nomark.md"), check=True)
+    check("table: no markers refused", rc is None and "no zenodo:archived" in err)
+    st.search = []
+    rc, err, out = table(FakeGitHub(rel, "title: x\n"))
+    check("table: no concept anywhere, no row", rc == 0 and "| R |" not in out)
+    st.search = [
+        {
+            "id": 102,
+            "conceptrecid": "100",
+            "metadata": {
+                "related_identifiers": [{"identifier": "https://github.com/org/R/tree/v1.2.0"}]
+            },
+        }
+    ]
+    rc, err, out = table(FakeGitHub(rel, "title: x\n"))
+    check("table: a concept found on Zenodo gets its row", rc == 0 and row in out)
+    st.search = []
+    rc, err, out = table(FakeGitHub(rel, 'doi: "10.5281/zenodo.101"\n'))
+    check("table: a version, not a concept, refused", rc is None and "not a concept" in err)
     # a local checkout's files
     with open(os.path.join(tmp, "CITATION.cff"), "w") as fh:
         fh.write(NEW)
