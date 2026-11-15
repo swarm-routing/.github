@@ -4,10 +4,11 @@
 """Open the refresh PRs that keep every org repository in step with this one.
 
 Usage:
-  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|all] [--repos A,B] [--dry-run]
+  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-rebuild|release-aftercare|release|all]
+                 [--repos A,B] [--dry-run]
   org_bot.py --self-test
 
-Four tasks, each a generator this repository already has, run on a fresh clone
+Six tasks, each a generator or check this repository already has, run on a fresh clone
 of each public repository (listed by `epics.py fetch`: the org listing, or
 ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
@@ -35,6 +36,32 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             org-bot/swarm-core-pin, and is updated in place (pushed again, its
             body rewritten) when swarm-core moves on before it merges.
             ORG_BOT_SWARM_CORE overrides swarm-core's URL.
+
+  release-aftercare  what a release leaves to record, once the bump PR merged
+            (#465, #430, #428): for each repository whose newest GitHub
+            release is younger than ORG_BOT_AFTERCARE_DAYS (default 14),
+            tools/zenodo/zenodo.py shipped --write (docs/roadmap.md's shipped
+            block, each release with its Zenodo version DOI, a release joining
+            it only once Zenodo has archived it; CONTRIBUTING.md's version-DOI
+            rows where it keeps them), and in .github `zenodo.py table
+            CONTRIBUTING.md --write` (the archived-releases table). Every DOI
+            is read from Zenodo, never typed. The PR gets auto-merge as any
+            bot PR. Then tools/release/release_check.py after runs for that
+            release, and what it still finds (WARN and FAIL lines) is posted
+            as one comment, updated in place, on the site's
+            `[release-sync] <name> <tag>` issue.
+  release-rebuild  no clone, the API only (#430): a repository whose open
+            `bot/release` PR is behind its base gets its release caller (the
+            workflow that calls reusable-release.yml) dispatched with mode
+            `bump` again, as CONTRIBUTING's rule says, with the `increment`
+            the PR was opened with (its body's `release-increment` line), so
+            the PR is rebuilt on the new tip. Only the inputs the caller's
+            `on: workflow_dispatch: inputs:` declares are sent. Never a first
+            bump: only a PR the maintainer asked for is rebuilt; never while a
+            run of that workflow is queued or running; never with a guessed
+            increment (a PR whose body records none is left to a person).
+  `release` runs both release tasks (org-bot.yml, hourly); `all` runs the
+  other four.
 
   org-sync and swarm-core-pin never leave two PRs that each fail the other's
   required check (#429: on 2026-11-14 every protocol repository held a pin
@@ -67,8 +94,9 @@ whose auto-merge GitHub refuses (the line says why; the run goes on).
 
 The token comes from ORG_BOT_TOKEN, never from the command line: the org
 GitHub App's installation token when the workflow can make one (#21), else a
-fine-grained token on the swarm-routing org with Contents, Pull requests and
-Workflows read and write (org-sync renders a workflow file). Commits are made
+fine-grained token on the swarm-routing org with Contents, Pull requests,
+Workflows (org-sync renders a workflow file), Actions (release-rebuild's
+dispatch) and Issues (release-aftercare's comment) read and write. Commits are made
 as ORG_BOT_GIT_NAME <ORG_BOT_GIT_EMAIL> when both are set (the App's
 `<slug>[bot]` identity), else as github-actions[bot]. Without a token every
 run is a dry run: it clones read-only and prints each change it would propose.
@@ -86,6 +114,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import re
 import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -93,6 +122,11 @@ EPICS = os.path.join(ROOT, "tools", "epics", "epics.py")
 ORG_SYNC = os.path.join(ROOT, "tools", "org-sync", "org_sync.py")
 ZENODO = os.path.join(ROOT, "tools", "zenodo", "zenodo.py")
 PIN = os.path.join(ROOT, "tools", "checks", "check-swarm-core-pin.py")
+RELEASE_CHECK = os.path.join(ROOT, "tools", "release", "release_check.py")
+SITE = (
+    "swarm-routing.github.io"  # the site repository, where each release's [release-sync] issue is
+)
+AFTERCARE_MARK = "<!-- org-bot:release-aftercare -->"
 # swarm-core's git URL for the swarm-core-pin task (a local path in the self-test)
 SWARM_CORE = os.environ.get(
     "ORG_BOT_SWARM_CORE", "https://github.com/swarm-routing/ns3-swarm-core.git"
@@ -107,6 +141,10 @@ FIXED_BRANCH = {"swarm-core-pin"}
 PAIRED = {"org-sync": "swarm-core-pin", "swarm-core-pin": "org-sync"}
 ORG = "swarm-routing"
 BOT = ("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
+REUSABLE_RELEASE = re.compile(
+    r"^[ \t]*(?:-[ \t]*)?uses:[ \t]*swarm-routing/\.github/\.github/workflows/reusable-release\.yml@",
+    re.M,
+)
 AUTO_MERGE = (
     "mutation($pr: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $pr}) "
     "{ clientMutationId } }"
@@ -139,6 +177,15 @@ TASKS = {
         "campaign plans are never touched (#407). This repository's core tests and ns-3 "
         "suite run on this PR; when swarm-core moves again before it merges, the bot "
         "updates this PR in place.",
+    },
+    "release-aftercare": {
+        "title": "docs: record the released versions and their zenodo dois (org-bot)",
+        "what": "A release of this repository (or, in .github, of any org repository) is "
+        "published and archived on Zenodo, and its record here is behind (#465, #430, #428). "
+        "Written by swarm-routing/.github `tools/zenodo/zenodo.py shipped --write` "
+        "(`docs/roadmap.md`'s shipped block; `CONTRIBUTING.md`'s version-DOI rows where it "
+        "keeps them) or, in .github, `zenodo.py table CONTRIBUTING.md --write`; every DOI is "
+        "the one Zenodo returned, never typed, and a release joins only once Zenodo has it.",
     },
     "zenodo": {
         "title": "docs: record the zenodo concept doi (org-bot)",
@@ -302,6 +349,19 @@ def generate(task, repo, clone, data, out):
         )
         if r.returncode:
             raise Failure(f"check-swarm-core-pin.py --bump: {r.stdout.strip() or r.stderr.strip()}")
+        out.append(r.stdout.strip())
+        return out
+    elif task == "release-aftercare":
+        if repo == ".github":
+            cmd = [sys.executable, "-I", ZENODO, "table", os.path.join(clone, "CONTRIBUTING.md")]
+        else:
+            if not os.path.exists(os.path.join(clone, "CITATION.cff")):
+                return None
+            cmd = [sys.executable, "-I", ZENODO, "shipped", "--repo", f"{ORG}/{repo}"]
+            cmd += ["--checkout", clone]
+        r = sh(cmd + ["--write"], check=False)
+        if r.returncode:
+            raise Failure(f"zenodo.py: {r.stderr.strip() or r.stdout.strip()}")
         out.append(r.stdout.strip())
         return out
     elif task == "zenodo":
@@ -500,6 +560,198 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
     return {"number": pr["number"], "branch": branch, "queue": note}
 
 
+def newest_release(gh, full):
+    """(tag, published) of the newest published, non-prerelease release, or None."""
+    rels = gh.api("GET", f"repos/{full}/releases?per_page=20") or []
+    rels = [
+        r for r in rels if not r.get("draft") and not r.get("prerelease") and r.get("published_at")
+    ]
+    if not rels:
+        return None
+    r = max(rels, key=lambda r: r["published_at"])
+    return r["tag_name"], r["published_at"]
+
+
+def recent(published, days, now=None):
+    import datetime
+
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    when = datetime.datetime.fromisoformat(published.replace("Z", "+00:00"))
+    return (now - when).total_seconds() < days * 86400
+
+
+def leftovers(gh, repo, tag, pr, dry_run, run_url):
+    """release_check.py after's WARN and FAIL lines, posted on the site's release-sync issue."""
+    r = sh(
+        [sys.executable, "-I", RELEASE_CHECK, "after", f"{ORG}/{repo}", "--tag", tag],
+        env=gh.env,
+        check=False,
+    )
+    left = [
+        ln
+        for ln in r.stdout.splitlines()
+        if ln.startswith(("WARN", "FAIL")) and "see above" not in ln
+    ]
+    if r.returncode > 1:
+        left.append(f"FAIL  release_check.py after: {(r.stderr.strip() or 'crashed')[:300]}")
+    mine = ""
+    if pr and pr.get("number"):
+        mine = f"\nThe record (roadmap shipped, DOI rows): {ORG}/{repo}#{pr['number']}, auto-merge where the repository has a merge queue.\n"
+    body = "\n".join(
+        [
+            AFTERCARE_MARK,
+            f"### Release aftercare: {repo} {tag}",
+            "",
+            f"`tools/release/release_check.py after {ORG}/{repo} --tag {tag}`, run by org-bot's "
+            f"`release-aftercare` task ({run_url or 'a local run'}); updated in place each hour "
+            "while the release is recent.",
+            "",
+            *([f"- `{ln}`" for ln in left] or ["Nothing left: every check passed."]),
+            mine,
+        ]
+    )
+    want = f"[release-sync] {repo} {tag}"
+    hit = []
+    for page in range(1, 11):  # newest first; PRs share the listing, so page on
+        issues = (
+            gh.api(
+                "GET",
+                f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc"
+                f"&per_page=100&page={page}",
+            )
+            or []
+        )
+        hit = [
+            i for i in issues if (i.get("title") or "").strip() == want and "pull_request" not in i
+        ]
+        if hit or len(issues) < 100:
+            break
+    if not hit:
+        print(f"{repo} release-aftercare: {len(left)} left; no '{want}' issue yet")
+        return {"left": left, "issue": None}
+    n = hit[0]["number"]
+    comments = gh.api("GET", f"repos/{ORG}/{SITE}/issues/{n}/comments?per_page=100") or []
+    old = [c for c in comments if AFTERCARE_MARK in (c.get("body") or "")]
+    if old and old[0]["body"].strip() == body.strip():
+        print(f"{repo} release-aftercare: {len(left)} left, {SITE}#{n} already says so")
+    elif dry_run:
+        print(
+            f"{repo} release-aftercare: {len(left)} left; would {'update' if old else 'post'} on {SITE}#{n}"
+        )
+    elif old:
+        gh.api("PATCH", f"repos/{ORG}/{SITE}/issues/comments/{old[0]['id']}", {"body": body})
+        print(f"{repo} release-aftercare: {len(left)} left; updated the comment on {SITE}#{n}")
+    else:
+        gh.api("POST", f"repos/{ORG}/{SITE}/issues/{n}/comments", {"body": body})
+        print(f"{repo} release-aftercare: {len(left)} left; posted on {SITE}#{n}")
+    return {"left": left, "issue": n}
+
+
+def dispatch_inputs(text):
+    """The input names under `on: workflow_dispatch: inputs:`, read by indentation."""
+    lines, names = text.splitlines(), []
+
+    def ind(ln):
+        return len(ln) - len(ln.lstrip(" "))
+
+    for i, ln in enumerate(lines):
+        if ln.strip() not in ("workflow_dispatch:", "workflow_dispatch: {}"):
+            continue
+        base = ind(ln)
+        for k in range(i + 1, len(lines)):
+            if not lines[k].strip() or lines[k].lstrip().startswith("#"):
+                continue
+            if ind(lines[k]) <= base:
+                break
+            if lines[k].strip() == "inputs:":
+                at = ind(lines[k])
+                for m in range(k + 1, len(lines)):
+                    t = lines[m]
+                    if not t.strip() or t.lstrip().startswith("#"):
+                        continue
+                    if ind(t) <= at:
+                        break
+                    hit = re.match(r"^ *([A-Za-z0-9_-]+):", t)
+                    if hit and (not names or ind(t) == names[0][1]):
+                        names.append((hit.group(1), ind(t)))
+                break
+        break
+    return {n for n, _ in names}
+
+
+INCREMENT_MARK = re.compile(r"<!-- release-increment: (auto|PATCH|MINOR|MAJOR) -->")
+
+
+def rebuild(gh, repo, dry_run):
+    """Dispatch bump again where the open bot/release PR is behind its base (#430)."""
+    full = f"{ORG}/{repo}"
+    pulls = gh.api("GET", f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10") or []
+    pulls = [p for p in pulls if p["head"]["ref"] == "bot/release"]
+    if not pulls:
+        return None
+    pr = pulls[0]
+    base = pr["base"]["ref"]
+    behind = (gh.api("GET", f"repos/{full}/compare/{base}...bot/release") or {}).get("behind_by", 0)
+    if not behind:
+        print(f"{repo} release-rebuild: bump PR #{pr['number']} is on {base}")
+        return {"number": pr["number"], "behind": 0}
+    caller, text = None, ""
+    for entry in gh.api("GET", f"repos/{full}/contents/.github/workflows?ref={base}") or []:
+        if not entry.get("name", "").endswith((".yml", ".yaml")):
+            continue
+        got = gh.api("GET", f"repos/{full}/contents/{entry['path']}?ref={base}") or {}
+        body = base64.b64decode(got.get("content", "")).decode("utf-8", "replace")
+        if REUSABLE_RELEASE.search(body):
+            caller, text = entry["name"], body
+            break
+    if not caller:
+        print(
+            f"{repo} release-rebuild: #{pr['number']} is {behind} behind, no reusable-release caller: dispatch bump by hand"
+        )
+        return {"number": pr["number"], "behind": behind, "caller": None}
+    # an active run on any page: one status-filtered count per active status
+    for status in ("queued", "in_progress", "waiting", "requested", "pending"):
+        runs = (
+            gh.api(
+                "GET", f"repos/{full}/actions/workflows/{caller}/runs?status={status}&per_page=1"
+            )
+            or {}
+        )
+        if runs.get("total_count") or runs.get("workflow_runs"):
+            print(
+                f"{repo} release-rebuild: #{pr['number']} is {behind} behind; a {caller} run is still {status}"
+            )
+            return {"number": pr["number"], "behind": behind, "caller": caller, "busy": True}
+    declared = dispatch_inputs(text)
+    inputs = {}
+    if "mode" in declared:
+        inputs["mode"] = "bump"
+    if "increment" in declared:
+        m = INCREMENT_MARK.search(pr.get("body") or "")
+        if not m:  # opened before the marker: the size asked for is unknown, so never guessed
+            print(
+                f"{repo} release-rebuild: #{pr['number']} is {behind} behind, and its body records "
+                "no release-increment: dispatch bump by hand with the increment it was opened with"
+            )
+            return {"number": pr["number"], "behind": behind, "caller": caller, "unknown": True}
+        inputs["increment"] = m.group(1)
+    what = f"{caller} mode bump" + (
+        f", increment {inputs['increment']}" if "increment" in inputs else ""
+    )
+    if dry_run:
+        print(
+            f"{repo} release-rebuild: #{pr['number']} is {behind} behind {base}; would dispatch {what}"
+        )
+        return {"number": pr["number"], "behind": behind, "caller": caller, "dry_run": True}
+    gh.api(
+        "POST",
+        f"repos/{full}/actions/workflows/{caller}/dispatches",
+        {"ref": base, "inputs": inputs},
+    )
+    print(f"{repo} release-rebuild: #{pr['number']} is {behind} behind {base}; dispatched {what}")
+    return {"number": pr["number"], "behind": behind, "caller": caller, "inputs": inputs}
+
+
 def closed_note(prs):
     return f"; closed {', '.join('#' + str(o['number']) for o in prs)} as superseded" if prs else ""
 
@@ -550,7 +802,12 @@ def run(args, gh=None, clone_url=None):
         print("org-bot: ORG_BOT_TOKEN is not set; dry run")
     gh = gh or GitHub(token)
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
-    tasks = ["epics", "org-sync", "zenodo", "swarm-core-pin"] if args.task == "all" else [args.task]
+    groups = {
+        "all": ["epics", "org-sync", "zenodo", "swarm-core-pin"],
+        "release": ["release-rebuild", "release-aftercare"],
+    }
+    tasks = groups.get(args.task, [args.task])
+    days = float(os.environ.get("ORG_BOT_AFTERCARE_DAYS") or 14)
     run_url = ""
     if os.environ.get("GITHUB_RUN_ID"):
         run_url = (
@@ -584,15 +841,40 @@ def run(args, gh=None, clone_url=None):
         repos = [r for r in repos if r in wanted]
     env = git_env(None if dry_run else token)
     results, failed = [], []
+    released = {}  # repo -> its recent release's tag, for release-aftercare
+    if "release-aftercare" in tasks:
+        for repo in repos:
+            try:
+                got = newest_release(gh, f"{ORG}/{repo}") if repo != ".github" else None
+            except Failure as e:
+                print(f"{repo} release-aftercare: releases unreadable ({e})")
+                continue
+            if got and recent(got[1], days):
+                released[repo] = got[0]
+        if released and ".github" in repos:
+            released[".github"] = None  # the org's archived-releases table
+        print(
+            f"org-bot: release-aftercare: releases younger than {days:g} days: "
+            + (", ".join(f"{r} {t}" for r, t in released.items() if t) or "none")
+        )
     for repo in repos:
         clone = os.path.join(work, repo)
         try:
+            if "release-rebuild" in tasks:
+                results.append((repo, "release-rebuild", rebuild(gh, repo, dry_run)))
+            mine = [
+                t
+                for t in tasks
+                if t != "release-rebuild" and (t != "release-aftercare" or repo in released)
+            ]
+            if not mine:
+                continue
             sh(
                 ["git", "clone", "-q", "--depth", "1", clone_url.format(org=ORG, repo=repo), clone],
                 env=env,
             )
             base_sha = sh(["git", "-C", clone, "rev-parse", "HEAD"], env=env).stdout.strip()
-            for task in tasks:
+            for task in mine:
                 # every task starts from the cloned commit, never from the last task's
                 sh(["git", "-C", clone, "checkout", "-q", "--", "."], env=env)
                 sh(["git", "-C", clone, "clean", "-qfd"], env=env)
@@ -601,13 +883,16 @@ def run(args, gh=None, clone_url=None):
                 if notes is None:
                     continue
                 as_task, notes, also = pair(task, repo, clone, data, notes)
-                results.append(
-                    (
-                        repo,
-                        task,
-                        propose(gh, repo, as_task, clone, notes, env, dry_run, run_url, also),
+                pr = propose(gh, repo, as_task, clone, notes, env, dry_run, run_url, also)
+                results.append((repo, task, pr))
+                if task == "release-aftercare" and released.get(repo):
+                    results.append(
+                        (
+                            repo,
+                            "release-leftovers",
+                            leftovers(gh, repo, released[repo], pr, dry_run, run_url),
+                        )
                     )
-                )
         except Failure as e:
             failed.append(repo)
             print(f"{repo}: FAILED: {e}")
@@ -623,7 +908,18 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd")
     r = sub.add_parser("run")
     r.add_argument(
-        "--task", choices=["epics", "org-sync", "zenodo", "swarm-core-pin", "all"], default="all"
+        "--task",
+        choices=[
+            "epics",
+            "org-sync",
+            "zenodo",
+            "swarm-core-pin",
+            "release-rebuild",
+            "release-aftercare",
+            "release",
+            "all",
+        ],
+        default="all",
     )
     r.add_argument("--repos", default="", help="comma-separated names (default: every public repo)")
     r.add_argument("--data", default="", help="saved `epics.py fetch` output instead of the API")
@@ -1457,6 +1753,274 @@ def self_test():
         and v4["swarm-core-0.4.0.tar.gz"] in lock_shown
         and "pin-target:" in post[0][2]["body"]
         and "v0.4.0" in post[0][2]["body"],
+    )
+
+    # release-rebuild (#430): a behind bot/release PR gets its caller dispatched with mode bump
+    # and the increment the PR was opened with; never when current, busy, or in a dry run
+    class RouteGitHub(FakeGitHub):
+        def __init__(self, routes, **kw):
+            super().__init__(**kw)
+            self.routes = routes
+
+        def api(self, method, path, body=None):
+            if method == "GET" and path in self.routes:
+                self.calls.append((method, path, body))
+                return self.routes[path]
+            return super().api(method, path, body)
+
+    caller = (
+        "on:\n  workflow_dispatch:\n    inputs:\n      mode: { type: choice, options: [dry-run, bump] }\n"
+        "      increment: { type: choice, options: [auto, PATCH, MINOR, MAJOR] }\njobs:\n  release:\n"
+        "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n"
+    )
+    full = f"{ORG}/lam"
+    rroutes = {
+        f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10": [
+            {
+                "number": 9,
+                "head": {"ref": "bot/release"},
+                "base": {"ref": "main"},
+                "body": "x\n<!-- release-increment: MAJOR -->\n",
+            }
+        ],
+        f"repos/{full}/compare/main...bot/release": {"behind_by": 3},
+        f"repos/{full}/contents/.github/workflows?ref=main": [
+            {"name": "ci.yml", "path": ".github/workflows/ci.yml"},
+            {"name": "release.yml", "path": ".github/workflows/release.yml"},
+        ],
+        f"repos/{full}/contents/.github/workflows/ci.yml?ref=main": {
+            "content": base64.b64encode(b"jobs: {}\n").decode()
+        },
+        f"repos/{full}/contents/.github/workflows/release.yml?ref=main": {
+            "content": base64.b64encode(caller.encode()).decode()
+        },
+        **{
+            f"repos/{full}/actions/workflows/release.yml/runs?status={st_}&per_page=1": {
+                "total_count": 0,
+                "workflow_runs": [],
+            }
+            for st_ in ("queued", "in_progress", "waiting", "requested", "pending")
+        },
+    }
+
+    def rb(routes, dry=False):
+        gh = RouteGitHub(routes)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            got = rebuild(gh, "lam", dry)
+        posts = [c for c in gh.calls if c[0] == "POST"]
+        return got, posts, out.getvalue()
+
+    got, posts, out = rb(rroutes)
+    check(
+        "release-rebuild: a behind bump PR dispatches its caller with mode bump and its increment",
+        posts
+        == [
+            (
+                "POST",
+                f"repos/{full}/actions/workflows/release.yml/dispatches",
+                {"ref": "main", "inputs": {"mode": "bump", "increment": "MAJOR"}},
+            )
+        ]
+        and "3 behind" in out,
+    )
+    got, posts, out = rb(rroutes, dry=True)
+    check("release-rebuild: a dry run dispatches nothing", not posts and "would dispatch" in out)
+    pr9 = rroutes[f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10"][0]
+    got, posts, out = rb({**rroutes, f"repos/{full}/compare/main...bot/release": {"behind_by": 0}})
+    check("release-rebuild: a current bump PR is left alone", not posts and got["behind"] == 0)
+    busy = {"total_count": 1, "workflow_runs": [{"id": 2, "status": "in_progress"}]}
+    got, posts, out = rb(
+        {
+            **rroutes,
+            f"repos/{full}/actions/workflows/release.yml/runs?status=in_progress&per_page=1": busy,
+        }
+    )
+    check(
+        "release-rebuild: never while a dispatch still runs (status-filtered, any page)",
+        not posts and "still in_progress" in out,
+    )
+    got, posts, out = rb(
+        {
+            **rroutes,
+            f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10": [
+                {**pr9, "body": "opened before the marker"}
+            ],
+        }
+    )
+    check(
+        "release-rebuild: no recorded increment, no guess: dispatch by hand",
+        not posts and "dispatch bump by hand" in out and got.get("unknown"),
+    )
+    plain = (
+        "on:\n  workflow_dispatch:\njobs:\n  r:\n"
+        "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n"
+        "    with:\n      mode: bump\n      increment: ''\n"
+    )
+    got, posts, out = rb(
+        {
+            **rroutes,
+            f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10": [
+                {**pr9, "body": ""}
+            ],
+            f"repos/{full}/contents/.github/workflows/release.yml?ref=main": {
+                "content": base64.b64encode(plain.encode()).decode()
+            },
+        }
+    )
+    check(
+        "release-rebuild: only the inputs the caller declares (a job's with: is none)",
+        posts and posts[0][2] == {"ref": "main", "inputs": {}},
+    )
+    got, posts, out = rb(
+        {**rroutes, f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10": []}
+    )
+    check("release-rebuild: no bump PR, nothing", got is None and not posts)
+    got, posts, out = rb({**rroutes, f"repos/{full}/contents/.github/workflows?ref=main": []})
+    check(
+        "release-rebuild: no reusable-release caller says so, dispatches nothing",
+        not posts and "by hand" in out,
+    )
+    # release-aftercare (#465): a recent release gets its record PR and the leftovers on
+    # the site's release-sync issue; an old one is not even cloned
+    src = os.path.join(work, "src", "mu")
+    os.makedirs(os.path.join(src, "docs"))
+    for rel_, text in (
+        ("CITATION.cff", "title: mu\n"),
+        ("docs/roadmap.md", "| v0.2.0 | planned |\n"),
+    ):
+        with open(os.path.join(src, rel_), "w") as fh:
+            fh.write(text)
+    sh(["git", "init", "-q", "-b", "main", src], env=env)
+    sh(["git", "-C", src, "add", "-A"], env=env)
+    sh(["git", "-C", src, "commit", "-q", "-m", "init"], env=env)
+    sh(["git", "clone", "-q", "--bare", src, os.path.join(remotes, ORG, "mu.git")], env=env)
+    adata = os.path.join(work, "adata.json")
+    with open(adata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": "mu", "epics": []}]}, fh)
+    import datetime
+
+    fresh = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=3)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    calls = []
+
+    def after_sh(cmd, cwd=None, env=None, check=True):
+        if len(cmd) > 3 and cmd[2] == ZENODO:
+            calls.append(cmd[3])
+            root = cmd[cmd.index("--checkout") + 1]
+            with open(os.path.join(root, "docs", "roadmap.md"), "a") as fh:
+                fh.write("- **v0.2.0** shipped (DOI from Zenodo)\n")
+            return subprocess.CompletedProcess(cmd, 0, "org/mu docs/roadmap.md: writes", "")
+        if len(cmd) > 3 and cmd[2] == RELEASE_CHECK:
+            calls.append(cmd[3])
+            text = "OK    release: v0.2.0 published\nWARN  vcpkg: open PR\nFAIL  see above\n"
+            return subprocess.CompletedProcess(cmd, 1, text, "")
+        return real_sh(cmd, cwd=cwd, env=env, check=check)
+
+    aroutes = {
+        f"repos/{ORG}/mu/releases?per_page=20": [
+            {"tag_name": "v0.2.0", "published_at": fresh},
+            {"tag_name": "v0.1.0", "published_at": "2026-01-01T00:00:00Z"},
+        ],
+        f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc&per_page=100&page=1": [
+            {"number": 1000 + k, "title": f"other {k}"} for k in range(100)
+        ],
+        f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc&per_page=100&page=2": [
+            {"number": 77, "title": "[release-sync] mu v0.2.0"}
+        ],
+        f"repos/{ORG}/{SITE}/issues/77/comments?per_page=100": [],
+    }
+    globals()["sh"] = after_sh
+    try:
+        gh = RouteGitHub(aroutes, merge_queue=True)
+        res, out = go(gh, task="release-aftercare", data=adata)
+    finally:
+        globals()["sh"] = real_sh
+    road = (
+        sh(
+            [
+                "git",
+                "--git-dir",
+                os.path.join(remotes, ORG, "mu.git"),
+                "show",
+                f"{res[0][2]['branch']}:docs/roadmap.md",
+            ],
+            check=False,
+        ).stdout
+        if res and res[0][2]
+        else ""
+    )
+    posted = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/issues/77/comments")]
+    check(
+        "release-aftercare: a recent release gets its record PR with auto-merge",
+        calls[:1] == ["shipped"]
+        and res[0][2]["branch"].startswith("org-bot/release-aftercare-")
+        and "v0.2.0** shipped" in road
+        and gh.auto_merged() == ["PR_42"],
+    )
+    check(
+        "release-aftercare: the leftovers posted on the site's release-sync issue (page 2)",
+        "after" in calls
+        and posted
+        and AFTERCARE_MARK in posted[0][2]["body"]
+        and "- `WARN  vcpkg: open PR`" in posted[0][2]["body"]
+        and "see above" not in posted[0][2]["body"]
+        and "swarm-routing/mu#42" in posted[0][2]["body"],
+    )
+    body = posted[0][2]["body"] if posted else ""
+    aroutes[f"repos/{ORG}/{SITE}/issues/77/comments?per_page=100"] = [{"id": 5, "body": body}]
+    globals()["sh"] = after_sh
+    try:
+        gh = RouteGitHub(
+            aroutes,
+            open_prs=[
+                {
+                    "number": 42,
+                    "node_id": "PR_42",
+                    "auto_merge": {},
+                    "head": {"ref": res[0][2]["branch"], "repo": {"full_name": f"{ORG}/mu"}},
+                }
+            ],
+        )
+        res2, out = go(gh, task="release-aftercare", data=adata)
+    finally:
+        globals()["sh"] = real_sh
+    check(
+        "release-aftercare: a second run changes nothing",
+        "already proposed in #42" in out
+        and "already says so" in out
+        and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
+    )
+    aroutes[f"repos/{ORG}/mu/releases?per_page=20"] = [
+        {"tag_name": "v0.2.0", "published_at": "2026-01-01T00:00:00Z"}
+    ]
+    calls.clear()
+    globals()["sh"] = after_sh
+    try:
+        gh = RouteGitHub(aroutes)
+        res3, out = go(gh, task="release-aftercare", data=adata)
+    finally:
+        globals()["sh"] = real_sh
+    check(
+        "release-aftercare: an old release is left alone",
+        res3 == [] and calls == [] and "none" in out,
+    )
+    seen_cmd = []
+
+    def table_sh(cmd, cwd=None, env=None, check=True):
+        seen_cmd.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "CONTRIBUTING.md: wrote 1 row(s)", "")
+
+    globals()["sh"] = table_sh
+    try:
+        notes = generate("release-aftercare", ".github", "/x", data, [])
+    finally:
+        globals()["sh"] = real_sh
+    check(
+        "release-aftercare: in .github, the archived-releases table",
+        seen_cmd
+        and seen_cmd[0][2:] == [ZENODO, "table", "/x/CONTRIBUTING.md", "--write"]
+        and notes,
     )
     # org_sync.py apply: exit 1 with only stdout is owned sections left alone; anything else fails
     check(

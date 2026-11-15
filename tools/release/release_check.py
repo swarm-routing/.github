@@ -328,7 +328,8 @@ def ready(repo_dir, repo, version, gh):
                 r.add(
                     "WARN",
                     f"bump PR #{p['number']} is {behind} commit(s) behind "
-                    f"{p['base']['ref']}: dispatch bump again (never push bot/release)",
+                    f"{p['base']['ref']}: dispatch bump again, or org-bot's release-rebuild does "
+                    "within the hour (never push bot/release)",
                 )
             else:
                 r.add("OK", f"bump PR #{p['number']} {p['title']!r} is on {p['base']['ref']}")
@@ -511,8 +512,9 @@ def after(repo, tag, org, gh, consumers=None):
         else:
             r.add(
                 "WARN",
-                f"ladder: docs/roadmap.md does not mark {tag} shipped; a docs PR with "
-                "the version DOI read from Zenodo (swarm-routing/.github#430)",
+                f"ladder: docs/roadmap.md does not mark {tag} shipped; org-bot's "
+                "release-aftercare opens that PR (the shipped block, the version DOI read "
+                "from Zenodo) within the hour once Zenodo has it (swarm-routing/.github#465)",
             )
     r.add(
         "NEXT",
