@@ -100,6 +100,10 @@ name: Reusable release
 #    sends it, whatever `notify-site` says (the site lists public
 #    repositories only, and its Actions logs are public);
 #    release-selftest.yml passes it too, so no test sends an event.
+#    In a dry run with `downstream-consumers` (a consumer list in the caller's
+#    repository, #482), the `downstream` job builds and tests those consumers
+#    on an ns3-dev image against this commit (tools/downstream/downstream.sh,
+#    the script ns3-containers' image canary runs), report-only.
 #    The last job, `notify-org` (`notify-org`, default true, #479), sends the
 #    same event to swarm-routing/.github once publish succeeded and the zenodo
 #    and vcpkg jobs ended: org-bot.yml then runs the release aftercare for this
@@ -262,6 +266,18 @@ on:
         description: "After a release is published, send repository_dispatch `org-release` to swarm-routing/swarm-routing.github.io (report-only); false in tests; a private repository never sends it"
         type: boolean
         default: true
+      downstream-consumers:
+        description: "Dry run only (#482): a consumer list in the caller's repository (tools/downstream/downstream.sh's format, e.g. `.github/downstream.txt`); the dry run then builds and tests those consumers on `downstream-image` against this commit, which stands in for the release (the list's `downstream-self` line). Report-only. Empty (default): nothing"
+        type: string
+        default: ''
+      downstream-self:
+        description: "With downstream-consumers: the list's line whose checkout is this repository at the dry run's commit (default: the repository's name)"
+        type: string
+        default: ''
+      downstream-image:
+        description: "With downstream-consumers: the ns3-dev image the consumers build on (an Ubuntu debug image; another is skipped)"
+        type: string
+        default: 'ghcr.io/swarm-routing/ns3-dev:latest-debug'
       notify-org:
         description: "After a release is published (and its zenodo and vcpkg jobs ended), send repository_dispatch `org-release` to swarm-routing/.github, so org-bot runs its release aftercare and moves the consumers' locks at once (report-only, #479); false in tests; a private repository never sends it"
         type: boolean
@@ -967,6 +983,66 @@ jobs:
             echo "Sent org-release to ${SITE}: ${GITHUB_REPOSITORY} ${TAG}${prev:+ (previous ${prev})}" >> "$GITHUB_STEP_SUMMARY"
           else
             warn "repository_dispatch org-release to ${SITE} failed or timed out for ${TAG} (the reason is above)"
+          fi
+
+  # Before a library ships (#482): in a dry run, its main consumers are built
+  # and tested against this commit on an ns3-dev image, by the same script as
+  # ns3-containers' image canary (swarm-routing/.github tools/downstream/,
+  # fetched from main as this workflow's actions are). The caller's checkout
+  # stands in for the release: the consumer list's `downstream-self` line is
+  # a copy of it (DOWNSTREAM_LOCAL), and each consumer's stage points at it
+  # (AntHocNet: NS3_TOOLS_DIR, SWARM_CORE_DIR). Report-only: a failing
+  # consumer is a warning, the summary table and a red job that does not fail
+  # the run; it never blocks the bump.
+  downstream:
+    needs: [route, build]
+    if: ${{ inputs.downstream-consumers != '' && needs.route.outputs.mode == 'dry-run' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      LIST: ${{ inputs.downstream-consumers }}
+      SELF: ${{ inputs.downstream-self || github.event.repository.name }}
+      IMAGE: ${{ inputs.downstream-image }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: self
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          # main, as this workflow's actions; in .github itself (its
+          # release-selftest.yml) the commit under test, so a PR's script runs
+          ref: ${{ github.repository == 'swarm-routing/.github' && github.sha || 'main' }}
+          path: org
+          persist-credentials: false
+      - name: Pull the image
+        timeout-minutes: 20
+        run: |
+          for i in 1 2 3; do docker pull -q "$IMAGE" && exit 0; sleep $((i * 20)); done
+          exit 1
+      - name: Build and test the consumers against this commit
+        env:
+          DOWNSTREAM_TITLE: Downstream check before the release (report-only)
+          DOWNSTREAM_FAILED: ${{ runner.temp }}/downstream-failed
+        run: |
+          [ -f "self/$LIST" ] || { echo "::error::downstream-consumers: no file $LIST in the repository"; exit 1; }
+          export DOWNSTREAM_LOCAL="${SELF}=${GITHUB_WORKSPACE}/self"
+          if ! org/tools/downstream/downstream.sh "$IMAGE" "self/$LIST"; then
+            if [ -f "$DOWNSTREAM_FAILED" ]; then
+              while read -r name src reason; do
+                echo "::warning::downstream: ${name} (${src}) fails against this commit: ${reason}"
+              done < "$DOWNSTREAM_FAILED"
+            fi
+            exit 1
           fi
 
   # org-bot follows the release (#479): `org-release` to swarm-routing/.github,
