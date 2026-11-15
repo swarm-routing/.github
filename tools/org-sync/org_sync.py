@@ -161,7 +161,6 @@ BASE_BADGES = [
     "arena",
     "scorecard",
     "bestpractices",
-    "codespaces",
 ]
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -199,7 +198,7 @@ BADGE_GROUPS = {
     "stack": ("Stack", ["cxx", "ns3", "python"]),
     "community": (
         "Community & docs",
-        ["docs", "arena", "claude-plugin", "codespaces", "conventional"],
+        ["docs", "arena", "claude-plugin", "conventional"],
     ),
 }
 BADGE_TABLE_HEAD = "| Group | Badges |\n| --- | --- |\n"
@@ -1044,11 +1043,6 @@ def badges_by_kind(cfg, repo_dir):
             out[b] = (
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
                 "(https://docs.claude.com/en/docs/claude-code/plugin-marketplaces)"
-            )
-        elif b == "codespaces" and os.path.isdir(os.path.join(repo_dir, ".devcontainer")):
-            out[b] = (
-                f"[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)]"
-                f"(https://codespaces.new/{repo}?quickstart=1)"
             )
     return out
 

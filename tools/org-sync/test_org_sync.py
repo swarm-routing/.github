@@ -186,12 +186,12 @@ rows2 = rows2.split("<!-- org-sync:end badges -->")[0].splitlines()
 check(
     rows2[2].startswith("| Quality | [![Core coverage](https://img.shields.io/endpoint?url=x)]")
     and rows2[3].startswith("| Release | [![Licence")
-    and rows2[4].startswith("| Community & docs | [![Open in GitHub Codespaces]")
-    and rows2[4].index("codespaces.new") < rows2[4].index("conventionalcommits")
+    and rows2[4].startswith("| Community & docs | [![Conventional Commits]")
+    and "codespaces" not in "".join(rows2).lower()
     and len(rows2) == 5
     and run("check", db2)[0] == 0,
     "a repo's own badges list picks the badges, the groups order them; extra_badges join their"
-    " group; codespaces with a .devcontainer; empty groups are left out",
+    " group; no Codespaces badge even when listed and a .devcontainer exists; empty groups are left out",
 )
 edit(db2, ".github/org-sync.toml", 'group = "quality"', 'group = "misc"')
 try:

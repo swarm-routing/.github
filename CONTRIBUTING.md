@@ -797,8 +797,8 @@ that has a badge (#415): **Build** (`ci`, `container-security`, `hadolint`,
 `trivy`, `ghcr`, `ns3dev`), **Quality** (the `sonar-*` badges, `codecov`,
 `coderabbit`), **Release** (`release`, `doi`, `cite`, `licence`), **Trust**
 (`scorecard`, `bestpractices`, `cosign`), **Stack** (`cxx`, `ns3`, `python`) and
-**Community & docs** (`docs`, `arena`, `claude-plugin`, `codespaces`,
-`conventional`), in that order within each row. A repository's `badges` list
+**Community & docs** (`docs`, `arena`, `claude-plugin`,
+`conventional`; no Codespaces badge, maintainer decision 2026-11-15), in that order within each row. A repository's `badges` list
 says which appear, never their order. A badge of the repository's own (a
 coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
 `.github/org-sync.toml` (`group`, `alt`, `image`, `link`), placed after its
