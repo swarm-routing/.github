@@ -1186,3 +1186,12 @@ file = "tools/zenodo/zenodo.py"
 line = 1156
 decision = "falsepositive"
 reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHdlVO1SajQlY95tE94"
+rule = "pythonsecurity:S8707"
+file = "tools/sonar-triage/sonar_triage.py"
+line = 75
+decision = "falsepositive"
+reason = "FP-cli"
