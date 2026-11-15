@@ -155,7 +155,10 @@ on `tools/release/fixture-major/` (0.4.0, no tag: must be 1.0.0, #211); its bump
 tag-and-publish job are proven by the first caller's release (ns3-tools#26), the
 publish job's last step, the `org-release` `repository_dispatch` to the org site
 (`notify-site`, default true; both self-test calls pass `false`, so no test sends
-one), by the first caller's release after it lands (#388),
+one), by the first caller's release after it lands (#388), its `notify-org`
+job (the same event to swarm-routing/.github, on which org-bot.yml runs
+`release` for the repository and `release-lock` everywhere; default true, both
+self-test calls pass `false`, #479) by the next caller's release,
 its opt-in `zenodo` job by a `zenodo-sandbox: true` run and the first
 caller's release with `zenodo: true` (#232), its opt-in `vcpkg` job (the port
 PR in swarm-routing/vcpkg-registry, opened with auto-merge on so the

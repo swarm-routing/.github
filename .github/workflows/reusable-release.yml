@@ -100,6 +100,12 @@ name: Reusable release
 #    sends it, whatever `notify-site` says (the site lists public
 #    repositories only, and its Actions logs are public);
 #    release-selftest.yml passes it too, so no test sends an event.
+#    The last job, `notify-org` (`notify-org`, default true, #479), sends the
+#    same event to swarm-routing/.github once publish succeeded and the zenodo
+#    and vcpkg jobs ended: org-bot.yml then runs the release aftercare for this
+#    repository and moves its consumers' locks without waiting for an hourly
+#    slot. Report-only, never from a private repository, `false` in the
+#    self-test.
 #      vcpkg    (opt-in, `vcpkg-ports: "<port> ..."`, #439) after the
 #               release is published, opens or updates the port bump PR in
 #               swarm-routing/vcpkg-registry for each named port: a checkout
@@ -254,6 +260,10 @@ on:
         default: false
       notify-site:
         description: "After a release is published, send repository_dispatch `org-release` to swarm-routing/swarm-routing.github.io (report-only); false in tests; a private repository never sends it"
+        type: boolean
+        default: true
+      notify-org:
+        description: "After a release is published (and its zenodo and vcpkg jobs ended), send repository_dispatch `org-release` to swarm-routing/.github, so org-bot runs its release aftercare and moves the consumers' locks at once (report-only, #479); false in tests; a private repository never sends it"
         type: boolean
         default: true
       vcpkg-ports:
@@ -957,6 +967,62 @@ jobs:
             echo "Sent org-release to ${SITE}: ${GITHUB_REPOSITORY} ${TAG}${prev:+ (previous ${prev})}" >> "$GITHUB_STEP_SUMMARY"
           else
             warn "repository_dispatch org-release to ${SITE} failed or timed out for ${TAG} (the reason is above)"
+          fi
+
+  # org-bot follows the release (#479): `org-release` to swarm-routing/.github,
+  # whose org-bot.yml then runs the `release` task (release-aftercare: the
+  # roadmap's shipped block and the DOI rows, release-rebuild) for this
+  # repository and `release-lock` (and, for swarm-core, `swarm-core-pin`) in
+  # every consumer, instead of waiting for an hourly slot GitHub may skip (it
+  # fired none for .github between 12:57 and 16:30 UTC on 2026-11-15). After
+  # the zenodo and vcpkg jobs, whatever they concluded, so the version DOI and
+  # the port PR are there to record; the hourly run stays the backstop. The bot
+  # token (Contents: write on .github), never GITHUB_TOKEN. Report-only: a
+  # failed dispatch is a warning and a summary line.
+  notify-org:
+    needs: [route, build, publish, zenodo, vcpkg]
+    if: ${{ always() && inputs.notify-org && needs.publish.result == 'success' && !github.event.repository.private }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      COMMIT: ${{ needs.build.outputs.commit }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - name: Bot token
+        id: bot
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: swarm-routing/.github/.github/actions/bot-token@main
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: Tell org-bot
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+        run: |
+          warn() {
+            echo "::warning::$1"
+            echo "org-bot not notified: $1 (its hourly release run catches it)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          [ -n "$GH_TOKEN" ] || warn "no bot token (BOT_APP_ID / BOT_APP_PRIVATE_KEY, ORG_BOT_TOKEN unset), so no org-release event for ${TAG}"
+          if timeout 45 gh api -X POST repos/swarm-routing/.github/dispatches \
+               -f event_type=org-release \
+               -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
+               -f "client_payload[tag]=${TAG}" \
+               -f "client_payload[commit]=${COMMIT}" > /dev/null; then
+            echo "Sent org-release to swarm-routing/.github: ${GITHUB_REPOSITORY} ${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            warn "repository_dispatch org-release to swarm-routing/.github failed or timed out for ${TAG} (the reason is above)"
           fi
 
   # Opt-in (`zenodo: true`, #232): the published release, archived on Zenodo

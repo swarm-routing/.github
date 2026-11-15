@@ -35,7 +35,14 @@ name: org-bot
 #   release_check.py after still finds, as one comment on the site's
 #   [release-sync] issue (#465); release-lock runs in the same hourly group.
 # Daily, on every push to main that changes the templates or the generators,
-# and on demand. One PR per repository and task; the same change is never
+# on demand, and on each release (#479): reusable-release.yml (and
+# AntHocNet's release.yml) send repository_dispatch `org-release` with
+# {repository, tag} once it is published; this workflow then runs `release`
+# for that repository (its aftercare, without waiting for an hourly slot
+# GitHub may skip, as it did 12:57-16:30 UTC on 2026-11-15) and
+# `release-lock` (plus `swarm-core-pin` for a swarm-core release) in every
+# repository, so the consumers' locks move at once. The hourly run is the
+# backstop: Zenodo may mint the DOI after the event, and the next hour records it. One PR per repository and task; the same change is never
 # proposed twice, and an older bot PR is closed as superseded. Where the
 # repository's main has a merge queue, the bot enables auto-merge on its own
 # PR, which then lands through the queue once green (#178); elsewhere a person
@@ -57,6 +64,8 @@ on:
     - cron: '17 4 * * *'
     - cron: '41 */3 * * *'  # swarm-core-pin alone (#208)
     - cron: '23 * * * *'    # release-rebuild and release-aftercare (#430, #465)
+  repository_dispatch:
+    types: [org-release]
   push:
     branches: [main]
     paths:
@@ -96,8 +105,11 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      TASK: ${{ inputs.task || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'release') || 'all' }}
+      TASK: ${{ inputs.task || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'release') || 'all' }}
       REPOS: ${{ inputs.repos }}
+      # org-release (#479): the released repository, checked below before use
+      RELEASED: ${{ github.event.client_payload.repository }}
+      RELEASED_TAG: ${{ github.event.client_payload.tag }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:
       - name: Harden the runner (audit egress)
@@ -124,11 +136,35 @@ jobs:
           ORG_BOT_GIT_EMAIL: ${{ steps.bot.outputs.git-email }}
         run: |
           set -o pipefail
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
+            # only swarm-routing/<name>; anything else is refused, never interpolated
+            if ! [[ "$RELEASED" =~ ^swarm-routing/[A-Za-z0-9_.-]+$ ]] || ! [[ "$RELEASED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::org-release: repository '${RELEASED:0:80}' / tag '${RELEASED_TAG:0:40}' is not swarm-routing/<name> and vX.Y.Z"
+              exit 1
+            fi
+            REPOS="${RELEASED#swarm-routing/}"
+            echo "org-release: ${RELEASED} ${RELEASED_TAG}" | tee "$RUNNER_TEMP/org-bot.txt"
+          fi
           args=(run --task "$TASK")
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): dry run only"
-          python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee "$RUNNER_TEMP/org-bot.txt"
+          if [ "$GITHUB_EVENT_NAME" != repository_dispatch ]; then
+            python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+            exit 0
+          fi
+          # org-release: the released repository, then the consumers (every
+          # repository's locks; the swarm-core pin after a swarm-core release).
+          # Each invocation runs even when the one before it failed; the step fails
+          # at the end if any of them failed.
+          failed=0
+          python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
+          consumers=release-lock
+          [ "$REPOS" = ns3-swarm-core ] && consumers="swarm-core-pin release-lock"
+          for task in $consumers; do
+            python3 -I tools/org-bot/org_bot.py run --task "$task" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
+          done
+          exit "$failed"
       - name: Summary
         if: ${{ always() }}
         run: |
