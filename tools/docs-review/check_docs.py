@@ -87,10 +87,20 @@ AGENTS_SETTINGS_ONLY_BUDGET = 27_700  # a settings-only repository's whole file 
 ORG_SECTION = re.compile(r"<!-- org-sync:begin (\S+) -->.*?<!-- org-sync:end \1 -->\n?", re.S)
 # a linked badge image, [![alt](image)](link), in the managed table or outside it
 BADGE = re.compile(r"\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)")
-# any image: Markdown, linked or not, or an HTML <img>, for the badges written by hand
-ANY_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)|<img\b[^>]*?\bsrc=\"([^\"]+)\"")
+# any image: Markdown, linked or not, with or without a title, or an HTML <img>
+# (src in double or single quotes), for the badges written by hand
+ANY_IMAGE = re.compile(
+    r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
+    r"|<img\b[^>]*?\bsrc=(?:\"([^\"]+)\"|'([^']+)')"
+)
+# a fenced code block: ``` or ~~~, closed by the same character, at least as long
+FENCE = re.compile(
+    r"^ {0,3}(?P<f>(?P<c>[`~])(?P=c){2,})[^\n]*\n.*?(?:^ {0,3}(?P=f)(?P=c)*[ \t]*$|\Z)",
+    re.S | re.M,
+)
 BADGE_HOST = re.compile(
     r"shields\.io|/badges?[/.?]|badge\.svg|/badge\b|zenodo\.org/badge|skills\.sh/b/"
+    r"|sonarcloud\.io/api/project_badges/"
 )
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 LAYOUT = re.compile(r"^([A-Za-z0-9_.][\w./-]*/)\s{2,}\S")
@@ -234,10 +244,10 @@ def readme_badges(text):
     """Every badge image of a README, as (alt, image): Markdown (linked or not) or
     an HTML <img>; an image that is not a badge (a screenshot, a figure) and a
     code block are left alone."""
-    text = re.sub(r"```.*?```", "", text, flags=re.S)
+    text = FENCE.sub("", text)
     out = []
     for m in ANY_IMAGE.finditer(text):
-        img = m.group(2) or m.group(3)
+        img = m.group(2) or m.group(3) or m.group(4)
         if BADGE_HOST.search(img):
             out.append((m.group(1) or "", img))
     return out
@@ -250,12 +260,14 @@ def hand_badges(text):
 
 def badge_metric(img):
     """What a badge measures, so that two badges of one metric are seen as one
-    too many: any coverage badge (Codecov, a coverage endpoint) is `coverage`,
+    too many: any coverage badge (Codecov, Coveralls, a shields endpoint or
+    static badge about coverage, never a workflow badge named coverage.yml) is `coverage`,
     the release and the DOI are themselves, a static shields badge is its label
     (`runs on: ns-3` and `runs on: ns-3 · WebAssembly` are one), anything else its
     image URL."""
     low = unquote(img).lower()
-    if "codecov.io" in low or "coverage" in low:
+    shields = re.search(r"img\.shields\.io/(?:endpoint|badge)\b", low)
+    if "codecov.io" in low or "coveralls.io" in low or (shields and "coverage" in low):
         return "coverage"
     if "/github/v/release/" in low:
         return "release"
@@ -1122,6 +1134,59 @@ def self_test():
             and any(item in x["items"] for x in r.rows if x["level"] == "FAIL"),
         )
     expect("one badge per metric passes", not has(ok, "FAIL", "repeat a badge"))
+    ci_cov = (
+        "[![CI](https://github.com/x/y/actions/workflows/coverage.yml/badge.svg)]"
+        "(https://github.com/x/y/actions/workflows/coverage.yml)"
+    )
+    r = repo(
+        {
+            "README.md": readme_ok.replace(table, table + f"| Quality | {cov} |\n").replace(
+                "[![CI](https://x/b.svg)](https://x/a)", ci_cov
+            )
+        }
+    )
+    expect(
+        "a CI badge of a coverage.yml workflow beside Codecov is no repeat",
+        not has(r, "FAIL", "repeat a badge"),
+    )
+    bugs = (
+        "[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=x&metric=bugs)]"
+        "(https://sonarcloud.io/summary/new_code?id=x)"
+    )
+    r = repo({"README.md": readme_ok.replace(table, table + f"| Quality | {bugs} {bugs} |\n")})
+    expect("the same Sonar badge twice fails", has(r, "FAIL", "repeat a badge or its metric"))
+    for name, after in (
+        ("a Sonar badge after the table", bugs + "\n"),
+        (
+            "a titled Markdown badge after the table",
+            '![A](https://img.shields.io/badge/a-b-blue "t")\n',
+        ),
+        (
+            "an HTML badge in single quotes after the table",
+            "<img src='https://img.shields.io/badge/a-b-blue'>\n",
+        ),
+    ):
+        r = repo(
+            {
+                "README.md": readme_ok.replace(
+                    "<!-- org-sync:end badges -->\n", "<!-- org-sync:end badges -->\n" + after
+                )
+            }
+        )
+        expect(f"{name} fails", has(r, "FAIL", "1 badge(s) outside the org-sync table"))
+    for fence in ("```", "~~~", "````"):
+        example = f"{fence}md\n![Example](https://img.shields.io/badge/e-x-blue)\n```\n{fence}\n"
+        r = repo(
+            {
+                "README.md": readme_ok.replace(
+                    "<!-- org-sync:end badges -->\n", "<!-- org-sync:end badges -->\n\n" + example
+                )
+            }
+        )
+        expect(
+            f"a badge inside a {fence} fence (even holding a shorter or other fence) is code, not a badge",
+            not has(r, "FAIL", "outside the org-sync table"),
+        )
     r = repo(drop=("README.md",))
     expect("no README fails", has(r, "FAIL", "no README.md"))
     r = repo({"README.md": "ARA\n\n" + readme_ok})
