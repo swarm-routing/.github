@@ -105,6 +105,8 @@ python3 -I tools/lit-search/lit_search.py --self-test   # confirm (a chapter's b
 python3 -I tools/repo-settings/repo_settings.py --self-test   # plan, check, apply against a fake GitHub (each field's drift, ruleset create/update, unmanaged ruleset left alone, private masked, 403 refused, dry run; merge_queue rule, its table overrides and validation, refused without a merge_group trigger behind each required check; security on in order, own CodeQL kept, private unsupported, Actions policy and an uncovered action refused, fork-PR approval for all outside contributors (a note on a private repository), 409 org policy, release environment, idempotent)
 python3 -I tools/org-bot/org_bot.py run --dry-run --repos .github,Termite   # read-only, what it would propose
 python3 -I tools/zenodo/zenodo.py sync --repo swarm-routing/AntHocNet --dry-run   # read-only, the real records
+python3 -I tools/sonar-triage/sonar_triage.py findings --repos ns3-tools   # read-only, no token: the open findings and which decisions.toml records
+python3 -I tools/sonar-triage/sonar_triage.py entry <KEY> --reason FP-cli   # read-only: the [[issue]] block for a key, every field from the API
 python3 -I tools/sonar-triage/sonar_triage.py plan   # read-only, no token: every decisions.toml entry against the live finding
 python3 -I tools/zenodo/zenodo.py orphans --repos benchmarks,ARA   # read-only, released repos without a concept
 python3 -I tools/zenodo/zenodo.py create --repo swarm-routing/benchmarks --tag v0.1.0   # read-only without --publish and ZENODO_TOKEN: what it would create

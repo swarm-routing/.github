@@ -7,9 +7,10 @@
 # never typed. `plan` refuses if a key's project, rule, file or line no longer
 # match, so a moved finding is re-reviewed, not silently marked.
 #
-# To record a new false positive: review it in its tracking issue, add its
-# entry here by PR (the key from the API, the reason id below), merge, then
-# dispatch sonar-triage with mode plan, then apply.
+# To record a new false positive: review it in its tracking issue, list the
+# open findings (`sonar_triage.py findings --repos <repo>`), print the entry
+# (`sonar_triage.py entry <KEY> --reason <id>`, every field from the API), add
+# it here by PR, merge, then dispatch sonar-triage with mode plan, then apply.
 #
 # decision: falsepositive (the finding is wrong) or wontfix (true as stated,
 # accepted for the reason given; SonarQube Cloud may call it `accept`).
