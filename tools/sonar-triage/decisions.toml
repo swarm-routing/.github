@@ -901,7 +901,7 @@ line = 1570
 decision = "falsepositive"
 reason = "FP-repofile"
 
-# ---- swarm-routing/.github (39)
+# ---- swarm-routing/.github (35)
 
 [[issue]]
 project = "swarm-routing_.github"
@@ -1112,84 +1112,12 @@ reason = "FP-cli"
 
 [[issue]]
 project = "swarm-routing_.github"
-key = "AaHCpQEKeDe7xtNTqKfz"
-rule = "pythonsecurity:S6350"
-file = "tools/org-bot/org_bot.py"
-line = 148
-decision = "falsepositive"
-reason = "FP-argv"
-
-[[issue]]
-project = "swarm-routing_.github"
 key = "AaHCpQEKeDe7xtNTqKf1"
 rule = "pythonsecurity:S8705"
 file = "tools/org-bot/org_bot.py"
-line = 148
+line = 206
 decision = "falsepositive"
 reason = "FP-cli"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHCpQEKeDe7xtNTqKfy"
-rule = "pythonsecurity:S6350"
-file = "tools/org-bot/org_bot.py"
-line = 166
-decision = "falsepositive"
-reason = "FP-argv"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHS6kjaPwz_j5xXC5yT"
-rule = "pythonsecurity:S2083"
-file = "tools/org-bot/org_bot.py"
-line = 233
-decision = "falsepositive"
-reason = "FP-gitpaths"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHS6kjaPwz_j5xXC5yU"
-rule = "pythonsecurity:S6549"
-file = "tools/org-bot/org_bot.py"
-line = 280
-decision = "falsepositive"
-reason = "FP-gitpaths"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHS6kjaPwz_j5xXC5yS"
-rule = "pythonsecurity:S2083"
-file = "tools/org-bot/org_bot.py"
-line = 282
-decision = "falsepositive"
-reason = "FP-gitpaths"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHNo06zfZUsx-RmKkqY"
-rule = "pythonsecurity:S6549"
-file = "tools/org-bot/org_bot.py"
-line = 297
-decision = "falsepositive"
-reason = "FP-gitpaths"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHNo06zfZUsx-RmKkqZ"
-rule = "pythonsecurity:S6549"
-file = "tools/org-bot/org_bot.py"
-line = 308
-decision = "falsepositive"
-reason = "FP-gitpaths"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHCpQEKeDe7xtNTqKf0"
-rule = "pythonsecurity:S6549"
-file = "tools/org-bot/org_bot.py"
-line = 312
-decision = "falsepositive"
-reason = "FP-gitpaths"
 
 [[issue]]
 project = "swarm-routing_.github"
@@ -1214,7 +1142,7 @@ project = "swarm-routing_.github"
 key = "AaHCpQEGeDe7xtNTqKfx"
 rule = "pythonsecurity:S8705"
 file = "tools/zenodo/zenodo.py"
-line = 153
+line = 184
 decision = "falsepositive"
 reason = "FP-cli"
 
@@ -1223,7 +1151,7 @@ project = "swarm-routing_.github"
 key = "AaHM7J-QOc4YV0WnKwNW"
 rule = "pythonsecurity:S8707"
 file = "tools/zenodo/zenodo.py"
-line = 1156
+line = 1405
 decision = "falsepositive"
 reason = "FP-cli"
 
@@ -1232,7 +1160,7 @@ project = "swarm-routing_.github"
 key = "AaHd0kr7GhjC-EaUGIcw"
 rule = "pythonsecurity:S8705"
 file = "tools/release/release_check.py"
-line = 78
+line = 84
 decision = "falsepositive"
 reason = "FP-cli"
 
@@ -1241,7 +1169,7 @@ project = "swarm-routing_.github"
 key = "AaHd0kr7GhjC-EaUGIcx"
 rule = "pythonsecurity:S8707"
 file = "tools/release/release_check.py"
-line = 128
+line = 134
 decision = "falsepositive"
 reason = "FP-cli"
 
@@ -1251,5 +1179,41 @@ key = "AaHdlVO1SajQlY95tE94"
 rule = "pythonsecurity:S8707"
 file = "tools/sonar-triage/sonar_triage.py"
 line = 87
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHfb1eXvoWSTACzM-dd"
+rule = "pythonsecurity:S8707"
+file = "tools/zenodo/zenodo.py"
+line = 1169
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHfb1eXvoWSTACzM-dc"
+rule = "pythonsecurity:S8707"
+file = "tools/zenodo/zenodo.py"
+line = 1192
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHftWA0voWSTACzP2Ns"
+rule = "pythonsecurity:S8707"
+file = "tools/zenodo/zenodo.py"
+line = 1293
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHftWA0voWSTACzP2Nr"
+rule = "pythonsecurity:S8707"
+file = "tools/zenodo/zenodo.py"
+line = 1307
 decision = "falsepositive"
 reason = "FP-cli"
