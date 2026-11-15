@@ -1,13 +1,14 @@
 ## How this repository gets swarm-core and ns3-tools
 
 - **swarm-core's `core/`**: `core/CMakeLists.txt` fetches it with CMake
-  `FetchContent` at one commit, `SWARM_CORE_REF`. The `Makefile` and every
-  workflow's swarm-core `core-deps` name the same commit; the
+  `FetchContent` at one commit, `SWARM_CORE_REF`. The `Makefile`, every
+  workflow's swarm-core `core-deps` and the `swarm-core=` dependency of
+  `.github/workflows/benchmark-cell.yml` name the same commit; the
   `swarm-core / pin` check (swarm-routing/.github
   `tools/checks/check-swarm-core-pin.py`) fails when they disagree or when
   swarm-core `main` changed `core/` since the pin. org-bot's `swarm-core-pin`
   task then opens the bump PR (`org-bot/swarm-core-pin`), touching only those
-  lines; review it and let it merge rather than bumping by hand.
+  lines, `benchmark-cell.yml` included; review it and let it merge rather than bumping by hand.
 - **The ns-3 build**: the `dependencies` input of
   `reusable-ns3-ci.yml` names the swarm-core and ns3-tools (`routing-bench`)
   refs the module builds on. A ref is a branch or a tag (`@vX.Y.Z`).
