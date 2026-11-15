@@ -197,7 +197,7 @@ recorded in the `benchmarks` global suite).
 | Repository | Ladder | Next release |
 |---|---|---|
 | ns3-swarm-core | [docs/roadmap.md](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md) | `v0.2.0` (ns3-swarm-core#40 first); `v0.1.0` "the shared module" shipped on 2026-11-11 |
-| ns3-tools | [docs/roadmap.md](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md) | `v1.1.0` (families and metrics, additive); `v1.0.0` (CLI and marker contract v1 frozen; maintainer decision 2026-11-13) shipped on 2026-11-13, after `v0.1.0` "harness packaged" (2026-11-11) and `v0.2.0` "campaigns and CLI" (2026-11-13) |
+| ns3-tools | [docs/roadmap.md](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md) | `v1.1.0` (arm isolation and PyPI: what merged since `v1.0.0`, re-plan 2026-11-15), then `v1.2.0` (families and metrics, additive); `v1.0.0` (CLI and marker contract v1 frozen; maintainer decision 2026-11-13) shipped on 2026-11-13, after `v0.1.0` "harness packaged" (2026-11-11) and `v0.2.0` "campaigns and CLI" (2026-11-13) |
 | AntHocNet | [docs/roadmap.md](https://github.com/swarm-routing/AntHocNet/blob/main/docs/roadmap.md) (its own ladder, v2.1.0 → v3.3.0) | `v2.7.0`, after the ns3-tools#29 switch-over |
 | ARA | [docs/roadmap.md](https://github.com/swarm-routing/ARA/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11) |
 | BeeAdHoc | [docs/roadmap.md](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11) |
@@ -232,7 +232,7 @@ flowchart LR
     AH["AntHocNet v2.7.0"]
   end
   subgraph B["Wave B"]
-    T2["ns3-tools v1.1.0"]
+    T2["ns3-tools v1.2.0"]
     C2["ns3-swarm-core v0.2.0"]
     ARA2["ARA v0.2.0"]
     BEE2["BeeAdHoc v0.2.0"]
@@ -269,7 +269,7 @@ flowchart LR
 | Wave | Releases | Gated by |
 |---|---|---|
 | A (now) | `ns3-tools v0.1.0` and `ns3-swarm-core v0.1.0` (both shipped 2026-11-11); `ns3-tools v0.2.0`, `ns3-tools v1.0.0` and `ns3-containers v1.0.0` (shipped 2026-11-13; the 1.0.0s by the decision of 2026-11-13, below); AntHocNet `v2.7.0` | ns3-tools: its release workflow (ns3-tools#26), shipped; ns3-swarm-core#38 (phase 2's exit criteria all hold); AntHocNet: the switch-over to the released harness (ns3-tools#29) |
-| B | `ns3-tools v1.1.0` (families and metrics, additive), `ns3-swarm-core v0.2.0`, then `ARA v0.2.0` and `BeeAdHoc v0.2.0` (the first gated protocol releases) | ns3-tools v1.1.0: its families-and-metrics scope, additive to contract v1 (the family catalogue ns3-tools#55, survivorship-safe metrics, probes as their own module ns3-tools#40, the user guide ns3-tools#4; [its ladder](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md)); the paired campaign end to end that every protocol pipeline needs shipped in v0.2.0; ns3-swarm-core v0.2.0: the adapter complete, additive and byte-identical, every consumer green; each protocol's own pipeline and anchor (ARA#36, BeeAdHoc#41) |
+| B | `ns3-tools v1.2.0` (families and metrics, additive; `v1.1.0` was re-planned on 2026-11-15 to ship what merged since `v1.0.0`), `ns3-swarm-core v0.2.0`, then `ARA v0.2.0` and `BeeAdHoc v0.2.0` (the first gated protocol releases) | ns3-tools v1.2.0: its families-and-metrics scope, additive to contract v1 (the family catalogue ns3-tools#55, survivorship-safe metrics, probes as their own module ns3-tools#40, the user guide ns3-tools#4; [its ladder](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md)); the paired campaign end to end that every protocol pipeline needs shipped in v0.2.0; ns3-swarm-core v0.2.0: the adapter complete, additive and byte-identical, every consumer green; each protocol's own pipeline and anchor (ARA#36, BeeAdHoc#41) |
 | C | `Termite v0.2.0`; `ns3-tools v2.0.0` (was v0.3.0: marker contract v2, the `benchmarks` schema in step, benchmarks#33), then the `benchmarks` release runs and global suite (benchmarks#24, #23), then the site's leaderboard and results explorer (site#12) | Termite: its module, pipeline and anchor (Termite#37, #31; the pre-registered runs of Termite#5); ns3-tools v2.0.0: readers refuse unknown contracts, outputs byte-identical apart from new fields |
 | D | `HOPNET v0.2.0` | after Termite's; the anchor against AntHocNet through ns3-tools (HOPNET#28; HOPNET golden rule 12) passes or ships as a written infeasibility verdict |
 | E | `1.0.0`s: `ns3-swarm-core`, then each protocol after its `v0.3.0` review (`ns3-tools` and `ns3-containers` released theirs ahead of the wave, below) | swarm-core: every protocol on it, AntHocNet included (ns3-swarm-core#14), the gated ones with no API change; the host contract waits for `2.0.0` (.github#253); a protocol: its `v0.3.0` review; all of them: the release workflow's `increment` input, so a major can be released ([.github#211](https://github.com/swarm-routing/.github/issues/211)) |
@@ -280,7 +280,7 @@ the order is now reversed. `ns3-tools` releases `v1.0.0` now, freezing its
 CLI and today's marker contract v1; marker contract v2 (wave C) becomes its
 `2.0.0`, and the campaign release of wave B a minor after 1.0 (`v1.1.0`;
 ns3-tools' own ladder, its `docs/roadmap.md`, has the versions; the labels
-`release:v1.1.0` and `release:v2.0.0` exist for it). `ns3-swarm-core`
+`release:v1.1.0`, `release:v1.2.0` and `release:v2.0.0` exist for it; on 2026-11-15 the maintainer re-planned it: `v1.1.0` ships what merged since `v1.0.0`, and the families-and-metrics scope moved to `v1.2.0`). `ns3-swarm-core`
 reaches `1.0.0` only after AntHocNet runs on it
 (swarm-routing/ns3-swarm-core#14). `ns3-containers` gets a first release,
 `v1.0.0`, that versions its image pipeline. Both 1.0.0s released now are
