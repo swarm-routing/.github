@@ -523,7 +523,7 @@ jobs:
           persist-credentials: false
       - name: Org .clang-format unless the repo ships its own
         run: |
-          [ -f .clang-format ] || curl -fsSL -o .clang-format \
+          [ -f .clang-format ] || curl --proto =https --tlsv1.2 -fsSL -o .clang-format \
             https://raw.githubusercontent.com/swarm-routing/.github/main/.clang-format
       - name: clang-format-18 --dry-run -Werror
         run: |

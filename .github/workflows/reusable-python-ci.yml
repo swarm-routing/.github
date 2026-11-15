@@ -64,13 +64,14 @@ jobs:
           python-version: ${{ inputs.python-version }}
       - name: Install ruff and coverage (pinned)
         timeout-minutes: 5
-        run: python3 -m pip install --quiet ruff==0.17.1 coverage==7.16.2
+        run: |
+          python3 -m pip install --quiet --only-binary :all: ruff==0.17.1 coverage==7.16.2
       - name: Org ruff.toml unless the repo has its own ruff config
         run: |
           if [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -qs '^\[tool\.ruff' pyproject.toml; then
             echo "using the repo's own ruff config"
           else
-            curl -fsSL -o ruff.toml https://raw.githubusercontent.com/swarm-routing/.github/main/ruff.toml
+            curl --proto =https --tlsv1.2 -fsSL -o ruff.toml https://raw.githubusercontent.com/swarm-routing/.github/main/ruff.toml
           fi
       - name: ruff check
         env:
