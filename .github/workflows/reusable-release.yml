@@ -91,6 +91,22 @@ name: Reusable release
 #    sends it, whatever `notify-site` says (the site lists public
 #    repositories only, and its Actions logs are public);
 #    release-selftest.yml passes it too, so no test sends an event.
+#      vcpkg    (opt-in, `vcpkg-ports: "<port> ..."`, #439) after the
+#               release is published, opens or updates the port bump PR in
+#               swarm-routing/vcpkg-registry for each named port: a checkout
+#               of the registry's main, its own renderer
+#               (`tools/port_bump.py bump --port P --tag vX.Y.Z`: the asset
+#               named in the port's portfile, checked against this release's
+#               SHA256SUMS, its SHA512, the version, the git-tree, versions/;
+#               a port not in ports/ yet comes from templates/P/), then
+#               `port_bump.py check`; the commit goes to the bot's branch
+#               `bot/vcpkg-<repository>` (rebuilt on the registry's main,
+#               force-pushed) and the PR `feat(ports): <ports> <version>`.
+#               Never a direct push to the registry's main. It needs the org
+#               App's token (GITHUB_TOKEN cannot write another repository): no
+#               token fails the job with a notice, and the GitHub release
+#               stands; re-run the job, or run the same command by hand. A
+#               private repository never opens one.
 #
 # mode `dry-run` (or `dry-run: true`) bumps on the runner only, then builds,
 # checksums, writes the SBOM, attests (real attestations, in the caller's
@@ -156,6 +172,10 @@ name: Reusable release
 #
 # To archive on Zenodo from the release job (#232), add `zenodo: true` under
 # `with:` and `ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}` under `secrets:`.
+#
+# A repository that releases a C++ library packaged as a vcpkg port (#439)
+# adds `vcpkg-ports: swarm-core` (its port names, space-separated) under
+# `with:`; the bot secrets above are what the registry PR needs.
 #
 # An ns-3 repository also publishes its images at the same version (#107):
 #
@@ -224,6 +244,10 @@ on:
         description: "After a release is published, send repository_dispatch `org-release` to swarm-routing/swarm-routing.github.io (report-only); false in tests; a private repository never sends it"
         type: boolean
         default: true
+      vcpkg-ports:
+        description: "Space-separated swarm-routing/vcpkg-registry ports this release bumps (e.g. `swarm-core`); after publish the org bot opens or updates the registry PR rendered by its tools/port_bump.py. Empty (default): nothing"
+        type: string
+        default: ''
     secrets:
       BOT_APP_ID:
         description: "The org GitHub App's ID, for the bump PR's and the release tag's token (.github/actions/bot-token)"
@@ -987,6 +1011,104 @@ jobs:
             *"missing from"*) echo "::notice::concept ${CONCEPT} is not recorded in the repository yet; org-bot's zenodo task opens the PR that writes it (or dispatch org-bot with task zenodo)." ;;
           esac
           printf '\n%s\n' "$out" >> "$GITHUB_STEP_SUMMARY"
+
+  # Opt-in (`vcpkg-ports`, #439): the published release's port bump in
+  # swarm-routing/vcpkg-registry, rendered by the registry's own script from
+  # the published asset (never a typed hash), as a PR from the bot's branch.
+  # No code of the caller's runs; the registry's script runs without a token.
+  vcpkg:
+    needs: [route, build, publish]
+    if: ${{ inputs.vcpkg-ports != '' && needs.route.outputs.mode == 'release' && !github.event.repository.private }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: release-vcpkg-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      VER: ${{ needs.build.outputs.version }}
+      PORTS: ${{ inputs.vcpkg-ports }}
+      REGISTRY: swarm-routing/vcpkg-registry
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - name: The registry at main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/vcpkg-registry
+          ref: main
+          path: registry
+          persist-credentials: false
+      - name: Render the bump (the registry's tools/port_bump.py)
+        working-directory: registry
+        run: |
+          for p in $PORTS; do
+            case "$p" in *[!a-z0-9-]*|'') echo "::error::vcpkg-ports: '$p' is not a port name"; exit 1 ;; esac
+            python3 -I tools/port_bump.py bump --port "$p" --tag "$TAG"
+          done
+          python3 -I tools/port_bump.py check
+          git status --short
+      # The action is this repository's, by path: a reusable workflow's `./`
+      # would be the caller's checkout.
+      - name: Bot token
+        id: bot
+        uses: swarm-routing/.github/.github/actions/bot-token@main
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: Push bot/vcpkg-<repository> and open or update the registry PR
+        working-directory: registry
+        env:
+          BOT_TOKEN: ${{ steps.bot.outputs.token }}
+          BOT_NAME: ${{ steps.bot.outputs.git-name }}
+          BOT_EMAIL: ${{ steps.bot.outputs.git-email }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "The registry already has ${PORTS} ${VER}: nothing to propose." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "$BOT_TOKEN" ]; then
+            echo "::error::no bot token (neither the App secrets nor ORG_BOT_TOKEN): GITHUB_TOKEN cannot push to ${REGISTRY}. The release ${TAG} is published; re-run this job once the secrets reach the caller, or open the PR by hand with tools/port_bump.py (swarm-routing/vcpkg-registry README \"How a port is bumped\")."
+            exit 1
+          fi
+          branch="bot/vcpkg-${GITHUB_REPOSITORY#*/}"
+          title="feat(ports): ${PORTS// /, } ${VER}"
+          git config user.name "${BOT_NAME:-github-actions[bot]}"
+          git config user.email "${BOT_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+          git checkout -q -b "$branch"
+          git add -A
+          git commit -q -m "$title" -m "Rendered by tools/port_bump.py from ${GITHUB_REPOSITORY} ${TAG}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          auth="$(printf 'x-access-token:%s' "$BOT_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          # bot/vcpkg-<repository> is the bot's branch, rebuilt on the
+          # registry's main each time: force-pushed.
+          git -c "http.${GITHUB_SERVER_URL}/.extraheader=AUTHORIZATION: basic $auth" \
+            push --force origin "HEAD:refs/heads/${branch}"
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "The port bump for **${GITHUB_REPOSITORY} ${TAG}** (${PORTS}), rendered by \`tools/port_bump.py bump\` from the published release: the asset named in each port's portfile, checked against the release's \`SHA256SUMS\`, its SHA512, the version, the git-tree and \`versions/\`; then \`port_bump.py check\`."
+            echo
+            echo "Release: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+            echo
+            echo "Opened by run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) (swarm-routing/.github \`reusable-release.yml\`, \`vcpkg-ports\`). The registry's CI installs every port on x64-linux and wasm32-emscripten."
+          } > "$body"
+          export GH_TOKEN="$BOT_TOKEN"
+          n="$(gh pr list --repo "$REGISTRY" --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$n" ]; then
+            gh pr edit "$n" --repo "$REGISTRY" --title "$title" --body-file "$body" > /dev/null
+            url="$(gh pr view "$n" --repo "$REGISTRY" --json url --jq .url)"
+            echo "Updated ${url}"
+          else
+            url="$(gh pr create --repo "$REGISTRY" --base main --head "$branch" --title "$title" --body-file "$body")"
+            echo "Opened ${url}"
+          fi
+          echo "### ${title}: ${url}" >> "$GITHUB_STEP_SUMMARY"
 
   # mode bump: the bump commit as the PR `chore(release): bump version A to
   # B` from bot/release. It runs no code of the caller's (the build job ran
