@@ -101,8 +101,11 @@ name: Reusable release
 #               a port not in ports/ yet comes from templates/P/), then
 #               `port_bump.py check`; the commit goes to the bot's branch
 #               `bot/vcpkg-<repository>` (rebuilt on the registry's main,
-#               force-pushed) and the PR `feat(ports): <ports> <version>`.
-#               Never a direct push to the registry's main. It needs the org
+#               force-pushed) and the PR `feat(ports): <ports> <version>`,
+#               with auto-merge (squash) enabled on it (#461), so the
+#               registry's merge queue lands it once its required checks
+#               pass, with no hand step (a refusal is a warning, the release
+#               stands). Never a direct push to the registry's main. It needs the org
 #               App's token (GITHUB_TOKEN cannot write another repository): no
 #               token fails the job with a notice, and the GitHub release
 #               stands; re-run the job, or run the same command by hand. A
@@ -1109,6 +1112,15 @@ jobs:
             echo "Opened ${url}"
           fi
           echo "### ${title}: ${url}" >> "$GITHUB_STEP_SUMMARY"
+          # Auto-merge (#461), as org-bot's and the site's bot PRs: the
+          # registry's merge queue squashes it once its required checks pass.
+          # Only on this bot branch's PR; a refusal is a warning, the release stands.
+          if gh pr merge "$url" --repo "$REGISTRY" --auto --squash; then
+            echo "Auto-merge on: the registry's merge queue lands ${url} once green" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::auto-merge not enabled on ${url}: merge it once the registry's checks are green"
+            echo "Auto-merge NOT enabled on ${url}: merge it by hand once green" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # mode bump: the bump commit as the PR `chore(release): bump version A to
   # B` from bot/release. It runs no code of the caller's (the build job ran

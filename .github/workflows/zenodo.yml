@@ -19,6 +19,8 @@ name: zenodo
 # and `tag` archives that tag as the first version of a new concept (refused
 # when a concept already exists; a dry run when `dry-run` is set or without
 # the token).
+# It also checks CONTRIBUTING.md's archived-releases table against Zenodo
+# (`zenodo.py table --check`, #428): drift is a warning in the summary.
 # Without the ZENODO_TOKEN secret (a Zenodo personal access token with
 # deposit:write and deposit:actions) every run is a dry run. Runs on a pull
 # request are dry runs too, and the token is not passed to them.
@@ -124,6 +126,21 @@ jobs:
             fi
           fi
           exit "$rc"
+      # CONTRIBUTING "Archived releases" against Zenodo (#428): drift is a
+      # warning and a summary table, never a failed run (the fix is a PR that
+      # runs `table --write`; no DOI is typed).
+      - name: Archived-releases table
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          sel=()
+          [ -n "$REPOS" ] && sel=(--repos "$REPOS")
+          out="$RUNNER_TEMP/table.txt"
+          if python3 -I tools/zenodo/zenodo.py table CONTRIBUTING.md --check "${sel[@]}" 2>&1 | tee "$out"; then
+            exit 0
+          fi
+          echo "::warning::CONTRIBUTING.md's archived-releases table differs from Zenodo: python3 -I tools/zenodo/zenodo.py table CONTRIBUTING.md --write"
+          { echo "### Archived-releases table drift"; echo; printf '%s\n' '```'; cat "$out"; printf '%s\n' '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Open or update the issue
         if: ${{ failure() && steps.sync.outcome == 'failure' && github.event_name != 'pull_request' }}
         run: |
