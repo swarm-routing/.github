@@ -111,13 +111,19 @@ def parse_text(text, name="lock"):
     return prefix, values
 
 
-def parse(path):
-    """A lock file below the current directory (a relative path only: the lock is
-    read from the repository it pins, never from elsewhere)."""
+def lock_path(path):
+    """The real path of a lock below the current directory (a relative path only: the
+    lock is read from, and bump writes, the repository it pins, never elsewhere)."""
     here = os.path.realpath(os.getcwd())
     full = os.path.realpath(os.path.join(here, path))
     if os.path.isabs(path) or not full.startswith(here + os.sep):
         raise LockError(f"{path}: give the lock as a path below the current directory")
+    return full
+
+
+def parse(path):
+    """A lock file below the current directory (lock_path)."""
+    full = lock_path(path)
     with open(full, encoding="utf-8") as f:
         return parse_text(f.read(), os.path.basename(full))
 
@@ -531,13 +537,14 @@ def main(argv=None):
             p.error("a command, or --self-test")
         prefix, values = parse(a.lock)
         if a.cmd == "bump":
-            with open(a.lock, encoding="utf-8") as f:
-                out, old, newest, commit = bump(f.read(), a.base, os.path.basename(a.lock))
+            full = lock_path(a.lock)
+            with open(full, encoding="utf-8") as f:
+                out, old, newest, commit = bump(f.read(), a.base, os.path.basename(full))
             if out is None:
                 print(f"{a.lock}: {values[f'{prefix}_REPO']} {old}: current")
                 return 0
             if a.write:
-                with open(a.lock, "w", encoding="utf-8") as f:
+                with open(full, "w", encoding="utf-8") as f:
                     f.write(out)
             print(
                 f"{a.lock}: {values[f'{prefix}_REPO']} {old} -> {newest} ({commit[:7]})"
