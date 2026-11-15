@@ -341,13 +341,20 @@ edit(
     'kind = "protocol"\ncitation = true\nzenodo_concept = "not-read-from-zenodo"\n',
 )
 write(
-    os.path.join(dr, ".github/workflows/release.yml"),
-    "# releases are cut by swarm-routing/.github's reusable-release.yml, elsewhere\n",
+    os.path.join(dr, ".github/workflows/release-sync.yml"),
+    "# every release, sent by swarm-routing/.github's reusable-release.yml, reaches the site\n",
 )
+os.remove(os.path.join(dr, ".github/workflows/release.yml"))
 run("apply", dr)
 check(
     "github/v/release" not in read(os.path.join(dr, "README.md")),
-    "a workflow that only names reusable-release.yml in a comment gives no release badge",
+    "a workflow that only names reusable-release.yml in a comment gives no release badge (the site's)",
+)
+write(os.path.join(dr, ".github/workflows/release.yml"), "on: workflow_dispatch\n")
+run("apply", dr)
+check(
+    "github/v/release" in read(os.path.join(dr, "README.md")),
+    "a release.yml of the repository's own gives the release badge (AntHocNet's)",
 )
 write(
     os.path.join(dr, ".github/workflows/release.yml"),

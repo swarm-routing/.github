@@ -759,7 +759,7 @@ that calls `reusable-release.yml`, not one that only names it in a comment.
 
 A repository's README shows AntHocNet's three badges through org-sync, each
 only once its target exists: **Release** when a workflow calls
-`reusable-release.yml`, **Cite** when it has a `CITATION.cff`, and **DOI**
+`reusable-release.yml` or the repository has its own `release.yml` (AntHocNet), **Cite** when it has a `CITATION.cff`, and **DOI**
 when its `.github/org-sync.toml` names the concept as top-level
 `zenodo_concept = "<record id>"`. `citation = true` (also top-level) seeds a
 `CITATION.cff` from `templates/CITATION.cff.in`: title, abstract (the
