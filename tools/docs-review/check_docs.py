@@ -58,7 +58,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "org-sync"))
 from org_sync import BADGE_GROUPS  # noqa: E402  the README badge table's groups, one source
@@ -265,15 +265,18 @@ def badge_metric(img):
     the release and the DOI are themselves, a static shields badge is its label
     (`runs on: ns-3` and `runs on: ns-3 · WebAssembly` are one), anything else its
     image URL."""
-    low = unquote(img).lower()
-    shields = re.search(r"img\.shields\.io/(?:endpoint|badge)\b", low)
-    if "codecov.io" in low or "coveralls.io" in low or (shields and "coverage" in low):
+    u = urlsplit(img)
+    host, path = (u.hostname or "").lower(), unquote(u.path).lower()
+    shields = host == "img.shields.io"
+    if host in ("codecov.io", "coveralls.io") or (
+        shields and re.match(r"/(?:endpoint|badge)\b", path) and "coverage" in unquote(img).lower()
+    ):
         return "coverage"
-    if "/github/v/release/" in low:
+    if shields and path.startswith("/github/v/release/"):
         return "release"
-    if "zenodo.org/badge/doi/" in low:
+    if host == "zenodo.org" and path.startswith("/badge/doi/"):
         return "doi"
-    m = re.search(r"img\.shields\.io/badge/((?:[^-/]|--)+)-", img)
+    m = re.match(r"/badge/((?:[^-/]|--)+)-", u.path) if shields else None
     if m:
         return "shield: " + unquote(m.group(1)).replace("--", "-").replace("_", " ").lower()
     return img
