@@ -531,6 +531,20 @@ def findings(data, repos, sonar, branch="main", out=print):
     return rows
 
 
+def toml_str(text):
+    """A TOML basic string: quote and backslash escaped, control characters and
+    DEL as \\uXXXX, every other character (outside the BMP too) as itself."""
+    out = []
+    for ch in str(text):
+        if ch in ('"', "\\"):
+            out.append("\\" + ch)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def entry(data, key, reason, decision, sonar, branch="main"):
     """The TOML block that records KEY, every field read from the API."""
     if key in {e["key"] for _, e in entries(data, "")}:
@@ -547,15 +561,15 @@ def entry(data, key, reason, decision, sonar, branch="main"):
         decision = decision or "falsepositive"
         if decision not in ISSUE_DECISIONS:
             raise Refusal(f"an issue's decision is one of {', '.join(ISSUE_DECISIONS)}")
-        last = f"decision = {json.dumps(decision)}"
+        last = f"decision = {toml_str(decision)}"
     else:
         decision = decision or "SAFE"
         if decision not in HOTSPOT_DECISIONS:
             raise Refusal(
                 f"a hotspot's resolution is one of {', '.join(sorted(HOTSPOT_DECISIONS))}"
             )
-        last = f"resolution = {json.dumps(decision)}"
-    q = json.dumps  # a JSON string is a valid TOML basic string (quotes, backslashes escaped)
+        last = f"resolution = {toml_str(decision)}"
+    q = toml_str
     lines = [
         f"[[{kind}]]",
         f"project = {q(project)}",
@@ -798,6 +812,14 @@ def self_test():
             and got["branch"] == "feature",
             got,
         )
+        # the printed entry, added to the file, makes plan read the issue on its branch
+        odd["issue"].append(got)
+        st["calls"].clear()
+        run(odd, "", sonar, False, out=lambda *_: None)
+        k9 = [c for c in st["calls"] if c[2].get("issues") == "K9"]
+        check_(k9 and k9[0][2].get("branch") == "feature", k9)
+        for text in ("FP-\U0001f600", "tab\there", "del\x7fend", "nl\nx"):
+            check_(tomllib.loads(f"v = {toml_str(text)}")["v"] == text, f"toml_str({text!r})")
         check_(
             "branch" not in tomllib.loads(entry(data, "K9", "FP-cli", None, sonar))["issue"][0],
             "main is the default branch, not written",
