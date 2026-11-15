@@ -34,6 +34,7 @@ FP-display = "dispatch_command only builds the command line recorded in the mani
 FP-chmod = "0o755 on the generated kit's .sh scripts, which the kit's reader runs; the kit holds no secret."
 FP-root = "ns3-dev is a build image run as a GitHub Actions container:, whose workspace mounts and actions need root; it runs no service."
 FP-float = "An exact test for zero of a counter parsed from the harness's text, where zero is printed exactly ('nothing happened'); a tolerance would change verdicts, and scenario_check's verdicts must stay byte-identical to AntHocNet's script (test_scenario_check_corpus.py)."
+FP-stub = "The file written is one of ns-3's one-line include stubs in the tool's own temporary copy of the headers of the ns3-dev image the invoker named (IMAGE-checked); a stub is skipped if it is a symlink or resolves outside that copy, and its own text is written back with the /opt/ns-3/ prefix pointed at the copy. Nothing read from the file chooses which file is written."
 
 # ---- swarm-routing/benchmarks (15)
 
@@ -198,6 +199,44 @@ key = "AaHT8Uo5QzGMKbFHRcEm"
 rule = "pythonsecurity:S8707"
 file = "tools/ns3_matrix.py"
 line = 373
+decision = "falsepositive"
+reason = "FP-cli"
+
+# ---- swarm-routing/ns3-swarm-core (4)
+
+[[issue]]
+project = "swarm-routing_ns3-swarm-core"
+key = "AaHd1Si4C7n5zOm-Rrrp"
+rule = "pythonsecurity:S2083"
+file = "tools/checks/check-api-surface.py"
+line = 693
+decision = "falsepositive"
+reason = "FP-stub"
+
+[[issue]]
+project = "swarm-routing_ns3-swarm-core"
+key = "AaHd1Si4C7n5zOm-Rrrr"
+rule = "pythonsecurity:S8707"
+file = "tools/checks/check-api-surface.py"
+line = 794
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-swarm-core"
+key = "AaHd1Si4C7n5zOm-Rrrq"
+rule = "pythonsecurity:S8707"
+file = "tools/checks/check-api-surface.py"
+line = 799
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_ns3-swarm-core"
+key = "AaHd1Si4C7n5zOm-Rrrs"
+rule = "pythonsecurity:S8707"
+file = "tools/checks/check-api-surface.py"
+line = 803
 decision = "falsepositive"
 reason = "FP-cli"
 
