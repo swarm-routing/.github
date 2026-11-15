@@ -403,10 +403,17 @@ def held_locks(gh, full, locks):
     """{lock: why} for each lock an open PR not from org-bot already changes (a hand
     bump, #478): the task leaves those alone rather than open a competing PR."""
     held = {}
-    for p in pages(gh, f"repos/{full}/pulls?state=open&per_page=100"):
+    prs = pages(gh, f"repos/{full}/pulls?state=open&per_page=100")
+    if len(prs) >= 1000:  # the list may go on: fail closed, never a competing PR
+        return {lock: "1000+ open PRs, not all read" for lock in locks}
+    for p in prs:
         if p["head"]["ref"].startswith("org-bot/"):
             continue
-        for f in pages(gh, f"repos/{full}/pulls/{p['number']}/files?per_page=100", 30):
+        files = pages(gh, f"repos/{full}/pulls/{p['number']}/files?per_page=100", 30)
+        if len(files) >= 3000:  # GitHub lists a PR's first 3000 files: it may change a lock
+            for lock in locks:
+                held.setdefault(lock, f"#{p['number']} changes 3000+ files, not all listed")
+        for f in files:
             name = f.get("filename") if isinstance(f, dict) else None
             if name in locks and name not in held:
                 held[name] = f"#{p['number']} changes it ({p.get('title') or ''})"
@@ -2387,6 +2394,19 @@ def self_test():
     check(
         "release-lock: a lock an open hand PR changes is left alone",
         "xi release-lock: up to date" in out
+        and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
+    )
+    big = {
+        f"repos/{ORG}/xi/pulls/7/files?per_page=100&page={n}": [
+            {"filename": f"f{n}-{i}"} for i in range(100)
+        ]
+        for n in range(1, 31)
+    }
+    gh = RouteGitHub(big, open_prs=[hand])
+    res, out = go(gh, task="release-lock", data=xdata)
+    check(
+        "release-lock: a hand PR whose file list may be truncated holds the lock (fail closed)",
+        "3000+ files" in out
         and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
     )
     xbot = dict(bot_pr, head={**bot_pr["head"], "repo": {"full_name": f"{ORG}/xi"}})
