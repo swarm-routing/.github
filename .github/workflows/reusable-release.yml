@@ -995,7 +995,10 @@ jobs:
   # consumer is a warning, the summary table and a red job that does not fail
   # the run; it never blocks the bump.
   downstream:
-    needs: [route, build]
+    # route only: the consumers judge the commit, not the version, so a dry
+    # run whose bump stops (a missing ladder row, nothing to release since the
+    # last tag) still reports them, and in parallel with the build
+    needs: route
     if: ${{ inputs.downstream-consumers != '' && needs.route.outputs.mode == 'dry-run' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 240
