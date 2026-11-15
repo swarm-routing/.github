@@ -1614,4 +1614,29 @@ check(
     "config.yml and a repository-only form are left alone",
 )
 
+# profile (#415): the org profile's badge table between its markers, the rest untouched
+dp = tempfile.mkdtemp()
+os.makedirs(os.path.join(dp, "profile"))
+pf = os.path.join(dp, "profile/README.md")
+write(
+    pf, "# org\n\nIntro.\n\n<!-- org-sync:begin badges -->\n<!-- org-sync:end badges -->\n\nRest.\n"
+)
+rc, out = run("profile", dp, "--check")
+check(rc == 1 and "drifted" in out, "profile --check: an empty badges section is drift")
+rc, _ = run("profile", dp)
+pr = read(pf)
+titles = [t for t, _ in org_sync.BADGE_GROUPS.values()]
+rows = re.findall(r"^\| ([^|]+) \| ", pr, re.M)[2:]
+check(
+    rc == 0
+    and pr.startswith("# org\n\nIntro.\n\n<!-- org-sync:begin badges -->\n| Group | Badges |\n")
+    and pr.endswith("<!-- org-sync:end badges -->\n\nRest.\n")
+    and rows == [t for t in titles if t in rows]
+    and "[![Colony Arena](" in pr,
+    "profile renders the grouped table between the markers, groups in order, the rest kept",
+)
+check(run("profile", dp, "--check")[0] == 0, "profile --check: today's render is current")
+write(pf, "# org\n")
+check(run("profile", dp)[0] == 1, "profile: no badges markers is an error")
+
 print("org-sync self-test: OK")
