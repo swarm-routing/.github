@@ -12,7 +12,9 @@
   `tools/checks/check-swarm-core-pin.py`, lock mode) verifies the lock against
   the release and fails when a newer swarm-core release is out; org-bot's
   `swarm-core-pin` task then opens the bump PR (`org-bot/swarm-core-pin`) with
-  the lock written from that release. Between releases nothing moves.
+  the lock written from that release and the tag and its commit moved on
+  every line above, the `swarm-core=` dependency of
+  `.github/workflows/benchmark-cell.yml` (the commit) included. Between releases nothing moves.
   With swarm-routing/.github checked out next to this repository,
   `python3 -I ../.github/tools/checks/release_lock.py verify swarm-core.lock`
   checks it locally.
