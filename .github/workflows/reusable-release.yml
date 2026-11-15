@@ -548,6 +548,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -o pipefail   # the checker's exit 1 must survive the tee
           tool="$RUNNER_TEMP/release_check.py"
           if [ "$GITHUB_REPOSITORY" = swarm-routing/.github ]; then
             cp tools/release/release_check.py "$tool"

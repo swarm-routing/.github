@@ -221,6 +221,22 @@ def ladder_row(text, tag):
     return [ln for ln in text.splitlines() if pat.search(ln)]
 
 
+def gate_rows(text, tag):
+    """The ladder rows that are the tag's own: a table row whose first cell is the
+    version (`| v0.5.0 |`, `| **v0.5.0** "gated" |`), or a heading naming it; never a
+    row that only mentions it (`| v0.4.0 | prerequisites for v0.5.0 |`)."""
+    out = []
+    for ln in ladder_row(text, tag):
+        s = ln.strip()
+        if s.startswith("#"):
+            out.append(ln)
+        elif s.startswith("|") and ladder_row(
+            s.split("|")[1].replace("*", "").strip()[: len(tag) + 1], tag
+        ):
+            out.append(ln)
+    return out
+
+
 def ladder(repo_dir, version, r=None):
     """The ladder gate: the version's row in docs/roadmap.md (swarm-routing/.github#430)."""
     r = r or Report()
@@ -229,7 +245,7 @@ def ladder(repo_dir, version, r=None):
         r.add("WARN", "ladder: no docs/roadmap.md; the org ROADMAP's release train is the scope")
     elif not version:
         r.add("WARN", "ladder: pass --version X.Y.Z (the dry-run's version) to check its row")
-    elif ladder_row(roadmap, f"v{version}"):
+    elif gate_rows(roadmap, f"v{version}"):
         r.add("OK", f"ladder: docs/roadmap.md has v{version}")
     else:
         r.add(
@@ -682,6 +698,18 @@ def self_test():
         with open(os.path.join(d, "docs", "roadmap.md"), "w", encoding="utf-8") as fh:
             fh.write("| v0.3.0 | shipped |\n| v0.4.0 | planned |\n")
         expect("ladder: the version's row", not quiet(ladder, d, "0.4.0").failed())
+        with open(os.path.join(d, "docs", "roadmap.md"), "a", encoding="utf-8") as fh:
+            fh.write(
+                '| v0.4.1 | prerequisites for v0.5.0 |\n| **v0.6.0** "gated" | x |\n## v0.7.0\n'
+            )
+        expect(
+            "ladder: a row that only mentions the version is not its row",
+            quiet(ladder, d, "0.5.0").failed(),
+        )
+        expect(
+            "ladder: a bold first cell and a heading are rows",
+            not quiet(ladder, d, "0.6.0").failed() and not quiet(ladder, d, "0.7.0").failed(),
+        )
         rep = quiet(ladder, d, "0.5.0")
         expect(
             "ladder: a version missing from the ladder fails (#430)",
