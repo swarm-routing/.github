@@ -19,7 +19,11 @@ name: Reusable release
 #    the PR `chore(release): bump version A to B`. It pushes with the org
 #    GitHub App's token (.github/actions/bot-token: BOT_APP_ID /
 #    BOT_APP_PRIVATE_KEY, else ORG_BOT_TOKEN, else GITHUB_TOKEN), so CI runs
-#    on the PR. Nothing is built, tagged or published.
+#    on the PR. Nothing is built, tagged or published. Before that (bump and
+#    dry-run alike), the ladder gate (#430): when the caller keeps a
+#    `docs/roadmap.md`, the bumped version must have its row there
+#    (tools/release/release_check.py `ladder`, this repository's at main),
+#    or the run fails before anything is proposed; no ladder is a warning.
 # 2. Merging that PR is the release (mode `release`, a push to the default
 #    branch). The `route` job releases only a commit that is the merge of a
 #    PR whose head is `<owner>/<repo>:bot/release` (GET
@@ -531,6 +535,33 @@ jobs:
           { echo "RELEASE_VERSION=${ver}"; echo "RELEASE_TAG=${tag}"; echo "NAME=${name}"; } >> "$GITHUB_ENV"
           git log --oneline -1
           cat "$OUT/meta/changes.md"
+
+      # The ladder gate (#430): a bump or dry-run of a version the repository's
+      # docs/roadmap.md has no row for fails here, before anything is built or
+      # proposed. No ladder is a warning (the org ROADMAP's release train is
+      # the scope). The check is tools/release/release_check.py `ladder`, this
+      # repository's at main, read into the runner's temp directory (never
+      # into the caller's checkout, which the build and the SBOM read); when
+      # the caller is this repository (release-selftest.yml), its own checkout's.
+      - name: Ladder gate (docs/roadmap.md has the version)
+        if: ${{ needs.route.outputs.mode != 'release' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tool="$RUNNER_TEMP/release_check.py"
+          if [ "$GITHUB_REPOSITORY" = swarm-routing/.github ]; then
+            cp tools/release/release_check.py "$tool"
+          else
+            gh api -H 'Accept: application/vnd.github.raw' \
+              'repos/swarm-routing/.github/contents/tools/release/release_check.py?ref=main' > "$tool"
+          fi
+          if ! python3 -I "$tool" ladder . --version "$RELEASE_VERSION" | tee "$RUNNER_TEMP/ladder.txt"; then
+            echo "::error::docs/roadmap.md has no row for ${RELEASE_TAG}: add the version and its exit criteria to the ladder in a PR, then dispatch again (CONTRIBUTING \"Cutting a release\", #430)"
+            exit 1
+          fi
+          if grep -q '^WARN' "$RUNNER_TEMP/ladder.txt"; then
+            echo "::warning::$(sed -n 's/^WARN *//p' "$RUNNER_TEMP/ladder.txt" | head -1)"
+          fi
 
       - name: Build the assets (the caller's command)
         if: ${{ needs.route.outputs.mode != 'bump' }}
