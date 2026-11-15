@@ -355,6 +355,33 @@ jobs:
             --html-details "$GITHUB_WORKSPACE/coverage/index.html" --print-summary . \
             | tee "$GITHUB_WORKSPACE/coverage/summary.txt"
           { echo '### Coverage (report-only)'; echo '```'; cat "$GITHUB_WORKSPACE/coverage/summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SONAR" = true ]; then
+            # gcovr names each file by the path ns-3 compiled it under,
+            # /opt/ns-3/contrib/<module>/..., a link into the checkout, so the
+            # scanner (base dir: the checkout) imported coverage for 0 files
+            # ("ignored for N unknown files", swarm-routing/.github#425). Name
+            # each by its real path relative to the checkout, as the compile
+            # database step below does; a file outside the checkout is dropped.
+            python3 -I - "$src" "$src/coverage-sonar.xml" <<'PY'
+          import os, sys
+          import xml.etree.ElementTree as ET
+          src, report = os.path.realpath(sys.argv[1]), sys.argv[2]
+          tree = ET.parse(report)
+          root = tree.getroot()
+          kept = 0
+          for f in list(root.iter("file")):
+              real = os.path.realpath(os.path.join(src, f.get("path")))
+              if real.startswith(src + os.sep):
+                  f.set("path", os.path.relpath(real, src))
+                  kept += 1
+              else:
+                  root.remove(f)
+          if not kept:  # report-only: warn, never fail the build leg
+              print(f"::warning::sonar: no file of this repository in {report}; no coverage imported")
+          tree.write(report, encoding="utf-8", xml_declaration=True)
+          print(f"sonar: {kept} file(s) in {report}, named relative to the checkout")
+          PY
+          fi
       - name: SonarQube Cloud — token, analysis method, compile database
         id: sonar
         if: inputs.sonar && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
