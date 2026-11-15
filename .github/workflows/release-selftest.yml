@@ -55,6 +55,11 @@ jobs:
       working-directory: tools/release/fixture
       dry-run: true
       notify-site: false   # no org-release event from a test (#388)
+      # The downstream check's wiring (#482): this commit's checkout stands in
+      # for the fixture consumer, whose ns-3 module does not exist, so it is
+      # skipped (exit 77) after the image, the script and the override ran.
+      downstream-consumers: tools/release/fixture/downstream.txt
+      downstream-self: .github
       notify-org: false    # nor to org-bot (#479)
 
   check:

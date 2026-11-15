@@ -1,0 +1,5 @@
+# release-selftest.yml's downstream check (swarm-routing/.github#482): one
+# consumer, this repository, standing in for itself (downstream-self), with
+# an ns-3 module path that does not exist, so the check skips it once the
+# image, tools/downstream/downstream.sh and the override have run.
+.github | swarm-routing/.github@main | 3.42+ | fixture=.github/tools/release/fixture/no-ns3-module | | |
