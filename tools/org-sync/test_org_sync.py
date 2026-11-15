@@ -309,6 +309,37 @@ check(
     "bestpractices_project renders the Best Practices badge after Scorecard, and check is clean",
 )
 
+# vcpkg and pypi (#436): only when the config names the ports / the project
+check(
+    "vcpkg-registry" not in rq and "pypi" not in rq.lower(),
+    "no vcpkg or PyPI badge without vcpkg_ports / pypi_project",
+)
+dv = fresh()
+run("init", dv, "--kind", "protocol", "--dual", "core/")
+edit(
+    dv,
+    ".github/org-sync.toml",
+    'kind = "protocol"\n',
+    'kind = "protocol"\nvcpkg_ports = ["swarm-core", "Not A Port"]\npypi_project = "ns3-tools"\n',
+)
+run("apply", dv)
+rv = read(os.path.join(dv, "README.md"))
+release_row = next(ln for ln in rv.splitlines() if ln.startswith("| Release |"))
+check(
+    "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com"
+    "%2Fswarm-routing%2Fvcpkg-registry%2Fmain%2Fports%2Fswarm-core%2Fvcpkg.json"
+    "&query=%24%5B%22version-semver%22%5D&label=vcpkg%20swarm-core"
+    in release_row
+    and "(https://github.com/swarm-routing/vcpkg-registry/tree/main/ports/swarm-core)"
+    in release_row
+    and "Not A Port" not in rv
+    and "[![PyPI](https://img.shields.io/pypi/v/ns3-tools?label=PyPI)](https://pypi.org/project/ns3-tools/)"
+    in release_row
+    and release_row.index("vcpkg") < release_row.index("PyPI") < release_row.index("Licence")
+    and run("check", dv)[0] == 0,
+    "vcpkg_ports and pypi_project render their badges in the Release row, before the licence; check is clean",
+)
+
 # release, doi and cite: each only when its target exists
 GH_DESC = (
     "The GitHub description: ant-colony routing over routing zones, a simulator-agnostic"
