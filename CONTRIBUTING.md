@@ -441,8 +441,10 @@ site's WebAssembly build (swarm-routing/swarm-routing.github.io#153).
   registry's `tools/port_bump.py bump --port <port> --tag vX.Y.Z` (the asset
   named in the portfile, checked against the release's `SHA256SUMS`, its
   SHA512, the version, the git-tree, `versions/`) and the org bot opens or
-  updates the PR from `bot/vcpkg-<repository>`. For a missed release a
-  person runs the same command and opens the PR.
+  updates the PR from `bot/vcpkg-<repository>` with auto-merge on, so the
+  registry's merge queue lands it once its required checks pass (#461; a
+  refusal is a warning in the job, and then a person merges it). For a
+  missed release a person runs the same command and opens the PR.
 
 ## Outside contributions
 
