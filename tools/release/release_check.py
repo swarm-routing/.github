@@ -64,7 +64,7 @@ REUSABLE = re.compile(
 )
 DIST_TARGET = re.compile(r"^dist\s*:", re.M)
 WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
-KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):[ \t]*(.*?)[ \t]*$")
+KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):(.*)$")  # the value is stripped after the match
 SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
 NOT_SHIPPED = re.compile(
     r"(?i)\b(?:not|un)[ -]?(?:yet[ -])?(?:shipped|released)\b|\b(?:planned|upcoming|next)\b"
@@ -162,7 +162,11 @@ def with_inputs(text):
                 if not (live(lines[k]) and m):
                     k += 1
                     continue
-                key, val, at = m.group(1), re.sub(r"[ \t]+#.*$", "", m.group(2)), indent(lines[k])
+                key, val, at = (
+                    m.group(1),
+                    m.group(2).split(" #", 1)[0].split("\t#", 1)[0].strip(),
+                    indent(lines[k]),
+                )
                 k += 1
                 if val[:1] in ("|", ">"):
                     body = []
