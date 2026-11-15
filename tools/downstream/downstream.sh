@@ -274,19 +274,25 @@ for e in "${entries[@]}"; do
     start=$(date +%s)
     cname="downstream-$name-$$"
     set +e
-    timeout "$budget" docker run --rm --name "$cname" -v "$work:/w" -w "/w/$name" \
+    # TERM reaches the docker client, which passes it to the container's bash
+    # (PID 1, which ignores it): KILL follows 60 s later, and the container
+    # is removed whatever ended the client (#485).
+    timeout -k 60 "$budget" docker run --rm --name "$cname" -v "$work:/w" -w "/w/$name" \
         -e C_NAME="$name" -e C_MODULES="$modules" -e C_SUITES="$suites" \
         -e C_STAGE="$stage" -e C_RUN="$run" "$image" bash -euo pipefail -c "$inner"
     rc=$?
+    docker rm -f "$cname" >/dev/null 2>&1 || true
     set -e
     echo "::endgroup::"
     took=$(( $(date +%s) - start ))
+    # KILL after the budget (137) is the hang too; a 137 before it (OOM) is not
+    if [ "$rc" = 137 ] && [ "$took" -ge "$budget" ]; then rc=124; fi
     case "$rc" in
         0)  echo "downstream: $name passed (${took} s)"
             echo "| $name | $short | pass | ${took} s |" >> "$summary" ;;
         77) echo "  SKIP  $name: no ns-3 module yet"
             echo "| $name | $short | SKIP (no ns-3 module yet) | |" >> "$summary" ;;
-        124) docker rm -f "$cname" >/dev/null 2>&1 || true
+        124)
             echo "downstream: $name did not finish within ${budget} s (hang)" >&2
             echo "| $name | $short | **FAIL** (no result within ${budget} s: hang) | ${took} s |" >> "$summary"
             echo "$name ${src%@*}@$sha hang (no result within ${budget} s)" >> "$failed_file"
