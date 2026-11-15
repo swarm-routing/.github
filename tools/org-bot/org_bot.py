@@ -4,11 +4,11 @@
 """Open the refresh PRs that keep every org repository in step with this one.
 
 Usage:
-  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-rebuild|release-aftercare|release|all]
+  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-lock|release-rebuild|release-aftercare|release|all]
                  [--repos A,B] [--dry-run]
   org_bot.py --self-test
 
-Six tasks, each a generator or check this repository already has, run on a fresh clone
+Seven tasks, each a generator or check this repository already has, run on a fresh clone
 of each public repository (listed by `epics.py fetch`: the org listing, or
 ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
@@ -36,6 +36,24 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             org-bot/swarm-core-pin, and is updated in place (pushed again, its
             body rewritten) when swarm-core moves on before it merges.
             ORG_BOT_SWARM_CORE overrides swarm-core's URL.
+  release-lock  tools/checks/release_lock.py bump --write, in each repository
+            with a root `<name>.lock` other than swarm-core.lock (that one is
+            swarm-core-pin's, as its pin lines move with it) that
+            release_lock.py parses, AntHocNet's ns3-tools.lock today (#478):
+            when the repository the lock names has a newer release, the lock
+            is moved to it, every value read from the release (the tag's
+            commit, each asset's sha256 from its SHA256SUMS, the asset found
+            by its hash in the locked release and named the same with the
+            version moved); an asset the new release renamed or dropped fails
+            that repository, for a person. Its PR lives on
+            org-bot/release-lock, updated in place, and runs the consumer's
+            CI like any PR: the merge queue lands it only when that CI is
+            green, so a release that changes the consumer's outputs waits for
+            a person. A lock that an open PR not from org-bot already changes
+            (a hand bump) is left alone. A PR whose branch is behind its base
+            and red is rebuilt on the base at the next run. Hourly (with
+            `release`), daily (`all`) and on each org-release event.
+            ORG_BOT_RELEASES overrides where releases are read from.
 
   release-aftercare  what a release leaves to record, once the bump PR merged
             (#465, #430, #428): for each repository whose newest GitHub
@@ -60,8 +78,9 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             bump: only a PR the maintainer asked for is rebuilt; never while a
             run of that workflow is queued or running; never with a guessed
             increment (a PR whose body records none is left to a person).
-  `release` runs both release tasks (org-bot.yml, hourly); `all` runs the
-  other four.
+  `release` runs both release tasks and release-lock (org-bot.yml, hourly,
+  and for one repository on its `org-release` repository_dispatch, #479); `all`
+  runs epics, org-sync, zenodo, swarm-core-pin and release-lock.
 
   org-sync and swarm-core-pin never leave two PRs that each fail the other's
   required check (#429: on 2026-11-14 every protocol repository held a pin
@@ -71,6 +90,11 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
   on org-bot/swarm-core-pin (the pin task's fixed branch, updated in place),
   and the bot's open org-sync PR there is closed as superseded. A repository
   where only one of them changes anything gets that task's PR as before.
+  release-lock carries the org-sync change the same way (its PR is never red on
+  `check / org-sync`), but leaves the org-sync PR open: no check fails because
+  a lock is behind, so the lock PR blocks nothing, and a lock bump red in the
+  consumer's CI must never hold the template refresh back. Whichever lands
+  first, the other's copy of those files is then no change.
 
 When a run changes files, the bot opens one PR per repository and task:
 - the branch is `org-bot/<task>-<hash of the change>`;
@@ -122,6 +146,7 @@ EPICS = os.path.join(ROOT, "tools", "epics", "epics.py")
 ORG_SYNC = os.path.join(ROOT, "tools", "org-sync", "org_sync.py")
 ZENODO = os.path.join(ROOT, "tools", "zenodo", "zenodo.py")
 PIN = os.path.join(ROOT, "tools", "checks", "check-swarm-core-pin.py")
+LOCK_TOOL = os.path.join(ROOT, "tools", "checks", "release_lock.py")
 RELEASE_CHECK = os.path.join(ROOT, "tools", "release", "release_check.py")
 SITE = (
     "swarm-routing.github.io"  # the site repository, where each release's [release-sync] issue is
@@ -135,10 +160,17 @@ SWARM_CORE = os.environ.get(
 # release lock, swarm-core.lock (swarm-routing/ns3-swarm-core#134; a file:// tree in
 # the self-test)
 SWARM_CORE_RELEASES = os.environ.get("ORG_BOT_SWARM_CORE_RELEASES", "https://github.com")
+# where the release-lock task reads every other lock's releases (#478)
+RELEASES = os.environ.get("ORG_BOT_RELEASES", "https://github.com")
+# the lock swarm-core-pin owns: its pin lines move with it
+SWARM_CORE_LOCK = "swarm-core.lock"
 # tasks whose PR lives on one branch, updated in place when the change moves on
-FIXED_BRANCH = {"swarm-core-pin"}
+FIXED_BRANCH = {"swarm-core-pin", "release-lock"}
 # tasks whose PRs would each fail the other's required check: carried in one PR (#429)
 PAIRED = {"org-sync": "swarm-core-pin", "swarm-core-pin": "org-sync"}
+# a task that carries its partner's change too, leaving the partner's PR open (#478)
+CARRY = {"release-lock": "org-sync"}
+FAILED_RUN = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
 ORG = "swarm-routing"
 BOT = ("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
 REUSABLE_RELEASE = re.compile(
@@ -177,6 +209,18 @@ TASKS = {
         "campaign plans are never touched (#407). This repository's core tests and ns-3 "
         "suite run on this PR; when swarm-core moves again before it merges, the bot "
         "updates this PR in place.",
+    },
+    "release-lock": {
+        "title": "chore(deps): bump the release locks (org-bot)",
+        "what": "A repository this one locks by release (a root `<name>.lock` other than "
+        "`swarm-core.lock`) published a newer release (#478). Moved by swarm-routing/.github "
+        "`tools/checks/release_lock.py bump --write`: the tag, the commit it names, the "
+        "version and each asset's sha256 are read from the new release (an asset is found by "
+        "its hash in the locked release's `SHA256SUMS` and named the same in the new one, the "
+        "version moved), never typed; every other line of the lock stays. This repository's "
+        "CI judges the new release on this PR: where it changes an output a gate compares, "
+        "the PR stays red and waits for a person (never merged around the gate). When the "
+        "dependency releases again before this merges, the bot updates this PR in place.",
     },
     "release-aftercare": {
         "title": "docs: record the released versions and their zenodo dois (org-bot)",
@@ -295,12 +339,80 @@ def branch_has(clone, branch, env):
 
 
 def pin_target(notes):
-    """The `pin-target: <sha>` line check-swarm-core-pin.py --bump printed, or None."""
+    """What a fixed-branch PR moves to: the `pin-target: <sha>` line check-swarm-core-pin.py
+    --bump printed, or release_lock.py bump's `lock-target: <lock>@<tag>` lines, or None."""
+    got = []
     for note in notes:
         for line in (note or "").splitlines():
-            if line.startswith("pin-target:"):
-                return line.split(":", 1)[1].strip()
-    return None
+            if line.startswith(("pin-target:", "lock-target:")):
+                got.append(line.split(":", 1)[1].strip())
+    return " ".join(got) or None
+
+
+def lock_files(clone):
+    """The root locks the release-lock task moves: `<name>.lock` files release_lock.py
+    parses, swarm-core.lock (swarm-core-pin's) and other formats (protocols.lock) left out."""
+    sys.path.insert(0, os.path.dirname(LOCK_TOOL))
+    import release_lock
+
+    found = []
+    for name in sorted(os.listdir(clone)):
+        path = os.path.join(clone, name)
+        if not name.endswith(".lock") or name == SWARM_CORE_LOCK or not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                release_lock.parse_text(fh.read(), name)
+        except (release_lock.LockError, UnicodeDecodeError):
+            continue
+        found.append(name)
+    return found
+
+
+def may_lock(gh, full):
+    """False when the repository's root lists no `<name>.lock` but swarm-core.lock, so the
+    release-lock task need not clone it; True when it does or the listing is unreadable."""
+    try:
+        entries = gh.api("GET", f"repos/{full}/contents")
+    except Failure:
+        return True
+    if not isinstance(entries, list):
+        return True
+    return any(
+        e.get("name", "").endswith(".lock") and e.get("name") != SWARM_CORE_LOCK
+        for e in entries
+        if isinstance(e, dict)
+    )
+
+
+def held_locks(gh, full, locks):
+    """{lock: why} for each lock an open PR not from org-bot already changes (a hand
+    bump, #478): the task leaves those alone rather than open a competing PR."""
+    held = {}
+    for p in gh.api("GET", f"repos/{full}/pulls?state=open&per_page=100") or []:
+        if p["head"]["ref"].startswith("org-bot/"):
+            continue
+        files = gh.api("GET", f"repos/{full}/pulls/{p['number']}/files?per_page=100") or []
+        for f in files:
+            name = f.get("filename") if isinstance(f, dict) else None
+            if name in locks and name not in held:
+                held[name] = f"#{p['number']} changes it ({p.get('title') or ''})"
+    return held
+
+
+def stale_red(gh, full, base, pr):
+    """The bot's fixed-branch PR is behind `base` and a check failed on its head: rebuilt
+    on the base, so a red that main fixed since (a template, a gate) is not kept."""
+    branch = pr["head"]["ref"]
+    try:
+        cmp = gh.api("GET", f"repos/{full}/compare/{base}...{branch}") or {}
+        if not cmp.get("behind_by"):
+            return False
+        sha = pr["head"].get("sha") or branch
+        runs = gh.api("GET", f"repos/{full}/commits/{sha}/check-runs?per_page=100") or {}
+    except Failure:
+        return False
+    return any(r.get("conclusion") in FAILED_RUN for r in runs.get("check_runs") or [])
 
 
 def apply_failed(returncode, stderr):
@@ -308,8 +420,9 @@ def apply_failed(returncode, stderr):
     return returncode > 1 or (returncode == 1 and bool(stderr.strip()))
 
 
-def generate(task, repo, clone, data, out):
-    """Run the task's generator in `clone`; return the lines it printed."""
+def generate(task, repo, clone, data, out, skip=None):
+    """Run the task's generator in `clone`; return the lines it printed. `skip`
+    (release-lock): {lock: why} for locks left alone."""
     if task == "epics":
         cmds = [[sys.executable, "-I", EPICS, "readme", clone, "--repo", repo, "--data", data]]
         if repo == ".github":
@@ -350,6 +463,26 @@ def generate(task, repo, clone, data, out):
         if r.returncode:
             raise Failure(f"check-swarm-core-pin.py --bump: {r.stdout.strip() or r.stderr.strip()}")
         out.append(r.stdout.strip())
+        return out
+    elif task == "release-lock":
+        locks = lock_files(clone)
+        if not locks:
+            return None
+        for lock in locks:
+            if lock in (skip or {}):
+                out.append(f"{lock}: left alone, {skip[lock]}")
+                print(f"{repo} release-lock: {lock} left alone, {skip[lock]}")
+                continue
+            r = sh(
+                [sys.executable, "-I", LOCK_TOOL, "bump", lock, "--write", "--base", RELEASES],
+                cwd=clone,
+                check=False,
+            )
+            if r.returncode:
+                raise Failure(
+                    f"release_lock.py bump {lock}: {r.stdout.strip() or r.stderr.strip()}"
+                )
+            out.append(r.stdout.strip())
         return out
     elif task == "release-aftercare":
         if repo == ".github":
@@ -493,8 +626,8 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
         if any(p["head"]["ref"].startswith(f"org-bot/{t}") for t in also)
         and p["head"].get("repo", {}).get("full_name", full) == full
     ]
-    target = pin_target(notes) if task == "swarm-core-pin" else None
-    if target and not same:
+    target = pin_target(notes) if task in FIXED_BRANCH else None
+    if target and not same and task == "swarm-core-pin":
         # someone already opened a bump to this commit by hand: no duplicate (#208)
         hand = [
             p
@@ -510,7 +643,12 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
     if same and task in FIXED_BRANCH:
         # one PR per repository, refreshed in place (#208): unchanged when it
         # already carries this target, else the branch is pushed again
-        if target and target in (same[0].get("body") or "") and branch_has(clone, branch, env):
+        if (
+            target
+            and target in (same[0].get("body") or "")
+            and branch_has(clone, branch, env)
+            and not (task == "release-lock" and stale_red(gh, full, base, same[0]))
+        ):
             supersede(gh, full, carried, same[0]["number"])
             note = queue(gh, full, base, same[0])
             print(
@@ -767,7 +905,7 @@ def snapshot(clone):
 def pair(task, repo, clone, data, notes):
     """#429: after `task` changed the clone, run its partner on the same clone. Returns
     (task to propose under, notes, tasks whose open PRs this one carries)."""
-    partner = PAIRED.get(task)
+    partner = PAIRED.get(task) or CARRY.get(task)
     if not partner or not snapshot(clone).strip():
         return task, notes, ()
     before = snapshot(clone)
@@ -786,6 +924,13 @@ def pair(task, repo, clone, data, notes):
         return task, notes + [f"{partner} not carried: {e}"], ()
     if extra is None or snapshot(clone) == before:
         return task, notes, ()
+    if task in CARRY:
+        head = (
+            f"This PR also carries the {partner} change, so `check / org-sync` does not hold "
+            f"it; the {partner} PR stays open, and whichever lands first leaves the other's "
+            "copy of those files no change (#478):"
+        )
+        return task, notes + [head] + extra, ()
     head = (
         f"This PR also carries the {partner} change (#429), so neither required check "
         "(`check / org-sync`, `swarm-core / pin`) holds it:"
@@ -803,8 +948,8 @@ def run(args, gh=None, clone_url=None):
     gh = gh or GitHub(token)
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
     groups = {
-        "all": ["epics", "org-sync", "zenodo", "swarm-core-pin"],
-        "release": ["release-rebuild", "release-aftercare"],
+        "all": ["epics", "org-sync", "zenodo", "swarm-core-pin", "release-lock"],
+        "release": ["release-rebuild", "release-aftercare", "release-lock"],
     }
     tasks = groups.get(args.task, [args.task])
     days = float(os.environ.get("ORG_BOT_AFTERCARE_DAYS") or 14)
@@ -865,7 +1010,9 @@ def run(args, gh=None, clone_url=None):
             mine = [
                 t
                 for t in tasks
-                if t != "release-rebuild" and (t != "release-aftercare" or repo in released)
+                if t != "release-rebuild"
+                and (t != "release-aftercare" or repo in released)
+                and (t != "release-lock" or may_lock(gh, f"{ORG}/{repo}"))
             ]
             if not mine:
                 continue
@@ -879,7 +1026,11 @@ def run(args, gh=None, clone_url=None):
                 sh(["git", "-C", clone, "checkout", "-q", "--", "."], env=env)
                 sh(["git", "-C", clone, "clean", "-qfd"], env=env)
                 sh(["git", "-C", clone, "checkout", "-q", "--detach", base_sha], env=env)
-                notes = generate(task, repo, clone, data, [])
+                if task == "release-lock" and lock_files(clone):
+                    held = held_locks(gh, f"{ORG}/{repo}", lock_files(clone))
+                    notes = generate(task, repo, clone, data, [], skip=held)
+                else:
+                    notes = generate(task, repo, clone, data, [])
                 if notes is None:
                     continue
                 as_task, notes, also = pair(task, repo, clone, data, notes)
@@ -914,6 +1065,7 @@ def main(argv=None):
             "org-sync",
             "zenodo",
             "swarm-core-pin",
+            "release-lock",
             "release-rebuild",
             "release-aftercare",
             "release",
@@ -2022,6 +2174,175 @@ def self_test():
         and seen_cmd[0][2:] == [ZENODO, "table", "/x/CONTRIBUTING.md", "--write"]
         and notes,
     )
+    # release-lock (#478): every other root lock follows its dependency's releases, one PR
+    # on org-bot/release-lock; a hand PR on the lock, a renamed asset, a carried org-sync
+    nt_repo = "swarm-routing/ns3-tools"
+    nt_more = release_lock.fixture_repo(rel, nt_repo, env)
+    _, n1 = release_lock.make_release(
+        rel, nt_repo, "v0.1.0", {"routing-bench-0.1.0.tar.gz": b"rb1", "nt-0.1.0.whl": b"w1"}, env
+    )
+    globals()["RELEASES"] = rbase
+    nt_tags = release_lock.tags(rbase, nt_repo)
+    nt_lock = (
+        "# the ns3-tools release this repository builds on\n"
+        f"NS3_TOOLS_REPO={nt_repo}\nNS3_TOOLS_TAG=v0.1.0\n"
+        f"NS3_TOOLS_COMMIT={nt_tags['v0.1.0']}\nNS3_TOOLS_VERSION=0.1.0\n"
+        f"ROUTING_BENCH_SHA256={n1['routing-bench-0.1.0.tar.gz']}\n"
+        f"NS3_TOOL_WHEEL_SHA256={n1['nt-0.1.0.whl']}\n"
+    )
+    protocols = "anthocnet https://github.com/x/y 0123 v1.0.0\n"  # not a release lock
+
+    def lock_repo(name):
+        src = os.path.join(work, "src", name)
+        os.makedirs(src)
+        for fn, text in (("ns3-tools.lock", nt_lock), ("protocols.lock", protocols)):
+            with open(os.path.join(src, fn), "w") as fh:
+                fh.write(text)
+        sh(["git", "init", "-q", "-b", "main", src], env=env)
+        sh(["git", "-C", src, "add", "-A"], env=env)
+        sh(["git", "-C", src, "commit", "-q", "-m", "init"], env=env)
+        sh(
+            ["git", "clone", "-q", "--bare", src, os.path.join(remotes, ORG, name + ".git")],
+            env=env,
+        )
+
+    def shown(name, path, ref="org-bot/release-lock"):
+        return sh(
+            [
+                "git",
+                "--git-dir",
+                os.path.join(remotes, ORG, name + ".git"),
+                "show",
+                f"{ref}:{path}",
+            ],
+            check=False,
+        ).stdout
+
+    lock_repo("nu")
+    ndata = os.path.join(work, "ndata.json")
+    with open(ndata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": "nu", "epics": []}]}, fh)
+    gh = FakeGitHub()
+    res, out = go(gh, task="release-lock", data=ndata)
+    check(
+        "release-lock: a current lock gets no PR, a lock of another format is skipped",
+        "nu release-lock: up to date" in out
+        and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
+    )
+    nt_more("two")
+    _, n2 = release_lock.make_release(
+        rel, nt_repo, "v0.2.0", {"routing-bench-0.2.0.tar.gz": b"rb2", "nt-0.2.0.whl": b"w2"}, env
+    )
+    gh = RouteGitHub({f"repos/{ORG}/nu/releases?per_page=20": []}, merge_queue=True)
+    res, out = go(gh, task="release", data=ndata)  # the hourly group carries release-lock
+    post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    got = shown("nu", "ns3-tools.lock")
+    check(
+        "release-lock: a new release gets one auto-merge PR, every value read from it",
+        len(post) == 1
+        and post[0][2]["head"] == "org-bot/release-lock"
+        and post[0][2]["title"].startswith("chore(deps):")
+        and "lock-target: ns3-tools.lock@v0.2.0" in post[0][2]["body"]
+        and got.startswith("# the ns3-tools release")
+        and "NS3_TOOLS_TAG=v0.2.0\n" in got
+        and f"ROUTING_BENCH_SHA256={n2['routing-bench-0.2.0.tar.gz']}" in got
+        and f"NS3_TOOL_WHEEL_SHA256={n2['nt-0.2.0.whl']}" in got
+        and shown("nu", "protocols.lock") == protocols
+        and gh.auto_merged() == ["PR_42"],
+    )
+    bot_pr = {
+        "number": 42,
+        "node_id": "PR_42",
+        "title": TASKS["release-lock"]["title"],
+        "body": post[0][2]["body"],
+        "head": {"ref": "org-bot/release-lock", "sha": "f00d", "repo": {"full_name": f"{ORG}/nu"}},
+        "auto_merge": {"merge_method": "squash"},
+    }
+    gh = FakeGitHub([bot_pr])
+    res, out = go(gh, task="release-lock", data=ndata)
+    check(
+        "release-lock: the same target is left alone",
+        "already proposed in #42" in out and not [c for c in gh.calls if c[0] in ("POST", "PATCH")],
+    )
+    red = {
+        f"repos/{ORG}/nu/compare/main...org-bot/release-lock": {"behind_by": 3},
+        f"repos/{ORG}/nu/commits/f00d/check-runs?per_page=100": {
+            "check_runs": [{"name": "CI gate", "conclusion": "failure"}]
+        },
+    }
+    gh = RouteGitHub(red, open_prs=[bot_pr])
+    res, out = go(gh, task="release-lock", data=ndata)
+    check(
+        "release-lock: behind its base and red, the PR is rebuilt on the base",
+        "updated #42 on org-bot/release-lock" in out,
+    )
+    red[f"repos/{ORG}/nu/commits/f00d/check-runs?per_page=100"] = {
+        "check_runs": [{"name": "CI gate", "conclusion": "success"}]
+    }
+    gh = RouteGitHub(red, open_prs=[bot_pr])
+    res, out = go(gh, task="release-lock", data=ndata)
+    check("release-lock: behind but green, left to the queue", "already proposed in #42" in out)
+    lock_repo("xi")  # a hand bump is open: no competing PR (#478)
+    xdata = os.path.join(work, "xdata.json")
+    with open(xdata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": "xi", "epics": []}]}, fh)
+    hand = {
+        "number": 7,
+        "title": "chore(deps): pin ns3-tools v0.2.0",
+        "body": "",
+        "head": {"ref": "claude/ns3-tools", "repo": {"full_name": f"{ORG}/xi"}},
+    }
+    gh = RouteGitHub(
+        {f"repos/{ORG}/xi/pulls/7/files?per_page=100": [{"filename": "ns3-tools.lock"}]},
+        open_prs=[hand],
+    )
+    res, out = go(gh, task="release-lock", data=xdata)
+    check(
+        "release-lock: a lock an open hand PR changes is left alone",
+        "xi release-lock: up to date" in out
+        and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
+    )
+    # #429-style carry: drifted templates ride along, the org-sync PR stays open
+    sync_pr = {
+        "number": 5,
+        "title": TASKS["org-sync"]["title"],
+        "body": "",
+        "head": {"ref": "org-bot/org-sync-abcd1234", "repo": {"full_name": f"{ORG}/xi"}},
+    }
+
+    def sync_generate(task, repo, clone, data_, out, skip=None):
+        if task == "org-sync":
+            with open(os.path.join(clone, "SYNCED.md"), "w") as fh:
+                fh.write("templates\n")
+            return ["org-sync generated"]
+        return real_generate(task, repo, clone, data_, out, skip=skip)
+
+    globals()["generate"] = sync_generate
+    try:
+        gh = FakeGitHub([sync_pr])
+        res, out = go(gh, task="release-lock", data=xdata)
+    finally:
+        globals()["generate"] = real_generate
+    post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    check(
+        "release-lock: carries the org-sync change and leaves the org-sync PR open",
+        len(post) == 1
+        and shown("xi", "SYNCED.md") == "templates\n"
+        and "NS3_TOOLS_TAG=v0.2.0" in shown("xi", "ns3-tools.lock")
+        and not [c for c in gh.calls if c[0] == "PATCH" and c[1].endswith("/pulls/5")]
+        and "also carries the org-sync change" in post[0][2]["body"],
+    )
+    nt_more("three")  # the wheel renamed: a person bumps it, with the code that names it
+    release_lock.make_release(
+        rel, nt_repo, "v0.3.0", {"routing-bench-0.3.0.tar.gz": b"rb3", "nt2-0.3.0.whl": b"w3"}, env
+    )
+    gh = FakeGitHub([bot_pr])
+    try:
+        res, out = go(gh, task="release-lock", data=ndata)
+        refused = ""
+    except Failure as e:
+        refused = str(e)
+    check("release-lock: a renamed asset fails that repository", "1 repositories failed" in refused)
     # org_sync.py apply: exit 1 with only stdout is owned sections left alone; anything else fails
     check(
         "apply exit codes",

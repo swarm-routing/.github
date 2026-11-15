@@ -37,9 +37,11 @@ before anything is built or proposed (swarm-routing/.github#430).
   - the site saw it: an `[release-sync] <name> <tag>` issue in
     swarm-routing/swarm-routing.github.io (CONTRIBUTING step 6);
   - every org repository that locks this one (a root `*.lock` whose
-    `<PREFIX>_REPO` names it) locks the tag, or has org-bot's open
-    `org-bot/*` bump PR; the candidates are the org's public repositories,
-    or --repos (a token bound to some repositories cannot list the org);
+    `<PREFIX>_REPO` names it) locks the tag, or has an open PR moving the lock
+    to it (org-bot's `org-bot/*` bump, or a hand bump); the candidates are
+    --repos, else the org's public repositories, else, where the token
+    cannot list the org (an agent session), the repositories
+    ROADMAP.md#epics names, as org-bot's epics fetch does (#478);
   - each `vcpkg-ports` port the caller names has the version as its
     swarm-routing/vcpkg-registry baseline, or the open `bot/vcpkg-<name>` PR;
   - where the release workflow publishes to PyPI, PyPI has the version;
@@ -63,6 +65,9 @@ import urllib.error
 import urllib.request
 
 SITE = "swarm-routing/swarm-routing.github.io"
+ROADMAP = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "ROADMAP.md"
+)
 REGISTRY = "swarm-routing/vcpkg-registry"
 REUSABLE = re.compile(
     r"^[ \t]*(?:-[ \t]*)?uses:[ \t]*swarm-routing/\.github/\.github/workflows/reusable-release\.yml@",
@@ -367,7 +372,15 @@ def bumps_lock(gh, repo, pull, lock, prefix, tag):
     return head.get(f"{prefix}_TAG") == tag
 
 
-def after(repo, tag, org, gh, consumers=None):
+def roadmap_repos(path=ROADMAP):
+    """The repository names ROADMAP.md#epics lists (tools/epics/epics.py's reader)."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "epics"))
+    import epics
+
+    return epics.roadmap_repos(path)
+
+
+def after(repo, tag, org, gh, consumers=None, roadmap=ROADMAP):
     r = Report()
     owner, name = repo.split("/", 1)
     version = tag.lstrip("v")
@@ -411,12 +424,21 @@ def after(repo, tag, org, gh, consumers=None):
         try:
             candidates = gh.get_all(f"orgs/{org}/repos?type=public") or []
         except RuntimeError as e:
-            candidates = []
-            r.add(
-                "WARN",
-                f"lock: cannot list {org}'s repositories ({str(e).splitlines()[0][:120]}); "
-                "pass --repos A,B to name the consumers",
-            )
+            names = roadmap_repos(roadmap)
+            candidates = [{"full_name": f"{org}/{n}"} for n in names]
+            why = str(e).splitlines()[0][:120]
+            if names:
+                r.add(
+                    "OK",
+                    f"lock: {org}'s repositories from ROADMAP.md#epics ({len(names)}), "
+                    f"as the org listing is refused ({why})",
+                )
+            else:
+                r.add(
+                    "WARN",
+                    f"lock: cannot list {org}'s repositories ({why}) and ROADMAP.md#epics "
+                    "names none; pass --repos A,B to name the consumers",
+                )
     for c in candidates:
         if c.get("archived") or c["full_name"] == repo:
             continue
@@ -436,23 +458,27 @@ def after(repo, tag, org, gh, consumers=None):
                 continue
             pulls = gh.get_all(f"repos/{c['full_name']}/pulls?state=open") or []
             bump = [
-                p
-                for p in pulls
-                if p["head"]["ref"].startswith("org-bot/")
-                and bumps_lock(gh, c["full_name"], p, entry["name"], prefix, tag)
+                p for p in pulls if bumps_lock(gh, c["full_name"], p, entry["name"], prefix, tag)
             ]
             if bump:
+                who = (
+                    "org-bot's bump"
+                    if bump[0]["head"]["ref"].startswith("org-bot/")
+                    else "a hand bump"
+                )
                 r.add(
                     "WARN",
-                    f"lock: {where} locks {have}; org-bot's bump "
+                    f"lock: {where} locks {have}; {who} "
                     f"{c['full_name']}#{bump[0]['number']} is open (shepherd it)",
                 )
             else:
+                task = "swarm-core-pin" if entry["name"] == "swarm-core.lock" else "release-lock"
                 r.add(
                     "WARN",
-                    f"lock: {where} locks {have}, no org-bot bump PR open: org-bot "
-                    "bumps swarm-core.lock once the pin check is red; any other lock is a "
-                    'hand PR (release_lock.py render, CONTRIBUTING "Dependencies")',
+                    f"lock: {where} locks {have}, no bump PR open: org-bot's `{task}` task "
+                    "opens it within the hour (dispatch org-bot with that task to run it now); "
+                    "an asset the release renamed makes it fail, and then the bump is a hand "
+                    'PR (release_lock.py render, CONTRIBUTING "Dependencies")',
                 )
     flows = []
     # the workflows as they were at the tag: what that release ran
@@ -802,6 +828,15 @@ def self_test():
         "after: a stale consumer with org-bot's pin PR (not the template PR)",
         has(rep, "WARN", "o/b#4 is open"),
     )
+    expect("after: org-bot's PR is named as org-bot's", has(rep, "WARN", "org-bot's bump o/b#4"))
+    hand_routes = dict(routes)
+    hand_routes["repos/o/b/pulls?state=open"] = [
+        {"number": 6, "title": "chore(deps): bump", "head": {"ref": "claude/x", "sha": "c0ffee"}}
+    ]
+    hand_routes["repos/o/b/pulls/6/files"] = [{"filename": "swarm-core.lock"}]
+    rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(hand_routes), ["b"])
+    expect("after: a hand bump PR counts as the bump (#478)", has(rep, "WARN", "a hand bump o/b#6"))
+    rep = quiet(after, "o/r", "v0.4.0", "o", gh)
     expect(
         "after: an unrelated lock and an archived repository are skipped",
         not any("o/c" in m or "o/old" in m for _, m in rep.lines),
@@ -825,7 +860,10 @@ def self_test():
     expect("after: no vcpkg PR fails", has(rep, "FAIL", "no bot/vcpkg-r PR"))
     expect("after: not on PyPI fails", has(rep, "FAIL", "not on PyPI"))
     expect("after: no site issue warns with the dispatch", has(rep, "WARN", "release-sync.yml"))
-    expect("after: a stale consumer with no bump PR warns", has(rep, "WARN", "no org-bot bump"))
+    expect(
+        "after: a stale consumer with no bump PR warns",
+        has(rep, "WARN", "no bump PR open: org-bot's `swarm-core-pin`"),
+    )
     expect("after: the ladder marked shipped", has(rep, "OK", "marks v0.4.0 shipped"))
     rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(routes), ["a"])
     expect(
@@ -840,7 +878,18 @@ def self_test():
             return super().get(path)
 
     rep = quiet(after, "o/r", "v0.4.0", "o", Refused(routes))
+    nowhere = os.path.join(tempfile.mkdtemp(), "ROADMAP.md")
+    rep = quiet(after, "o/r", "v0.4.0", "o", Refused(routes), None, nowhere)
     expect("after: an org listing refused warns and names --repos", has(rep, "WARN", "--repos"))
+    with open(nowhere, "w") as fh:
+        fh.write(
+            "<!-- epics:begin -->\n### [a](https://github.com/swarm-routing/a)\n<!-- epics:end -->\n"
+        )
+    rep = quiet(after, "o/r", "v0.4.0", "o", Refused(routes), None, nowhere)
+    expect(
+        "after: an org listing refused falls back to ROADMAP.md#epics (#478)",
+        has(rep, "OK", "from ROADMAP.md#epics (1)") and has(rep, "OK", "o/a swarm-core.lock"),
+    )
     # an org-bot PR that changes the lock, but to another tag, is not the bump
     routes["repos/o/b/pulls?state=open"] = [
         {"number": 5, "title": "x", "head": {"ref": "org-bot/swarm-core-pin", "sha": "beef"}}
@@ -850,7 +899,7 @@ def self_test():
     rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(routes), ["b"])
     expect(
         "after: an org-bot PR whose lock names another tag is not the bump",
-        has(rep, "WARN", "no org-bot bump PR open"),
+        has(rep, "WARN", "no bump PR open"),
     )
     routes["repos/o/r/contents/docs/roadmap.md"] = b64("| v0.4.0 | not shipped yet |\n")
     rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(routes), [])
