@@ -519,9 +519,18 @@ def pair(task, repo, clone, data, notes):
     if not partner or not snapshot(clone).strip():
         return task, notes, ()
     before = snapshot(clone)
+    # the tree as the task left it, so a partner that fails half-way is undone
+    # exactly, the task's own change kept
+    sh(["git", "-C", clone, "add", "-A"])
+    tree = sh(["git", "-C", clone, "write-tree"]).stdout.strip()
+    sh(["git", "-C", clone, "reset", "-q"])
     try:
         extra = generate(partner, repo, clone, data, [])
     except Failure as e:  # the partner's own run reports it; this PR goes on alone
+        sh(["git", "-C", clone, "read-tree", tree])
+        sh(["git", "-C", clone, "checkout-index", "-a", "-f"])
+        sh(["git", "-C", clone, "clean", "-qfd"])
+        sh(["git", "-C", clone, "reset", "-q"])
         return task, notes + [f"{partner} not carried: {e}"], ()
     if extra is None or snapshot(clone) == before:
         return task, notes, ()
@@ -1329,6 +1338,43 @@ def self_test():
                 and f"pin-target: {newer}" in body[0][2]["body"]
             ),
         )
+
+    def half_generate(task, repo, clone, data_, out):
+        if task == "org-sync":  # the task itself: a new file and an edit
+            with open(os.path.join(clone, "SYNCED.md"), "w") as fh:
+                fh.write("templates\n")
+            with open(os.path.join(clone, "Makefile"), "a") as fh:
+                fh.write("# synced\n")
+            return ["org-sync generated"]
+        with open(os.path.join(clone, "HALF.md"), "w") as fh:  # the partner fails half-way
+            fh.write("partial\n")
+        with open(os.path.join(clone, "core", "CMakeLists.txt"), "a") as fh:
+            fh.write("# partial\n")
+        raise Failure("check-swarm-core-pin.py --bump: refused")
+
+    globals()["generate"] = half_generate
+    try:
+        gh = FakeGitHub()
+        res, out = go(gh, task="org-sync", repos="iota", data=tdata)
+    finally:
+        globals()["generate"] = real_generate
+    ibranch = res[0][2]["branch"] if res else ""
+    ifiles = sh(
+        [
+            "git",
+            "--git-dir",
+            os.path.join(remotes, ORG, "iota.git"),
+            "diff",
+            "--name-only",
+            "main",
+            ibranch,
+        ],
+        check=False,
+    ).stdout.split()
+    check(
+        "#429: a partner that fails half-way is undone, the task's own change kept",
+        ibranch.startswith("org-bot/org-sync-") and sorted(ifiles) == ["Makefile", "SYNCED.md"],
+    )
     globals()["generate"] = drift_generate
     try:
         gh = FakeGitHub()
