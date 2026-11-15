@@ -5,6 +5,7 @@
 
     release_check.py ready REPO_DIR [--repo OWNER/NAME] [--version X.Y.Z]
     release_check.py after OWNER/NAME --tag vX.Y.Z [--org ORG] [--repos A,B]
+    release_check.py ladder REPO_DIR --version X.Y.Z
     release_check.py --self-test
 
 Read-only. It prints one line per check, `OK`, `WARN`, `FAIL` or `NEXT` (a
@@ -18,12 +19,17 @@ CONTRIBUTING "Cutting a release" is the procedure; this checks its steps.
   - the Commitizen config (`.cz.toml`, or `[tool.commitizen]` in
     `pyproject.toml`) exists, with `tag_format = "v$version"`;
   - `make dist` exists, unless the caller passes its own `build:`;
-  - with --version, `docs/roadmap.md` has a row for vX.Y.Z (the ladder gate
-    the workflow does not enforce yet, swarm-routing/.github#430); without a
-    ladder, the org ROADMAP's release train applies (a WARN);
+  - with --version, `docs/roadmap.md` has a row for vX.Y.Z (the ladder gate,
+    as `ladder`); without a ladder, the org ROADMAP's release train applies
+    (a WARN);
   - with --repo and --version, no open issue is labelled `release:vX.Y.Z`;
   - with --repo, an open `bot/release` PR behind `main` (dispatch `bump`
     again; never update or push that branch by hand).
+
+`ladder` is the ladder gate alone, offline: FAIL (exit 1) when
+`docs/roadmap.md` has no row for vX.Y.Z, WARN when the repository keeps no
+ladder. reusable-release.yml's bump and dry-run run it on the bumped version
+before anything is built or proposed (swarm-routing/.github#430).
 
 `after` (once the bump PR merged), through `gh api` and public URLs:
   - the GitHub release of the tag is published with SHA256SUMS and the
@@ -215,6 +221,41 @@ def ladder_row(text, tag):
     return [ln for ln in text.splitlines() if pat.search(ln)]
 
 
+def gate_rows(text, tag):
+    """The ladder rows that are the tag's own: a table row whose first cell is the
+    version (`| v0.5.0 |`, `| **v0.5.0** "gated" |`), or a heading naming it; never a
+    row that only mentions it (`| v0.4.0 | prerequisites for v0.5.0 |`)."""
+    out = []
+    for ln in ladder_row(text, tag):
+        s = ln.strip()
+        if s.startswith("#"):
+            out.append(ln)
+        elif s.startswith("|") and ladder_row(
+            s.split("|")[1].replace("*", "").strip()[: len(tag) + 1], tag
+        ):
+            out.append(ln)
+    return out
+
+
+def ladder(repo_dir, version, r=None):
+    """The ladder gate: the version's row in docs/roadmap.md (swarm-routing/.github#430)."""
+    r = r or Report()
+    roadmap = read(os.path.join(repo_dir, "docs", "roadmap.md"))
+    if roadmap is None:
+        r.add("WARN", "ladder: no docs/roadmap.md; the org ROADMAP's release train is the scope")
+    elif not version:
+        r.add("WARN", "ladder: pass --version X.Y.Z (the dry-run's version) to check its row")
+    elif gate_rows(roadmap, f"v{version}"):
+        r.add("OK", f"ladder: docs/roadmap.md has v{version}")
+    else:
+        r.add(
+            "FAIL",
+            f"ladder: docs/roadmap.md has no row for v{version}; add the version and "
+            "its exit criteria in a PR before the bump (swarm-routing/.github#430)",
+        )
+    return r
+
+
 def ready(repo_dir, repo, version, gh):
     r = Report()
     flows = local_workflows(repo_dir)
@@ -262,19 +303,7 @@ def ready(repo_dir, repo, version, gh):
         r.add("OK", "build: the caller's own build: input")
     else:
         r.add("FAIL", "build: no `dist:` target in the Makefile and no build: input in the caller")
-    roadmap = read(os.path.join(repo_dir, "docs", "roadmap.md"))
-    if roadmap is None:
-        r.add("WARN", "ladder: no docs/roadmap.md; the org ROADMAP's release train is the scope")
-    elif not version:
-        r.add("WARN", "ladder: pass --version X.Y.Z (the dry-run's version) to check its row")
-    elif ladder_row(roadmap, f"v{version}"):
-        r.add("OK", f"ladder: docs/roadmap.md has v{version}")
-    else:
-        r.add(
-            "FAIL",
-            f"ladder: docs/roadmap.md has no row for v{version}; add the version and "
-            "its exit criteria in a PR before the bump (swarm-routing/.github#430)",
-        )
+    ladder(repo_dir, version, r)
     if repo and version:
         label = f"release:v{version}"
         listed = gh.get_all(f"repos/{repo}/issues?state=open&labels={label}")
@@ -665,6 +694,39 @@ def self_test():
             has(rep, "FAIL", "cannot read o/gone's issues") and not has(rep, "OK", "scope"),
         )
     with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "docs"))
+        with open(os.path.join(d, "docs", "roadmap.md"), "w", encoding="utf-8") as fh:
+            fh.write("| v0.3.0 | shipped |\n| v0.4.0 | planned |\n")
+        expect("ladder: the version's row", not quiet(ladder, d, "0.4.0").failed())
+        with open(os.path.join(d, "docs", "roadmap.md"), "a", encoding="utf-8") as fh:
+            fh.write(
+                '| v0.4.1 | prerequisites for v0.5.0 |\n| **v0.6.0** "gated" | x |\n## v0.7.0\n'
+            )
+        expect(
+            "ladder: a row that only mentions the version is not its row",
+            quiet(ladder, d, "0.5.0").failed(),
+        )
+        expect(
+            "ladder: a bold first cell and a heading are rows",
+            not quiet(ladder, d, "0.6.0").failed() and not quiet(ladder, d, "0.7.0").failed(),
+        )
+        rep = quiet(ladder, d, "0.5.0")
+        expect(
+            "ladder: a version missing from the ladder fails (#430)",
+            rep.failed() and has(rep, "FAIL", "no row for v0.5.0"),
+        )
+        expect(
+            "ladder: exit 1 on a missing row",
+            quiet(main, ["ladder", d, "--version", "v0.5.0"]) == 1,
+        )
+        expect("ladder: exit 0 on its row", quiet(main, ["ladder", d, "--version", "0.4.0"]) == 0)
+        os.remove(os.path.join(d, "docs", "roadmap.md"))
+        rep = quiet(ladder, d, "0.5.0")
+        expect(
+            "ladder: no ladder warns, never fails",
+            not rep.failed() and has(rep, "WARN", "no docs/roadmap.md"),
+        )
+    with tempfile.TemporaryDirectory() as d:
         rep = quiet(ready, d, None, "0.1.0", FakeGh({}))
         expect(
             "ready: an empty repository fails the caller and commitizen",
@@ -817,6 +879,9 @@ def main(argv=None):
     p.add_argument("repo_dir")
     p.add_argument("--repo", help="OWNER/NAME, for the issue scope and the bump PR")
     p.add_argument("--version", help="the version the dry-run computed, X.Y.Z")
+    p = sub.add_parser("ladder", help="the ladder gate alone: the version's docs/roadmap.md row")
+    p.add_argument("repo_dir")
+    p.add_argument("--version", required=True, help="X.Y.Z (a leading v is dropped)")
     p = sub.add_parser("after", help="once the bump PR merged")
     p.add_argument("repo", help="OWNER/NAME")
     p.add_argument("--tag", required=True, help="vX.Y.Z")
@@ -829,7 +894,9 @@ def main(argv=None):
     a = ap.parse_args(argv)
     gh = Gh()
     try:
-        if a.cmd == "ready":
+        if a.cmd == "ladder":
+            rep = ladder(a.repo_dir, a.version.lstrip("v"))
+        elif a.cmd == "ready":
             rep = ready(a.repo_dir, a.repo, (a.version or "").lstrip("v") or None, gh)
         else:
             if not re.fullmatch(r"v\d+\.\d+\.\d+", a.tag):
