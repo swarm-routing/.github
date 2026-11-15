@@ -39,8 +39,9 @@ name: org-bot
 # .github/actions/bot-token when the BOT_APP_ID and BOT_APP_PRIVATE_KEY org
 # secrets are set (commits then come from the App's `<slug>[bot]`); else the
 # ORG_BOT_TOKEN secret, a fine-grained personal access token on the
-# swarm-routing org, all repositories, with Contents, Pull requests and
-# Workflows read and write. The App has its own rate limit; the personal token
+# swarm-routing org, all repositories, with Contents, Pull requests,
+# Workflows, Actions (release-rebuild's dispatch) and Issues
+# (release-aftercare's comment) read and write. The App has its own rate limit; the personal token
 # shares its owner's 5,000 requests an hour. PRs opened with either run CI;
 # PRs opened with the workflow's GITHUB_TOKEN would not. With neither, every
 # run is a dry run. This workflow has no pull_request trigger, so the token

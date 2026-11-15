@@ -1207,7 +1207,7 @@ DOI_ROW = re.compile(
 
 
 def semver(v):
-    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", v or "")
+    m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", (v or "").strip())  # never a prerelease
     return tuple(int(x) for x in m.groups()) if m else None
 
 
@@ -2645,6 +2645,8 @@ def self_test():
     )
     rc, out = shipped(FakeGitHub(rel), sroot, check=True)
     check("shipped: --check after --write is clean", rc == 0 and out.count("matches Zenodo") == 2)
+    _, added = with_doi_rows(con, [{"version": "v1.2.0-rc.1", "doi": "10.5281/zenodo.150"}])
+    check("shipped: a prerelease record is never a version row", added == [])
     st.versions.append(
         {"id": "103", "metadata": {"version": "v1.2.0"}, "doi": "10.5281/zenodo.103"}
     )

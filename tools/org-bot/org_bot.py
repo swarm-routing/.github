@@ -55,9 +55,11 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             workflow that calls reusable-release.yml) dispatched with mode
             `bump` again, as CONTRIBUTING's rule says, with the `increment`
             the PR was opened with (its body's `release-increment` line), so
-            the PR is rebuilt on the new tip. Never a first bump: only a PR
-            the maintainer asked for is rebuilt; never while a dispatch of
-            that workflow is still queued or running.
+            the PR is rebuilt on the new tip. Only the inputs the caller's
+            `on: workflow_dispatch: inputs:` declares are sent. Never a first
+            bump: only a PR the maintainer asked for is rebuilt; never while a
+            run of that workflow is queued or running; never with a guessed
+            increment (a PR whose body records none is left to a person).
   `release` runs both release tasks (org-bot.yml, hourly); `all` runs the
   other four.
 
@@ -92,8 +94,9 @@ whose auto-merge GitHub refuses (the line says why; the run goes on).
 
 The token comes from ORG_BOT_TOKEN, never from the command line: the org
 GitHub App's installation token when the workflow can make one (#21), else a
-fine-grained token on the swarm-routing org with Contents, Pull requests and
-Workflows read and write (org-sync renders a workflow file). Commits are made
+fine-grained token on the swarm-routing org with Contents, Pull requests,
+Workflows (org-sync renders a workflow file), Actions (release-rebuild's
+dispatch) and Issues (release-aftercare's comment) read and write. Commits are made
 as ORG_BOT_GIT_NAME <ORG_BOT_GIT_EMAIL> when both are set (the App's
 `<slug>[bot]` identity), else as github-actions[bot]. Without a token every
 run is a dry run: it clones read-only and prints each change it would propose.
@@ -608,14 +611,21 @@ def leftovers(gh, repo, tag, pr, dry_run, run_url):
         ]
     )
     want = f"[release-sync] {repo} {tag}"
-    issues = gh.api(
-        "GET", f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc&per_page=100"
-    )
-    hit = [
-        i
-        for i in issues or []
-        if (i.get("title") or "").strip() == want and "pull_request" not in i
-    ]
+    hit = []
+    for page in range(1, 11):  # newest first; PRs share the listing, so page on
+        issues = (
+            gh.api(
+                "GET",
+                f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc"
+                f"&per_page=100&page={page}",
+            )
+            or []
+        )
+        hit = [
+            i for i in issues if (i.get("title") or "").strip() == want and "pull_request" not in i
+        ]
+        if hit or len(issues) < 100:
+            break
     if not hit:
         print(f"{repo} release-aftercare: {len(left)} left; no '{want}' issue yet")
         return {"left": left, "issue": None}
@@ -635,6 +645,38 @@ def leftovers(gh, repo, tag, pr, dry_run, run_url):
         gh.api("POST", f"repos/{ORG}/{SITE}/issues/{n}/comments", {"body": body})
         print(f"{repo} release-aftercare: {len(left)} left; posted on {SITE}#{n}")
     return {"left": left, "issue": n}
+
+
+def dispatch_inputs(text):
+    """The input names under `on: workflow_dispatch: inputs:`, read by indentation."""
+    lines, names = text.splitlines(), []
+
+    def ind(ln):
+        return len(ln) - len(ln.lstrip(" "))
+
+    for i, ln in enumerate(lines):
+        if ln.strip() not in ("workflow_dispatch:", "workflow_dispatch: {}"):
+            continue
+        base = ind(ln)
+        for k in range(i + 1, len(lines)):
+            if not lines[k].strip() or lines[k].lstrip().startswith("#"):
+                continue
+            if ind(lines[k]) <= base:
+                break
+            if lines[k].strip() == "inputs:":
+                at = ind(lines[k])
+                for m in range(k + 1, len(lines)):
+                    t = lines[m]
+                    if not t.strip() or t.lstrip().startswith("#"):
+                        continue
+                    if ind(t) <= at:
+                        break
+                    hit = re.match(r"^ *([A-Za-z0-9_-]+):", t)
+                    if hit and (not names or ind(t) == names[0][1]):
+                        names.append((hit.group(1), ind(t)))
+                break
+        break
+    return {n for n, _ in names}
 
 
 INCREMENT_MARK = re.compile(r"<!-- release-increment: (auto|PATCH|MINOR|MAJOR) -->")
@@ -667,23 +709,32 @@ def rebuild(gh, repo, dry_run):
             f"{repo} release-rebuild: #{pr['number']} is {behind} behind, no reusable-release caller: dispatch bump by hand"
         )
         return {"number": pr["number"], "behind": behind, "caller": None}
-    runs = gh.api("GET", f"repos/{full}/actions/workflows/{caller}/runs?per_page=10") or {}
-    busy = [
-        x
-        for x in runs.get("workflow_runs", [])
-        if x.get("status") in ("queued", "in_progress", "waiting", "requested", "pending")
-    ]
-    if busy:
-        print(
-            f"{repo} release-rebuild: #{pr['number']} is {behind} behind; {caller} run {busy[0]['id']} is still {busy[0]['status']}"
+    # an active run on any page: one status-filtered count per active status
+    for status in ("queued", "in_progress", "waiting", "requested", "pending"):
+        runs = (
+            gh.api(
+                "GET", f"repos/{full}/actions/workflows/{caller}/runs?status={status}&per_page=1"
+            )
+            or {}
         )
-        return {"number": pr["number"], "behind": behind, "caller": caller, "busy": True}
+        if runs.get("total_count") or runs.get("workflow_runs"):
+            print(
+                f"{repo} release-rebuild: #{pr['number']} is {behind} behind; a {caller} run is still {status}"
+            )
+            return {"number": pr["number"], "behind": behind, "caller": caller, "busy": True}
+    declared = dispatch_inputs(text)
     inputs = {}
-    if re.search(r"^\s+mode:", text, re.M):
+    if "mode" in declared:
         inputs["mode"] = "bump"
-    if re.search(r"^\s+increment:", text, re.M):
+    if "increment" in declared:
         m = INCREMENT_MARK.search(pr.get("body") or "")
-        inputs["increment"] = m.group(1) if m else "auto"
+        if not m:  # opened before the marker: the size asked for is unknown, so never guessed
+            print(
+                f"{repo} release-rebuild: #{pr['number']} is {behind} behind, and its body records "
+                "no release-increment: dispatch bump by hand with the increment it was opened with"
+            )
+            return {"number": pr["number"], "behind": behind, "caller": caller, "unknown": True}
+        inputs["increment"] = m.group(1)
     what = f"{caller} mode bump" + (
         f", increment {inputs['increment']}" if "increment" in inputs else ""
     )
@@ -1743,8 +1794,12 @@ def self_test():
         f"repos/{full}/contents/.github/workflows/release.yml?ref=main": {
             "content": base64.b64encode(caller.encode()).decode()
         },
-        f"repos/{full}/actions/workflows/release.yml/runs?per_page=10": {
-            "workflow_runs": [{"id": 1, "status": "completed"}]
+        **{
+            f"repos/{full}/actions/workflows/release.yml/runs?status={st_}&per_page=1": {
+                "total_count": 0,
+                "workflow_runs": [],
+            }
+            for st_ in ("queued", "in_progress", "waiting", "requested", "pending")
         },
     }
 
@@ -1773,17 +1828,33 @@ def self_test():
     pr9 = rroutes[f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10"][0]
     got, posts, out = rb({**rroutes, f"repos/{full}/compare/main...bot/release": {"behind_by": 0}})
     check("release-rebuild: a current bump PR is left alone", not posts and got["behind"] == 0)
-    busy = {"workflow_runs": [{"id": 2, "status": "in_progress"}]}
+    busy = {"total_count": 1, "workflow_runs": [{"id": 2, "status": "in_progress"}]}
     got, posts, out = rb(
-        {**rroutes, f"repos/{full}/actions/workflows/release.yml/runs?per_page=10": busy}
+        {
+            **rroutes,
+            f"repos/{full}/actions/workflows/release.yml/runs?status=in_progress&per_page=1": busy,
+        }
     )
     check(
-        "release-rebuild: never while a dispatch still runs",
+        "release-rebuild: never while a dispatch still runs (status-filtered, any page)",
         not posts and "still in_progress" in out,
+    )
+    got, posts, out = rb(
+        {
+            **rroutes,
+            f"repos/{full}/pulls?state=open&head={ORG}:bot/release&per_page=10": [
+                {**pr9, "body": "opened before the marker"}
+            ],
+        }
+    )
+    check(
+        "release-rebuild: no recorded increment, no guess: dispatch by hand",
+        not posts and "dispatch bump by hand" in out and got.get("unknown"),
     )
     plain = (
         "on:\n  workflow_dispatch:\njobs:\n  r:\n"
         "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n"
+        "    with:\n      mode: bump\n      increment: ''\n"
     )
     got, posts, out = rb(
         {
@@ -1797,7 +1868,7 @@ def self_test():
         }
     )
     check(
-        "release-rebuild: only the inputs the caller declares",
+        "release-rebuild: only the inputs the caller declares (a job's with: is none)",
         posts and posts[0][2] == {"ref": "main", "inputs": {}},
     )
     got, posts, out = rb(
@@ -1851,7 +1922,10 @@ def self_test():
             {"tag_name": "v0.2.0", "published_at": fresh},
             {"tag_name": "v0.1.0", "published_at": "2026-01-01T00:00:00Z"},
         ],
-        f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc&per_page=100": [
+        f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc&per_page=100&page=1": [
+            {"number": 1000 + k, "title": f"other {k}"} for k in range(100)
+        ],
+        f"repos/{ORG}/{SITE}/issues?state=all&sort=created&direction=desc&per_page=100&page=2": [
             {"number": 77, "title": "[release-sync] mu v0.2.0"}
         ],
         f"repos/{ORG}/{SITE}/issues/77/comments?per_page=100": [],
@@ -1885,7 +1959,7 @@ def self_test():
         and gh.auto_merged() == ["PR_42"],
     )
     check(
-        "release-aftercare: the leftovers posted on the site's release-sync issue",
+        "release-aftercare: the leftovers posted on the site's release-sync issue (page 2)",
         "after" in calls
         and posted
         and AFTERCARE_MARK in posted[0][2]["body"]
