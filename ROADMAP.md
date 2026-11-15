@@ -481,6 +481,10 @@ No open epic: the work here is tracked as single issues.
 |------|--------|-------------------|
 | [#3](https://github.com/swarm-routing/Termite/issues/3) Termite as a standalone hexagonal protocol (Phase 5) | In progress | 1 / 4 |
 
+### [vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry)
+
+No open epic: the work here is tracked as single issues.
+
 <!-- epics:end -->
 
 ## Protocol repositories
