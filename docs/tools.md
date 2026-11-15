@@ -154,4 +154,7 @@ publish job's last step, the `org-release` `repository_dispatch` to the org site
 (`notify-site`, default true; both self-test calls pass `false`, so no test sends
 one), by the first caller's release after it lands (#388),
 its opt-in `zenodo` job by a `zenodo-sandbox: true` run and the first
-caller's release with `zenodo: true` (#232).
+caller's release with `zenodo: true` (#232), its opt-in `vcpkg` job (the port
+PR in swarm-routing/vcpkg-registry, opened with auto-merge on so the
+registry's merge queue lands it, #439, #461) by the next release of a caller
+with `vcpkg-ports` (ns3-swarm-core).
