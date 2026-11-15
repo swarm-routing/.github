@@ -1093,6 +1093,16 @@ actor), so the bump goes through a PR and the tag follows the merge
    (swarm-routing/swarm-routing.github.io#134,
    swarm-routing/swarm-routing.github.io#135).
 
+Two read-only checks bracket these steps (`tools/release/release_check.py`,
+the `release` skill of swarm-routing/skills): `ready <checkout> --repo
+<owner>/<repo> --version X.Y.Z` before the dry-run or the bump (the caller,
+the Commitizen config, `make dist`, the version's row in `docs/roadmap.md`,
+no open `release:vX.Y.Z` issue, a `bot/release` PR behind `main`), and
+`after <owner>/<repo> --tag vX.Y.Z` once the bump PR merged (the release and
+its provenance, the site's `[release-sync]` issue, each consumer's lock or
+org-bot's bump PR, the vcpkg port, PyPI, the ladder marked shipped). Neither
+writes anything; the Zenodo DOI is still read with `zenodo.py status`.
+
 Mode `dry-run` bumps on the runner only, then builds, signs and verifies, and
 stops: nothing is pushed, proposed, tagged or published, and its artifact
 holds the release it would have published.
