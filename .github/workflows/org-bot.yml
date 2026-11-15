@@ -149,15 +149,22 @@ jobs:
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): dry run only"
-          python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
-          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
-            # the consumers: every repository's locks, the swarm-core pin after a swarm-core release
-            consumers=release-lock
-            [ "$REPOS" = ns3-swarm-core ] && consumers="swarm-core-pin release-lock"
-            for task in $consumers; do
-              python3 -I tools/org-bot/org_bot.py run --task "$task" | tee -a "$RUNNER_TEMP/org-bot.txt"
-            done
+          if [ "$GITHUB_EVENT_NAME" != repository_dispatch ]; then
+            python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+            exit 0
           fi
+          # org-release: the released repository, then the consumers (every
+          # repository's locks; the swarm-core pin after a swarm-core release).
+          # Each invocation runs even when the one before it failed; the step fails
+          # at the end if any of them failed.
+          failed=0
+          python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
+          consumers=release-lock
+          [ "$REPOS" = ns3-swarm-core ] && consumers="swarm-core-pin release-lock"
+          for task in $consumers; do
+            python3 -I tools/org-bot/org_bot.py run --task "$task" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
+          done
+          exit "$failed"
       - name: Summary
         if: ${{ always() }}
         run: |
