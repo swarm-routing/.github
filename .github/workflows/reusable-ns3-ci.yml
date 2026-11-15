@@ -38,7 +38,13 @@ name: Reusable ns-3 CI
 #                    modules only; ns-3's headers are -isystem (#28)
 #   coverage         gcov on this repo's modules on the debug leg of the first
 #                    version; gcovr table in the job log and summary, Cobertura
-#                    XML + HTML as an artifact; report-only, no threshold (#24)
+#                    XML + HTML as an artifact; report-only, no threshold (#24).
+#                    coverage-branch-filter (default off, rule 10) leaves out
+#                    the branches gcov adds for exception edges and the ones
+#                    gcovr's heuristic judges unreachable (gcovr
+#                    --exclude-throw-branches --exclude-unreachable-branches;
+#                    decision of 2026-11-15, #425). A heuristic: what remains
+#                    is closer to the testable conditions, not proof that each is
 #   determinism      programs with a `{seed}` placeholder: their stdout (where
 #                    the marker lines go) for seed 1 twice must be byte-identical,
 #                    for seed 2 it must differ (org invariant 5, #26). stderr
@@ -137,6 +143,10 @@ on:
         description: "gcovr --exclude regex for source paths, relative to the repo root"
         type: string
         default: '(.*/)?(test|examples)/'
+      coverage-branch-filter:
+        description: "Leave gcov's exception-edge branches, and those gcovr's heuristic judges unreachable, out of the coverage report (gcovr --exclude-throw-branches --exclude-unreachable-branches; #425). Default false: every gcov branch, as before"
+        type: boolean
+        default: false
       sonar:
         description: "SonarQube Cloud CI analysis on the coverage leg (implies coverage); needs secret SONAR_TOKEN and the repo's sonar-project.properties"
         type: boolean
@@ -325,6 +335,7 @@ jobs:
         env:
           EXCLUDE: ${{ inputs.coverage-exclude }}
           SONAR: ${{ inputs.sonar }}
+          BRANCH_FILTER: ${{ inputs.coverage-branch-filter }}
         run: |
           set -euo pipefail
           # The debug and sanitized ns3-dev images carry a pinned gcovr
@@ -350,7 +361,11 @@ jobs:
           cd /opt/ns-3/cmake-cache
           sonar_args=()
           if [ "$SONAR" = true ]; then sonar_args=(--sonarqube "$src/coverage-sonar.xml"); fi
-          gcovr --root "$src" --filter "$src/" --exclude "$src/$EXCLUDE" "${sonar_args[@]}" \
+          # Without these, every call that may throw adds a branch no test can
+          # take: ns3-swarm-core counted 4303 conditions for 2247 lines (#425).
+          branch_args=()
+          if [ "$BRANCH_FILTER" = true ]; then branch_args=(--exclude-throw-branches --exclude-unreachable-branches); fi
+          gcovr --root "$src" --filter "$src/" --exclude "$src/$EXCLUDE" "${sonar_args[@]}" "${branch_args[@]}" \
             --txt --cobertura "$GITHUB_WORKSPACE/coverage/coverage.xml" \
             --html-details "$GITHUB_WORKSPACE/coverage/index.html" --print-summary . \
             | tee "$GITHUB_WORKSPACE/coverage/summary.txt"
