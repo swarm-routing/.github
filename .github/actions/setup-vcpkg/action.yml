@@ -1,0 +1,137 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: setup vcpkg
+description: >-
+  vcpkg for a core job that takes the org's C++ cores through vcpkg in manifest
+  mode (#489): the tool at a pinned microsoft/vcpkg commit, the commit the
+  repository's vcpkg-configuration.json names as its builtin baseline, and
+  vcpkg's binary cache on the org's GitHub Packages NuGet feed.
+# A protocol's core job (the caller needs `packages: write`, read on a fork PR):
+#   permissions:
+#     contents: read
+#     packages: write
+#   steps:
+#     - uses: swarm-routing/.github/.github/actions/setup-vcpkg@main
+#       id: vcpkg
+#       timeout-minutes: 5
+#     - run: cmake -S core -B build -DCMAKE_TOOLCHAIN_FILE="${{ steps.vcpkg.outputs.toolchain }}"
+# The repository's vcpkg.json and vcpkg-configuration.json (its root) pin what
+# is installed: swarm-core's version (`overrides`) and the
+# swarm-routing/vcpkg-registry baseline commit, which the `swarm-core / pin`
+# check keeps equal to swarm-core.lock (tools/checks/check-swarm-core-pin.py,
+# vcpkg mode). A composite step takes no timeout-minutes, so each command
+# below carries its own `timeout`; the caller caps the step (org rule 8).
+inputs:
+  binary-cache:
+    description: >-
+      `readwrite`, `read` or `off`: vcpkg's binary cache on
+      https://nuget.pkg.github.com/<owner>/index.json. `auto` (the default):
+      readwrite, but read on a pull request from a fork, whose token cannot
+      write packages.
+    required: false
+    default: auto
+  token:
+    description: The token the feed takes (GITHUB_TOKEN, with packages write or read)
+    required: false
+    default: ${{ github.token }}
+  vcpkg-commit:
+    description: The microsoft/vcpkg commit whose tool runs (the registry's CI pin)
+    required: false
+    # microsoft/vcpkg tag 2026.10.16, as swarm-routing/vcpkg-registry's CI
+    default: 9eec002df1cd109f8f104cd966a763daf9751489
+  configuration:
+    description: The repository's vcpkg-configuration.json (its builtin baseline commit is fetched too)
+    required: false
+    default: vcpkg-configuration.json
+outputs:
+  toolchain:
+    description: vcpkg's CMake toolchain file, for -DCMAKE_TOOLCHAIN_FILE
+    value: ${{ steps.tool.outputs.toolchain }}
+  binary-cache:
+    description: The cache mode in effect (readwrite, read or off)
+    value: ${{ steps.mode.outputs.mode }}
+runs:
+  using: composite
+  steps:
+    - name: vcpkg at the pinned commit
+      id: tool
+      shell: bash
+      env:
+        VCPKG_COMMIT: ${{ inputs.vcpkg-commit }}
+        CONFIGURATION: ${{ inputs.configuration }}
+      run: |
+        set -euo pipefail
+        [[ "$VCPKG_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::vcpkg-commit is not a 40-hex commit"; exit 1; }
+        # the builtin registry reads versions/ at the configuration's baseline
+        # commit: fetch it beside the tool's (one shallow fetch, not the history)
+        base=$(python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])).get("default-registry") or {}; print(d.get("baseline","") if d.get("kind")=="builtin" else "")' "$CONFIGURATION" 2>/dev/null || true)
+        [[ -z "$base" || "$base" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::$CONFIGURATION: the builtin baseline is not a 40-hex commit"; exit 1; }
+        root="$RUNNER_TEMP/vcpkg"
+        git init -q "$root"
+        git -C "$root" remote add origin https://github.com/microsoft/vcpkg.git
+        for delay in 10 20 0; do
+          # shellcheck disable=SC2086  # $base is one commit or empty
+          timeout 180 git -C "$root" fetch -q --depth 1 origin "$VCPKG_COMMIT" $base && break
+          [ "$delay" -gt 0 ] || exit 1
+          echo "git fetch failed; retrying in $delay s" >&2; sleep "$delay"
+        done
+        git -C "$root" checkout -q --detach "$VCPKG_COMMIT"
+        timeout 180 "$root/bootstrap-vcpkg.sh" -disableMetrics
+        {
+          echo "VCPKG_ROOT=$root"
+          echo "VCPKG_DISABLE_METRICS=1"
+        } >> "$GITHUB_ENV"
+        echo "toolchain=$root/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_OUTPUT"
+        echo "vcpkg $("$root/vcpkg" version | head -1) at $VCPKG_COMMIT${base:+, builtin baseline $base}"
+    - name: The binary cache's mode
+      id: mode
+      shell: bash
+      env:
+        MODE: ${{ inputs.binary-cache }}
+        FORK: ${{ github.event.pull_request.head.repo.fork }}
+      run: |
+        case "$MODE" in
+          auto) if [ "$FORK" = true ]; then MODE="read"; else MODE="readwrite"; fi ;;
+          readwrite|read|off) ;;
+          *) echo "::error::binary-cache must be auto, readwrite, read or off, not '${MODE:0:20}'"; exit 1 ;;
+        esac
+        echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+        echo "vcpkg binary cache: $MODE"
+    - name: The binary cache on GitHub Packages (NuGet, through mono)
+      if: steps.mode.outputs.mode != 'off'
+      shell: bash
+      env:
+        MODE: ${{ steps.mode.outputs.mode }}
+        TOKEN: ${{ inputs.token }}
+        OWNER: ${{ github.repository_owner }}
+        REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+      run: |
+        set -euo pipefail
+        # vcpkg runs nuget.exe under mono on Linux; the runner image has none.
+        # mono-devel is the smallest set nuget.exe starts with (mono-runtime
+        # alone lacks netstandard and System.ComponentModel.Composition).
+        if ! command -v mono > /dev/null || ! "$VCPKG_ROOT/vcpkg" fetch nuget > /dev/null 2>&1; then
+          for delay in 10 20 0; do
+            timeout 300 sudo apt-get update -qq --error-on=any && break
+            [ "$delay" -gt 0 ] || exit 1
+            echo "apt-get update failed; retrying in $delay s" >&2; sleep "$delay"
+          done
+          timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends mono-devel > /dev/null
+        fi
+        nuget=$(timeout 120 "$VCPKG_ROOT/vcpkg" fetch nuget | tail -n 1)
+        feed="https://nuget.pkg.github.com/$OWNER/index.json"
+        # the token goes to nuget's user config through stdin-free arguments of
+        # one process on this ephemeral runner, never to the log
+        timeout 120 mono "$nuget" sources add -Source "$feed" -StorePasswordInClearText \
+          -Name github-packages -UserName "$OWNER" -Password "$TOKEN" > /dev/null
+        if [ "$MODE" = readwrite ]; then
+          timeout 120 mono "$nuget" setapikey "$TOKEN" -Source "$feed" > /dev/null
+        fi
+        {
+          # `default` (the runner's local file cache) stays first, so the
+          # second configure of a job restores from disk
+          echo "VCPKG_BINARY_SOURCES=clear;default,readwrite;nuget,$feed,$MODE"
+          # a package GITHUB_TOKEN creates must be linked to this repository
+          echo "VCPKG_NUGET_REPOSITORY=$REPO_URL"
+        } >> "$GITHUB_ENV"
+        echo "vcpkg binary cache: $feed ($MODE)"

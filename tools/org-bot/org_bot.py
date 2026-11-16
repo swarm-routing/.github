@@ -35,7 +35,12 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             results, docs or campaign plans, #407). Its PR lives on one branch,
             org-bot/swarm-core-pin, and is updated in place (pushed again, its
             body rewritten) when swarm-core moves on before it merges.
-            ORG_BOT_SWARM_CORE overrides swarm-core's URL.
+            With vcpkg.json (#489, vcpkg mode) the same PR also moves the
+            swarm-core override and the swarm-routing/vcpkg-registry
+            baseline, once the registry's main holds the new release (until
+            its port PR merges the task proposes nothing).
+            ORG_BOT_SWARM_CORE overrides swarm-core's URL,
+            ORG_BOT_VCPKG_REGISTRY the registry's.
   release-lock  tools/checks/release_lock.py bump --write, in each repository
             with a root `<name>.lock` other than swarm-core.lock (that one is
             swarm-core-pin's, as its pin lines move with it) that
@@ -160,6 +165,10 @@ SWARM_CORE = os.environ.get(
 # release lock, swarm-core.lock (swarm-routing/ns3-swarm-core#134; a file:// tree in
 # the self-test)
 SWARM_CORE_RELEASES = os.environ.get("ORG_BOT_SWARM_CORE_RELEASES", "https://github.com")
+# the vcpkg registry the swarm-core-pin task moves a vcpkg-mode baseline to (#489)
+VCPKG_REGISTRY = os.environ.get(
+    "ORG_BOT_VCPKG_REGISTRY", "https://github.com/swarm-routing/vcpkg-registry.git"
+)
 # where the release-lock task reads every other lock's releases (#478)
 RELEASES = os.environ.get("ORG_BOT_RELEASES", "https://github.com")
 # the lock swarm-core-pin owns: its pin lines move with it
@@ -472,11 +481,12 @@ def generate(task, repo, clone, data, out, skip=None):
             return None
         with open(cmake) as fh:
             text = fh.read()
-        if "SWARM_CORE_REF" not in text and "swarm-core.lock" not in text:
+        locked = os.path.exists(os.path.join(clone, SWARM_CORE_LOCK))
+        if "SWARM_CORE_REF" not in text and "swarm-core.lock" not in text and not locked:
             return None  # no swarm-core pin in this repository
         r = sh(
             [sys.executable, "-I", PIN, "--bump", "--swarm-core", SWARM_CORE]
-            + ["--releases", SWARM_CORE_RELEASES],
+            + ["--releases", SWARM_CORE_RELEASES, "--registry", VCPKG_REGISTRY],
             cwd=clone,
             check=False,
         )
@@ -1916,7 +1926,22 @@ def self_test():
     release_lock.make_release(rel, sc_repo, "v0.3.0", {"swarm-core-0.3.0.tar.gz": b"3"}, env)
     rbase = "file://" + rel
 
-    def locked_repo(name):
+    # the vcpkg registry a vcpkg-mode consumer's baseline moves to (#489)
+    vreg = os.path.join(work, "vcpkg-registry")
+    sh(["git", "init", "-q", "-b", "main", vreg], env=env)
+
+    def vreg_port(version):
+        os.makedirs(os.path.join(vreg, "versions"), exist_ok=True)
+        with open(os.path.join(vreg, "versions", "baseline.json"), "w") as fh:
+            json.dump({"default": {"swarm-core": {"baseline": version, "port-version": 0}}}, fh)
+        sh(["git", "-C", vreg, "add", "-A"], env=env)
+        sh(["git", "-C", vreg, "commit", "-q", "-m", version], env=env)
+        return sh(["git", "-C", vreg, "rev-parse", "HEAD"], env=env).stdout.strip()
+
+    v3_base = vreg_port("0.3.0")
+    globals()["VCPKG_REGISTRY"] = vreg
+
+    def locked_repo(name, vcpkg=False):
         src = os.path.join(work, "src", name)
         lock = release_lock.render(
             "SWARM_CORE", sc_repo, "v0.3.0", "swarm-core-{version}.tar.gz", rbase
@@ -1927,6 +1952,28 @@ def self_test():
             "Makefile": "SWARM_CORE_REF ?= v0.3.0\n",
             ".github/workflows/licence.yml": "  core-deps: swarm-routing/ns3-swarm-core@v0.3.0:core\n",
         }
+        if vcpkg:  # core/ takes swarm-core through vcpkg; the lock records the ns-3 tag
+            files["core/CMakeLists.txt"] = "find_package(swarm-core CONFIG REQUIRED)\n"
+            files["vcpkg.json"] = json.dumps(
+                {
+                    "dependencies": ["swarm-core"],
+                    "overrides": [{"name": "swarm-core", "version": "0.3.0", "port-version": 0}],
+                },
+                indent=2,
+            )
+            files["vcpkg-configuration.json"] = json.dumps(
+                {
+                    "registries": [
+                        {
+                            "kind": "git",
+                            "repository": "https://github.com/swarm-routing/vcpkg-registry",
+                            "baseline": v3_base,
+                            "packages": ["swarm-core"],
+                        }
+                    ]
+                },
+                indent=2,
+            )
         for rel_, text in files.items():
             os.makedirs(os.path.dirname(os.path.join(src, rel_)), exist_ok=True)
             with open(os.path.join(src, rel_), "w") as fh:
@@ -1940,9 +1987,13 @@ def self_test():
         )
 
     locked_repo("zeta")
+    locked_repo("zeta-vcpkg", vcpkg=True)
     ldata = os.path.join(work, "ldata.json")
     with open(ldata, "w") as fh:
         json.dump({"org": ORG, "repos": [{"name": "zeta", "epics": []}]}, fh)
+    vdata = os.path.join(work, "vdata.json")
+    with open(vdata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": "zeta-vcpkg", "epics": []}]}, fh)
     globals()["SWARM_CORE_RELEASES"] = rbase
     sc_more("main moves, no release")
     gh = FakeGitHub()
@@ -1975,6 +2026,39 @@ def self_test():
         and v4["swarm-core-0.4.0.tar.gz"] in lock_shown
         and "pin-target:" in post[0][2]["body"]
         and "v0.4.0" in post[0][2]["body"],
+    )
+    # vcpkg mode (#489): no PR until the registry's main holds the release, then one PR
+    # that moves the lock, the override and the registry baseline together
+    gh = FakeGitHub()
+    res, out = go(gh, task="swarm-core-pin", data=vdata)
+    check(
+        "swarm-core-pin, vcpkg: a release the registry lacks yet gets no PR",
+        "zeta-vcpkg swarm-core-pin: up to date" in out
+        and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
+    )
+    v4_base = vreg_port("0.4.0")
+    gh = FakeGitHub()
+    res, out = go(gh, task="swarm-core-pin", data=vdata)
+
+    def zv(path):
+        return sh(
+            [
+                "git",
+                "--git-dir",
+                os.path.join(remotes, ORG, "zeta-vcpkg.git"),
+                "show",
+                f"org-bot/swarm-core-pin:{path}",
+            ],
+            check=False,
+        ).stdout
+
+    post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    check(
+        "swarm-core-pin, vcpkg: once the registry has it, one PR moves lock, override and baseline",
+        len(post) == 1
+        and "SWARM_CORE_TAG=v0.4.0" in zv("swarm-core.lock")
+        and '"version": "0.4.0"' in zv("vcpkg.json")
+        and v4_base in zv("vcpkg-configuration.json"),
     )
 
     # release-rebuild (#430): a behind bot/release PR gets its caller dispatched with mode bump

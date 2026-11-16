@@ -48,8 +48,23 @@ finding. `--bump` then writes the lock for the newest release (every value
 read from it) and moves the tag on the same pin lines, nothing else. A
 repository without a lock keeps the commit mode above.
 
+vcpkg mode (#489), a lock mode for a repository whose `core/` takes swarm-core
+through vcpkg in manifest mode: `vcpkg.json` at the root depends on
+`swarm-core`. The lock stays the record of the release the ns-3 build uses
+(its tag) and everything above holds, except that `core/CMakeLists.txt` must
+not read the lock but `find_package(swarm-core CONFIG ...)`. Also checked:
+`vcpkg.json`'s `overrides` pin swarm-core at the lock's version (with a
+`port-version`), and `vcpkg-configuration.json`'s swarm-routing/vcpkg-registry
+entry (`--registry`, default its GitHub URL, cloned without blobs) names as
+`baseline` a commit on the registry's `main` whose `versions/baseline.json`
+holds exactly that version and port-version. So vcpkg, the ns-3 tag and
+`core-deps` name one swarm-core release. `--bump` moves the lock and the pin
+lines as above, the override, and the baseline to the registry's `main`, but
+only once the registry's `main` holds the new release (its port PR merged):
+until then it bumps nothing and says it waits (exit 0).
+
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
-  check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--bump]
+  check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--registry URL_OR_PATH] [--bump]
   check-swarm-core-pin.py --self-test
 
 `--releases` (default https://github.com) is where lock mode reads tags and
@@ -60,6 +75,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import os
 import re
 import subprocess
@@ -84,6 +100,12 @@ CMAKE_PIN = re.compile(rf'^\s*set\(\s*SWARM_CORE_REF\s+"({SHA})"', re.M)
 MAKE_PIN = re.compile(r"^\s*SWARM_CORE_REF\s*[?:]?=\s*(\S+)", re.M)
 CORE_DEP = re.compile(r"swarm-routing/ns3-swarm-core@([^\s:'\"]+):")
 NS3_DEP = re.compile(r"swarm-core=swarm-routing/ns3-swarm-core@([^\s:'\"]+)")
+# vcpkg mode (#489)
+REGISTRY = "https://github.com/swarm-routing/vcpkg-registry"
+VCPKG_MANIFEST = "vcpkg.json"
+VCPKG_CONFIG = "vcpkg-configuration.json"
+PORT = "swarm-core"
+FIND_PACKAGE = re.compile(r"^[^#\n]*find_package\(\s*swarm-core\b[^#\n)]*\bCONFIG\b", re.M)
 
 
 def git(*args, cwd=None):
@@ -260,7 +282,17 @@ def check_lock_files():
     else:
         with open(CMAKE, encoding="utf-8") as f:
             text = f.read()
-        if not LOCK_READ.search(text):
+        if vcpkg_mode():
+            if not FIND_PACKAGE.search(text):
+                errors.append(
+                    f"{CMAKE}: no find_package(swarm-core CONFIG ...): with {VCPKG_MANIFEST}, "
+                    "core/ takes swarm-core from its vcpkg port"
+                )
+            if LOCK_READ.search(text):
+                errors.append(
+                    f"{CMAKE}: reads {LOCK}; with {VCPKG_MANIFEST} swarm-core comes from vcpkg"
+                )
+        elif not LOCK_READ.search(text):
             errors.append(f"{CMAKE}: does not read {LOCK} (file(STRINGS ...) or file(READ ...))")
         if HARD_RELEASE.search(text):
             errors.append(f"{CMAKE}: names a swarm-core release itself; take it from {LOCK}")
@@ -293,6 +325,125 @@ def check_lock_files():
     return prefix, values, errors
 
 
+def vcpkg_mode():
+    """True when vcpkg.json at the root depends on swarm-core (#489)."""
+    try:
+        with open(VCPKG_MANIFEST, encoding="utf-8") as f:
+            deps = json.load(f).get("dependencies") or []
+    except (OSError, ValueError, AttributeError):
+        return os.path.exists(VCPKG_MANIFEST)  # unreadable: let check_vcpkg say why
+    return any((d.get("name") if isinstance(d, dict) else d) == PORT for d in deps)
+
+
+def load_json(path, errors):
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        errors.append(f"{path}: unreadable ({e})")
+        return None
+    if not isinstance(data, dict):
+        errors.append(f"{path}: not a JSON object")
+        return None
+    return data
+
+
+def same_repo(url):
+    return url.rstrip("/").removesuffix(".git") == REGISTRY
+
+
+def vcpkg_pins():
+    """(override, port-version, baseline, manifest, config, errors) from the two vcpkg files."""
+    errors = []
+    manifest, config = load_json(VCPKG_MANIFEST, errors), load_json(VCPKG_CONFIG, errors)
+    version = port_version = baseline = None
+    if manifest is not None:
+        deps = manifest.get("dependencies") or []
+        if not any((d.get("name") if isinstance(d, dict) else d) == PORT for d in deps):
+            errors.append(f"{VCPKG_MANIFEST}: no {PORT} in dependencies")
+        over = [o for o in manifest.get("overrides") or [] if o.get("name") == PORT]
+        if len(over) != 1:
+            errors.append(
+                f"{VCPKG_MANIFEST}: want one overrides entry for {PORT} "
+                f"(its version and port-version, so the version is explicit)"
+            )
+        else:
+            o = over[0]
+            version = o.get("version") or o.get("version-semver")
+            port_version = o.get("port-version", 0)
+            if not version:
+                errors.append(f"{VCPKG_MANIFEST}: the {PORT} override names no version")
+    if config is not None:
+        regs = [
+            r
+            for r in config.get("registries") or []
+            if same_repo(str(r.get("repository", ""))) and PORT in (r.get("packages") or [])
+        ]
+        if len(regs) != 1 or regs[0].get("kind") != "git":
+            errors.append(
+                f"{VCPKG_CONFIG}: want one git registry {REGISTRY} with {PORT} in its packages"
+            )
+        else:
+            baseline = regs[0].get("baseline", "")
+            if not re.fullmatch(SHA, baseline):
+                errors.append(f"{VCPKG_CONFIG}: the registry's baseline is not a 40-hex commit")
+                baseline = None
+    return version, port_version, baseline, manifest, config, errors
+
+
+def registry_clone(url, d):
+    """A blobless clone of the registry in `d`; the error, or None."""
+    rc, _, err = git("clone", "-q", "--filter=blob:none", "--no-checkout", url, d)
+    return f"cannot clone the vcpkg registry ({url}): {err}" if rc else None
+
+
+def registry_port(d, commit):
+    """(version, port-version) of swarm-core in the registry's versions/baseline.json
+    at `commit`, or None."""
+    rc, text, _ = git("show", f"{commit}:versions/baseline.json", cwd=d)
+    if rc:
+        return None
+    try:
+        entry = json.loads(text)["default"][PORT]
+        return entry["baseline"], entry.get("port-version", 0)
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def check_vcpkg(version, registry):
+    """Errors when the vcpkg pins disagree with the lock's version or the registry."""
+    want, pv, baseline, _, _, errors = vcpkg_pins()
+    if want and want != version:
+        errors.append(
+            f"{VCPKG_MANIFEST}: the override pins {PORT} {want}, {LOCK} names {version} "
+            "(the ns-3 build's tag): one repository builds one swarm-core"
+        )
+    if not baseline:
+        return errors
+    with tempfile.TemporaryDirectory() as d:
+        err = registry_clone(registry, d)
+        if err:
+            return errors + [err]
+        if git("cat-file", "-e", f"{baseline}^{{commit}}", cwd=d)[0]:
+            return errors + [f"{VCPKG_CONFIG}: baseline {baseline} is not a registry commit"]
+        if git("merge-base", "--is-ancestor", baseline, "origin/main", cwd=d)[0]:
+            errors.append(f"{VCPKG_CONFIG}: baseline {baseline} is not on the registry's main")
+        got = registry_port(d, baseline)
+        if not got:
+            errors.append(f"{VCPKG_CONFIG}: the registry at {baseline[:7]} has no {PORT} port")
+        elif want and got != (want, pv):
+            errors.append(
+                f"{VCPKG_CONFIG}: the registry at {baseline[:7]} has {PORT} "
+                f"{got[0]}#{got[1]}, {VCPKG_MANIFEST} overrides {want}#{pv}"
+            )
+    return errors
+
+
+def write_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+
 def retag(line, patterns, old, new):
     """The line with every pin match naming `old` rewritten to `new`, on the
     matched span only, whatever the spacing around it."""
@@ -305,9 +456,12 @@ def retag(line, patterns, old, new):
     return line
 
 
-def run_lock(releases):
+def run_lock(releases, registry=REGISTRY):
     prefix, values, errors = check_lock_files()
     newest = None
+    vcpkg = vcpkg_mode()
+    if values and vcpkg:
+        errors += check_vcpkg(values[f"{prefix}_VERSION"], registry)
     if values:
         try:
             errors += release_lock.verify(prefix, values, releases)
@@ -325,19 +479,25 @@ def run_lock(releases):
     if errors:
         print(f"swarm-core pin (lock): {len(errors)} problem(s)")
         return 1
-    print(f"swarm-core pin (lock): ok, {LOCK} names {tag}, the newest swarm-core release")
+    also = f", {VCPKG_MANIFEST} and the registry baseline agree" if vcpkg else ""
+    print(f"swarm-core pin (lock): ok, {LOCK} names {tag}, the newest swarm-core release{also}")
     return 0
 
 
-def bump_lock(releases):
+def bump_lock(releases, registry=REGISTRY):
     """--bump in lock mode: when a newer swarm-core release exists, write the lock
-    for it (every value read from the release) and move the tag on the pin lines."""
+    for it (every value read from the release) and move the tag on the pin lines;
+    in vcpkg mode also the override and the registry baseline, once the registry's
+    main holds the release."""
     prefix, values, errors = check_lock_files()
+    vcpkg = vcpkg_mode()
     if values:
         try:
             errors += release_lock.verify(prefix, values, releases)
         except release_lock.LockError as e:
             errors.append(str(e))
+        if vcpkg:
+            errors += check_vcpkg(values[f"{prefix}_VERSION"], registry)
     for e in errors:
         print(f"FAIL {e}")
     if not values or errors:
@@ -355,9 +515,38 @@ def bump_lock(releases):
     except release_lock.LockError as e:
         print(f"FAIL {e}")
         return 1
+    if vcpkg:
+        # the registry's main must hold the release (its port PR merged) first
+        new_version = release_lock.parse_text(text)[1][f"{prefix}_VERSION"]
+        with tempfile.TemporaryDirectory() as d:
+            err = registry_clone(registry, d)
+            if err:
+                print(f"FAIL {err}")
+                return 1
+            head = git("rev-parse", "origin/main", cwd=d)[1]
+            got = registry_port(d, head)
+        if not got or got[0] != new_version:
+            have = f"{got[0]}#{got[1]}" if got else "no port"
+            print(
+                f"swarm-core pin (vcpkg): swarm-core {newest} is released, the registry's "
+                f"main ({head[:7]}) has {PORT} {have}: waiting for its port PR, nothing bumped"
+            )
+            return 0
     with open(LOCK, "w", encoding="utf-8") as f:
         f.write(text)
     changed = [LOCK]
+    if vcpkg:
+        _, _, _, manifest, config, _ = vcpkg_pins()
+        for o in manifest["overrides"]:
+            if o.get("name") == PORT:
+                o.pop("version-semver", None)
+                o["version"], o["port-version"] = got
+        for r in config["registries"]:
+            if same_repo(str(r.get("repository", ""))) and PORT in (r.get("packages") or []):
+                r["baseline"] = head
+        write_json(VCPKG_MANIFEST, manifest)
+        write_json(VCPKG_CONFIG, config)
+        changed += [VCPKG_MANIFEST, VCPKG_CONFIG]
     for path, patterns in pin_places():
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
@@ -721,6 +910,128 @@ def self_test():
         rc, out = golock(current)
         check("lock: swarm-core main moving is no finding", rc == 0)
 
+        # vcpkg mode (#489): the lock records the ns-3 tag, vcpkg pins the port
+        reg = os.path.join(t, "registry")
+        os.makedirs(reg)
+        git("init", "-q", "-b", "main", cwd=reg)
+
+        def port(v, pv):
+            body = {"default": {PORT: {"baseline": v, "port-version": pv}}}
+            return {"versions/baseline.json": json.dumps(body)}
+
+        commit(reg, port("0.3.0", 0), "0.3.0")
+        r4 = commit(reg, port("0.4.0", 1), "0.4.0#1")
+        git("checkout", "-q", "-b", "pr", cwd=reg)
+        side = commit(reg, port("0.4.0", 2), "an unmerged port PR")
+        git("checkout", "-q", "main", cwd=reg)
+
+        def vcpkged(name, version="0.4.0", pv=1, baseline=r4, cmake=None):
+            d = locked(name, "v0.4.0")
+            with open(os.path.join(d, CMAKE), "w", encoding="utf-8") as f:
+                f.write(cmake or "find_package(swarm-core CONFIG REQUIRED)\n")
+            manifest = {
+                "dependencies": [PORT],
+                "overrides": [{"name": PORT, "version": version, "port-version": pv}],
+            }
+            config = {
+                "default-registry": {"kind": "builtin", "baseline": "a" * 40},
+                "registries": [
+                    {
+                        "kind": "git",
+                        "repository": REGISTRY,
+                        "baseline": baseline,
+                        "packages": [PORT],
+                    }
+                ],
+            }
+            write_json(os.path.join(d, VCPKG_MANIFEST), manifest)
+            write_json(os.path.join(d, VCPKG_CONFIG), config)
+            return d
+
+        def govcpkg(repo, bump_mode=False):
+            import contextlib
+            import io
+
+            out, here = io.StringIO(), os.getcwd()
+            try:
+                os.chdir(repo)
+                with contextlib.redirect_stdout(out):
+                    args = ["--releases", base, "--registry", reg]
+                    rc = main(args + (["--bump"] if bump_mode else []))
+            finally:
+                os.chdir(here)
+            return rc, out.getvalue()
+
+        ok = vcpkged("vcpkg-ok")
+        rc, out = govcpkg(ok)
+        check("vcpkg: override, registry baseline and lock agree: ok", rc == 0 and "agree" in out)
+        rc, out = govcpkg(vcpkged("vcpkg-version", "0.3.0", 0))
+        check(
+            "vcpkg: an override on another version than the lock (the ns-3 tag)",
+            rc == 1 and "the override pins swarm-core 0.3.0, swarm-core.lock names 0.4.0" in out,
+        )
+        rc, out = govcpkg(vcpkged("vcpkg-pv", pv=0))
+        check(
+            "vcpkg: the baseline's port-version differs from the override's",
+            rc == 1 and "has swarm-core 0.4.0#1, vcpkg.json overrides 0.4.0#0" in out,
+        )
+        rc, out = govcpkg(vcpkged("vcpkg-side", pv=2, baseline=side))
+        check(
+            "vcpkg: a baseline off the registry's main",
+            rc == 1 and "not on the registry's main" in out,
+        )
+        rc, out = govcpkg(vcpkged("vcpkg-ghost", baseline="f" * 40))
+        check(
+            "vcpkg: a baseline that is no registry commit",
+            rc == 1 and "not a registry commit" in out,
+        )
+        rc, out = govcpkg(vcpkged("vcpkg-lock", cmake=f"file(STRINGS ../{LOCK} x)\n"))
+        check(
+            "vcpkg: core/ must find_package swarm-core, not read the lock",
+            rc == 1
+            and "no find_package(swarm-core CONFIG" in out
+            and "reads swarm-core.lock" in out,
+        )
+        noover = vcpkged("vcpkg-noover")
+        write_json(os.path.join(noover, VCPKG_MANIFEST), {"dependencies": [PORT]})
+        rc, out = govcpkg(noover)
+        check(
+            "vcpkg: the version must be explicit (an override)",
+            rc == 1 and "overrides entry" in out,
+        )
+
+        # a new release: no bump until the registry's main holds its port
+        new_commit("five")
+        release_lock.make_release(
+            rel, SWARM_CORE_REPO, "v0.5.0", {"swarm-core-0.5.0.tar.gz": b"five"}, env
+        )
+        before = {
+            p_: open(os.path.join(ok, p_)).read() for p_ in (LOCK, VCPKG_MANIFEST, VCPKG_CONFIG)
+        }
+        rc, out = govcpkg(ok, bump_mode=True)
+        after = {p_: open(os.path.join(ok, p_)).read() for p_ in before}
+        check(
+            "vcpkg: --bump waits for the registry's port, changing nothing",
+            rc == 0 and "waiting for its port PR" in out and before == after,
+        )
+        r5 = commit(reg, port("0.5.0", 0), "0.5.0")
+        rc, out = govcpkg(ok, bump_mode=True)
+        with open(os.path.join(ok, VCPKG_MANIFEST), encoding="utf-8") as f:
+            manifest = json.load(f)
+        with open(os.path.join(ok, VCPKG_CONFIG), encoding="utf-8") as f:
+            config = json.load(f)
+        check(
+            "vcpkg: --bump moves the lock, the override and the registry baseline together",
+            rc == 0
+            and "SWARM_CORE_TAG=v0.5.0" in open(os.path.join(ok, LOCK)).read()
+            and manifest["overrides"] == [{"name": PORT, "version": "0.5.0", "port-version": 0}]
+            and config["registries"][0]["baseline"] == r5
+            and config["default-registry"]["baseline"] == "a" * 40
+            and VCPKG_CONFIG in out,
+        )
+        rc, out = govcpkg(ok)
+        check("vcpkg: …after which the check passes", rc == 0)
+
     for f in failures:
         print(f"FAIL: {f}")
     print(
@@ -742,12 +1053,19 @@ def main(argv=None):
         default=release_lock.GITHUB,
         help="lock mode: where swarm-core's tags and release assets are read",
     )
+    p.add_argument(
+        "--registry",
+        default=REGISTRY + ".git",
+        help="vcpkg mode: swarm-routing/vcpkg-registry's git URL or a local path",
+    )
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
     if a.self_test:
         return self_test()
     if os.path.exists(LOCK):
-        return bump_lock(a.releases) if a.bump else run_lock(a.releases)
+        if a.bump:
+            return bump_lock(a.releases, a.registry)
+        return run_lock(a.releases, a.registry)
     return bump(a.swarm_core) if a.bump else run(a.swarm_core)
 
 

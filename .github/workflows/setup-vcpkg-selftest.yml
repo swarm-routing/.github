@@ -1,0 +1,89 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: setup-vcpkg self-test
+
+# Proves .github/actions/setup-vcpkg from this checkout (#489): a scratch
+# manifest-mode consumer of swarm-core, its registry baseline the registry's
+# main and its override the version found there, configured with the action's
+# toolchain and built with find_package(swarm-core CONFIG REQUIRED). Twice:
+# with the binary cache off, and on (readwrite here, read on a fork PR), so
+# both paths of the action run. A protocol repository's core job is the
+# caller that proves it in use (swarm-routing/ARA, the pilot).
+on:
+  pull_request:
+    paths: ['.github/actions/setup-vcpkg/**', '.github/workflows/setup-vcpkg-selftest.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    name: consumer (binary cache ${{ matrix.cache }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        cache: ['off', auto]
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: A scratch consumer on the registry's main
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/consumer"
+          mkdir -p "$work"
+          git clone -q --depth 1 https://github.com/swarm-routing/vcpkg-registry.git "$RUNNER_TEMP/registry"
+          reg=$(git -C "$RUNNER_TEMP/registry" rev-parse HEAD)
+          read -r ver pv < <(python3 -I -c 'import json,sys; e=json.load(open(sys.argv[1]))["default"]["swarm-core"]; print(e["baseline"], e.get("port-version", 0))' \
+            "$RUNNER_TEMP/registry/versions/baseline.json")
+          python3 -I - "$work" "$reg" "$ver" "$pv" <<'PY'
+          import json, os, sys
+          work, reg, version, pv = sys.argv[1:]
+          json.dump({"dependencies": ["swarm-core"],
+                     "overrides": [{"name": "swarm-core", "version": version, "port-version": int(pv)}]},
+                    open(os.path.join(work, "vcpkg.json"), "w"), indent=2)
+          json.dump({"default-registry": {"kind": "builtin",
+                                          "baseline": "9eec002df1cd109f8f104cd966a763daf9751489"},
+                     "registries": [{"kind": "git",
+                                     "repository": "https://github.com/swarm-routing/vcpkg-registry",
+                                     "baseline": reg, "packages": ["swarm-core"]}]},
+                    open(os.path.join(work, "vcpkg-configuration.json"), "w"), indent=2)
+          open(os.path.join(work, "CMakeLists.txt"), "w").write(
+              "cmake_minimum_required(VERSION 3.20)\n"
+              "project(consumer LANGUAGES CXX)\n"
+              "set(CMAKE_CXX_STANDARD 23)\n"
+              "find_package(swarm-core CONFIG REQUIRED)\n"
+              "add_executable(consumer main.cc)\n"
+              "target_link_libraries(consumer PRIVATE swarm::core)\n")
+          open(os.path.join(work, "main.cc"), "w").write(
+              '#include "swarm-wire.h"\nint main() { return 0; }\n')
+          PY
+          echo "WORK=$work" >> "$GITHUB_ENV"
+          cat "$work/vcpkg.json" "$work/vcpkg-configuration.json"
+      - uses: ./.github/actions/setup-vcpkg
+        id: vcpkg
+        timeout-minutes: 8
+        with:
+          binary-cache: ${{ matrix.cache }}
+          configuration: ${{ env.WORK }}/vcpkg-configuration.json
+      - name: Configure, build and run the consumer
+        timeout-minutes: 10
+        env:
+          TOOLCHAIN: ${{ steps.vcpkg.outputs.toolchain }}
+        run: |
+          set -euo pipefail
+          echo "binary cache: ${{ steps.vcpkg.outputs.binary-cache }}"
+          time cmake -S "$WORK" -B "$WORK/build" -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN"
+          cmake --build "$WORK/build"
+          "$WORK/build/consumer"
