@@ -248,7 +248,9 @@ jobs:
           DIGEST: ${{ needs.image.outputs.digest }}
         run: |
           set -euo pipefail
-          docker buildx imagetools create \
+          # --prefer-index=false: copy the candidate's own manifest; the
+          # default wraps a single image manifest in a new index, a new digest
+          docker buildx imagetools create --prefer-index=false \
             -t "$IMAGE:sha-${GITHUB_SHA::7}" -t "$IMAGE:latest" "$CANDIDATES@$DIGEST"
           got=$(docker buildx imagetools inspect "$IMAGE:sha-${GITHUB_SHA::7}" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
           [ "$got" = "$DIGEST" ] || { echo "::error::promoted $got is not the tested $DIGEST"; exit 1; }
