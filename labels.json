@@ -9,7 +9,8 @@
     {"name": "question", "color": "d876e3", "description": "Usage or behaviour question"},
     {"name": "epic", "color": "3e4b9e", "description": "Umbrella issue; children are sub-issues"},
     {"name": "handoff", "color": "fbca04", "description": "Work in flight handed to the next session"},
-    {"name": "rcapa", "color": "8b0000", "description": "Root cause analysis + corrective/preventive actions of an ns-3 bug; doc in ns3-tools docs/ns3-rcapa/"},
+    {"name": "rcapa", "color": "8b0000", "description": "RCAPA ticket: an ns-3 bug (ns3-tools) or a regression in a published release (docs/rcapa/)"},
+    {"name": "ns3-upstream", "color": "5319e7", "description": "An NS3-NNN RCAPA ticket: a bug in upstream ns-3, beside rcapa; counted by the ns-3 bugs badge"},
     {"name": "hold", "color": "b60205", "description": "Stops an automated action (the upstream bridge's veto window) while it is on"},
 
     {"name": "good first issue", "color": "7057ff", "description": "Contributor: small, well-scoped, a good start for a newcomer"},

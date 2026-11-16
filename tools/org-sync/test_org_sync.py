@@ -279,6 +279,37 @@ check(
     and run("check", dp)[0] == 0,
     "a repo that skips the Scorecard workflow (a private one) gets no badge and stays clean",
 )
+# RCAPA (ADR-0003): the flow and template seeded, the open-RCAPA badge, ns-3 bugs only with the register
+dr2 = fresh()
+run("init", dr2, "--kind", "protocol", "--dual", "core/")
+rr = read(os.path.join(dr2, "README.md"))
+idx = read(os.path.join(dr2, "docs/rcapa/README.md"))
+check(
+    idx.startswith("# RCAPA: regressions in a release of swarm-routing/demo\n")
+    and "## Index" in idx
+    and "```mermaid" in idx
+    and os.path.exists(os.path.join(dr2, "docs/rcapa/_template.md"))
+    and "[docs/rcapa/README.md](docs/rcapa/README.md)" in rr,
+    "init seeds docs/rcapa/ (the flow with the repo's name, the template) and the Develop section links it",
+)
+check(
+    "[![Open RCAPA](https://img.shields.io/github/issues/swarm-routing/demo/rcapa"
+    "?label=open%20RCAPA&color=blue)](https://github.com/swarm-routing/demo/blob/main/docs/rcapa/README.md)"
+    in rr
+    and "ns-3 bugs" not in rr,
+    "the open-RCAPA badge counts the repo's rcapa issues; no ns-3 bugs badge without docs/ns3-bugs.md",
+)
+write(os.path.join(dr2, "docs/rcapa/README.md"), "# RCAPA: our own flow\n")
+write(os.path.join(dr2, "docs/ns3-bugs.md"), "# ns-3 bugs\n")
+run("apply", dr2)
+rr = read(os.path.join(dr2, "README.md"))
+check(
+    read(os.path.join(dr2, "docs/rcapa/README.md")) == "# RCAPA: our own flow\n"
+    and "/ns3-upstream?label=ns-3%20bugs&color=blue)](docs/ns3-bugs.md)" in rr
+    and rr.index("open%20RCAPA") < rr.index("ns-3%20bugs")
+    and run("check", dr2)[0] == 0,
+    "the rcapa seed stays the repo's own; docs/ns3-bugs.md adds the ns-3 bugs badge after it",
+)
 # OpenSSF Best Practices (#23): the badge only with a bestpractices.dev project id
 check(
     "bestpractices.dev" not in rq,

@@ -37,6 +37,10 @@ the tools to install, how to run every self-test and lint, how to try a
 change against another repository, what CI checks and how to read a red
 run. How changes are proposed, reviewed and released is
 [CONTRIBUTING.md](CONTRIBUTING.md).
+A regression that reached `main` and broke a caller gets an RCAPA (root
+cause analysis with corrective and preventive actions):
+[docs/rcapa/README.md](docs/rcapa/README.md) is this repository's flow and
+its index.
 
 ## Epics
 

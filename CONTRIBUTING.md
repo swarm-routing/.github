@@ -184,7 +184,8 @@ automatic CodeRabbit review, so a new label is added there by hand):
 | Kind | Rule | Labels |
 |---|---|---|
 | Type | exactly one; umbrellas add `epic` | `bug`, `enhancement`, `chore`, `documentation`, `verification` (+ `question`, `handoff`) |
-| ns-3 bug | on every RCAPA ticket, beside its type (`verification`) and area (`ns3`); see "ns-3 bugs (RCAPA)" below | `rcapa` |
+| RCAPA | on every RCAPA ticket: an ns-3 bug beside `verification` and `ns3` ("ns-3 bugs (RCAPA)" below), a regression in a published release beside `bug` ("RCAPA" below) | `rcapa` |
+| ns-3 upstream | on every `NS3-NNN` RCAPA ticket, beside `rcapa` (never on a regression or a `PROC-NNN`): it counts the open upstream ns-3 bugs for ns3-tools' "ns-3 bugs" badge | `ns3-upstream` |
 | Hold | stops an automated action from going out while it stays on (the upstream bridge's veto window; see "ns-3 bugs (RCAPA)" below) | `hold` |
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `learn-site`, `literature` |
 | Model | exactly one, a suggestion: what a wrong first pass costs, not code volume; only models a Claude Pro plan includes (maintainer decision, #280) | `model:haiku-5.5` (mechanical), `model:sonnet-5.5` (plumbing, tooling, docs), `model:opus-5.5` (protocol semantics, root cause, adapter work, architecture: write the design first) |
@@ -203,13 +204,73 @@ its body starts with *Migrated from `danieljoppi/AntHocNet#N`*. It takes the
 `release:` label of the target repository's ladder, not AntHocNet's (ROADMAP
 "Releases"; decision 2026-11-11).
 
+### RCAPA
+
+An **RCAPA** (root cause analysis with corrective and preventive actions) is
+a ticket first, then a document: five whys, each cited; a reproducer;
+diagrams; the corrective and preventive actions, linked; a timeline
+([ADR-0003](docs/adr/0003-rcapa-for-ns3-bugs-and-released-regressions.md);
+maintainer decision 2026-11-16). It is required for upstream ns-3 bugs and
+for **regressions in a published release**, and for nothing else:
+
+| Defect | RCAPA |
+|--------|-------|
+| A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/ns3-tools ("ns-3 bugs (RCAPA)" below) |
+| A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/ns3-tools |
+| A regression in a published release: something that worked in a released version (a GitHub release, its Zenodo DOI, a PyPI package, a vcpkg port) and broke after a change, so the defect is in a published release or was found against one | **yes**: `<PREFIX>-NNN` in the repository that owns the defect |
+| A bug or change that never reached a release (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
+| A trivial change with no behaviour (a typo, a comment, docs wording) that affects no behaviour, output, number or released artifact | **no** |
+
+Whether a defect reached a release is read from the tags, never from
+memory: it did when the repository's latest release tag contains the commit
+that introduced it (`git tag --contains <commit>`).
+
+For a regression in a published release:
+
+1. **Open the ticket first**, in the repository that owns the defect, from
+   the form *Regression in a release (RCAPA)*
+   (`ISSUE_TEMPLATE/rcapa-regression.yml`): title
+   `[rcapa] <PREFIX>-NNN <short description>`, labels `rcapa` and `bug`, a
+   priority and a model suggestion. `NNN` is the next free number in that
+   repository's `docs/rcapa/README.md`.
+2. Copy `docs/rcapa/_template.md` (seeded by org-sync from
+   `templates/rcapa/`) to `docs/rcapa/rcapa-<short-description>.md`
+   (lowercase, hyphens: what breaks) and add its row to
+   `docs/rcapa/README.md` in the same pull request.
+3. References are fully qualified: `swarm-routing/<repo>#N` for the org's
+   items, a link whose text is `nsnam/ns-3-dev#N` to the full GitLab URL for
+   ns-3's; never a bare `#N`.
+4. **The ticket stays open until the corrective action is merged and a
+   release carries the fix** (PROC-001's rule, swarm-routing/ns3-tools#247,
+   generalised).
+
+ID prefixes, one per repository (a new repository adds its row here):
+
+| Repository | Prefix |
+|------------|--------|
+| swarm-routing/.github | `ORG` |
+| swarm-routing/AntHocNet | `AHN` |
+| swarm-routing/ARA | `ARA` |
+| swarm-routing/BeeAdHoc | `BAH` |
+| swarm-routing/HOPNET | `HOP` |
+| swarm-routing/Termite | `TRM` |
+| swarm-routing/ns3-swarm-core | `SWC` |
+| swarm-routing/ns3-tools | `NST` (its own code; ns-3 bugs keep `NS3`, process defects `PROC`) |
+| swarm-routing/ns3-containers | `CNT` |
+| swarm-routing/ns3-upstream-report | `UPR` |
+| swarm-routing/benchmarks | `BEN` |
+| swarm-routing/skills | `SKL` |
+| swarm-routing/swarm-routing.github.io | `SITE` |
+| swarm-routing/vcpkg-registry | `VCP` |
+
 ### ns-3 bugs (RCAPA)
 
 A defect in upstream ns-3 (the simulator, not our code), or an investigation
 of one, always gets an **RCAPA ticket** (root cause analysis + corrective and
 preventive actions; maintainer decision, 2026-11-16) in
 **swarm-routing/ns3-tools** first, opened from the form *ns-3 bug (RCAPA)*
-(`ISSUE_TEMPLATE/rcapa.yml`: labels `rcapa`, `verification`, `ns3`; title
+(`ISSUE_TEMPLATE/rcapa.yml`: labels `rcapa`, `ns3-upstream`, `verification`,
+`ns3`; title
 `[rcapa] NS3-NNN ...`, the next free ID of the index). It holds the ns-3
 versions and modules, the symptom, a reproducer (command, `ns3-dev` image tag
 and digest, seed, expected vs actual), the evidence and the workarounds in our
@@ -985,8 +1046,13 @@ that has a badge (#415): **Build** (`ci`, `container-security`, `hadolint`,
 `trivy`, `ghcr`, `ns3dev`), **Quality** (the `sonar-*` badges, `codecov`,
 `coderabbit`), **Release** (`release`, `doi`, `cite`, `licence`), **Trust**
 (`scorecard`, `bestpractices`, `cosign`), **Stack** (`cxx`, `ns3`, `python`) and
-**Community & docs** (`docs`, `arena`, `claude-plugin`,
-`conventional`; no Codespaces badge, maintainer decision 2026-11-15), in that order within each row. A repository's `badges` list
+**Community & docs** (`docs`, `arena`, `rcapa`, `ns3-bugs`, `claude-plugin`,
+`conventional`; no Codespaces badge, maintainer decision 2026-11-15), in that order within each row.
+`rcapa` ("open RCAPA", the repository's open issues labelled `rcapa`, linking
+its `docs/rcapa/README.md`; ADR-0003) is on in every repository; `ns3-bugs`
+("ns-3 bugs", open issues labelled `ns3-upstream`, linking
+`docs/ns3-bugs.md`) appears only where that register exists
+(swarm-routing/ns3-tools). Both are counts, in a neutral colour. A repository's `badges` list
 says which appear, never their order. A badge of the repository's own (a
 coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
 `.github/org-sync.toml` (`group`, `alt`, `image`, `link`), placed after its

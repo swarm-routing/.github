@@ -170,6 +170,8 @@ BASE_BADGES = [
     "arena",
     "scorecard",
     "bestpractices",
+    "rcapa",
+    "ns3-bugs",
 ]
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -207,7 +209,7 @@ BADGE_GROUPS = {
     "stack": ("Stack", ["cxx", "ns3", "python"]),
     "community": (
         "Community & docs",
-        ["docs", "arena", "claude-plugin", "conventional"],
+        ["docs", "arena", "rcapa", "ns3-bugs", "claude-plugin", "conventional"],
     ),
 }
 BADGE_TABLE_HEAD = "| Group | Badges |\n| --- | --- |\n"
@@ -1096,6 +1098,20 @@ def badges_by_kind(cfg, repo_dir):
             # the project's level on bestpractices.dev (in progress, passing, ...)
             url = f"https://www.bestpractices.dev/projects/{bestpractices_project(cfg)}"
             out[b] = f"[![OpenSSF Best Practices]({url}/badge)]({url})"
+        elif b == "rcapa" and "docs/rcapa/README.md" not in cfg.get("skip", []):
+            # open RCAPA tickets (label `rcapa`), linking the project's flow (ADR-0003);
+            # an absolute link, so the badge holds before the docs/rcapa/ seed lands
+            out[b] = (
+                f"[![Open RCAPA](https://img.shields.io/github/issues/{repo}/rcapa"
+                "?label=open%20RCAPA&color=blue)]"
+                f"(https://github.com/{repo}/blob/main/docs/rcapa/README.md)"
+            )
+        elif b == "ns3-bugs" and os.path.exists(os.path.join(repo_dir, "docs/ns3-bugs.md")):
+            # the upstream ns-3 bug register (ns3-tools): open tickets labelled `ns3-upstream`
+            out[b] = (
+                f"[![ns-3 bugs](https://img.shields.io/github/issues/{repo}/ns3-upstream"
+                "?label=ns-3%20bugs&color=blue)](docs/ns3-bugs.md)"
+            )
         elif b == "claude-plugin":
             out[b] = (
                 f"[![Claude Code plugins]({shield('Claude Code', 'plugin marketplace', 'blueviolet')})]"
@@ -1309,6 +1325,9 @@ def items(cfg):
         ("seed", BIB, "references.bib.in", None),
         # its header is the org's rules, managed so a change reaches every repository (#343)
         ("section", BIB, "references-header.bib", "bib-header"),
+        # the project's RCAPA flow and index, and the document template (ADR-0003)
+        ("seed", "docs/rcapa/README.md", "rcapa/README.md", None),
+        ("seed", "docs/rcapa/_template.md", "rcapa/_template.md", None),
     ]
     if cfg["dual"]:
         out.insert(12, ("seed", "LICENSE-MIT", "LICENSE-MIT.in", None))
