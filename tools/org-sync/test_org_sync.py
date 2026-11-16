@@ -964,6 +964,7 @@ check(
     guide.startswith("# Developer guide\n")
     and "## Troubleshooting\n" in guide
     and "{repo}" not in guide
+    and re.search(r'^cd "\$\(basename [^/\s]+/[^/\s)]+\)"$', guide, re.M) is not None
     and "/rules/branches/main" in guide,
     "init seeds docs/development.md, the link's target, its placeholders filled",
 )

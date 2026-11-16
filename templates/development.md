@@ -24,7 +24,7 @@ Docker, emsdk: what this repository needs, each with the version CI uses.
 
 ```bash
 git clone https://github.com/{repo}.git
-cd {title}
+cd "$(basename {repo})"
 ```
 
 Submodules, sibling checkouts or forks the work needs.
