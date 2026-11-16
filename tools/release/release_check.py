@@ -82,6 +82,7 @@ REUSABLE = re.compile(
 )
 DIST_TARGET = re.compile(r"^dist\s*:", re.M)
 INCREMENT = re.compile(r"\binputs\.increment\b")
+COMMENT = re.compile(r"(?:^|\s)#.*$")  # a YAML comment, to the end of the line
 WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
 KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):(.*)$")  # the value is stripped after the match
 SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
@@ -291,7 +292,8 @@ def ready(repo_dir, repo, version, gh):
     for _, t in callers:
         inputs.update(with_inputs(t))
     own = [t for n, t in flows if n == "release.yml" and not callers]
-    if (callers and "increment" in inputs) or (own and INCREMENT.search(own[0])):
+    own_live = "\n".join(COMMENT.sub("", ln) for ln in own[0].splitlines()) if own else ""
+    if (callers and "increment" in inputs) or (own and INCREMENT.search(own_live)):
         r.add("OK", "increment: the dispatch input reaches the bump")
     elif callers:
         r.add(
@@ -716,6 +718,18 @@ def self_test():
         )
         with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
             fh.write(own + "# cz bump --increment ${{ inputs.increment }}\n")
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: inputs.increment only in a comment is no read",
+            has(rep, "FAIL", "never reads `inputs.increment`"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(
+                own.replace("jobs: {}\n", "")
+                + "jobs:\n  propose:\n    steps:\n      - env:\n"
+                + "          INCREMENT: ${{ inputs.increment }}   # forced size\n"
+                + '        run: cz bump --yes ${INCREMENT:+--increment "$INCREMENT"}\n'
+            )
         rep = quiet(ready, d, None, None, gh)
         expect("ready: an own release.yml reading inputs.increment", has(rep, "OK", "increment"))
     flow = (
