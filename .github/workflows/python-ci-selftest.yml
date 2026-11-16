@@ -5,14 +5,16 @@ name: Python CI self-test
 # Proves reusable-python-ci.yml from this checkout measures child Python
 # processes by default (#480): tools/checks/fixtures/python-ci/test_tool.py
 # runs tool.py only as `python3 -I tool.py` from another directory, so tool.py
-# is covered only if the subprocess is measured. The check job reads the
-# coverage report the reusable workflow uploads.
+# is covered only if the subprocess is measured. `source` names two
+# directories: test_lib.py imports python-ci-lib/lib.py, so both tool.py and
+# lib.py are in the report only if every `source` item is measured (#530).
+# The check job reads the coverage report the reusable workflow uploads.
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/reusable-python-ci.yml', '.github/workflows/python-ci-selftest.yml', 'tools/checks/fixtures/python-ci/**']
+    paths: ['.github/workflows/reusable-python-ci.yml', '.github/workflows/python-ci-selftest.yml', 'tools/checks/fixtures/python-ci/**', 'tools/checks/fixtures/python-ci-lib/**']
   pull_request:
-    paths: ['.github/workflows/reusable-python-ci.yml', '.github/workflows/python-ci-selftest.yml', 'tools/checks/fixtures/python-ci/**']
+    paths: ['.github/workflows/reusable-python-ci.yml', '.github/workflows/python-ci-selftest.yml', 'tools/checks/fixtures/python-ci/**', 'tools/checks/fixtures/python-ci-lib/**']
   workflow_dispatch:
 
 permissions:
@@ -22,9 +24,9 @@ jobs:
   python:
     uses: ./.github/workflows/reusable-python-ci.yml
     with:
-      paths: tools/checks/fixtures/python-ci
+      paths: tools/checks/fixtures/python-ci tools/checks/fixtures/python-ci-lib
       tests: tools/checks/fixtures/python-ci/test_*.py
-      source: tools/checks/fixtures/python-ci
+      source: tools/checks/fixtures/python-ci tools/checks/fixtures/python-ci-lib
 
   check:
     needs: python
@@ -40,7 +42,7 @@ jobs:
         with:
           name: python-coverage
           path: coverage
-      - name: tool.py is covered through its child process
+      - name: tool.py (a child process) and lib.py (the second source) are covered
         run: |
           cat coverage/summary.txt
           python3 - <<'PY'
@@ -50,4 +52,6 @@ jobs:
           print(rates)
           tool = [r for f, r in rates.items() if f.endswith("tool.py") and "test_" not in f]
           assert tool and tool[0] == 1.0, f"tool.py not fully measured: {rates}"
+          lib = [r for f, r in rates.items() if f.endswith("lib.py") and "test_" not in f]
+          assert lib and lib[0] == 1.0, f"lib.py (second source) not measured: {rates}"
           PY
