@@ -1138,6 +1138,28 @@ check(
     and run("check", d)[0] == 0,
     "a lock: the lock text replaces the pin text",
 )
+check(
+    "does not call `reusable-ns3-ci.yml`" in agents and "canary-dependencies" not in agents,
+    "no workflow calls reusable-ns3-ci.yml: the section claims no canary leg (#411)",
+)
+write(
+    os.path.join(d, ".github/workflows/ns3.yml"),
+    "jobs:\n  ci:\n    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main\n",
+)
+rc, out = run("check", d)
+check(
+    rc == 1 and "AGENTS.md#dependencies" in out,
+    "a caller of reusable-ns3-ci.yml added: the section drifts",
+)
+run("apply", d)
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "`canary-dependencies` names `@main`" in agents
+    and "does not call `reusable-ns3-ci.yml`" not in agents
+    and "- **Working against an unreleased swarm-core**" in agents
+    and run("check", d)[0] == 0,
+    "a caller of reusable-ns3-ci.yml: the canary text, the next bullet intact",
+)
 write(os.path.join(d, "vcpkg.json"), '{"dependencies": ["swarm-core"]}\n')
 rc, out = run("check", d)
 check(rc == 1 and "AGENTS.md#dependencies" in out, "vcpkg.json added: the section drifts")

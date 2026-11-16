@@ -424,6 +424,24 @@ def swarm_core_mode(repo_dir):
     return "pin" if re.search(r"^\s*set\(\s*SWARM_CORE_REF\b", cmake, re.M) else None
 
 
+NS3_BUILD_BULLET = re.compile(
+    r"^- \*\*The ns-3 (?:build|canary)\*\*:.*?(?=^- \*\*|\Z)", re.M | re.S
+)
+
+
+def calls_ns3_ci(repo_dir):
+    """Whether a workflow of the repository calls reusable-ns3-ci.yml. Only such
+    a repository has the canary leg the `dependencies` section describes (#411)."""
+    wf = os.path.join(repo_dir, ".github", "workflows")
+    names = sorted(os.listdir(wf)) if os.path.isdir(wf) else []
+    uses = re.compile(
+        r"^\s*uses:\s*swarm-routing/\.github/\.github/workflows/reusable-ns3-ci\.yml@", re.M
+    )
+    return any(
+        uses.search(read(os.path.join(wf, n)) or "") for n in names if n.endswith((".yml", ".yaml"))
+    )
+
+
 class SettingsOnly(Exception):
     """The config has `[settings]` and no `kind`: no templates are managed."""
 
@@ -1456,6 +1474,13 @@ def render(cfg, repo_dir, item, v=None):
         want = citing_section(cfg, repo_dir)
     else:
         want = template(src) or "" if src else ""
+    if name == "dependencies" and not calls_ns3_ci(repo_dir):
+        # The canary leg belongs to reusable-ns3-ci.yml: a repository with its
+        # own ns-3 CI (AntHocNet) gets the text that is true for it (#411).
+        own = template("agents/dependencies-own-ci.md")
+        if not NS3_BUILD_BULLET.search(want):
+            sys.exit(f"org-sync: templates/{src} lost its ns-3 build bullet")
+        want = NS3_BUILD_BULLET.sub(lambda _m: own, want, count=1)
     if name == "coderabbit-head" and cfg.get("coderabbit_path_filters"):
         # The repository's own path_filters (generated data, lockfiles) go after
         # the org's: the list sits inside the managed head, so a hand-added
