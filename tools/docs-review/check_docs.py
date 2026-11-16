@@ -22,7 +22,10 @@ org-sync manages nothing there, #320) and within its size budget (#277,
 warn-only: the org-sync sections, the repository's own text, or a
 settings-only file as a whole, each today's largest plus 10 %); CLAUDE.md
 importing it; CONTEXT.md past its seed; a docs/ map
-when docs/ holds more than ADRs; no broken relative link. The checks are what
+when docs/ holds more than ADRs; no broken relative link; a developer guide,
+docs/development.md, with every `##` section of templates/development.md
+(DEV_HEADINGS), linked from the README by org-sync's Develop section (#490:
+each a FAIL). The checks are what
 a script can decide; whether the explanation is good is the reviewer's
 (the docs-review skill).
 
@@ -63,6 +66,7 @@ from urllib.parse import unquote, urlsplit
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "org-sync"))
 from org_sync import BADGE_GROUPS  # noqa: E402  the README badge table's groups, one source
 
+ORG_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 SITE = "https://swarm-routing.github.io/"
 IMAGE = (
     "ghcr.io/swarm-routing/ns3-dev",
@@ -77,6 +81,23 @@ AGENTS_HEADINGS = (
     "Git workflow",
     "Agent skills",
     "Where to look",
+)
+# docs/development.md, the developer guide every repository has (#490): these
+# `##` sections, from templates/development.md (the self-test keeps the two the
+# same), and the README links it (org-sync's managed Develop section)
+DEV_GUIDE = "docs/development.md"
+DEV_HEADINGS = (
+    "Prerequisites",
+    "Get the code",
+    "Dependencies",
+    "Build",
+    "Test",
+    "Run",
+    "Docker and dev containers",
+    "Lint and format",
+    "CI map",
+    "Release",
+    "Troubleshooting",
 )
 # What a session loads from AGENTS.md, in bytes (#277): today's largest plus
 # 10 %, measured on every repository's main on 2026-11-13. Warn-only, a
@@ -432,6 +453,8 @@ def check(repo, online=False, fetch=None):
     if context and "Describe the repository here" in context and has_work:
         r.add("WARN", "CONTEXT.md", "still the seed placeholder although the repo has content")
 
+    check_dev_guide(repo, readme, r)
+
     # --- docs/ ------------------------------------------------------------------
     docs = os.path.join(repo, "docs")
     pages = []
@@ -501,6 +524,53 @@ def check(repo, online=False, fetch=None):
         r.add("PASS", "links", "every relative link resolves")
     check_ai_facts(repo, r, online, fetch)
     return r
+
+
+# --- the developer guide (#490) ----------------------------------------------
+
+
+def dev_headings(text):
+    """The `##` headings of a Markdown text, outside fenced code blocks."""
+    return [h.strip() for h in re.findall(r"^##\s+(.+)$", FENCE.sub("", text), re.M)]
+
+
+def check_dev_guide(repo, readme, r):
+    """docs/development.md exists, has every standard section, and the README links it."""
+    guide = read(repo, DEV_GUIDE)
+    if guide is None:
+        r.add(
+            "FAIL",
+            "development",
+            f"no {DEV_GUIDE}: start from swarm-routing/.github templates/development.md",
+        )
+    else:
+        heads = [h.lower() for h in dev_headings(guide)]
+        at = {
+            h: next((i for i, x in enumerate(heads) if x.startswith(h.lower())), None)
+            for h in DEV_HEADINGS
+        }
+        lack = [h for h in DEV_HEADINGS if at[h] is None]
+        found = [at[h] for h in DEV_HEADINGS if at[h] is not None]
+        if lack:
+            r.add("FAIL", "development", f"{DEV_GUIDE} lacks standard sections", lack)
+        elif found != sorted(found):
+            r.add(
+                "FAIL",
+                "development",
+                f"{DEV_GUIDE}'s standard sections are out of order (the template's order)",
+                DEV_HEADINGS,
+            )
+        else:
+            r.add("PASS", "development", f"{DEV_GUIDE} has every standard section")
+    if readme is not None:
+        if re.search(r"\]\((?:\./)?docs/development\.md(?:#[^)]*)?\)", FENCE.sub("", readme)):
+            r.add("PASS", "development", f"README links {DEV_GUIDE}")
+        else:
+            r.add(
+                "FAIL",
+                "development",
+                f"README does not link {DEV_GUIDE} (org-sync's Develop section: org_sync.py apply)",
+            )
 
 
 # --- citation: a released repository cites and is cited like AntHocNet --------
@@ -1022,6 +1092,7 @@ def self_test():
         "**Status: building.**\n\n"
         "See [its page](https://swarm-routing.github.io/projects/ARA/), the image "
         "`ghcr.io/swarm-routing/ns3-dev` and [AGENTS.md](AGENTS.md)\n\n"
+        "Develop: [docs/development.md](docs/development.md)\n\n"
         "```\ncore/   the core\n```\n\n## Epics\n\nx\n\n## License\n\n[LICENSING.md](LICENSING.md)\n"
     )
     base = {
@@ -1034,6 +1105,7 @@ def self_test():
         "core/a.cc": "x\n",
         "docs/README.md": "# Map\n\n[fidelity](fidelity.md)\n",
         "docs/fidelity.md": "# F\n",
+        DEV_GUIDE: "# Developer guide\n\n" + "".join(f"## {h}\n\ntext\n\n" for h in DEV_HEADINGS),
         "docs/adr/README.md": "| [0001](0001-x.md) | x |\n",
         "docs/adr/0001-x.md": "# x\n",
     }
@@ -1256,6 +1328,48 @@ def self_test():
     expect("a status that disagrees with AGENTS.md warns", has(r, "WARN", "disagrees"))
     r = repo({"AGENTS.md": agents_ok.replace("## Agent skills", "## Skills")})
     expect("a missing AGENTS section fails", has(r, "FAIL", "org's sections"))
+    # #490: docs/development.md with the standard sections, linked from the README
+    expect(
+        "the developer guide passes (base)",
+        has(ok, "PASS", "has every standard section") and has(ok, "PASS", "README links"),
+    )
+    r = repo(drop=(DEV_GUIDE,))
+    expect("a missing docs/development.md fails", has(r, "FAIL", "no docs/development.md"))
+    r = repo({DEV_GUIDE: base[DEV_GUIDE].replace("## CI map\n", "## CI\n")})
+    expect(
+        "a guide missing a standard section fails, naming it",
+        any(x["level"] == "FAIL" and "CI map" in x["items"] for x in r.rows),
+    )
+    r = repo({DEV_GUIDE: base[DEV_GUIDE].replace("## Release\n", "```\n## Release\n```\n")})
+    expect("a heading inside a code block does not count", has(r, "FAIL", "lacks standard"))
+    r = repo({DEV_GUIDE: base[DEV_GUIDE].replace("## Build\n", "## Build and install\n")})
+    expect("a standard heading may go on (Build and install)", not r.fail)
+    r = repo({"README.md": readme_ok.replace("[docs/development.md](docs/development.md)", "x")})
+    expect("a README that does not link the guide fails", has(r, "FAIL", "does not link"))
+    r = repo(
+        {
+            "README.md": readme_ok.replace(
+                "[docs/development.md](docs/development.md)",
+                "\n```\n[docs/development.md](docs/development.md)\n```\n",
+            )
+        }
+    )
+    expect("a link inside a code block does not count", has(r, "FAIL", "does not link"))
+    swapped = base[DEV_GUIDE].replace("## Build\n", "## @@\n").replace("## Test\n", "## Build\n")
+    r = repo({DEV_GUIDE: swapped.replace("## @@\n", "## Test\n")})
+    expect("standard sections out of order fail", has(r, "FAIL", "out of order"))
+    extra = base[DEV_GUIDE].replace("## Run\n", "## Our own section\n\nx\n\n## Run\n")
+    expect("a repository's own section between them passes", not repo({DEV_GUIDE: extra}).fail)
+    with open(os.path.join(ORG_ROOT, "templates", "development.md"), encoding="utf-8") as f:
+        expect(
+            "templates/development.md has exactly DEV_HEADINGS, in order",
+            tuple(dev_headings(f.read())) == DEV_HEADINGS,
+        )
+    with open(os.path.join(ORG_ROOT, "templates", "readme-develop.md"), encoding="utf-8") as f:
+        expect(
+            "org-sync's Develop section passes the README link check",
+            re.search(r"\]\(docs/development\.md\)", f.read()) is not None,
+        )
     # #277: AGENTS.md's size budget, warn-only (own text, org-sync sections, settings-only whole)
     expect("…a small AGENTS.md is within its budget", has(ok, "PASS", "size budget"))
     big = "x" * (AGENTS_OWN_BUDGET + 1)

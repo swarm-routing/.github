@@ -458,6 +458,29 @@ site's WebAssembly build (swarm-routing/swarm-routing.github.io#153).
   refusal is a warning in the job, and then a person merges it). For a
   missed release a person runs the same command and opens the PR.
 
+## Developer guide
+
+Every repository has `docs/development.md`, the page a newcomer starts from
+(#490): the tools to install and their versions, how to get the code and its
+dependencies, how to build, test, run and lint it, the Docker images and dev
+containers, what each CI workflow checks and which checks are required, how
+a release is cut (a link to [Cutting a release](#cutting-a-release)) and the
+known pitfalls. It has the `##` sections of
+[`templates/development.md`](templates/development.md), in that order:
+Prerequisites, Get the code, Dependencies, Build, Test, Run, Docker and dev
+containers, Lint and format, CI map, Release, Troubleshooting; a repository
+may add its own sections and `###` subsections, and a section with nothing to
+say keeps one sentence saying so. Every command in it is one that runs today,
+copied from CI, the Makefile or AGENTS.md "Build & verify"; a step only CI
+can run names its workflow. AGENTS.md keeps what an agent needs and points
+here for the rest.
+
+The README links it through org-sync's managed `develop` section (the
+"Develop" heading, `templates/readme-develop.md`), placed before the first
+of Contributing, Epics or Licence. `tools/docs-review/check_docs.py` fails
+when the guide is missing, lacks a standard section, has them out of order
+or the README does not link it.
+
 ## Outside contributions
 
 Contributions from outside the org are welcome in every public repository:
