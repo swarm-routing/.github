@@ -4,7 +4,7 @@
 """Open the refresh PRs that keep every org repository in step with this one.
 
 Usage:
-  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-lock|release-rebuild|release-aftercare|release|all]
+  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-lock|release-rebuild|release-aftercare|bestpractices|release|all]
                  [--repos A,B] [--dry-run]
   org_bot.py --self-test
 
@@ -73,6 +73,17 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             release, and what it still finds (WARN and FAIL lines) is posted
             as one comment, updated in place, on the site's
             `[release-sync] <name> <tag>` issue.
+  bestpractices  the Go tool `bestpractices answers <clone> --slug swarm-routing/<repo>
+            --write` (cmd/bestpractices, run from the ci-tools image's binary,
+            ORG_BOT_BESTPRACTICES names it), in every public repository: the
+            OpenSSF Best Practices answers its files show, as `.bestpractices.json`
+            at the top level, regenerated so the weekly `bestpractices` check
+            proposes them on bestpractices.dev (one Save per project, the site has
+            no write API; #531, swarm-routing/AntHocNet#790). A PR only when the
+            file changes; the newer PR supersedes an older one. Daily (`all`),
+            and for one repository on its `bestpractices` repository_dispatch,
+            sent by that repository's org-managed bestpractices-evidence.yml when
+            a push to main touches the files the answers read.
   release-rebuild  no clone, the API only (#430): a repository whose open
             `bot/release` PR is behind its base gets its release caller (the
             workflow that calls reusable-release.yml) dispatched with mode
@@ -85,7 +96,7 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             increment (a PR whose body records none is left to a person).
   `release` runs both release tasks and release-lock (org-bot.yml, hourly,
   and for one repository on its `org-release` repository_dispatch, #479); `all`
-  runs epics, org-sync, zenodo, swarm-core-pin and release-lock.
+  runs epics, org-sync, zenodo, swarm-core-pin, release-lock and bestpractices.
 
   org-sync and swarm-core-pin never leave two PRs that each fail the other's
   required check (#429: on 2026-11-14 every protocol repository held a pin
@@ -153,6 +164,8 @@ ZENODO = os.path.join(ROOT, "tools", "zenodo", "zenodo.py")
 PIN = os.path.join(ROOT, "tools", "checks", "check-swarm-core-pin.py")
 LOCK_TOOL = os.path.join(ROOT, "tools", "checks", "release_lock.py")
 RELEASE_CHECK = os.path.join(ROOT, "tools", "release", "release_check.py")
+# the Go tool's binary (cmd/bestpractices), copied out of the ci-tools image by org-bot.yml
+BESTPRACTICES = os.environ.get("ORG_BOT_BESTPRACTICES", "bestpractices")
 SITE = (
     "swarm-routing.github.io"  # the site repository, where each release's [release-sync] issue is
 )
@@ -239,6 +252,16 @@ TASKS = {
         "(`docs/roadmap.md`'s shipped block; `CONTRIBUTING.md`'s version-DOI rows where it "
         "keeps them) or, in .github, `zenodo.py table CONTRIBUTING.md --write`; every DOI is "
         "the one Zenodo returned, never typed, and a release joins only once Zenodo has it.",
+    },
+    "bestpractices": {
+        "title": "chore: regenerate .bestpractices.json (org-bot)",
+        "what": "The OpenSSF Best Practices answers this repository's files show changed. "
+        "Regenerated with swarm-routing/.github's `bestpractices answers . --write` "
+        "(cmd/bestpractices): every passing criterion the repository gives evidence for, "
+        "each justified by its full URL on `main`; owner-only criteria stay `?`. Once this "
+        "merges, the weekly `bestpractices` check puts the proposal link for what "
+        "bestpractices.dev lacks in the repository's `[bestpractices]` issue: the "
+        "maintainer opens it, reviews and presses Save (the site has no write API).",
     },
     "zenodo": {
         "title": "docs: record the zenodo concept doi (org-bot)",
@@ -526,6 +549,19 @@ def generate(task, repo, clone, data, out, skip=None):
         if r.returncode:
             raise Failure(f"zenodo.py: {r.stderr.strip() or r.stdout.strip()}")
         out.append(r.stdout.strip())
+        return out
+    elif task == "bestpractices":
+        r = sh(
+            [BESTPRACTICES, "answers", clone, "--slug", f"{ORG}/{repo}", "--write"],
+            check=False,
+        )
+        if r.returncode:
+            raise Failure(f"bestpractices answers: {r.stderr.strip() or r.stdout.strip()}")
+        # intent-to-add: a new file's content is in `git diff`, so the branch name
+        # (a hash of the diff) changes with it and a changed file is a new PR
+        sh(["git", "-C", clone, "add", "-N", ".bestpractices.json"])
+        # its stderr: the file written, then the count by status
+        out.append(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "")
         return out
     elif task == "zenodo":
         if not os.path.exists(os.path.join(clone, "CITATION.cff")):
@@ -1028,7 +1064,7 @@ def run(args, gh=None, clone_url=None):
     gh = gh or GitHub(token)
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
     groups = {
-        "all": ["epics", "org-sync", "zenodo", "swarm-core-pin", "release-lock"],
+        "all": ["epics", "org-sync", "zenodo", "swarm-core-pin", "release-lock", "bestpractices"],
         "release": ["release-rebuild", "release-aftercare", "release-lock"],
     }
     tasks = groups.get(args.task, [args.task])
@@ -1148,6 +1184,7 @@ def main(argv=None):
             "release-lock",
             "release-rebuild",
             "release-aftercare",
+            "bestpractices",
             "release",
             "all",
         ],
@@ -1677,6 +1714,57 @@ def self_test():
     finally:
         globals()["sh"] = real_sh
     check("zenodo: a refused record fails the repository", refused and "gamma" in refused)
+    # bestpractices: the Go tool writes .bestpractices.json (a fake binary here); a
+    # changed file is one PR, an unchanged one none, and a failure fails the repository
+    fake_bp = os.path.join(work, "fake-bestpractices")
+    with open(fake_bp, "w") as fh:
+        fh.write(
+            "#!/bin/sh\n"
+            '[ "$1" = answers ] && [ "$3" = --slug ] && [ "$5" = --write ] || exit 2\n'
+            '[ -n "$BP_FAIL" ] && { echo "boom" >&2; exit 1; }\n'
+            'printf \'{\\n  "build_status": "Met"\\n}\\n\' > "$2/.bestpractices.json"\n'
+            'echo "bestpractices: wrote $2/.bestpractices.json" >&2\n'
+            'echo "bestpractices: Met 1" >&2\n'
+        )
+    os.chmod(fake_bp, 0o700)  # owner only
+    global BESTPRACTICES
+    real_bp, BESTPRACTICES = BESTPRACTICES, fake_bp
+    try:
+        gh = FakeGitHub()
+        res, out = go(gh, task="bestpractices", repos="gamma", data=zdata)
+        post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+        bbranch = res[0][2]["branch"] if res and res[0][2] else ""
+        written = sh(
+            ["git", "--git-dir", git_dir, "show", f"{bbranch}:.bestpractices.json"], check=False
+        ).stdout
+        check(
+            "bestpractices: the file written by the tool, one PR",
+            [r[0] for r in res] == ["gamma"]
+            and bbranch.startswith("org-bot/bestpractices-")
+            and written == '{\n  "build_status": "Met"\n}\n'
+            and len(post) == 1
+            and post[0][2]["title"] == "chore: regenerate .bestpractices.json (org-bot)"
+            and "Met 1" in post[0][2]["body"],
+        )
+        sh(["git", "--git-dir", git_dir, "update-ref", "refs/heads/main", bbranch])
+        gh = FakeGitHub()
+        res, out = go(gh, task="bestpractices", repos="gamma", data=zdata)
+        check(
+            "bestpractices: unchanged, no PR",
+            "gamma bestpractices: up to date" in out
+            and not [c for c in gh.calls if c[0] == "POST"],
+        )
+        os.environ["BP_FAIL"] = "1"
+        try:
+            go(FakeGitHub(), task="bestpractices", repos="gamma", data=zdata)
+            refused = None
+        except Failure as e:
+            refused = str(e)
+        finally:
+            os.environ.pop("BP_FAIL", None)
+        check("bestpractices: a failing tool fails the repository", refused and "gamma" in refused)
+    finally:
+        BESTPRACTICES = real_bp
     # swarm-core-pin (#208): a stale pin gets one PR on org-bot/swarm-core-pin, a current
     # one none, a repository with no pin is skipped, and a second swarm-core move
     # updates that same PR (branch pushed again, body rewritten)

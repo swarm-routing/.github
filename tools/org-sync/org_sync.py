@@ -1313,6 +1313,14 @@ def items(cfg):
         ("file", ".github/workflows/dco.yml", "workflows/dco.yml", None),
         ("file", ".github/workflows/review-gate.yml", "workflows/review-gate.yml", None),
         ("file", ".github/workflows/scorecard.yml", "workflows/scorecard.yml", None),
+        # a push that changes the Best Practices evidence asks org-bot to
+        # regenerate .bestpractices.json (#531)
+        (
+            "file",
+            ".github/workflows/bestpractices-evidence.yml",
+            "workflows/bestpractices-evidence.yml",
+            None,
+        ),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),

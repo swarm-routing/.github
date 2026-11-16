@@ -3,23 +3,28 @@
 name: bestpractices
 
 # Do the org's OpenSSF Best Practices entries (bestpractices.dev) still match
-# the repositories? Weekly, and on demand, tools/bestpractices/bestpractices.py
-# `check` reads each registered project's public JSON (no login, one request a
-# second) for every public repository that names `bestpractices_project` in
-# its .github/org-sync.toml, or that the site finds by its URL, and reports:
-# a registered repository without the key, answers that disagree with the
-# repository's .bestpractices.json, justification URLs at files no longer on
-# main, and a lost level. It keeps one issue per repository,
-# `[bestpractices] N finding(s)` (label chore): opened on drift, updated in
-# place when the findings change, closed when clean. The site has no write
-# API: a person fixes the answers there (CONTRIBUTING "OpenSSF Best
-# Practices"). Report-only: never a required check.
+# the repositories? Weekly, and on demand, the Go tool `bestpractices check`
+# (cmd/bestpractices, run from the ci-tools image by digest, #531) reads each
+# registered project's public JSON (no login, one request a second, never a
+# POST) for every public repository, found by `bestpractices_project` in its
+# .github/org-sync.toml or by its URL on the site, and keeps one issue per
+# repository, `[bestpractices] N finding(s)` (label chore): for a registered
+# project, the findings (answers in .bestpractices.json the site lacks or
+# contradicts, justification URLs at files no longer on main, a lost level, a
+# missing key) with the proposal link(s) to "open, review, Save" and the
+# owner-only criteria still `?`; for a public repository not registered (and
+# not opted out with `bestpractices = false` under [settings]), the
+# registration steps. Updated in place, closed when the site matches. The site
+# has no write API: the maintainer's Save is the one step left (CONTRIBUTING
+# "OpenSSF Best Practices"). Report-only: never a required check.
 #
 # Token: the org bot's, from .github/actions/bot-token as ai-files-review.yml
 # uses it (the GitHub App's installation token, else ORG_BOT_TOKEN), for
 # Issues: read and write on every repository. Without one, or with dry-run,
-# no issue is written. The token never runs on code from a pull request: pull
-# requests that change the tool run its self-test only.
+# no issue is written. The token never runs on code from a pull request: a pull
+# request that changes this workflow runs the image's tool read-only, with the
+# workflow's own token, on one repository. The tool's tests run in
+# ci-tools-image.yml.
 on:
   schedule:
     - cron: '37 7 * * 3'
@@ -35,7 +40,6 @@ on:
         default: false
   pull_request:
     paths:
-      - 'tools/bestpractices/**'
       - '.github/workflows/bestpractices.yml'
 
 permissions:
@@ -54,6 +58,8 @@ jobs:
     env:
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
+      # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md)
+      IMG: ghcr.io/swarm-routing/ci-tools@sha256:81ae5bd1a281d224463d07ec7e697dddda8f2e3069f3cd1209712af687c678c3
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -63,8 +69,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Self-test
-        run: python3 -I tools/bestpractices/bestpractices.py --self-test
+      - name: The tool runs (pull request, read-only, no issues)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          rc=0
+          docker run --rm -e GH_TOKEN "$IMG" bestpractices check --repos AntHocNet || rc=$?
+          [ "$rc" -le 1 ] || { echo "::error::bestpractices check: exit $rc (unreadable)"; exit 1; }
       - name: Bot token
         if: github.event_name != 'pull_request'
         id: bot
@@ -85,7 +98,8 @@ jobs:
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -z "$BESTPRACTICES_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): no issue is written"
-          python3 -I tools/bestpractices/bestpractices.py "${args[@]}" | tee "$RUNNER_TEMP/check.txt"
+          docker run --rm -e GH_TOKEN -e BESTPRACTICES_TOKEN -e GITHUB_RUN_ID -e GITHUB_REPOSITORY -e GITHUB_SERVER_URL \
+            "$IMG" bestpractices "${args[@]}" | tee "$RUNNER_TEMP/check.txt"
       - name: Summary
         if: ${{ always() && github.event_name != 'pull_request' }}
         run: |

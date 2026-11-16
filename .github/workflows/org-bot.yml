@@ -34,6 +34,15 @@ name: org-bot
 #   DOI read from Zenodo, in one auto-merge PR per repository; then what
 #   release_check.py after still finds, as one comment on the site's
 #   [release-sync] issue (#465); release-lock runs in the same hourly group.
+# - bestpractices (daily, with `all`): `.bestpractices.json` regenerated in every
+#   public repository by the Go tool `bestpractices answers --write`
+#   (cmd/bestpractices; its binary copied out of the ci-tools image by digest,
+#   because the answers read git's last commit date and the distroless image
+#   has no git), one PR when it changes (#531). Also for one repository on its
+#   repository_dispatch `bestpractices`, which that repository's org-managed
+#   bestpractices-evidence.yml sends when a push to main touches the evidence
+#   files; those runs have their own concurrency group per repository, so a
+#   pending org-release run is never replaced by one.
 # Daily, on every push to main that changes the templates or the generators,
 # on demand, and on each release (#479): reusable-release.yml (and
 # AntHocNet's release.yml) send repository_dispatch `org-release` with
@@ -65,7 +74,7 @@ on:
     - cron: '41 */3 * * *'  # swarm-core-pin alone (#208)
     - cron: '23 * * * *'    # release-rebuild and release-aftercare (#430, #465)
   repository_dispatch:
-    types: [org-release]
+    types: [org-release, bestpractices]
   push:
     branches: [main]
     paths:
@@ -81,7 +90,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, release-rebuild, release-aftercare]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, release-rebuild, release-aftercare, bestpractices]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -96,7 +105,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: org-bot
+  # a bestpractices nudge queues per repository, never in place of an
+  # org-release run (one pending run per group)
+  group: ${{ github.event.action == 'bestpractices' && format('org-bot-bestpractices-{0}', github.event.client_payload.repository) || 'org-bot' }}
   cancel-in-progress: false
 
 jobs:
@@ -105,7 +116,7 @@ jobs:
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      TASK: ${{ inputs.task || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'release') || 'all' }}
+      TASK: ${{ inputs.task || (github.event.action == 'bestpractices' && 'bestpractices') || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'release') || 'all' }}
       REPOS: ${{ inputs.repos }}
       # org-release (#479): the released repository, checked below before use
       RELEASED: ${{ github.event.client_payload.repository }}
@@ -122,6 +133,19 @@ jobs:
           persist-credentials: false
       - name: Self-test
         run: python3 -I tools/org-bot/org_bot.py --self-test
+      - name: The bestpractices tool (the ci-tools image's binary, by digest)
+        if: env.TASK == 'all' || env.TASK == 'bestpractices'
+        timeout-minutes: 3
+        env:
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:81ae5bd1a281d224463d07ec7e697dddda8f2e3069f3cd1209712af687c678c3
+        run: |
+          set -euo pipefail
+          docker pull --quiet "$IMG" > /dev/null
+          id=$(docker create "$IMG")
+          docker cp "$id:/usr/local/bin/bestpractices" "$RUNNER_TEMP/bestpractices"
+          docker rm "$id" > /dev/null
+          "$RUNNER_TEMP/bestpractices" --help > /dev/null
+          echo "ORG_BOT_BESTPRACTICES=$RUNNER_TEMP/bestpractices" >> "$GITHUB_ENV"
       - name: Bot token
         id: bot
         uses: ./.github/actions/bot-token
@@ -136,6 +160,16 @@ jobs:
           ORG_BOT_GIT_EMAIL: ${{ steps.bot.outputs.git-email }}
         run: |
           set -o pipefail
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ] && [ "$TASK" = bestpractices ]; then
+            # bestpractices (#531): only swarm-routing/<name>, refused otherwise, never interpolated
+            if ! [[ "$RELEASED" =~ ^swarm-routing/[A-Za-z0-9_.-]+$ ]]; then
+              echo "::error::bestpractices: repository '${RELEASED:0:80}' is not swarm-routing/<name>"
+              exit 1
+            fi
+            echo "bestpractices: ${RELEASED}" | tee "$RUNNER_TEMP/org-bot.txt"
+            python3 -I tools/org-bot/org_bot.py run --task bestpractices --repos "${RELEASED#swarm-routing/}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+            exit 0
+          fi
           if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
             # only swarm-routing/<name>; anything else is refused, never interpolated
             if ! [[ "$RELEASED" =~ ^swarm-routing/[A-Za-z0-9_.-]+$ ]] || ! [[ "$RELEASED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
