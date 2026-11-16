@@ -344,7 +344,7 @@ because the issue threads were thorough. Caveman the chat, not the record.
   reports go out only through swarm-routing/ns3-upstream-report (CONTRIBUTING
   "ns-3 bugs (RCAPA)"). A regression in a published library, a version
   another project consumes (a swarm-core or ns3-tools release through its
-  lock, PyPI, a vcpkg port), gets an RCAPA too, in the library's repository,
+  lock, PyPI, a vcpkg port), gets an RCAPA too, in that library's repository,
   even when a consumer finds it (a swarm-core lock bump that breaks
   AntHocNet is an `SWC-NNN` in ns3-swarm-core, verified with AntHocNet's
   failing check): ticket first (form *Regression in a release (RCAPA)*,
