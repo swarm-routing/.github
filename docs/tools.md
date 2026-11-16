@@ -11,7 +11,7 @@ read this page: before adding, changing or running a tool or a workflow here.
 profile/README.md          org landing page
 ROADMAP.md                 the org's phases, exit criteria and non-goals (epics carry the work)
 CONTRIBUTING.md            org invariants + issue/label conventions (default for every repo)
-ISSUE_TEMPLATE/            default issue forms (AntHocNet's set + literature)
+ISSUE_TEMPLATE/            default issue forms (AntHocNet's set + literature, rcapa: an ns-3 bug)
 pull_request_template.md   default PR template
 labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style

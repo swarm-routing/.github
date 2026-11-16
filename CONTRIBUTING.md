@@ -183,6 +183,7 @@ automatic CodeRabbit review, so a new label is added there by hand):
 | Kind | Rule | Labels |
 |---|---|---|
 | Type | exactly one; umbrellas add `epic` | `bug`, `enhancement`, `chore`, `documentation`, `verification` (+ `question`, `handoff`) |
+| ns-3 bug | on every RCAPA ticket, beside its type (`verification`) and area (`ns3`); see "ns-3 bugs (RCAPA)" below | `rcapa` |
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `learn-site`, `literature` |
 | Model | exactly one, a suggestion: what a wrong first pass costs, not code volume; only models a Claude Pro plan includes (maintainer decision, #280) | `model:haiku-5.5` (mechanical), `model:sonnet-5.5` (plumbing, tooling, docs), `model:opus-5.5` (protocol semantics, root cause, adapter work, architecture: write the design first) |
 | Priority | exactly one on non-epic issues; never on an epic | `priority:P1` (blocks the current wave's release, breaks `main`, or invalidates published numbers; a protocol's gated v0.2.0 issue while its wave is current), `priority:P2` (gates a result or feature), `priority:P3` (valuable, not blocking). Infrastructure work holds at most 30% of the work in flight (maintainer decision, #262) |
@@ -199,6 +200,32 @@ newcomer needs (files, the check that proves it, the repository's
 its body starts with *Migrated from `danieljoppi/AntHocNet#N`*. It takes the
 `release:` label of the target repository's ladder, not AntHocNet's (ROADMAP
 "Releases"; decision 2026-11-11).
+
+### ns-3 bugs (RCAPA)
+
+A defect in upstream ns-3 (the simulator, not our code), or an investigation
+of one, always gets an **RCAPA ticket** (root cause analysis + corrective and
+preventive actions; maintainer decision, 2026-11-16) in
+**swarm-routing/ns3-tools** first, opened from the form *ns-3 bug (RCAPA)*
+(`ISSUE_TEMPLATE/rcapa.yml`: labels `rcapa`, `verification`, `ns3`; title
+`[rcapa] NS3-NNN ...`, the next free ID of the index). It holds the ns-3
+versions and modules, the symptom, a reproducer (command, `ns3-dev` image tag
+and digest, seed, expected vs actual), the evidence and the workarounds in our
+repositories. The register follows the ticket:
+
+- `docs/ns3-bugs.md` in swarm-routing/ns3-tools is the index, one row per
+  `NS3-NNN`;
+- `docs/ns3-rcapa/ns3-rcapa-<short-description>.md` is the full RCAPA: the 5
+  whys, each cited; the reproducer, verified on `ns3-dev:latest` and on
+  ns-3-dev master (commit recorded); mermaid sequence, class and
+  infrastructure diagrams; source excerpts; the corrective and preventive
+  actions, linked; the upstream report text.
+
+Every workaround links its `NS3-NNN` ID: a `test/known-failures.txt` XFAIL in
+swarm-routing/ns3-containers, an ns-3 version pin in a workflow, a refused or
+restricted arm. **Upstream reports are filed by the maintainer only**, under
+their own account, from the ticket's text; an agent never posts upstream. The
+ticket records the report's link, or the decision not to file.
 
 **Handoffs are issues** (template *Handoff*, label `handoff`). A session that
 continues handed-off work starts from the newest open `handoff` issue for that
