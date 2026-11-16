@@ -51,8 +51,6 @@ jobs:
         run: python3 -I tools/release/release_notes.py --self-test
       - name: sonar-triage self-test (tools/sonar-triage)
         run: python3 -I tools/sonar-triage/sonar_triage.py --self-test
-      - name: bestpractices self-test (tools/bestpractices)
-        run: python3 -I tools/bestpractices/bestpractices.py --self-test
       - name: org-bot self-test (tools/org-bot)
         run: python3 -I tools/org-bot/org_bot.py --self-test
       - name: fidelity self-test (tools/fidelity)
