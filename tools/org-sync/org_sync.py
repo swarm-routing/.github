@@ -273,6 +273,10 @@ def read(path):
         return None
 
 
+# the ns-3 bullet of a `dependencies` section, up to the next bullet
+NS3_BULLET = re.compile(r"^- \*\*The ns-3 (?:build|canary)\*\*:.*?(?=^- \*\*)", re.M | re.S)
+
+
 def template(name):
     return read(os.path.join(TEMPLATES, name))
 
@@ -1473,6 +1477,11 @@ def render(cfg, repo_dir, item, v=None):
             sys.exit("org-sync: templates/coderabbit/head.yaml lost its path_filters list")
         extra = "".join(f'    - "{f}"\n' for f in cfg["coderabbit_path_filters"])
         want = want.replace(anchor, anchor + extra)
+    if name == "dependencies" and not calls_workflow(repo_dir, "reusable-ns3-ci.yml"):
+        # A repository with its own ns-3 CI (AntHocNet) has no canary leg: the
+        # bullet that says `canary-dependencies` names `@main` is untrue there
+        # (swarm-routing/.github#411, #560).
+        want = NS3_BULLET.sub(lambda _: template("agents/dependencies-ns3-own.md"), want)
     if kind == "seed":
         if path == "Makefile":
             want = render_makefile(cfg)
