@@ -1,0 +1,33 @@
+# The schedule backstop (cmd/backstop, .github/workflows/backstop.yml): for each
+# entry, when no run of the workflow on its default branch started within the
+# period (less a 10-minute slack, so an hourly backstop keeps an hourly cadence),
+# backstop.yml dispatches it with these inputs. The repository's own schedule stays
+# the primary trigger: once it fires, its runs make the backstop skip.
+#
+# swarm-routing/ns3-upstream-report: GitHub has fired no `schedule` event there since
+# the repository was created (swarm-routing/ns3-upstream-report#33); `mode =
+# "scheduled"` makes a dispatched run real (a manual dispatch is dry by default).
+
+[[entry]]
+repo = "swarm-routing/ns3-upstream-report"
+workflow = "send.yml"      # cron '23 * * * *'
+period = "1h"
+inputs = { mode = "scheduled" }
+
+[[entry]]
+repo = "swarm-routing/ns3-upstream-report"
+workflow = "read.yml"      # cron '41 */6 * * *'
+period = "6h"
+inputs = { mode = "scheduled" }
+
+[[entry]]
+repo = "swarm-routing/ns3-upstream-report"
+workflow = "maintain.yml"  # cron '13 7 * * *'
+period = "24h"
+inputs = { mode = "scheduled" }
+
+[[entry]]
+repo = "swarm-routing/ns3-upstream-report"
+workflow = "rotate.yml"    # cron '29 4 * * 3'
+period = "168h"
+inputs = { mode = "scheduled" }

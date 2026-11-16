@@ -180,6 +180,7 @@ jobs:
         timeout-minutes: 10
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}  # backstop's dry run reads runs (no rate limit of an anonymous runner)
         run: |
           set -euo pipefail
           if [ -n "$DIGEST" ]; then
@@ -197,6 +198,7 @@ jobs:
           docker run --rm "$img" list | tee list.txt
           grep -qx fixture list.txt
           grep -qx bestpractices list.txt
+          grep -qx backstop list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
           # a tool on the workspace, mounted as `uses: docker://` mounts it
@@ -218,6 +220,11 @@ jobs:
           cmp bp-read.json "$bp/.bestpractices.json" || { echo "::error::the written .bestpractices.json differs from the printed one"; exit 1; }
           [ "$(stat -c %u "$bp/.bestpractices.json")" = "$(id -u)" ] || { echo "::error::--user did not write as the runner's user"; exit 1; }
           echo "bestpractices: both run forms agree ($(wc -c < bp-read.json) bytes)"
+          # backstop (swarm-routing/ns3-upstream-report#33): the repository's table, read-only
+          # as `uses: docker://` runs it: --dry-run only reads runs
+          docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" backstop --dry-run | tee backstop.txt
+          [ "$(grep -c ': dry run: would dispatch\|: nothing to do$' backstop.txt)" = "$(grep -c '^\[\[entry\]\]' .github/backstop.toml)" ] \
+            || { echo "::error::backstop: not one line per entry of .github/backstop.toml"; exit 1; }
           # nonroot, and no shell to fall back to
           user=$(docker image inspect -f '{{.Config.User}}' "$img")
           [ "$user" = nonroot:nonroot ] || { echo "::error::image user is '$user'"; exit 1; }
