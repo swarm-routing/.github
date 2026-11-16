@@ -16,6 +16,9 @@ CONTRIBUTING "Cutting a release" is the procedure; this checks its steps.
 `ready` (before a dry-run or a bump), on a checkout of the repository:
   - the caller workflow uses reusable-release.yml (a repository with its own
     release workflow, as AntHocNet, is a WARN: these checks may not fit it);
+  - the caller forwards `increment` to reusable-release.yml (an own
+    release.yml reads `inputs.increment`), so a dispatch can force the
+    version the ladder fixes (swarm-routing/.github#512);
   - the Commitizen config (`.cz.toml`, or `[tool.commitizen]` in
     `pyproject.toml`) exists, with `tag_format = "v$version"`;
   - `make dist` exists, unless the caller passes its own `build:`;
@@ -78,6 +81,7 @@ REUSABLE = re.compile(
     re.M,
 )
 DIST_TARGET = re.compile(r"^dist\s*:", re.M)
+INCREMENT = re.compile(r"\binputs\.increment\b")
 WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
 KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):(.*)$")  # the value is stripped after the match
 SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
@@ -286,6 +290,23 @@ def ready(repo_dir, repo, version, gh):
     inputs = {}
     for _, t in callers:
         inputs.update(with_inputs(t))
+    own = [t for n, t in flows if n == "release.yml" and not callers]
+    if (callers and "increment" in inputs) or (own and INCREMENT.search(own[0])):
+        r.add("OK", "increment: the dispatch input reaches the bump")
+    elif callers:
+        r.add(
+            "FAIL",
+            "increment: the caller does not forward the `increment` input "
+            "(a choice auto/PATCH/MINOR/MAJOR, passed as "
+            "`increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}`; "
+            "swarm-routing/.github#512)",
+        )
+    elif own:
+        r.add(
+            "FAIL",
+            "increment: the own release.yml never reads `inputs.increment` (a choice "
+            "auto/PATCH/MINOR/MAJOR given to `cz bump --increment`; swarm-routing/.github#512)",
+        )
     wd = inputs.get("working-directory", "").strip("./")
     if wd:
         r.add("OK", f"working-directory: {wd} (the Commitizen config and make dist are read there)")
@@ -613,6 +634,7 @@ def self_test():
     caller = (
         "jobs:\n  release:\n    uses: swarm-routing/.github/.github/workflows/"
         "reusable-release.yml@main\n    with:\n      vcpkg-ports: swarm-core\n"
+        "      increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}\n"
     )
     cz = '[tool.commitizen]\nversion = "0.3.0"\ntag_format = "v$version"\nmajor_version_zero = true\n'
     with tempfile.TemporaryDirectory() as d:
@@ -651,6 +673,7 @@ def self_test():
             and has(rep, "OK", "make dist"),
         )
         expect("ready: the ladder row v0.4.0", has(rep, "OK", "has v0.4.0"))
+        expect("ready: a caller forwarding increment", has(rep, "OK", "increment"))
         expect(
             "ready: an open release-labelled issue fails (PRs not counted)",
             has(rep, "FAIL", "1 open issue(s) labelled release:v0.4.0: #7"),
@@ -676,6 +699,25 @@ def self_test():
         expect("ready: a tag_format without v fails", has(rep, "FAIL", "tag_format"))
         expect("ready: no make dist and no build: input fails", has(rep, "FAIL", "build:"))
         expect("ready: no --version warns on the ladder", has(rep, "WARN", "pass --version"))
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(caller.replace("increment", "# increment"))
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: a caller that drops increment fails (#512)",
+            has(rep, "FAIL", "caller does not forward the `increment` input"),
+        )
+        own = "on:\n  workflow_dispatch:\n    inputs:\n      mode: {type: string}\njobs: {}\n"
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(own)
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: an own release.yml without inputs.increment fails",
+            has(rep, "WARN", "an own") and has(rep, "FAIL", "never reads `inputs.increment`"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(own + "# cz bump --increment ${{ inputs.increment }}\n")
+        rep = quiet(ready, d, None, None, gh)
+        expect("ready: an own release.yml reading inputs.increment", has(rep, "OK", "increment"))
     flow = (
         "jobs:\n"
         "  build:\n"
