@@ -7,6 +7,8 @@ Usage:
   sonar_triage.py validate [--file F]            the decisions file alone, offline
   sonar_triage.py plan  [--file F] [--repos A,B] read-only: every entry against the live issue
   sonar_triage.py apply [--file F] [--repos A,B] plan, then transition and comment each entry
+  sonar_triage.py refresh [--file F] [--repos A,B]
+                                                 plan, then rewrite each moved entry's line from the API
   sonar_triage.py findings --repos A,B [--file F] [--branch B]
                                                  read-only: the open findings, and which are recorded
   sonar_triage.py entry KEY --reason R [--decision D] [--file F] [--branch B]
@@ -27,9 +29,15 @@ wontfix for an issue; SAFE, the default, ACKNOWLEDGED or FIXED for a hotspot).
 `[reasons]` (add the reason first). Both read without a token.
 
 `plan` fetches each entry's issue (`api/issues/search?issues=KEY`) or hotspot
-(`api/hotspots/show`) and refuses the whole run on any mismatch: the key is
-gone, its project, rule, file or line differ from the entry, or it was
-resolved some other way. A key already resolved as the entry says is `done`
+(`api/hotspots/show`) and matches it by its key, project, rule and file
+(swarm-routing/.github#487). It refuses the whole run on a mismatch: the key
+is gone (Sonar gives a finding whose code changed substantively a new key, so
+it is reviewed again), its project, rule or file differ from the entry, or it
+was resolved some other way. A line that differs is not a refusal: the
+finding is the one reviewed, only moved, and the row says `moved from line
+N`; `refresh` runs the same checks, then rewrites each moved entry's `line`
+in the file from the API (nothing else in the file changes, nothing is
+posted), for a PR. A key already resolved as the entry says is `done`
 (a re-run is a no-op). With a token it also reports whether the token may
 make the transition (the issue's `transitions`); `apply` refuses when it may
 not. `apply` runs `plan` first, then per open entry posts
@@ -244,7 +252,9 @@ def transition_for(entry, live):
 
 
 def check(kind, e, live, authed):
-    """(state, transition): state is open, done; raises Refusal on a mismatch."""
+    """(state, transition, moved): state is open or done, moved the live line when it
+    is not the entry's (else None); raises Refusal when the finding is not the one
+    reviewed."""
     tag = f"{e['project']} {e['key']}"
     if live is None:
         raise Refusal(f"{tag}: no such {kind} (gone, or another branch)")
@@ -263,12 +273,18 @@ def check(kind, e, live, authed):
             ("project", project, e["project"]),
             ("rule", rule, e["rule"]),
             ("file", path, e["file"]),
-            ("line", line or 0, e["line"]),
         )
         if got != want
     ]
     if diffs:
         raise Refusal(f"{tag}: the live {kind} differs from the reviewed entry: {'; '.join(diffs)}")
+    moved = (line or 0) if (line or 0) != e["line"] else None
+    state, t = state_of(kind, e, live, authed, tag)
+    return state, t, moved
+
+
+def state_of(kind, e, live, authed, tag):
+    """(state, transition) of a live finding already matched to its entry."""
     status = live.get("status")
     if kind == "issue":
         if status in ("RESOLVED", "CLOSED"):
@@ -291,9 +307,12 @@ def check(kind, e, live, authed):
     return "open", ("REVIEWED" if can else None)
 
 
-def run(data, repos, sonar, apply, out=print):
+def run(data, repos, sonar, apply, out=print, moved=None):
+    """Plan (and with APPLY, apply); MOVED, if given, receives {key: live line} of
+    each entry whose finding moved."""
     authed = bool(sonar.token)
     rows, refusals = [], []
+    moved = {} if moved is None else moved
     for kind, e in entries(data, repos):
         live = (
             sonar.issue(e["key"], e.get("branch", "main"))
@@ -301,21 +320,23 @@ def run(data, repos, sonar, apply, out=print):
             else sonar.hotspot(e["key"])
         )
         try:
-            state, t = check(kind, e, live, authed)
+            state, t, line = check(kind, e, live, authed)
         except Refusal as r:
             refusals.append(str(r))
             rows.append((kind, e, "REFUSED", ""))
             continue
+        if line is not None:
+            moved[e["key"]] = line
         rows.append((kind, e, state, t or ""))
     if refusals:
-        table(rows, out)
+        table(rows, out, moved)
         raise Refusal("plan refused, nothing changed:\n" + "\n".join(f"  - {r}" for r in refusals))
     if apply:
         if not authed:
             raise Refusal("apply needs SONAR_TOKEN in the environment")
         blocked = [r for r in rows if r[2] == "open" and not r[3]]
         if blocked:
-            table(rows, out)
+            table(rows, out, moved)
             keys = ", ".join(r[1]["key"] for r in blocked)
             raise Refusal(f"{NO_RIGHTS} (no transition offered for {keys}); nothing changed")
         for i, (kind, e, state, t) in enumerate(rows):
@@ -344,7 +365,7 @@ def run(data, repos, sonar, apply, out=print):
                 text = f"{data['reasons'][e['reason']]} (reviewed: {TRACKER})"
                 sonar.call("POST", "api/issues/add_comment", {"issue": e["key"], "text": text})
                 rows[i] = (kind, e, "commented", t)
-    table(rows, out)
+    table(rows, out, moved)
     return rows
 
 
@@ -357,20 +378,26 @@ def commented(sonar, e):
     )
 
 
-def table(rows, out):
+def table(rows, out, moved=None):
+    moved = moved or {}
     lines = [
         "| Project | Key | Rule | Location | Decision | State | Transition |",
         "|---|---|---|---|---|---|---|",
     ]
     for kind, e, state, t in rows:
         decision = e.get("decision") or e.get("resolution")
+        where = f"`{e['file']}:{e['line']}`"
+        if e["key"] in moved:
+            where = f"`{e['file']}:{moved[e['key']]}` (moved from line {e['line']})"
         lines.append(
             f"| {e['project'].removeprefix('swarm-routing_')} | `{e['key']}` | `{e['rule']}` | "
-            f"`{e['file']}:{e['line']}` | {decision} ({e['reason']}) | {state} | {t or '-'} |"
+            f"{where} | {decision} ({e['reason']}) | {state} | {t or '-'} |"
         )
     counts = {}
     for r in rows:
         counts[r[2]] = counts.get(r[2], 0) + 1
+    if moved:
+        counts["moved (run refresh)"] = len(moved)
     lines.append("")
     lines.append(
         "Total: " + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
@@ -383,6 +410,49 @@ def table(rows, out):
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
             f.write(text + "\n")
+
+
+def refresh(path, data, repos, sonar, out=print):
+    """Plan read-only, then rewrite the `line` of each moved entry in PATH.
+
+    Refuses as plan does (nothing is written then). The file is edited as text,
+    so comments and order stay: in the block whose `key` is the entry's, the
+    `line = N` assignment. Returns {key: (old, new)}."""
+    moved = {}
+    run(
+        data, repos, Sonar(sonar.host, ""), False, out, moved
+    )  # read-only: no token, nothing posted
+    if not moved:
+        out("refresh: no entry moved, nothing written")
+        return {}
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().split("\n")
+    old = {e["key"]: e["line"] for _, e in entries(data, repos)}
+    done, block_key = {}, None
+    for i, text in enumerate(lines):
+        stripped = text.strip()
+        if stripped.startswith("[["):
+            block_key = None
+        elif stripped.startswith("key") and "=" in stripped:
+            block_key = tomllib.loads(stripped).get("key")
+        elif block_key in moved and stripped.startswith("line") and "=" in stripped:
+            if tomllib.loads(stripped).get("line") != old[block_key]:
+                raise Refusal(f"{block_key}: its line in {path} is not {old[block_key]}")
+            lines[i] = text[: len(text) - len(text.lstrip())] + f"line = {int(moved[block_key])}"
+            done[block_key] = (old[block_key], moved[block_key])
+            block_key = None
+    missing = sorted(set(moved) - set(done))
+    if missing:
+        raise Refusal(f"{path}: no `line =` found for {', '.join(missing)}; nothing written")
+    new = "\n".join(lines)
+    errs = validate(tomllib.loads(new))
+    if errs:
+        raise Refusal(f"{path}: the refreshed file would not validate: {errs}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(new)
+    for k, (a, b) in sorted(done.items()):
+        out(f"refresh: {k} line {a} -> {b}")
+    return done
 
 
 # ---------------------------------------------------------------- self-test
@@ -681,8 +751,11 @@ def self_test():
 
     # mismatches refuse the whole run before any change
     for mutate, want in (
-        (lambda s: s["issues"]["K1"].update(line=11), "line 11 != 10"),
         (lambda s: s["issues"]["K1"].update(rule="pythonsecurity:S2083"), "rule"),
+        (
+            lambda s: s["issues"]["K1"].update(component="swarm-routing_demo:tools/other.py"),
+            "file 'tools/other.py' != 'tools/a.py'",
+        ),
         (lambda s: s["issues"].pop("K2"), "no such issue"),
         (
             lambda s: s["issues"]["K1"].update(status="RESOLVED", resolution="FIXED"),
@@ -700,7 +773,75 @@ def self_test():
             not [c for c in st["calls"] if c[0] == "POST"], f"nothing posted on a refusal ({want})"
         )
     print(
-        "ok   refusals: a moved line, another rule, a gone key, another resolution; nothing posted"
+        "ok   refusals: another rule, another file, a gone key, another resolution; nothing posted"
+    )
+
+    # a moved line: plan reports it, apply still records the finding (same key, rule, file)
+    st = copy.deepcopy(base)
+    st["issues"]["K1"]["line"] = 87
+    st["hotspots"]["H1"]["line"] = 9
+    rows, text = go(st, False)
+    check_([r[2] for r in rows] == ["open", "open", "open"], rows)
+    check_("`tools/a.py:87` (moved from line 10)" in text, text)
+    check_("`tools/b.py:9` (moved from line 7)" in text and "2 moved (run refresh)" in text, text)
+    rows, _ = go(st, True)
+    check_([r[2] for r in rows] == ["applied"] * 3, rows)
+    print("ok   a moved line: plan reports it (moved from line N), apply records the same key")
+
+    # refresh: rewrites only the moved lines, from the API, as text; posts nothing
+    import tempfile
+
+    toml_text = (
+        "# a comment that stays\n[reasons]\n"
+        + "".join(f"{k} = {toml_str(v)}\n" for k, v in data["reasons"].items())
+        + "\n# ---- demo\n"
+    )
+    for kind in ("issue", "hotspot"):
+        for e in data[kind]:
+            toml_text += f"\n[[{kind}]]\n" + "".join(
+                f"{k} = {v if isinstance(v, int) else toml_str(v)}\n" for k, v in e.items()
+            )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "decisions.toml")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(toml_text)
+        st = copy.deepcopy(base)
+        st["issues"]["K1"]["line"] = 87
+        st["hotspots"]["H1"]["line"] = 9
+        srv = fake_sonar(st, token)
+        try:
+            sonar = Sonar(f"http://127.0.0.1:{srv.server_address[1]}", token)
+            buf = []
+            done = refresh(path, load(path), "", sonar, out=buf.append)
+            check_(done == {"K1": (10, 87), "H1": (7, 9)}, done)
+            with open(path, encoding="utf-8") as f:
+                after = f.read()
+            want = toml_text.replace("line = 10\n", "line = 87\n").replace(
+                "line = 7\n", "line = 9\n"
+            )
+            check_(after == want, f"only the two lines change:\n{after}")
+            check_(not [c for c in st["calls"] if c[0] == "POST"], "refresh posts nothing")
+            check_(all(c[3] is None for c in st["calls"]), "refresh reads without the token")
+            reloaded = load(path)
+            buf = []
+            run(reloaded, "", sonar, False, out=buf.append)
+            check_("moved" not in "\n".join(buf), buf)
+            buf = []
+            check_(refresh(path, reloaded, "", sonar, out=buf.append) == {}, "a re-run is a no-op")
+            # a refusal (another rule) writes nothing
+            st["issues"]["K1"]["line"] = 99
+            st["issues"]["K2"]["rule"] = "docker:S0000"
+            try:
+                refresh(path, reloaded, "", sonar, out=lambda *_: None)
+                check_(False, "refresh must refuse when a rule changed")
+            except Refusal as e:
+                check_("rule" in str(e), str(e))
+            with open(path, encoding="utf-8") as f:
+                check_(f.read() == after, "a refused refresh writes nothing")
+        finally:
+            srv.shutdown()
+    print(
+        "ok   refresh: only the moved lines rewritten from the API, read-only, a re-run no-op; a refusal writes nothing"
     )
 
     # no rights: no transitions offered -> refuse with the token message; HTTP 403 too
@@ -882,7 +1023,9 @@ def main(argv=None):
         self_test()
         return 0
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("command", choices=("validate", "plan", "apply", "findings", "entry"))
+    ap.add_argument(
+        "command", choices=("validate", "plan", "apply", "refresh", "findings", "entry")
+    )
     ap.add_argument("key", nargs="?", help="entry: the finding's key, from findings")
     ap.add_argument("--file", default=DEFAULT_FILE)
     ap.add_argument("--repos", default="", help="comma-separated repository names")
@@ -908,6 +1051,9 @@ def main(argv=None):
             return 0
         if a.command == "entry":
             print(entry(data, a.key, a.reason, a.decision, Sonar(token=""), a.branch))
+            return 0
+        if a.command == "refresh":
+            refresh(a.file, data, a.repos, Sonar(token=""))
             return 0
         run(data, a.repos, Sonar(), a.command == "apply")
     except Refusal as e:
