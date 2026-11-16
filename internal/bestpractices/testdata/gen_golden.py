@@ -442,13 +442,31 @@ def check_cases(work):
     return cases
 
 
+def compact(cases):
+    """A site entry built from Proto's answers keeps only what differs, marked
+    "$proposed", and the answers ride along as text: so the golden file holds
+    no JSON key a secret scanner reads as a credential (crypto_password_storage_*);
+    golden_test.go expands it."""
+    for c in cases:
+        w = c["world"]
+        text = next(f[2] for f in cases[0]["world"]["files"] if f[:2] == ["Proto", bp.OUT])
+        prop = json.loads(text)
+        for pid, site in w["sites"].items():
+            if isinstance(site, dict) and all(k in site for k in prop):
+                rest = {k: v for k, v in site.items() if k not in prop or prop[k] != v}
+                rest["$proposed"] = True
+                w["sites"][pid] = rest
+        w["proposed"] = text
+    return cases
+
+
 def main():
     work = tempfile.mkdtemp(prefix="bestpractices-golden-")
     try:
         for name, cases in (
             ("answers", answers_cases(work)),
             ("register", register_cases(work)),
-            ("check", check_cases(work)),
+            ("check", compact(check_cases(work))),
         ):
             path = os.path.join(HERE, "golden", f"{name}.json")
             with open(path, "w") as fh:

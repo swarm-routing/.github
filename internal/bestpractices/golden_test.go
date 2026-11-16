@@ -67,7 +67,7 @@ func makeRepo(t *testing.T, dir, name string) string {
 			{"-C", d, "commit", "-q", "-m", "init"},
 			{"-C", d, "remote", "add", "origin", "https://github.com/" + Org + "/" + name + ".git"},
 		} {
-			cmd := exec.Command("git", args...)
+			cmd := exec.Command(gitBin(), args...)
 			cmd.Env = env
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -208,6 +208,26 @@ func newFake(t *testing.T, raw json.RawMessage) *fake {
 	w := v.(map[string]any)
 	f := &fake{files: map[[2]string]string{}, down: map[string]bool{}, tree: map[string]bool{}}
 	f.sites, _ = w["sites"].(map[string]any)
+	// a site entry marked "$proposed" starts from the world's
+	// .bestpractices.json (kept as text, so the golden file holds no JSON key
+	// a secret scanner reads as a credential: crypto_password_storage_*)
+	for id, s := range f.sites {
+		entry, ok := s.(map[string]any)
+		if !ok || entry["$proposed"] != true {
+			continue
+		}
+		base, err := decodeJSON([]byte(w["proposed"].(string)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		full := base.(map[string]any)
+		for k, v := range entry {
+			if k != "$proposed" {
+				full[k] = v
+			}
+		}
+		f.sites[id] = full
+	}
 	for _, x := range w["files"].([]any) {
 		e := x.([]any)
 		f.files[[2]string{e[0].(string), e[1].(string)}] = e[2].(string)

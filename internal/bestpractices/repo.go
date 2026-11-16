@@ -56,8 +56,28 @@ func loadConfig(repoDir string) (map[string]any, error) {
 	return m, nil
 }
 
+// gitPaths are where git is looked for: fixed system directories, never
+// $PATH (a writable directory on it could put another git first).
+var gitPaths = []string{"/usr/bin/git", "/usr/local/bin/git", "/bin/git", "/opt/homebrew/bin/git"}
+
+// gitBin is the first of gitPaths that exists, else "".
+func gitBin() string {
+	for _, p := range gitPaths {
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
+			return p
+		}
+	}
+	return ""
+}
+
+// git runs git in repoDir; ok is false when it fails or there is no git
+// (the ci-tools image has none).
 func git(repoDir string, args ...string) (string, bool) {
-	cmd := exec.Command("git", append([]string{"-C", repoDir}, args...)...)
+	bin := gitBin()
+	if bin == "" {
+		return "", false
+	}
+	cmd := exec.Command(bin, append([]string{"-C", repoDir}, args...)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", false
