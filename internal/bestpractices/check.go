@@ -35,32 +35,47 @@ type CheckArgs struct {
 	DryRun bool   // write no issue
 }
 
+// target is a repository to check: its project, or, when project is "",
+// a repository in scope (Scope) that is not registered.
 type target struct {
 	repo, project string
 	configured    bool
+	scope         string // why an unregistered repository is in scope
+	outOfScope    bool   // not registered and out of scope: only an open issue is closed
 }
 
-func projectOf(r Remote, repo string) (string, error) {
+// repoConfig is what the check reads from a repository's
+// .github/org-sync.toml: top-level bestpractices_project, and the opt-out
+// `bestpractices = false` in [settings] (absent or true: in scope).
+type repoConfig struct {
+	project string
+	scope   *bool
+}
+
+func configOf(r Remote, repo string) (repoConfig, error) {
+	var c repoConfig
 	text, ok, err := r.File(repo, Config)
 	if err != nil {
-		return "", err
+		return c, err
 	}
 	if !ok || text == "" {
-		return "", nil
+		return c, nil
 	}
 	cfg, err := parseTOML(text)
 	if err != nil {
-		return "", nil
+		return c, nil
 	}
-	v, ok := cfg["bestpractices_project"]
-	if !ok {
-		v = ""
+	if v, ok := cfg["bestpractices_project"]; ok {
+		if p := strings.TrimSpace(tomlStr(v)); isDigits(p) {
+			c.project = p
+		}
 	}
-	p := strings.TrimSpace(tomlStr(v))
-	if isDigits(p) {
-		return p, nil
+	if settings, ok := cfg["settings"].(map[string]any); ok {
+		if b, ok := settings["bestpractices"].(bool); ok {
+			c.scope = &b
+		}
 	}
-	return "", nil
+	return c, nil
 }
 
 // tomlStr is Python's str() of a value tomllib returned.
@@ -74,10 +89,21 @@ func tomlStr(v any) string {
 	return pyStr(v)
 }
 
+// inScope says whether a repository should be registered: every public
+// org repository is (maintainer decision 2026-11-16), unless its
+// .github/org-sync.toml opts out with `bestpractices = false` in
+// [settings]. The reason is "" when it is out of scope.
+func inScope(c repoConfig) string {
+	if c.scope != nil && !*c.scope {
+		return ""
+	}
+	return "a public org repository"
+}
+
 // targets: --repos entries (NAME=ID or NAME), else every public org
 // repository. A repository whose config names no project is looked up on the
 // site by its URL: registered there, it is checked and its missing key is a
-// finding.
+// finding; not registered and in scope, it is a target with no project.
 func targets(r Remote, spec string) ([]target, []string, error) {
 	var names []string
 	named := spec != ""
@@ -101,10 +127,10 @@ func targets(r Remote, spec string) ([]target, []string, error) {
 	var failed []string
 	for _, entry := range names {
 		repo, given, _ := strings.Cut(entry, "=")
-		configured, err := projectOf(r, repo)
+		cfg, err := configOf(r, repo)
 		pid := strings.TrimSpace(given)
 		if err == nil && pid == "" {
-			pid = configured
+			pid = cfg.project
 			if pid == "" {
 				pid, err = Registered(r, Org+"/"+repo)
 			}
@@ -113,46 +139,69 @@ func targets(r Remote, spec string) ([]target, []string, error) {
 			failed = append(failed, fmt.Sprintf("%s: FAILED: the lookup: %s", repo, described(err)))
 			continue
 		}
-		if isDigits(pid) {
-			out = append(out, target{repo, pid, configured != ""})
-		} else if named {
-			failed = append(failed, fmt.Sprintf("%s: FAILED: no bestpractices_project in %s, "+
-				"and not registered on bestpractices.dev", repo, Config))
+		scope := inScope(cfg)
+		switch {
+		case isDigits(pid):
+			out = append(out, target{repo: repo, project: pid, configured: cfg.project != ""})
+		case scope != "":
+			out = append(out, target{repo: repo, scope: scope})
+		default:
+			out = append(out, target{repo: repo, outOfScope: true, configured: named})
 		}
 	}
 	return out, failed, nil
 }
 
-// Findings returns (info lines, finding lines) for one project: data is the
-// site's JSON, proposed the repository's .bestpractices.json, tree main's
-// paths.
-func Findings(repo string, data, proposed map[string]any, tree map[string]bool) ([]string, []string) {
+// Report is what the check finds for one registered project.
+type Report struct {
+	Info  []string // level, percentage, what the owner still answers
+	Items []string // the findings: each is drift
+	// Propose is the criteria whose answer in .bestpractices.json the site
+	// should take: unanswered there, answered otherwise, or justified by a
+	// file no longer on main.
+	Propose map[string]bool
+	// OwnerOpen is the owner-only criteria still unanswered on the site.
+	OwnerOpen []string
+}
+
+func unanswered(v any) bool { return v == nil || pyEqual(v, "?") || pyEqual(v, "unknown") }
+
+// Findings compares a project's site JSON (data) with the repository's
+// .bestpractices.json (proposed) and main's paths (tree).
+func Findings(repo string, data, proposed map[string]any, tree map[string]bool) Report {
 	get := func(m map[string]any, k string, def any) any {
 		if v, ok := m[k]; ok {
 			return v
 		}
 		return def
 	}
-	info := []string{fmt.Sprintf("level %s, passing %s%%", pyStr(get(data, "badge_level", "?")),
+	rep := Report{Propose: map[string]bool{}}
+	rep.Info = []string{fmt.Sprintf("level %s, passing %s%%", pyStr(get(data, "badge_level", "?")),
 		pyStr(get(data, "badge_percentage_0", "?")))}
-	var out []string
-	unanswered := 0
-	for _, c := range Passing {
+	answered := func(c string) bool {
 		want := proposed[c+"_status"]
-		have := data[c+"_status"]
-		if !truthy(want) || pyEqual(want, "?") || pyEqual(want, "unknown") {
+		return truthy(want) && !unanswered(want) && !OwnerOnly[c]
+	}
+	var out, missing []string
+	for _, c := range Passing {
+		if !answered(c) {
 			continue
 		}
-		if have == nil || pyEqual(have, "?") || pyEqual(have, "unknown") {
-			unanswered++
+		want, have := proposed[c+"_status"], data[c+"_status"]
+		if unanswered(have) {
+			missing = append(missing, c)
+			rep.Propose[c] = true
 		} else if !pyEqual(have, want) {
 			out = append(out, fmt.Sprintf("%s: the site says %s, %s says %s", c, pyStr(have), Out, pyStr(want)))
+			rep.Propose[c] = true
 		}
 	}
-	if len(proposed) > 0 {
-		info = append(info, fmt.Sprintf("%d criteria %s answers are not answered on the site yet", unanswered, Out))
-	} else {
-		info = append(info, "no "+Out+" on main")
+	if len(missing) > 0 {
+		out = append([]string{fmt.Sprintf("%d answer(s) in %s not on the site yet: %s",
+			len(missing), Out, strings.Join(missing, ", "))}, out...)
+	}
+	if len(proposed) == 0 {
+		rep.Info = append(rep.Info, "no "+Out+" on main")
 	}
 	for _, c := range Passing {
 		why, _ := data[c+"_justification"].(string)
@@ -173,6 +222,9 @@ func Findings(repo string, data, proposed map[string]any, tree map[string]bool) 
 				continue
 			}
 			out = append(out, fmt.Sprintf("%s: the justification points at %s, not on main", c, path))
+			if answered(c) {
+				rep.Propose[c] = true
+			}
 		}
 	}
 	for _, level := range Levels {
@@ -185,22 +237,48 @@ func Findings(repo string, data, proposed map[string]any, tree map[string]bool) 
 			out = append(out, fmt.Sprintf("level lost: %s since %s", level, string(l)))
 		}
 	}
+	for _, c := range Passing {
+		if OwnerOnly[c] && unanswered(data[c+"_status"]) {
+			rep.OwnerOpen = append(rep.OwnerOpen, c)
+		}
+	}
+	if len(rep.OwnerOpen) > 0 {
+		rep.Info = append(rep.Info, fmt.Sprintf("%d owner-only criteria unanswered", len(rep.OwnerOpen)))
+	}
 	seen := map[string]bool{}
-	var items []string
 	for _, x := range out {
 		if !seen[x] {
 			seen[x] = true
-			items = append(items, x)
+			rep.Items = append(rep.Items, x)
 		}
 	}
-	return info, items
+	return rep
+}
+
+// proposalLinks are the proposal links for the criteria rep proposes, from
+// the repository's .bestpractices.json, in the form's order.
+func proposalLinks(project string, proposed map[string]any, rep Report) ([]string, error) {
+	var ans Answers
+	for _, c := range Passing {
+		if rep.Propose[c] {
+			why := ""
+			if j, ok := proposed[c+"_justification"]; ok {
+				why = pyStr(j)
+			}
+			ans = append(ans, Answer{c, pyStr(proposed[c+"_status"]), why})
+		}
+	}
+	return ProposalURLs(project, ans, "passing", ProposalLimit)
 }
 
 // Title is the issue's title for these findings.
 func Title(items []string) string { return fmt.Sprintf("%s %d finding(s)", Prefix, len(items)) }
 
-// Body is the issue's body for these findings.
-func Body(repo, project string, items []string, runURL string) string {
+// Body is the issue's body for a registered project's findings: the
+// proposal links that fix what the repository can answer, then the
+// owner-only criteria still open (listed, never a finding, so they alone
+// neither open nor update an issue).
+func Body(repo, project string, items, links, ownerOpen []string, runURL string) string {
 	run := "."
 	if runURL != "" {
 		run = fmt.Sprintf(" ([run](%s)).", runURL)
@@ -208,7 +286,7 @@ func Body(repo, project string, items []string, runURL string) string {
 	lines := []string{
 		"## Context",
 		"",
-		fmt.Sprintf("The weekly `bestpractices` check (swarm-routing/.github `tools/bestpractices/`) "+
+		fmt.Sprintf("The weekly `bestpractices` check (swarm-routing/.github `cmd/bestpractices`) "+
 			"found `%s`'s OpenSSF Best Practices entry (%s/projects/%s) out of "+
 			"step with the repository%s", repo, Site, project, run),
 		"",
@@ -218,41 +296,106 @@ func Body(repo, project string, items []string, runURL string) string {
 	for _, i := range items {
 		lines = append(lines, "- [ ] "+i)
 	}
+	lines = append(lines, "", "## Save", "")
+	if len(links) > 0 {
+		lines = append(lines,
+			"**Open, review, Save.** Each link opens the project's form, logged in, with the "+
+				"answers from `"+Out+"` on main filled in; nothing changes until you press "+
+				"\"Save (and continue)\". Owner-only criteria are left out.",
+			"")
+		for i, l := range links {
+			lines = append(lines, fmt.Sprintf("%d. %s", i+1, l))
+		}
+	} else {
+		lines = append(lines, fmt.Sprintf("Nothing to propose from `%s`: answer on the site, "+
+			"logged in at %s/projects/%s/passing (a lost level is answered there first).", Out, Site, project))
+	}
+	if len(ownerOpen) > 0 {
+		lines = append(lines, "", "## Only the owner can answer", "",
+			"Still `?` on the site; no repository file shows them, so they are never proposed "+
+				"(swarm-routing/AntHocNet#790). Listed here, not counted as findings:", "")
+		for _, c := range ownerOpen {
+			lines = append(lines, "- `"+c+"`")
+		}
+	}
 	lines = append(lines,
 		"",
 		"## Scope",
 		"",
-		fmt.Sprintf("bestpractices.dev has no write API, so a person fixes each one, logged in at "+
-			"%s/projects/%s/passing: correct the answer, or regenerate `%s` "+
-			"(`python3 -I ../.github/tools/bestpractices/bestpractices.py answers . --write`) and "+
-			"press \"Save (and continue)\" with the robot; a justification pointing at a moved "+
-			"file gets the new URL. A lost level is answered on the site first.", Site, project, Out),
+		"bestpractices.dev has no write API: the bot never logs in or saves. `"+Out+"` is "+
+			"regenerated from the repository by org-bot (task `bestpractices`), and a fix "+
+			"belongs in the repository first; then the link above carries it.",
 		"",
-		"This issue is updated in place by the weekly run and closed when the entry is clean.",
+		"This issue is updated in place by the weekly run and closed when the entry matches.",
 	)
 	return strings.Join(lines, "\n") + Footer
 }
 
-func sameFindings(body string, items []string) bool {
-	var got []string
+// RegisterBody is the issue's body for a repository in scope that is not
+// registered.
+func RegisterBody(repo, scope, runURL string) string {
+	run := "."
+	if runURL != "" {
+		run = fmt.Sprintf(" ([run](%s)).", runURL)
+	}
+	lines := []string{
+		"## Context",
+		"",
+		fmt.Sprintf("The weekly `bestpractices` check (swarm-routing/.github `cmd/bestpractices`) "+
+			"found `%s` in scope for the OpenSSF Best Practices badge (%s) but not registered "+
+			"on bestpractices.dev%s", repo, scope, run),
+		"",
+		"## Findings",
+		"",
+		"- [ ] " + notRegistered,
+		"",
+		"## Register",
+		"",
+		"Registration is the maintainer's, on the site (it has no registration API):",
+		"",
+		fmt.Sprintf("1. Logged in, add the project at %s/en/projects/new with https://github.com/%s/%s.", Site, Org, repo),
+		"2. Nothing else: the next weekly run finds the project by its URL, and this issue then " +
+			"carries the proposal link(s) to Save and asks for `bestpractices_project = \"<id>\"` in " +
+			"`" + Config + "`.",
+		"",
+		fmt.Sprintf("Not wanted for this repository? `bestpractices = false` under `[settings]` in "+
+			"`%s` takes it out of scope, and this issue closes at the next run.", Config),
+	}
+	return strings.Join(lines, "\n") + Footer
+}
+
+const notRegistered = "not registered on bestpractices.dev"
+
+var proposalLine = Site + "/en/projects/"
+
+// sameIssue: the open issue already lists these findings and these links.
+func sameIssue(body string, items, links []string) bool {
+	var got, gotLinks []string
 	for _, x := range strings.Split(body, "\n") {
 		x = strings.TrimSuffix(x, "\r")
 		if strings.HasPrefix(x, "- [ ] ") || strings.HasPrefix(x, "- [x] ") {
 			got = append(got, x[6:])
 		}
+		if _, l, ok := strings.Cut(x, ". "+proposalLine); ok {
+			gotLinks = append(gotLinks, proposalLine+l)
+		}
 	}
-	if len(got) != len(items) {
+	return equal(got, items) && equal(gotLinks, links)
+}
+
+func equal(a, b []string) bool {
+	if len(a) != len(b) {
 		return false
 	}
-	for i := range got {
-		if got[i] != items[i] {
+	for i := range a {
+		if a[i] != b[i] {
 			return false
 		}
 	}
 	return true
 }
 
-func syncIssue(gh GitHub, repo, project string, items []string, dryRun bool, runURL string) (string, error) {
+func syncIssue(gh GitHub, repo string, items, links []string, body string, dryRun bool, runURL string) (string, error) {
 	got, err := gh.API("GET", fmt.Sprintf("repos/%s/%s/issues?state=open&labels=chore&per_page=100", Org, repo), nil, true)
 	if err != nil {
 		return "", err
@@ -291,7 +434,7 @@ func syncIssue(gh GitHub, repo, project string, items []string, dryRun bool, run
 		}
 		return "close #" + n, nil
 	}
-	title, body := Title(items), Body(repo, project, items, runURL)
+	title := Title(items)
 	if issue == nil {
 		if dryRun {
 			return "open", nil
@@ -310,7 +453,7 @@ func syncIssue(gh GitHub, repo, project string, items []string, dryRun bool, run
 	}
 	n := pyStr(issue["number"])
 	oldBody, _ := issue["body"].(string)
-	if issue["title"] == title && sameFindings(oldBody, items) {
+	if issue["title"] == title && sameIssue(oldBody, items, links) {
 		return "unchanged #" + n, nil
 	}
 	if !dryRun {
@@ -322,8 +465,9 @@ func syncIssue(gh GitHub, repo, project string, items []string, dryRun bool, run
 	return "update #" + n, nil
 }
 
-// Check compares every registered project with its repository and returns
-// the exit code: 0 clean, 1 drift, 2 a project could not be read. env gives
+// Check compares every registered project with its repository, and finds
+// the repositories in scope that are not registered, and returns the exit
+// code: 0 clean, 1 drift, 2 a project could not be read. env gives
 // BESTPRACTICES_TOKEN (the issue token) and the GITHUB_* run variables;
 // newGitHub makes the API client the issues are written with, from that
 // token.
@@ -353,38 +497,77 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 	for _, line := range failed { // a lookup that failed, or a named repository on no project: not drift
 		fmt.Fprintln(stdout, line)
 	}
-	if len(todo) == 0 && len(failed) == 0 {
-		fmt.Fprintf(stdout, "bestpractices: no repository names bestpractices_project in %s\n", Config)
-		return 0
-	}
-	drift, broken := 0, len(failed)
+	projects, unregistered, drift, broken := 0, 0, 0, len(failed)
 	for _, t := range todo {
-		data, proposed, tree, err := read(r, t)
-		if err != nil {
-			broken++
-			fmt.Fprintf(stdout, "%s (project %s): FAILED: %s\n", t.repo, t.project, described(err))
+		var info, items, links []string
+		var body, head string
+		if t.outOfScope {
+			// not registered, out of scope: nothing to find; an issue left
+			// open from when it was in scope is closed
+			action := ""
+			if args.Issues {
+				a, err := syncIssue(gh, t.repo, nil, nil, "", dryRun, runURL)
+				switch {
+				case err != nil:
+					broken++
+					action = "; issue: FAILED: " + described(err)
+				case a != "clean" && dryRun:
+					action = "; issue: would " + a
+				case a != "clean":
+					action = "; issue: " + a
+				}
+			}
+			if t.configured || action != "" { // named, or an issue to report
+				fmt.Fprintf(stdout, "%s (not registered): out of scope; 0 finding(s)%s\n", t.repo, action)
+			}
 			continue
 		}
-		repoURL := data["repo_url"]
-		if !truthy(repoURL) {
-			repoURL = ""
-		}
-		if !strings.EqualFold(strings.TrimRight(pyStr(repoURL), "/"), fmt.Sprintf("https://github.com/%s/%s", Org, t.repo)) {
-			broken++
-			fmt.Fprintf(stdout, "%s (project %s): FAILED: the project's repo_url is %s\n", t.repo, t.project, pyStr(data["repo_url"]))
-			continue
-		}
-		info, items := Findings(t.repo, data, proposed, tree)
-		if !t.configured {
-			items = append([]string{fmt.Sprintf("registered as project %s, but %s has no "+
-				"bestpractices_project = \"%s\"", t.project, Config, t.project)}, items...)
+		if t.project == "" {
+			unregistered++
+			head = t.repo + " (not registered)"
+			info = []string{"in scope: " + t.scope}
+			items = []string{notRegistered}
+			body = RegisterBody(t.repo, t.scope, runURL)
+		} else {
+			projects++
+			head = fmt.Sprintf("%s (project %s)", t.repo, t.project)
+			data, proposed, tree, err := read(r, t)
+			if err != nil {
+				broken++
+				fmt.Fprintf(stdout, "%s: FAILED: %s\n", head, described(err))
+				continue
+			}
+			repoURL := data["repo_url"]
+			if !truthy(repoURL) {
+				repoURL = ""
+			}
+			if !strings.EqualFold(strings.TrimRight(pyStr(repoURL), "/"), fmt.Sprintf("https://github.com/%s/%s", Org, t.repo)) {
+				broken++
+				fmt.Fprintf(stdout, "%s: FAILED: the project's repo_url is %s\n", head, pyStr(data["repo_url"]))
+				continue
+			}
+			rep := Findings(t.repo, data, proposed, tree)
+			info, items = rep.Info, rep.Items
+			if !t.configured {
+				items = append([]string{fmt.Sprintf("registered as project %s, but %s has no "+
+					"bestpractices_project = \"%s\"", t.project, Config, t.project)}, items...)
+			}
+			if links, err = proposalLinks(t.project, proposed, rep); err != nil {
+				broken++
+				fmt.Fprintf(stdout, "%s: FAILED: %s\n", head, described(err))
+				continue
+			}
+			if len(links) > 0 {
+				info = append(info, fmt.Sprintf("%d proposal link(s)", len(links)))
+			}
+			body = Body(t.repo, t.project, items, links, rep.OwnerOpen, runURL)
 		}
 		if len(items) > 0 {
 			drift++
 		}
 		action := ""
 		if args.Issues {
-			a, err := syncIssue(gh, t.repo, t.project, items, dryRun, runURL)
+			a, err := syncIssue(gh, t.repo, items, links, body, dryRun, runURL)
 			if err != nil {
 				broken++
 				action = "; issue: FAILED: " + described(err)
@@ -399,12 +582,20 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 				action = "; issue: " + verb + a
 			}
 		}
-		fmt.Fprintf(stdout, "%s (project %s): %s; %d finding(s)%s\n", t.repo, t.project, strings.Join(info, "; "), len(items), action)
+		fmt.Fprintf(stdout, "%s: %s; %d finding(s)%s\n", head, strings.Join(info, "; "), len(items), action)
 		for _, i := range items {
 			fmt.Fprintf(stdout, "    %s\n", i)
 		}
+		for i, l := range links {
+			fmt.Fprintf(stdout, "    proposal %d: %s\n", i+1, l)
+		}
 	}
-	fmt.Fprintf(stdout, "bestpractices: %d project(s), %d drifting, %d unreadable\n", len(todo), drift, broken)
+	if projects+unregistered == 0 && broken == 0 {
+		fmt.Fprintf(stdout, "bestpractices: no repository is registered or in scope (%s)\n", Config)
+		return 0
+	}
+	fmt.Fprintf(stdout, "bestpractices: %d project(s), %d in scope and not registered, %d drifting, %d unreadable\n",
+		projects, unregistered, drift, broken)
 	switch {
 	case broken > 0:
 		return 2
