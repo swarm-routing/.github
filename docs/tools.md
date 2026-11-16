@@ -63,8 +63,8 @@ SUPPORT.md                      the org default support policy: issues for bugs,
                            reusable-dev-image-cleanup.yml (#371),
                            reusable-review-gate.yml (#294), review-gate.yml (this repository's own, from the PR's head),
                            sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, sonar-triage.yml, bestpractices.yml, org-bot.yml, backstop.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
-                           benchmark-cell-selftest.yml, setup-vcpkg-selftest.yml, python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480;
-                           its fixture: tools/checks/fixtures/python-ci/),
+                           benchmark-cell-selftest.yml, setup-vcpkg-selftest.yml, python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480, and every one of two `source` items, #530;
+                           its fixtures: tools/checks/fixtures/python-ci/, python-ci-lib/),
                            reusable-go-ci.yml (a Go module's build, gofmt, vet, staticcheck, govulncheck, race tests and coverage; docs/adr/0002-pipelines-are-go.md)
                            and go-ci-selftest.yml (its fixtures: tools/checks/fixtures/go-ci/good, which passes, and bad, which fails gofmt, vet, staticcheck and test)
 go.mod                     the root Go module github.com/swarm-routing/.github (go and toolchain lines; ADR-0002)
@@ -164,7 +164,8 @@ Callers pin `dependencies` to released tags (`@vX.Y.Z`; `git clone --branch`
 takes a tag) and name `@main` in `canary-dependencies`, with a `schedule:` in
 their `on:`. A change to
 `reusable-python-ci.yml` runs `python-ci-selftest.yml` on its PR (a fixture
-tool run only as a child process must read 100 % covered, #480). A change to
+tool run only as a child process must read 100 % covered, #480, and a module in
+the second of two `source` directories too, #530). A change to
 `reusable-go-ci.yml` runs `go-ci-selftest.yml` on its PR: the `good` fixture
 module must pass every check with 100 % coverage in both the Go profile and
 the Cobertura `coverage.xml`, and the `bad` one, called with

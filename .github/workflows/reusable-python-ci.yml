@@ -41,7 +41,7 @@ on:
         type: string
         default: ''
       source:
-        description: "Space-separated packages/directories whose coverage is reported"
+        description: "Space- or comma-separated packages/directories whose coverage is reported (every item is measured)"
         type: string
         default: ''
       python-version:
@@ -104,7 +104,10 @@ jobs:
         run: |
           set -euo pipefail
           src=()
-          for s in $SOURCE; do src+=(--source "$s"); done
+          # coverage.py keeps only the last of several --source options, so the
+          # items (space- or comma-separated) go in as one comma list (#530)
+          sources=$(printf '%s' "$SOURCE" | tr -s ' ,\t\n' ',' | sed 's/^,//; s/,$//')
+          [ -z "$sources" ] || src+=(--source "$sources")
           if [ -f .coveragerc ] || grep -qs '^\[coverage:' setup.cfg tox.ini \
             || grep -qs '^\[tool\.coverage' pyproject.toml; then
             echo "using the repo's own coverage config"
