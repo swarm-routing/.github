@@ -80,6 +80,34 @@ session is under [.github#141](https://github.com/swarm-routing/.github/issues/1
 [#278](https://github.com/swarm-routing/.github/issues/278),
 [#281](https://github.com/swarm-routing/.github/issues/281)).
 
+### Outside review, 2026-11-16
+
+An outside review of the org and three design notes on the Linux daemon (the
+data plane, a namespace test, IPv6) were checked against every issue they
+touch on 2026-11-16. No epic and no issue was opened: each proposal already
+had an owner, so it is recorded as a comment there. Nothing in this table
+changes a decision, a scope or a release; a row marked out of scope or ruled
+out stays so until the maintainer reopens it on the issue named.
+
+| Proposal | Where it lives | Outcome |
+|---|---|---|
+| A kernel route alone drops the first packet of a reactive protocol and cannot draw a next hop per packet; forward in user space (a TUN device with an underlay socket, NFQUEUE as a second mode, rtnetlink for link events, a route mirror and an optional multipath mode); an eBPF fast path | [.github#255](https://github.com/swarm-routing/.github/issues/255) (the data-plane ADR), [AntHocNet#152](https://github.com/swarm-routing/AntHocNet/issues/152) | the problem and the TUN-or-NFQUEUE choice were already the ADR's; the proposed design, the eBPF option and seven points it leaves open are recorded there as input |
+| A three-namespace chain in CI: two subnets, kernel forwarding off, 0 % loss on a cold ping, the mirrored route checked | [.github#256](https://github.com/swarm-routing/.github/issues/256) | candidate for the scene runner after the ADR; not the first slice, which needs no root |
+| IPv6: a compact node id in the cores, the address mapping in the host, a dual-stack TUN device and underlay | [ns3-swarm-core#72](https://github.com/swarm-routing/ns3-swarm-core/issues/72) (the identity decision), [.github#255](https://github.com/swarm-routing/.github/issues/255) | an argument for the opaque-id option (control messages stay small); it does not answer AntHocNet ADR-0011's objection, recorded there |
+| Raspberry Pi built-in Wi-Fi is weak for ad hoc, mesh and monitor mode; use USB adapters with mainline drivers; OpenWrt routers as stand-ins; Babel and batman-adv as baselines | [.github#259](https://github.com/swarm-routing/.github/issues/259) | leads for the bill of materials, unverified until measured; the baselines were already in scope |
+| Microcontroller boards with LoRa radios, compared with Meshtastic | [.github#258](https://github.com/swarm-routing/.github/issues/258), [.github#267](https://github.com/swarm-routing/.github/issues/267) | **out of scope** as recorded (no microcontrollers; the cores use the heap and `std::function`); reopening is the maintainer's decision |
+| Simulator order: CORE/EMANE first, then Shadow, OMNeT++/INET and Veins last | [.github#253](https://github.com/swarm-routing/.github/issues/253), [.github#324](https://github.com/swarm-routing/.github/issues/324), [.github#48](https://github.com/swarm-routing/.github/issues/48) | the order was decided on 2026-11-12 and agrees; Shadow is new and is recorded as an emulator candidate |
+| arm64 `ns3-dev` images, urgently, as the base for hardware | [ns3-containers#11](https://github.com/swarm-routing/ns3-containers/issues/11), [ns3-containers#54](https://github.com/swarm-routing/ns3-containers/issues/54) | open, and the two issues duplicate each other (proposed: #54 as #11's sub-issue). They do not gate hardware: the boards run the cores and daemons ({L('.github',258)}, {L('.github',267)}), not ns-3 |
+| Pin swarm-core by release tag, not `@main` | [ns3-swarm-core#134](https://github.com/swarm-routing/ns3-swarm-core/issues/134), [.github#411](https://github.com/swarm-routing/.github/issues/411) | **done** before the review: every protocol builds on the release its `swarm-core.lock` names, with a non-blocking canary on `main` |
+| Trust-metric and ant-authenticator interfaces in swarm-core; an org-wide attack matrix | [.github#272](https://github.com/swarm-routing/.github/issues/272), [.github#273](https://github.com/swarm-routing/.github/issues/273) | the attack grid was already planned; shared interfaces go beyond the 2026-11-12 decision (into swarm-core once a second protocol uses them), so recorded, not adopted |
+| Mechanisms: a repellent pheromone for congestion, evaporation driven by predicted link lifetime, cross-layer signals in reinforcement, a learned heuristic | [.github#265](https://github.com/swarm-routing/.github/issues/265), [AntHocNet#574](https://github.com/swarm-routing/AntHocNet/issues/574) | hypotheses only (default off, an A/B in every family). The signals are ports already ({L('ns3-swarm-core',73)}); lifetime and adaptive evaporation were each measured in AntHocNet and missed their target families |
+| Families: 3D aerial swarms with air-to-ground shadowing, a ground network behind satellite gateways, sub-GHz duty-cycled meshes | [.github#275](https://github.com/swarm-routing/.github/issues/275), [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43) | the first two to assess against the existing FANET and SAGIN cells; LoRa mesh is **ruled out** in AntHocNet's research landscape, and its airtime-cap argument is recorded as possible new evidence |
+| Protocols: POSANT, PACONET, slime-mould routing, BeeSensor / M-IAR, an ACO and Q-learning hybrid | [.github#54](https://github.com/swarm-routing/.github/issues/54) | POSANT and PACONET added as provisional candidates (citations confirmed, papers unread); slime-mould and the sensor-network protocols stay out of scope as recorded; the hybrid names no paper and is a design ({L('.github',265)}) |
+
+Three of the review's premises were out of date and are corrected by the
+rows above: protocols no longer build on swarm-core `@main`, the host order
+was already decided, and hardware does not wait for arm64 ns-3 images.
+
 ## The ladder
 
 ```mermaid
@@ -113,7 +141,7 @@ flowchart LR
 | Transfer | [.github#2](https://github.com/swarm-routing/.github/issues/2) | AntHocNet moves into the org, or stays | **done**: [swarm-routing/AntHocNet](https://github.com/swarm-routing/AntHocNet), CI green after the move (AntHocNet#854); missed releases are archived on Zenodo by the daily `zenodo` workflow (.github#66); left: the links ([.github#63](https://github.com/swarm-routing/.github/issues/63)) and the org template (AntHocNet#855), tracked on the handoff [AntHocNet#856](https://github.com/swarm-routing/AntHocNet/issues/856) |
 | 5 Termite | [Termite#3](https://github.com/swarm-routing/Termite/issues/3) (was .github#51) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | version decided (ch. 4, Termite#4); fidelity sheet merged (Termite#21, #23–#26; #4 stays open on its last criterion); anchor-miss pre-registration accepted 2026-11-10 ([Termite#5](https://github.com/swarm-routing/Termite/issues/5), its runs to come); `core/` started ([Termite#28](https://github.com/swarm-routing/Termite/pull/28): the ch. 4 data path, 16 tests; the `core` check required by Termite#29); next in [Termite#6](https://github.com/swarm-routing/Termite/issues/6): the route request, then `ns3/` |
 | 5+ HOPNET | [HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3) (was .github#52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | scheduled after Termite (maintainer decision 2026-11-10, [on HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3)); fidelity sheet merged (HOPNET#4 closed) and the #5 pre-registration accepted 2026-11-10; `core/` started ([HOPNET#25](https://github.com/swarm-routing/HOPNET/pull/25): the intra-zone half; `core-test`/`core-format` required by HOPNET#26); next in [HOPNET#5](https://github.com/swarm-routing/HOPNET/issues/5): the inter-zone half of `core/`; `ns3/` follows ARA's (see [Non-goals](#non-goals)) |
-| Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first; proposed 2026-11-12 as the last step of the portable runtime ([.github#250](https://github.com/swarm-routing/.github/issues/250)), the order to be decided in [.github#253](https://github.com/swarm-routing/.github/issues/253) |
+| Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `ns3-containers` / `ns3-tools` | deferred: ns-3 first; proposed 2026-11-12 as the last step of the portable runtime ([.github#250](https://github.com/swarm-routing/.github/issues/250)), the order decided on 2026-11-12 ([.github#253](https://github.com/swarm-routing/.github/issues/253)): standalone discrete-event host, Linux daemon, emulation, Raspberry Pi, other simulators alongside when needed; emulation (CORE/EMANE) has its own epic, [.github#324](https://github.com/swarm-routing/.github/issues/324), and #48 keeps OMNeT++/INET and Veins |
 
 ## Where to start
 
@@ -680,8 +708,17 @@ real computers). The proposal that answers it,
 standalone discrete-event host and a Linux daemon before any other simulator
 and moves the CORE/EMANE row of this section into the portable runtime
 ([.github#250](https://github.com/swarm-routing/.github/issues/250)); OMNeT++/INET
-and Veins stay here. Nothing in this section changes until
-[.github#253](https://github.com/swarm-routing/.github/issues/253) is answered.
+and Veins stay here. [.github#253](https://github.com/swarm-routing/.github/issues/253)
+was answered on 2026-11-12: the hosts come in the order standalone
+discrete-event host ([.github#322](https://github.com/swarm-routing/.github/issues/322)),
+Linux daemon ([.github#323](https://github.com/swarm-routing/.github/issues/323)),
+emulation ([.github#324](https://github.com/swarm-routing/.github/issues/324)),
+Raspberry Pi ([.github#325](https://github.com/swarm-routing/.github/issues/325)),
+with other simulators alongside when a result needs one; all of it follows
+swarm-core's 2.0.0 host contract
+([ns3-swarm-core#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82)).
+Emulator candidates other than CORE/EMANE (Shadow, ns-3's `TapBridge`) are
+recorded on .github#324 for the child issue that chooses one.
 
 ## Non-goals
 
@@ -695,4 +732,4 @@ and Veins stay here. Nothing in this section changes until
 - **AntHocNet keeps its own ladder.** Its `docs/roadmap.md` governs AntHocNet's releases; the org's [release train](#the-release-train) only places them among the other repositories' releases. Issues not migrated (95 audited, 31 moved in three waves) keep their `release:` labels there; a migrated issue takes the target repository's `release:` labels, from that repository's own ladder ([Releases](#releases); decision 2026-11-11). The undecided ones (swarm-routing/AntHocNet#319, #112, #405) stay until the maintainer moves them.
 - **No learned arm without its gates.** The DRL comparator (ns3-tools#20) needs disjoint training and test seeds, one held-out family and a reported training budget, plus frozen, versioned weights; nothing about it is scheduled before those exist.
 - **DTN only where the oracle says so.** The store-carry-forward arm (ns3-tools#21) exists because swarm-routing/AntHocNet#580's trigger fired (the oracle delivers about 81 % on the disaster scene: the rest is partition-bound); it is scoped to the disaster family, not a general comparator.
-- **No second simulator for now.** ns-3 is the focus; OMNeT++/INET, Veins and CORE/EMANE are planned as their own container and tooling repositories, deferred until the trigger in [Later: other simulators](#later-other-simulators-deferred) fires (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"; org decision 2026-11-03, .github#48). Cross-simulator results would be qualitative only. Under review: [.github#253](https://github.com/swarm-routing/.github/issues/253) proposes hosts that are not simulators (a standalone discrete-event host, a Linux daemon, real computers) before any second simulator; this non-goal stands until it is answered.
+- **No second simulator for now.** ns-3 is the focus; OMNeT++/INET, Veins and CORE/EMANE are planned as their own container and tooling repositories, deferred until the trigger in [Later: other simulators](#later-other-simulators-deferred) fires (AntHocNet decision 2026-10-06, its roadmap "Why OMNeT++ (#32) is deferred"; org decision 2026-11-03, .github#48). Cross-simulator results would be qualitative only. [.github#253](https://github.com/swarm-routing/.github/issues/253), answered on 2026-11-12, puts hosts that are not simulators (a standalone discrete-event host, a Linux daemon, emulation, real computers) before any second simulator, on swarm-core's 2.0.0 line; a second simulator stays deferred, alongside them only when a result needs one.
