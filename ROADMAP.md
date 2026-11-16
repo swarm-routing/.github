@@ -35,7 +35,9 @@ own if the tests say one is needed.
 - **swarm-core is required for every protocol, AntHocNet included**
   ([ns3-swarm-core#14](https://github.com/swarm-routing/ns3-swarm-core/issues/14)).
   AntHocNet's `core/` and ns-3 adapter move onto it before swarm-core's
-  `v1.0.0`, so the freeze covers every protocol.
+  `v1.0.0`, so the freeze covers every protocol. `v1.0.0` shipped on
+  2026-11-16 with #14 still open: what it froze and what remains is under
+  [The release train](#the-release-train).
 - **The host contract is swarm-core `2.0.0`**
   ([.github#253](https://github.com/swarm-routing/.github/issues/253), item 4).
   `v1.0.0` freezes the ns-3 API as it is. Support for other simulators, Linux
@@ -54,8 +56,8 @@ own if the tests say one is needed.
 |---|---|---|---|
 | **A** Protocols on ns-3 | the phases and the [release train](#the-release-train) below, unchanged | each repository's epic | none |
 | **B** Portable runtime | one host contract for every `core/`, a standalone discrete-event host, a Linux daemon, installable packages, a Raspberry Pi testbed; another simulator last ([Later: other simulators](#later-other-simulators-deferred)) | [.github#250](https://github.com/swarm-routing/.github/issues/250) | none left: [.github#253](https://github.com/swarm-routing/.github/issues/253) and [.github#268](https://github.com/swarm-routing/.github/issues/268) were decided on 2026-11-12; still open is work, not a decision: #268's tolerances are fixed once the first ns-3 reference runs exist |
-| **C** Research | security under one epic; network families under one owner; AntHocNet or a protocol of our own, decided by tests; the remaining swarm protocols' verdicts | [.github#272](https://github.com/swarm-routing/.github/issues/272); [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43) ([.github#275](https://github.com/swarm-routing/.github/issues/275)); [.github#252](https://github.com/swarm-routing/.github/issues/252); [.github#54](https://github.com/swarm-routing/.github/issues/54) | [.github#264](https://github.com/swarm-routing/.github/issues/264) (gates for a protocol with no paper); [.github#273](https://github.com/swarm-routing/.github/issues/273) and [.github#269](https://github.com/swarm-routing/.github/issues/269) were decided on 2026-11-12, and what remains is their work: #273's ADR or CONTRIBUTING section, #269's runs |
-| **I** Infrastructure | templates, hardening, CI time, images, releases, skills, the AI files; it rides along with any release and gates none, except the items [Releases](#releases) names as gates (today the release workflow's `increment` input, .github#211, for wave E) | [.github#6](https://github.com/swarm-routing/.github/issues/6), [#14](https://github.com/swarm-routing/.github/issues/14), [#150](https://github.com/swarm-routing/.github/issues/150), [#141](https://github.com/swarm-routing/.github/issues/141), [#216](https://github.com/swarm-routing/.github/issues/216) | none left: [.github#262](https://github.com/swarm-routing/.github/issues/262) (priorities, the infrastructure share) and [.github#280](https://github.com/swarm-routing/.github/issues/280) (the `model:*` labels) were decided on 2026-11-12 |
+| **C** Research | security under one epic; network families under one owner; AntHocNet or a protocol of our own, decided by tests; the remaining swarm protocols' verdicts | [.github#272](https://github.com/swarm-routing/.github/issues/272); [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43) ([.github#275](https://github.com/swarm-routing/.github/issues/275)); [.github#252](https://github.com/swarm-routing/.github/issues/252); [.github#54](https://github.com/swarm-routing/.github/issues/54) | none left: [.github#264](https://github.com/swarm-routing/.github/issues/264) (gates for a protocol with no paper) was accepted as written on 2026-11-16 and is not scheduled until the fitness tests of #269 have run; the owner of the network-family list was decided the same day (ns3-tools, through its family catalogue, [ns3-tools#55](https://github.com/swarm-routing/ns3-tools/issues/55)); [.github#273](https://github.com/swarm-routing/.github/issues/273) and [.github#269](https://github.com/swarm-routing/.github/issues/269) were decided on 2026-11-12, and what remains is their work: #273's ADR or CONTRIBUTING section, #269's runs |
+| **I** Infrastructure | templates, hardening, CI time, images, releases, skills, the AI files; it rides along with any release and gates none, except the items [Releases](#releases) names as gates (the release workflow's `increment` input, .github#211, for wave E: closed 2026-11-13) | [.github#6](https://github.com/swarm-routing/.github/issues/6), [#14](https://github.com/swarm-routing/.github/issues/14), [#150](https://github.com/swarm-routing/.github/issues/150), [#141](https://github.com/swarm-routing/.github/issues/141), [#216](https://github.com/swarm-routing/.github/issues/216) | none left: [.github#262](https://github.com/swarm-routing/.github/issues/262) (priorities, the infrastructure share) and [.github#280](https://github.com/swarm-routing/.github/issues/280) (the `model:*` labels) were decided on 2026-11-12 |
 
 **One test ladder.** Nine named scenes with stated expectations (RT-1 to RT-9,
 [.github#268](https://github.com/swarm-routing/.github/issues/268)) are run on
@@ -96,14 +98,14 @@ out stays so until the maintainer reopens it on the issue named.
 | A three-namespace chain in CI: two subnets, kernel forwarding off, 0 % loss on a cold ping, the mirrored route checked | [.github#256](https://github.com/swarm-routing/.github/issues/256) | candidate for the scene runner after the ADR; not the first slice, which needs no root |
 | IPv6: a compact node id in the cores, the address mapping in the host, a dual-stack TUN device and underlay | [ns3-swarm-core#72](https://github.com/swarm-routing/ns3-swarm-core/issues/72) (the identity decision), [.github#255](https://github.com/swarm-routing/.github/issues/255) | an argument for the opaque-id option (control messages stay small); it does not answer AntHocNet ADR-0011's objection, recorded there |
 | Raspberry Pi built-in Wi-Fi is weak for ad hoc, mesh and monitor mode; use USB adapters with mainline drivers; OpenWrt routers as stand-ins; Babel and batman-adv as baselines | [.github#259](https://github.com/swarm-routing/.github/issues/259) | leads for the bill of materials, unverified until measured; the baselines were already in scope |
-| Microcontroller boards with LoRa radios, compared with Meshtastic | [.github#258](https://github.com/swarm-routing/.github/issues/258), [.github#267](https://github.com/swarm-routing/.github/issues/267) | **out of scope** as recorded (no microcontrollers; the cores use the heap and `std::function`); reopening is the maintainer's decision |
+| Microcontroller boards with LoRa radios, compared with Meshtastic | [.github#258](https://github.com/swarm-routing/.github/issues/258), [.github#267](https://github.com/swarm-routing/.github/issues/267) | **out of scope** as recorded (no microcontrollers; the cores use the heap and `std::function`); the maintainer confirmed it on 2026-11-16 |
 | Simulator order: CORE/EMANE first, then Shadow, OMNeT++/INET and Veins last | [.github#253](https://github.com/swarm-routing/.github/issues/253), [.github#324](https://github.com/swarm-routing/.github/issues/324), [.github#48](https://github.com/swarm-routing/.github/issues/48) | the order was decided on 2026-11-12 and agrees; Shadow is new and is recorded as an emulator candidate |
-| arm64 `ns3-dev` images, urgently, as the base for hardware | [ns3-containers#11](https://github.com/swarm-routing/ns3-containers/issues/11), [ns3-containers#54](https://github.com/swarm-routing/ns3-containers/issues/54) | open, and the two issues duplicate each other (proposed: #54 as #11's sub-issue). They do not gate hardware: the boards run the cores and daemons ({L('.github',258)}, {L('.github',267)}), not ns-3 |
-| Pin swarm-core by release tag, not `@main` | [ns3-swarm-core#134](https://github.com/swarm-routing/ns3-swarm-core/issues/134), [.github#411](https://github.com/swarm-routing/.github/issues/411) | **done** before the review: every protocol builds on the release its `swarm-core.lock` names, with a non-blocking canary on `main` |
+| arm64 `ns3-dev` images, urgently, as the base for hardware | [ns3-containers#11](https://github.com/swarm-routing/ns3-containers/issues/11), [ns3-containers#54](https://github.com/swarm-routing/ns3-containers/issues/54) | open, and the two issues overlap; decided 2026-11-16: #54 is #11's child, and arm64 images are for development and CI, not for published numbers. They do not gate hardware: the boards run the cores and daemons ([.github#258](https://github.com/swarm-routing/.github/issues/258), [.github#267](https://github.com/swarm-routing/.github/issues/267)), not ns-3 |
+| Pin swarm-core by release tag, not `@main` | [ns3-swarm-core#134](https://github.com/swarm-routing/ns3-swarm-core/issues/134), [.github#411](https://github.com/swarm-routing/.github/issues/411) | **done** before the review: every protocol builds on the release its `swarm-core.lock` names, with a non-blocking canary on `main` (AntHocNet has none: it builds from release locks and is exempt, decided 2026-11-16) |
 | Trust-metric and ant-authenticator interfaces in swarm-core; an org-wide attack matrix | [.github#272](https://github.com/swarm-routing/.github/issues/272), [.github#273](https://github.com/swarm-routing/.github/issues/273) | the attack grid was already planned; shared interfaces go beyond the 2026-11-12 decision (into swarm-core once a second protocol uses them), so recorded, not adopted |
-| Mechanisms: a repellent pheromone for congestion, evaporation driven by predicted link lifetime, cross-layer signals in reinforcement, a learned heuristic | [.github#265](https://github.com/swarm-routing/.github/issues/265), [AntHocNet#574](https://github.com/swarm-routing/AntHocNet/issues/574) | hypotheses only (default off, an A/B in every family). The signals are ports already ({L('ns3-swarm-core',73)}); lifetime and adaptive evaporation were each measured in AntHocNet and missed their target families |
+| Mechanisms: a repellent pheromone for congestion, evaporation driven by predicted link lifetime, cross-layer signals in reinforcement, a learned heuristic | [.github#265](https://github.com/swarm-routing/.github/issues/265), [AntHocNet#574](https://github.com/swarm-routing/AntHocNet/issues/574) | hypotheses only (default off, an A/B in every family). The signals are ports already ([ns3-swarm-core#73](https://github.com/swarm-routing/ns3-swarm-core/issues/73)); lifetime and adaptive evaporation were each measured in AntHocNet and missed their target families |
 | Families: 3D aerial swarms with air-to-ground shadowing, a ground network behind satellite gateways, sub-GHz duty-cycled meshes | [.github#275](https://github.com/swarm-routing/.github/issues/275), [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43) | the first two to assess against the existing FANET and SAGIN cells; LoRa mesh is **ruled out** in AntHocNet's research landscape, and its airtime-cap argument is recorded as possible new evidence |
-| Protocols: POSANT, PACONET, slime-mould routing, BeeSensor / M-IAR, an ACO and Q-learning hybrid | [.github#54](https://github.com/swarm-routing/.github/issues/54) | POSANT and PACONET added as provisional candidates (citations confirmed, papers unread); slime-mould and the sensor-network protocols stay out of scope as recorded; the hybrid names no paper and is a design ({L('.github',265)}) |
+| Protocols: POSANT, PACONET, slime-mould routing, BeeSensor / M-IAR, an ACO and Q-learning hybrid | [.github#54](https://github.com/swarm-routing/.github/issues/54) | POSANT and PACONET added as provisional candidates (citations confirmed, papers unread); slime-mould and the sensor-network protocols stay out of scope as recorded; the hybrid names no paper and is a design ([.github#265](https://github.com/swarm-routing/.github/issues/265)) |
 
 Later the same day two more notes (IPv6 mechanics, hardware tiers) went to
 the same owners: the data-plane ADR ([.github#255](https://github.com/swarm-routing/.github/issues/255): duplicate address
@@ -131,6 +133,39 @@ closing a gap the check found:
   a generated catalogue, and a reading epic with one review per group that
   had none (security, learned routing, baselines and methodology, hosts, and
   what the protocols' papers leave unstated about their evaluations).
+
+**Decided on 2026-11-16 (the maintainer):**
+
+1. **The attack grid** ([benchmarks#117](https://github.com/swarm-routing/benchmarks/issues/117)). Its first run holds AntHocNet,
+   AODV, OLSR and DSDV. ARA, BeeAdHoc, Termite and HOPNET appear in a second
+   table labelled ungated, not in the headline. The suite is named
+   `attack-grid`; it re-runs on an ns3-tools release that adds or changes an
+   adversary and on a release of any protocol in the grid.
+2. **AntHocNet's phase-0 security design ADR** ([AntHocNet#1078](https://github.com/swarm-routing/AntHocNet/issues/1078)) carries
+   `release:v3.0.0`, and keeps its scope item that the trust seam and the
+   authentication check are designed as ports with no AntHocNet type. Nothing
+   moves to swarm-core until a second protocol needs it ([.github#273](https://github.com/swarm-routing/.github/issues/273),
+   item 7, stands).
+3. **The canary** ([.github#411](https://github.com/swarm-routing/.github/issues/411)). AntHocNet is exempt from the canary
+   leg because it builds from release locks. The issue closes once a run on
+   `main` showing the canary leg is linked. The org-managed text that says
+   AntHocNet has a canary is to be corrected through the template.
+4. **Network families** ([.github#275](https://github.com/swarm-routing/.github/issues/275)). ns3-tools owns the list, through
+   the family catalogue ([ns3-tools#55](https://github.com/swarm-routing/ns3-tools/issues/55)); [AntHocNet#858](https://github.com/swarm-routing/AntHocNet/issues/858) becomes a
+   pointer. The proposed 3D aerial and satellite-gateway families are assessed
+   against the existing FANET and SAGIN cells before being called new;
+   sub-GHz duty-cycled meshes stay ruled out.
+5. **Gates for a protocol with no paper** ([.github#264](https://github.com/swarm-routing/.github/issues/264)): accepted as
+   written, and not scheduled until the fitness tests of [.github#269](https://github.com/swarm-routing/.github/issues/269)
+   have run.
+6. **Microcontrollers and LoRa hardware stay out of scope**
+   ([.github#258](https://github.com/swarm-routing/.github/issues/258), [.github#267](https://github.com/swarm-routing/.github/issues/267)).
+7. **arm64 images.** [ns3-containers#54](https://github.com/swarm-routing/ns3-containers/issues/54) becomes the child of
+   [ns3-containers#11](https://github.com/swarm-routing/ns3-containers/issues/11); arm64 images are for development and CI, not for
+   published numbers.
+8. **swarm-core `v1.0.0` shipped with [ns3-swarm-core#14](https://github.com/swarm-routing/ns3-swarm-core/issues/14) open.** This
+   file says so ([The release train](#the-release-train)), and #14 is the
+   first item of swarm-core's 1.x line.
 
 Three of the review's premises were out of date and are corrected by the
 rows above: protocols no longer build on swarm-core `@main`, the host order
@@ -169,8 +204,9 @@ issue, so the plan does not change, but a reader of the review should know):
   HOPNET's `docs/anchor-verdict.md`). A protocol whose anchor missed can run
   on a new host, but its numbers still do not count in comparisons.
 
-**Suggested next steps** (proposed 2026-11-16; none is decided, and each is
-the maintainer's to order):
+**Suggested next steps** (proposed 2026-11-16; items 3 to 6 were settled the
+same day by the decisions above, as marked on each; items 1 and 2 are not
+decided and are the maintainer's to order):
 
 1. Write the data-plane ADR ([.github#255](https://github.com/swarm-routing/.github/issues/255)) now. It is a document, it is
    `priority:P2`, it blocks the daemon, and the design input is fresh. Decide
@@ -181,18 +217,25 @@ the maintainer's to order):
    kernel forwarding mode is worth building at all.
 3. Settle the two arm64 image issues into one ([ns3-containers#11](https://github.com/swarm-routing/ns3-containers/issues/11),
    [ns3-containers#54](https://github.com/swarm-routing/ns3-containers/issues/54)) and answer #11's three open decisions, whose
-   premise (39 images) no longer holds.
+   premise (39 images) no longer holds. **Decided 2026-11-16** (decision 7):
+   #54 is #11's child and arm64 images are for development and CI; #11's
+   three open decisions are not among the decisions above.
 4. ~~File what open issues announce but nobody filed~~ (done 2026-11-16,
    listed above): next is the attack grid's one definition
-   ([benchmarks#117](https://github.com/swarm-routing/benchmarks/issues/117)), which waits on the maintainer.
+   ([benchmarks#117](https://github.com/swarm-routing/benchmarks/issues/117)), which waits on the maintainer. **Decided
+   2026-11-16** (decision 1): the protocols, the ungated table, the suite's
+   name and what re-runs it.
 5. Answer the two decisions the review's proposals wait on: the owner of the
    network-family list ([.github#275](https://github.com/swarm-routing/.github/issues/275)) and the gates for a protocol with
-   no paper ([.github#264](https://github.com/swarm-routing/.github/issues/264)).
+   no paper ([.github#264](https://github.com/swarm-routing/.github/issues/264)). **Decided 2026-11-16** (decisions 4 and
+   5): ns3-tools owns the list; #264 is accepted as written and waits for the
+   fitness tests.
 6. Housekeeping: [.github#48](https://github.com/swarm-routing/.github/issues/48) was renamed on 2026-11-16 (CORE/EMANE
    moved to [.github#324](https://github.com/swarm-routing/.github/issues/324)). [.github#411](https://github.com/swarm-routing/.github/issues/411) was checked: two criteria
    are met, a run on `main` showing the canary leg is still to be linked, and
    AntHocNet has no canary because it does not call `reusable-ns3-ci.yml`;
-   that needs a decision, recorded on the issue.
+   that needs a decision, recorded on the issue. **Decided 2026-11-16**
+   (decision 3): AntHocNet is exempt; the linked run is still owed.
 
 ## The ladder
 
@@ -216,7 +259,7 @@ flowchart LR
 | 1 Foundations | `.github`, `ns3-containers` | org defaults, labels, reusable CI, licence gate; `ns3-dev` images; issue migration | done |
 | 1+ Org templates | [.github#6](https://github.com/swarm-routing/.github/issues/6) | `tools/org-sync` + `templates/`: AGENTS/CLAUDE org sections, badges, SECURITY.md, licence files, ADR template, per-repo Makefiles with the same target names; the `org-repo` skill ([skills](https://github.com/swarm-routing/skills)) | tool and skills merged; every public repo has adopted it, AntHocNet included ([AntHocNet#855](https://github.com/swarm-routing/AntHocNet/issues/855), closed 2026-11-11; its prerequisite #860 closed 2026-11-09), except `.github` itself; each adopter enables the `swarm-routing` plugin and the Agent skills section ([.github#79](https://github.com/swarm-routing/.github/issues/79)); keeping the AI files' facts correct is epic [.github#141](https://github.com/swarm-routing/.github/issues/141) (decided 2026-11-10, in progress) |
 | 1+ Hardening | [.github#14](https://github.com/swarm-routing/.github/issues/14) | Scorecard, rulesets, merge policy, CI hygiene in every repo (from AntHocNet#328 and its children) | open; the order is on [.github#35](https://github.com/swarm-routing/.github/issues/35); the admin decisions were made 2026-11-09 ([.github#81](https://github.com/swarm-routing/.github/issues/81)) and wait on the settings; CI time (every job under its budget, the shared runners' queue) is epic [.github#150](https://github.com/swarm-routing/.github/issues/150) (in progress) |
-| 2 swarm-core | [ns3-swarm-core#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) | the shared `swarm-core` contrib module | skeleton (#7), the primitives in `core/` (#8, ns3-swarm-core#27) and the ns-3 glue in `model/` (#9, ns3-swarm-core#30; `kSwarmCoreApiVersion` 2) merged 2026-11-10, CI green on `main`; the third exit criterion is met: ARA's `ns3/` module (ARA#40, merged 2026-11-10) and BeeAdHoc's (BeeAdHoc#48, merged 2026-11-11) build green against `@main`; the epic closed with the release `v0.1.0` (ns3-swarm-core#38, wave A of the [release train](#the-release-train)); since then `v0.2.0` (2026-11-13: #33, #40, #43, #46), `v0.3.0` (2026-11-14: #2, #3, #4, #15), `v0.4.0` (2026-11-15) and `v1.0.0` (2026-11-16, the API frozen at `kSwarmCoreApiVersion` 2) shipped ([its ladder](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md)), and the protocols consume it by release (`swarm-core.lock`, ns3-swarm-core#134, closed 2026-11-15); open: the freeze issue [ns3-swarm-core#83](https://github.com/swarm-routing/ns3-swarm-core/issues/83) on its last criterion and #14 (AntHocNet onto swarm-core, AntHocNet#1019) |
+| 2 swarm-core | [ns3-swarm-core#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) | the shared `swarm-core` contrib module | skeleton (#7), the primitives in `core/` (#8, ns3-swarm-core#27) and the ns-3 glue in `model/` (#9, ns3-swarm-core#30; `kSwarmCoreApiVersion` 2) merged 2026-11-10, CI green on `main`; the third exit criterion is met: ARA's `ns3/` module (ARA#40, merged 2026-11-10) and BeeAdHoc's (BeeAdHoc#48, merged 2026-11-11) build green against `@main`; the epic closed with the release `v0.1.0` (ns3-swarm-core#38, wave A of the [release train](#the-release-train)); since then `v0.2.0` (2026-11-13: #33, #40, #43, #46), `v0.3.0` (2026-11-14: #2, #3, #4, #15), `v0.4.0` (2026-11-15) and `v1.0.0` (2026-11-16, the API frozen at `kSwarmCoreApiVersion` 2) shipped ([its ladder](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md)), and the protocols consume it by release (`swarm-core.lock`, ns3-swarm-core#134, closed 2026-11-15); the freeze issue [ns3-swarm-core#83](https://github.com/swarm-routing/ns3-swarm-core/issues/83) closed on 2026-11-16; open: #14 (AntHocNet onto swarm-core, AntHocNet#1019), the first item of the 1.x line (maintainer decision 2026-11-16) |
 | 3 ARA | [ARA#3](https://github.com/swarm-routing/ARA/issues/3) | first protocol on swarm-core, through the three gates | version decided (ARA#15: ARA 2002); fidelity sheet merged (ARA#4 closed; ARA#25, #26, #28); `core/` started on swarm-core's primitives ([ARA#33](https://github.com/swarm-routing/ARA/pull/33): FANT/BANT route discovery, trails, evaporation, retries, 14 tests; the `core` check required by ARA#34); the ns-3 module `ara` on `SwarmRoutingBase` green on `main` against swarm-core `@main` (ARA#40, merged 2026-11-10); `v0.1.0` released 2026-11-11 (ungated); the gated `v0.2.0` shipped 2026-11-13 ([its ladder](https://github.com/swarm-routing/ARA/blob/main/docs/roadmap.md)): [ARA#5](https://github.com/swarm-routing/ARA/issues/5) (duplicate errors, route-failure backtracking) and the pipeline (ARA#36) closed 2026-11-13, and the anchor **missed**, recorded as a [written infeasibility verdict](https://github.com/swarm-routing/ARA/blob/main/docs/benchmarks/v0.2.0-anchor.md), so its numbers do not count; `v0.2.1` (2026-11-16) is built on swarm-core `v1.0.0`; next, `v0.3.0`: the review against the 2003 version (ARA#27) and its features behind default-off switches, with their own anchor (ARA#125) |
 | 4 BeeAdHoc | [BeeAdHoc#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) | second protocol | reference version decided (BeeAdHoc#16: PG 460's Linux module); fidelity sheet merged and its readings settled (BeeAdHoc#13, #4 closed; the scout-TTL reading decided on #5); `core/` started ([BeeAdHoc#37](https://github.com/swarm-routing/BeeAdHoc/pull/37): scouts and forager arrays, 13 tests; the `core` check required by BeeAdHoc#38); the ns-3 module `beeadhoc` green on `main` against swarm-core `@main` (BeeAdHoc#48, merged 2026-11-11); `v0.1.0` released 2026-11-11 (ungated); the gated `v0.2.0` shipped 2026-11-16 ([its ladder](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/roadmap.md)): [BeeAdHoc#36](https://github.com/swarm-routing/BeeAdHoc/issues/36) (the data path, swarms, link failure) and the module's issue (BeeAdHoc#47) closed 2026-11-13, the pipeline (BeeAdHoc#41) closed 2026-11-16, and the anchor **missed** (3 of 5 pause times), recorded as a [written infeasibility verdict](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/benchmarks/v0.2.0-anchor.md), so its numbers do not count; `v0.2.1` (2026-11-16) is built on swarm-core `v1.0.0`; open, for `v0.3.0`: #5 and #27 (review against GECCO 2005) |
 | 4 Tools | [ns3-tools#2](https://github.com/swarm-routing/ns3-tools/issues/2), [ns3-tools#7](https://github.com/swarm-routing/ns3-tools/issues/7) | the comparison harness, probes, arenas, `ns3-tool` CLI | harness + readers moved (ns3-tools#13); reader fixes (#14), strict warnings (#31), `scenario_check` (#28) and CI gates on the reader (#6) closed 2026-11-10; the multi-protocol campaign runner `ns3-campaign` (#66) and its change-test plans (ns3-tools#82) merged; `v0.1.0` shipped on 2026-11-11 (#26; ns3-tools#105, the refused tag push that first held it, closed), `v0.2.0` and `v1.0.0` (CLI and marker contract v1 frozen) on 2026-11-13, wave A of the [release train](#the-release-train), `v1.1.0` (per-arm process isolation, ns3-tools#198; `ns3-tools` on PyPI, ns3-tools#196) and its patches `v1.1.1` and `v1.1.2` on 2026-11-15; the `ns3-tool` CLI (#39) and AntHocNet's switch-over (#29) done, probes (#40) open, in `v1.2.0` ([its ladder](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md)) |
@@ -235,7 +278,7 @@ Each workstream has a **handoff issue** written for a session with no chat histo
 
 | Workstream | Handoff | First tickets, in order | Can start now? |
 |---|---|---|---|
-| swarm-core after `v1.0.0` | none open ([ns3-swarm-core#18](https://github.com/swarm-routing/ns3-swarm-core/issues/18) closed; `v0.1.0` to `v1.0.0` shipped) | ns3-swarm-core#14 (AntHocNet onto swarm-core, AntHocNet#1019), the last open criterion of the freeze issue #83; #135 ([its ladder](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md)) | yes |
+| swarm-core after `v1.0.0` | none open ([ns3-swarm-core#18](https://github.com/swarm-routing/ns3-swarm-core/issues/18) closed; `v0.1.0` to `v1.0.0` shipped) | ns3-swarm-core#14 (AntHocNet onto swarm-core, AntHocNet#1019), the first item of the 1.x line (maintainer decision 2026-11-16; the freeze issue #83 closed that day); #135 ([its ladder](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md)) | yes |
 | ARA: `v0.3.0` (reviewed) | none open ([ARA#14](https://github.com/swarm-routing/ARA/issues/14) closed; the gated `v0.2.0` shipped 2026-11-13) | ARA#27, #140, #125 (#135 to #139), #132, #50, #99, #100 ([its ladder](https://github.com/swarm-routing/ARA/blob/main/docs/roadmap.md)) | yes |
 | BeeAdHoc: `v0.3.0` (reviewed) | none open ([BeeAdHoc#14](https://github.com/swarm-routing/BeeAdHoc/issues/14) closed 2026-11-10; the gated `v0.2.0` shipped 2026-11-16) | BeeAdHoc#5, #27, #55 ([its ladder](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/roadmap.md)) | yes |
 | Termite: the gated `v0.2.0` | [Termite#7](https://github.com/swarm-routing/Termite/issues/7) (written before code; the fidelity sheet merged, #5 closed, the `ns3/` module, #37, on `main`) | Termite#6's next slices (route requests, hello, seed), then #59 (#5's runs) and #31 ([its ladder](https://github.com/swarm-routing/Termite/blob/main/docs/roadmap.md)) | yes |
@@ -310,11 +353,11 @@ recorded in the `benchmarks` global suite).
 
 | Repository | Ladder | Next release |
 |---|---|---|
-| ns3-swarm-core | [docs/roadmap.md](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md) | `v0.2.0` (ns3-swarm-core#40 first); `v0.1.0` "the shared module" shipped on 2026-11-11 |
-| ns3-tools | [docs/roadmap.md](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md) | `v1.1.0` (arm isolation and PyPI: what merged since `v1.0.0`, re-plan 2026-11-15), then `v1.2.0` (families and metrics, additive); `v1.0.0` (CLI and marker contract v1 frozen; maintainer decision 2026-11-13) shipped on 2026-11-13, after `v0.1.0` "harness packaged" (2026-11-11) and `v0.2.0` "campaigns and CLI" (2026-11-13) |
-| AntHocNet | [docs/roadmap.md](https://github.com/swarm-routing/AntHocNet/blob/main/docs/roadmap.md) (its own ladder, v2.1.0 → v3.3.0) | `v2.7.0`, after the ns3-tools#29 switch-over |
-| ARA | [docs/roadmap.md](https://github.com/swarm-routing/ARA/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11) |
-| BeeAdHoc | [docs/roadmap.md](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11) |
+| ns3-swarm-core | [docs/roadmap.md](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md) | the 1.x line, which its ladder does not name a version for yet: ns3-swarm-core#14 first (AntHocNet onto swarm-core; maintainer decision 2026-11-16), and `v2.0.0` is the host contract (ns3-swarm-core#82); `v1.0.0` "API frozen" shipped on 2026-11-16, after `v0.1.0` "the shared module" (2026-11-11), `v0.2.0` "adapter complete" (2026-11-13), `v0.3.0` "metrics and testbench" (2026-11-14) and `v0.4.0` "AntHocNet port primitives, C++23" (2026-11-15) |
+| ns3-tools | [docs/roadmap.md](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md) | `v1.2.0` (families and metrics, additive), then `v2.0.0` (marker contract v2); `v1.1.0` (arm isolation and PyPI: what merged since `v1.0.0`, re-plan 2026-11-15) and its patches `v1.1.1` and `v1.1.2` shipped on 2026-11-15; `v1.0.0` (CLI and marker contract v1 frozen; maintainer decision 2026-11-13) shipped on 2026-11-13, after `v0.1.0` "harness packaged" (2026-11-11) and `v0.2.0` "campaigns and CLI" (2026-11-13) |
+| AntHocNet | [docs/roadmap.md](https://github.com/swarm-routing/AntHocNet/blob/main/docs/roadmap.md) (its own ladder, v2.1.0 → v3.3.0) | `v3.0.0` "secured AntHocNet"; `v2.7.0` "harness packaged" shipped on 2026-11-13, after the ns3-tools#29 switch-over (closed 2026-11-11) |
+| ARA | [docs/roadmap.md](https://github.com/swarm-routing/ARA/blob/main/docs/roadmap.md) | `v0.3.0` "reviewed"; `v0.2.0` "gated" shipped on 2026-11-13 with its anchor's written infeasibility verdict, and the patch `v0.2.1`, built on swarm-core `v1.0.0`, on 2026-11-16 (`v0.1.0` released 2026-11-11) |
+| BeeAdHoc | [docs/roadmap.md](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/roadmap.md) | `v0.3.0` "reviewed"; `v0.2.0` "gated" shipped on 2026-11-16 with its anchor's written infeasibility verdict, and the patch `v0.2.1`, built on swarm-core `v1.0.0`, the same day (`v0.1.0` released 2026-11-11) |
 | Termite | [docs/roadmap.md](https://github.com/swarm-routing/Termite/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11) |
 | HOPNET | [docs/roadmap.md](https://github.com/swarm-routing/HOPNET/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11), after Termite's |
 
@@ -329,8 +372,8 @@ maintainer's decision of 2026-11-13 it also has releases: v1.0.0, shipped on
 `ns3-build-contrib`, never an image tag, which stays the ns-3 release), the site
 (deploys from `main`; site#28, epic site#27, and after wave C site#12, #13,
 #55, #56, #57), and `skills` and `.github` (the infrastructure track; their
-gating item is the release workflow's `increment` input for wave E,
-.github#211).
+gating item was the release workflow's `increment` input for wave E,
+.github#211, closed 2026-11-13).
 
 ### The release train
 
@@ -339,19 +382,19 @@ it depends on are out.
 
 ```mermaid
 flowchart LR
-  subgraph A["Wave A (now)"]
+  subgraph A["Wave A (done)"]
     T1["ns3-tools v0.1.0, v0.2.0, v1.0.0<br/>(shipped)"]
     NC["ns3-containers v1.0.0<br/>(shipped)"]
-    C1["ns3-swarm-core v0.1.0"]
-    AH["AntHocNet v2.7.0"]
+    C1["ns3-swarm-core v0.1.0<br/>(shipped)"]
+    AH["AntHocNet v2.7.0<br/>(shipped)"]
   end
-  subgraph B["Wave B"]
+  subgraph B["Wave B (done, except ns3-tools v1.2.0)"]
     T2["ns3-tools v1.2.0"]
-    C2["ns3-swarm-core v0.2.0"]
-    ARA2["ARA v0.2.0"]
-    BEE2["BeeAdHoc v0.2.0"]
+    C2["ns3-swarm-core v0.2.0<br/>(shipped)"]
+    ARA2["ARA v0.2.0<br/>(shipped)"]
+    BEE2["BeeAdHoc v0.2.0<br/>(shipped)"]
   end
-  subgraph C["Wave C"]
+  subgraph C["Wave C (now)"]
     TER2["Termite v0.2.0"]
     T3["ns3-tools v2.0.0"]
     BM["benchmarks release runs<br/>+ global suite"]
@@ -361,32 +404,39 @@ flowchart LR
     HOP2["HOPNET v0.2.0"]
   end
   subgraph E["Wave E: 1.0.0s"]
-    C10["ns3-swarm-core v1.0.0"]
+    C10["ns3-swarm-core v1.0.0<br/>(shipped)"]
+    I14["ns3-swarm-core#14: AntHocNet<br/>onto swarm-core (first item of 1.x)"]
     P10["each protocol v1.0.0"]
   end
   T1 --> AH
   T1 --> T2
   C1 --> C2
-  T2 --> ARA2
+  T1 --> ARA2
   C2 --> ARA2
-  T2 --> BEE2
+  T1 --> BEE2
   C2 --> BEE2
-  T2 --> TER2
+  T1 --> TER2
   T3 --> BM
   BM --> SITE
   TER2 --> HOP2
   ARA2 --> C10
   BEE2 --> C10
+  C10 --> I14
   C10 --> P10
 ```
 
+The arrows from ns3-tools to the gated protocol releases start at wave A
+since 2026-11-16: the paired campaign their pipelines need shipped in
+`ns3-tools v0.2.0`, and `ARA v0.2.0` and `BeeAdHoc v0.2.0` shipped without
+`ns3-tools v1.2.0`, which is not released.
+
 | Wave | Releases | Gated by |
 |---|---|---|
-| A (now) | `ns3-tools v0.1.0` and `ns3-swarm-core v0.1.0` (both shipped 2026-11-11); `ns3-tools v0.2.0`, `ns3-tools v1.0.0` and `ns3-containers v1.0.0` (shipped 2026-11-13; the 1.0.0s by the decision of 2026-11-13, below); AntHocNet `v2.7.0` | ns3-tools: its release workflow (ns3-tools#26), shipped; ns3-swarm-core#38 (phase 2's exit criteria all hold); AntHocNet: the switch-over to the released harness (ns3-tools#29) |
-| B | `ns3-tools v1.2.0` (families and metrics, additive; `v1.1.0` was re-planned on 2026-11-15 to ship what merged since `v1.0.0`), `ns3-swarm-core v0.2.0`, then `ARA v0.2.0` and `BeeAdHoc v0.2.0` (the first gated protocol releases) | ns3-tools v1.2.0: its families-and-metrics scope, additive to contract v1 (the family catalogue ns3-tools#55, survivorship-safe metrics, probes as their own module ns3-tools#40, the user guide ns3-tools#4; [its ladder](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md)); the paired campaign end to end that every protocol pipeline needs shipped in v0.2.0; ns3-swarm-core v0.2.0: the adapter complete, additive and byte-identical, every consumer green; each protocol's own pipeline and anchor (ARA#36, BeeAdHoc#41) |
-| C | `Termite v0.2.0`; `ns3-tools v2.0.0` (was v0.3.0: marker contract v2, the `benchmarks` schema in step, benchmarks#33), then the `benchmarks` release runs and global suite (benchmarks#24, #23), then the site's leaderboard and results explorer (site#12) | Termite: its module, pipeline and anchor (Termite#37, #31; the pre-registered runs of Termite#5); ns3-tools v2.0.0: readers refuse unknown contracts, outputs byte-identical apart from new fields |
-| D | `HOPNET v0.2.0` | after Termite's; the anchor against AntHocNet through ns3-tools (HOPNET#28; HOPNET golden rule 12) passes or ships as a written infeasibility verdict |
-| E | `1.0.0`s: `ns3-swarm-core`, then each protocol after its `v0.3.0` review (`ns3-tools` and `ns3-containers` released theirs ahead of the wave, below) | swarm-core: every protocol on it, AntHocNet included (ns3-swarm-core#14), the gated ones with no API change; the host contract waits for `2.0.0` (.github#253); a protocol: its `v0.3.0` review; all of them: the release workflow's `increment` input, so a major can be released ([.github#211](https://github.com/swarm-routing/.github/issues/211)) |
+| A (done) | `ns3-tools v0.1.0` and `ns3-swarm-core v0.1.0` (both shipped 2026-11-11); `ns3-tools v0.2.0`, `ns3-tools v1.0.0` and `ns3-containers v1.0.0` (shipped 2026-11-13; the 1.0.0s by the decision of 2026-11-13, below); AntHocNet `v2.7.0` (shipped 2026-11-13) | ns3-tools: its release workflow (ns3-tools#26), shipped; ns3-swarm-core#38 (phase 2's exit criteria all hold); AntHocNet: the switch-over to the released harness (ns3-tools#29, closed 2026-11-11) |
+| B (done, except `ns3-tools v1.2.0`) | `ns3-tools v1.2.0` (families and metrics, additive, not released; `v1.1.0` was re-planned on 2026-11-15 to ship what merged since `v1.0.0`, and shipped that day with its patches `v1.1.1` and `v1.1.2`), `ns3-swarm-core v0.2.0` (shipped 2026-11-13), then `ARA v0.2.0` (shipped 2026-11-13) and `BeeAdHoc v0.2.0` (shipped 2026-11-16), the first gated protocol releases, each with its anchor's written infeasibility verdict | ns3-tools v1.2.0: its families-and-metrics scope, additive to contract v1 (the family catalogue ns3-tools#55, survivorship-safe metrics, probes as their own module ns3-tools#40, the user guide ns3-tools#4; [its ladder](https://github.com/swarm-routing/ns3-tools/blob/main/docs/roadmap.md)); the paired campaign end to end that every protocol pipeline needs shipped in v0.2.0; ns3-swarm-core v0.2.0: the adapter complete, additive and byte-identical, every consumer green; each protocol's own pipeline and anchor (ARA#36, closed 2026-11-13; BeeAdHoc#41, closed 2026-11-16) |
+| C (now) | `Termite v0.2.0`; `ns3-tools v2.0.0` (was v0.3.0: marker contract v2, the `benchmarks` schema in step, benchmarks#33), then the `benchmarks` release runs and global suite (benchmarks#24, #23), then the site's leaderboard and results explorer (site#12) | Termite: its module, pipeline and anchor (Termite#37, #31; the pre-registered runs of Termite#5); ns3-tools v2.0.0: readers refuse unknown contracts, outputs byte-identical apart from new fields |
+| D | `HOPNET v0.2.0` | after Termite's; the anchor against AntHocNet through ns3-tools (HOPNET#28; HOPNET golden rule 12) passes or ships as a written infeasibility verdict: the verdict is written (HOPNET#5, closed 2026-11-14), and the pipeline issue HOPNET#28 is open |
+| E | `1.0.0`s: `ns3-swarm-core` (shipped 2026-11-16, before waves C and D), then each protocol after its `v0.3.0` review (`ns3-tools` and `ns3-containers` released theirs ahead of the wave, below) | swarm-core, as it shipped: two gated protocol releases on it with no API change (`ARA v0.2.0`, `BeeAdHoc v0.2.0`) and the last additions AntHocNet's port needs (ns3-swarm-core#168); the planned gate, every protocol on it with AntHocNet included (ns3-swarm-core#14), was open at the release and is the first item of the 1.x line (below); the host contract waits for `2.0.0` (.github#253); a protocol: its `v0.3.0` review; all of them: the release workflow's `increment` input, so a major can be released ([.github#211](https://github.com/swarm-routing/.github/issues/211), closed 2026-11-13) |
 
 **Wave E reordered (maintainer decision 2026-11-13: "ns3-tools now, core
 later").** Until this decision wave E put `ns3-swarm-core` first, then `ns3-tools`;
@@ -395,14 +445,44 @@ CLI and today's marker contract v1; marker contract v2 (wave C) becomes its
 `2.0.0`, and the campaign release of wave B a minor after 1.0 (`v1.1.0`;
 ns3-tools' own ladder, its `docs/roadmap.md`, has the versions; the labels
 `release:v1.1.0`, `release:v1.2.0` and `release:v2.0.0` exist for it; on 2026-11-15 the maintainer re-planned it: `v1.1.0` ships what merged since `v1.0.0`, and the families-and-metrics scope moved to `v1.2.0`). `ns3-swarm-core`
-reaches `1.0.0` only after AntHocNet runs on it
-(swarm-routing/ns3-swarm-core#14). `ns3-containers` gets a first release,
+was to reach `1.0.0` only after AntHocNet runs on it
+(swarm-routing/ns3-swarm-core#14); that is not what happened (next
+paragraph). `ns3-containers` gets a first release,
 `v1.0.0`, that versions its image pipeline. Both 1.0.0s released now are
 gated by the release workflow's `increment` input
 ([.github#211](https://github.com/swarm-routing/.github/issues/211)):
 `increment: MAJOR` with `major_version_zero = false`, and, for a repository
 with no tag yet, the configured version's next major (CONTRIBUTING "Cutting a
 release").
+
+**swarm-core's `1.0.0` shipped with ns3-swarm-core#14 open (corrected
+2026-11-16).** `ns3-swarm-core v1.0.0` was released on 2026-11-16, while
+[ns3-swarm-core#14](https://github.com/swarm-routing/ns3-swarm-core/issues/14)
+(AntHocNet onto swarm-core) was open, and it still is. On 2026-11-15 the
+maintainer had decided to cut it once the last additions AntHocNet's port
+needs were in (ns3-swarm-core#168, merged that day) and `BeeAdHoc v0.2.0` was
+released, and to let the port's last slices finish on the frozen version
+(the `v1.0.0` row of
+[its ladder](https://github.com/swarm-routing/ns3-swarm-core/blob/main/docs/roadmap.md)).
+What `v1.0.0` froze (ns3-swarm-core#83, closed 2026-11-16; its CHANGELOG):
+`kSwarmCoreApiVersion` stays 2 for all of 1.x; the API is recorded in
+`docs/api-surface.txt` and guarded by the required `api-surface` check; a
+breaking change waits for `2.0.0`, after a deprecation of at least two minor
+releases (`docs/api-policy.md`). `FuzzyMetric` and `IslLinkMonitor` are
+experimental, outside the promise until a second protocol adopts them
+(ns3-swarm-core#160). The evidence for the freeze was `ARA v0.2.0` and
+`BeeAdHoc v0.2.0` on it with no API change; all five protocols lock `v1.0.0`
+since 2026-11-16, ARA and BeeAdHoc each with a `v0.2.1` patch built on it.
+What remains under #14: AntHocNet's port merged its last slices and its ADR
+on `v1.0.0` after the release, the same day, with no API change
+(AntHocNet#1064, #1065, #1066, #1061), but #14's four acceptance criteria are
+unticked, and AntHocNet's tracking issue (AntHocNet#1019) is open until the
+standard-cell campaign (`main` before the port against `main` after it, on
+one `ns3-dev` digest) confirms byte-identical output. Maintainer decision,
+2026-11-16: this file says what happened, and #14 stays open as the first
+item of swarm-core's 1.x line; if finishing it needs an API change,
+`docs/api-policy.md` decides whether that is an addition (a minor release) or
+breaking (the `2.0.0` line, ns3-swarm-core#82).
 
 ### After 1.0
 
@@ -411,8 +491,8 @@ These lines come after the 1.0.0 releases (wave E). Each is a theme, not a date.
 | Line | Theme | Issues |
 |---|---|---|
 | **1.1** | **Comparators**: protocols we did not design, under identical conditions (epic [ns3-tools#15](https://github.com/swarm-routing/ns3-tools/issues/15)) | secure arms SAODV, SEAD, TAODV and the crypto cost model they share: [ns3-tools#16](https://github.com/swarm-routing/ns3-tools/issues/16)–[#19](https://github.com/swarm-routing/ns3-tools/issues/19); the multi-agent DRL arm [ns3-tools#20](https://github.com/swarm-routing/ns3-tools/issues/20), gated (disjoint training and test seeds, a held-out family, the training budget reported); the DTN arm for the disaster family [ns3-tools#21](https://github.com/swarm-routing/ns3-tools/issues/21); AntHocNet's vendored AOMDV and GPSR promoted to `ns3/arms/` ([ns3-tools#34](https://github.com/swarm-routing/ns3-tools/issues/34)–[#36](https://github.com/swarm-routing/ns3-tools/issues/36)) |
-| **1.2** | **Network families**: the ns-3 pieces new network types need, for every arm (epic [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43)) | substrates [ns3-tools#44](https://github.com/swarm-routing/ns3-tools/issues/44)–[#53](https://github.com/swarm-routing/ns3-tools/issues/53); the tactical narrowband cell [ns3-tools#24](https://github.com/swarm-routing/ns3-tools/issues/24). The public-safety fallback cell ([ns3-tools#48](https://github.com/swarm-routing/ns3-tools/issues/48)) needs `lte` and `buildings` in the images first ([ns3-containers#63](https://github.com/swarm-routing/ns3-containers/issues/63)). One owner, one list of families and verdicts before substrates are proposed in [.github#275](https://github.com/swarm-routing/.github/issues/275) |
-| **2.0** | **Security**: attacks every arm can face, and the secure swarm variants | protocol-agnostic adversary nodes (wormhole, rushing, Sybil) [ns3-tools#37](https://github.com/swarm-routing/ns3-tools/issues/37); the secure ARA variants [ARA#9](https://github.com/swarm-routing/ARA/issues/9) (trust-weighted ACO) and [ARA#10](https://github.com/swarm-routing/ARA/issues/10) (ACO + watchdog); BeeSec / BeeAIS [BeeAdHoc#9](https://github.com/swarm-routing/BeeAdHoc/issues/9). Alongside AntHocNet's secured profile and wider threat model ([AntHocNet#302](https://github.com/swarm-routing/AntHocNet/issues/302), [AntHocNet#564](https://github.com/swarm-routing/AntHocNet/issues/564)) and the site's campaign chapters on it ([swarm-routing.github.io#21](https://github.com/swarm-routing/swarm-routing.github.io/issues/21)–[#23](https://github.com/swarm-routing/swarm-routing.github.io/issues/23)). One owning epic and the order of work are proposed in [.github#272](https://github.com/swarm-routing/.github/issues/272); its first step is the decision [.github#273](https://github.com/swarm-routing/.github/issues/273) |
+| **1.2** | **Network families**: the ns-3 pieces new network types need, for every arm (epic [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43)) | substrates [ns3-tools#44](https://github.com/swarm-routing/ns3-tools/issues/44)–[#53](https://github.com/swarm-routing/ns3-tools/issues/53); the tactical narrowband cell [ns3-tools#24](https://github.com/swarm-routing/ns3-tools/issues/24). The public-safety fallback cell ([ns3-tools#48](https://github.com/swarm-routing/ns3-tools/issues/48)) needs `lte` and `buildings` in the images first ([ns3-containers#63](https://github.com/swarm-routing/ns3-containers/issues/63)). One owner, one list of families and verdicts before substrates were proposed in [.github#275](https://github.com/swarm-routing/.github/issues/275); decided 2026-11-16: ns3-tools owns the list, through its family catalogue ([ns3-tools#55](https://github.com/swarm-routing/ns3-tools/issues/55)) |
+| **2.0** | **Security**: attacks every arm can face, and the secure swarm variants | protocol-agnostic adversary nodes (wormhole, rushing, Sybil) [ns3-tools#37](https://github.com/swarm-routing/ns3-tools/issues/37); the secure ARA variants [ARA#9](https://github.com/swarm-routing/ARA/issues/9) (trust-weighted ACO) and [ARA#10](https://github.com/swarm-routing/ARA/issues/10) (ACO + watchdog); BeeSec / BeeAIS [BeeAdHoc#9](https://github.com/swarm-routing/BeeAdHoc/issues/9). Alongside AntHocNet's secured profile and wider threat model ([AntHocNet#302](https://github.com/swarm-routing/AntHocNet/issues/302), [AntHocNet#564](https://github.com/swarm-routing/AntHocNet/issues/564)) and the site's campaign chapters on it ([swarm-routing.github.io#21](https://github.com/swarm-routing/swarm-routing.github.io/issues/21)–[#23](https://github.com/swarm-routing/swarm-routing.github.io/issues/23)). One owning epic and the order of work are proposed in [.github#272](https://github.com/swarm-routing/.github/issues/272); its first step, the decision [.github#273](https://github.com/swarm-routing/.github/issues/273), was taken on 2026-11-12 |
 | **Later** | **More swarm protocols, other simulators** | the remaining swarm MANET protocols, each a repository, a skip or a fold into an existing one by the verdicts of [.github#54](https://github.com/swarm-routing/.github/issues/54); other simulators (OMNeT++/INET, Veins, CORE/EMANE), deferred until their trigger fires ([.github#48](https://github.com/swarm-routing/.github/issues/48)) |
 
 A 2.0 here is a theme name. A repository bumps its major version only for a breaking change, and an additive security arm is a minor release in the repository that ships it.
@@ -673,13 +753,13 @@ as fixed.
 What two or more protocols share, extracted from AntHocNet's dual-licensed
 `core/` and its ns-3 modules into `swarm-core`: the simulator-free primitives
 and ports in `core/`, the ns-3 glue in `model/`, and the link-metric seams
-migrated from AntHocNet ([ns3-swarm-core#2](https://github.com/swarm-routing/ns3-swarm-core/issues/2), [#3](https://github.com/swarm-routing/ns3-swarm-core/issues/3), [#4](https://github.com/swarm-routing/ns3-swarm-core/issues/4)).
+migrated from AntHocNet ([ns3-swarm-core#2](https://github.com/swarm-routing/ns3-swarm-core/issues/2), [#3](https://github.com/swarm-routing/ns3-swarm-core/issues/3), [#4](https://github.com/swarm-routing/ns3-swarm-core/issues/4); all three closed on 2026-11-14 and shipped in `v0.3.0`).
 
 **Exit criteria**
 
 - [x] `test.py -s swarm-core` green on `debug` and `sanitized`; `core/` passes the include check (ns3-swarm-core#27, #30; ticked on [the epic](https://github.com/swarm-routing/ns3-swarm-core/issues/6)).
 - [x] Every wire helper has deterministic roundtrip + fuzz tests (ns3-swarm-core#27).
-- [x] A downstream module builds against it with `dependencies: swarm-core=swarm-routing/ns3-swarm-core@main`: ARA's `ns3/` (ARA#40, merged 2026-11-10; `ns-3` green on `main`, run 42970177950) and BeeAdHoc's (BeeAdHoc#48, merged 2026-11-11; run 42970724058). The protocol cores still build against swarm-core's `core/` at a pinned commit (ARA#33, BeeAdHoc#37, Termite#28, HOPNET#25).
+- [x] A downstream module builds against it with `dependencies: swarm-core=swarm-routing/ns3-swarm-core@main`: ARA's `ns3/` (ARA#40, merged 2026-11-10; `ns-3` green on `main`, run 42970177950) and BeeAdHoc's (BeeAdHoc#48, merged 2026-11-11; run 42970724058). The protocol cores built against swarm-core's `core/` at a pinned commit then (ARA#33, BeeAdHoc#37, Termite#28, HOPNET#25); since ns3-swarm-core#134 (closed 2026-11-15) every protocol builds on the swarm-core release its `swarm-core.lock` names (`v1.0.0` in all five on 2026-11-16).
 
 ## Phase 3: ARA
 
