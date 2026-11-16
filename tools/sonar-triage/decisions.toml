@@ -1238,3 +1238,21 @@ file = "tools/zenodo/zenodo.py"
 line = 1307
 decision = "falsepositive"
 reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHknGW6p52a_rpX19wy"
+rule = "pythonsecurity:S8707"
+file = "tools/release/release_notes.py"
+line = 96
+decision = "falsepositive"
+reason = "FP-cli"
+
+[[issue]]
+project = "swarm-routing_.github"
+key = "AaHknGW6p52a_rpX19wz"
+rule = "pythonsecurity:S8707"
+file = "tools/release/release_notes.py"
+line = 101
+decision = "falsepositive"
+reason = "FP-cli"
