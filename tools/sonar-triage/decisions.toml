@@ -905,7 +905,7 @@ line = 1570
 decision = "falsepositive"
 reason = "FP-repofile"
 
-# ---- swarm-routing/.github (38)
+# ---- swarm-routing/.github (40)
 
 [[issue]]
 project = "swarm-routing_.github"
