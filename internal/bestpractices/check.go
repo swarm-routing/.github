@@ -6,6 +6,7 @@ package bestpractices
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 )
 
@@ -196,6 +197,7 @@ func Findings(repo string, data, proposed map[string]any, tree map[string]bool) 
 			rep.Propose[c] = true
 		}
 	}
+	out = append(out, staleEvidence(repo, data, proposed, rep.Propose)...)
 	if len(missing) > 0 {
 		out = append([]string{fmt.Sprintf("%d answer(s) in %s not on the site yet: %s",
 			len(missing), Out, strings.Join(missing, ", "))}, out...)
@@ -642,4 +644,61 @@ func read(r Remote, t target) (map[string]any, map[string]any, map[string]bool, 
 		return nil, nil, nil, err
 	}
 	return data, proposed, tree, nil
+}
+
+// ownerLeft are the criteria Derive leaves to the owner (`?` in the file by
+// design): a site answer there is the owner's, never drift.
+func ownerLeft(c string) bool {
+	if OwnerOnly[c] || c == "test_most" || c == "tests_are_added" || c == "static_analysis_fixed" {
+		return true
+	}
+	for _, x := range Crypto {
+		if x == c {
+			return true
+		}
+	}
+	return false
+}
+
+// workflowEvidence are the criteria Derive justifies by what a CI workflow
+// runs (#559).
+var workflowEvidence = regexp.MustCompile(`^(dynamic_analysis|static_analysis|test_continuous_integration|warnings)`)
+
+// staleEvidence is the drift a saved answer keeps after Derive stopped
+// finding its evidence (#559): Met on the site where the file now finds
+// none (`?`), or, for a criterion justified by a CI workflow, the same
+// answer citing a workflow the file no longer cites (proposed again with
+// the file's justification). A hand-written justification elsewhere is the
+// owner's and never drift.
+func staleEvidence(repo string, data, proposed map[string]any, propose map[string]bool) []string {
+	var out []string
+	for _, c := range Passing {
+		want, ok := proposed[c+"_status"]
+		if !ok || ownerLeft(c) {
+			continue
+		}
+		have := data[c+"_status"]
+		if unanswered(want) {
+			if pyEqual(have, "Met") {
+				out = append(out, fmt.Sprintf("%s: the site says Met, %s finds no evidence for it on main", c, Out))
+			}
+			continue
+		}
+		if !pyEqual(have, want) || !workflowEvidence.MatchString(c) {
+			continue
+		}
+		site, _ := data[c+"_justification"].(string)
+		file := pyStr(proposed[c+"_justification"])
+		for _, m := range urlIn.FindAllStringSubmatch(site, -1) {
+			path := strings.TrimRight(m[3], ".,;:")
+			if m[1] != Org || m[2] != repo || !strings.HasPrefix(path, ".github/workflows/") ||
+				strings.Contains(file, "/blob/main/"+path) {
+				continue
+			}
+			out = append(out, fmt.Sprintf("%s: the site's justification cites %s, %s no longer does", c, path, Out))
+			propose[c] = true
+			break
+		}
+	}
+	return out
 }

@@ -19,7 +19,7 @@
  },
  "Opt": {
   "files": {
-   ".github/workflows/ci.yml": "on: [pull_request]\njobs:\n  fuzz:\n    steps:\n      - run: python3 -O t/fuzz.py\n",
+   ".github/workflows/ci.yml": "on: [pull_request]\njobs:\n  fuzz:\n    steps:\n      - run: pip install atheris && python3 -O t/fuzz.py -atheris_runs=1000\n",
    "README.md": "x\n",
    "t/fuzz.py": "x\n"
   }
@@ -34,9 +34,9 @@
   "files": {
    ".cz.toml": "[tool.commitizen]\nversion = \"1.2.0\"\n",
    ".github/org-sync.toml": "kind = \"protocol\"\nbestpractices_project = \"42\"\n",
-   ".github/workflows/ci.yml": "on:\n  pull_request:\n  push:\njobs:\n  a:\n    steps:\n      - run: cmake -DSANITIZE=ON  # -fsanitize=address debug\n      - run: gcovr\n",
-   ".github/workflows/codeql.yml": "on: [pull_request]\njobs:\n  codeql: {}\n",
-   ".github/workflows/fuzz.yml": "on: [pull_request]\njobs:\n  fuzz: {}\n",
+   ".github/workflows/ci.yml": "on:\n  pull_request:\n  push:\njobs:\n  a:\n    steps:\n      - run: cmake -S . -B b -DCMAKE_BUILD_TYPE=Debug -DPROTO_SANITIZE=ON  # -fsanitize=address debug\n      - run: ctest --test-dir b\n      - run: gcovr\n",
+   ".github/workflows/codeql.yml": "on: [pull_request]\njobs:\n  codeql:\n    steps:\n      - uses: github/codeql-action/init@0000000000000000000000000000000000000000 # v4\n      - uses: github/codeql-action/analyze@0000000000000000000000000000000000000000 # v4\n",
+   ".github/workflows/fuzz.yml": "on: [pull_request]\njobs:\n  fuzz:\n    steps:\n      - run: b/fuzz_codec -max_total_time=60\n",
    "CHANGELOG.md": "## v1.2.0 (2026-10-01)\n- fix\n",
    "CMakeLists.txt": "add_compile_options(-Wall -Wextra -Werror)\n",
    "CONTRIBUTING.md": "Every change carries a test.\n",

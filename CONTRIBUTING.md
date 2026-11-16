@@ -1717,7 +1717,12 @@ is **Save**, once per project, only when something changed. By hand, from a
 - **The answers, `.bestpractices.json`.** `go run ./cmd/bestpractices answers ../<repo> --write`
   writes it at the repository's top level: every passing criterion the
   repository gives evidence for, each justified by its full https URL on
-  `main`. org-bot's task `bestpractices` regenerates it in every public
+  `main`. Evidence is what a CI workflow runs (on push, pull request, merge
+  group or schedule, itself or through the workflow that calls it): a
+  sanitizer or fuzzer flag in a step, a CodeQL analysis step, a reusable
+  workflow called with the input that turns its tool on (`sonar: false` is
+  no analysis). A word in a comment, a step name or a description string is
+  not; where nothing runs, the answer stays `?` (#559). org-bot's task `bestpractices` regenerates it in every public
   repository and opens a PR when it changes: daily, and at once when a push
   to `main` touches the files the answers read (the org-managed
   `bestpractices-evidence.yml` sends repository_dispatch `bestpractices`). The
@@ -1741,7 +1746,9 @@ is **Save**, once per project, only when something changed. By hand, from a
   registered repository without `bestpractices_project`, answers in
   `.bestpractices.json` the site does not have yet, answers the site
   contradicts, justifications pointing at files no longer on `main`, a lost
-  level; or, for a repository in scope that is not registered, the
+  level, a Met the file no longer finds evidence for, or a workflow-based
+  answer whose saved justification cites a workflow the file no longer
+  cites; or, for a repository in scope that is not registered, the
   registration steps. A registered project's issue carries the **proposal
   link(s) for exactly what differs**, under "Open, review, Save", and lists
   the owner-only criteria still `?` on the site, which are never findings: they
