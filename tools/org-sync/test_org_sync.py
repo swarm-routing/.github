@@ -1146,6 +1146,19 @@ write(
     os.path.join(d, ".github/workflows/ns3.yml"),
     "jobs:\n  ci:\n    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main\n",
 )
+for q in ('"', "'"):
+    write(
+        os.path.join(d, ".github/workflows/ns3.yml"),
+        f"jobs:\n  ci:\n    uses: {q}swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main{q}\n",
+    )
+    check(
+        run("check", d)[0] == 1,
+        f"a caller quoted with {q} is a caller too",
+    )
+write(
+    os.path.join(d, ".github/workflows/ns3.yml"),
+    "jobs:\n  ci:\n    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main\n",
+)
 rc, out = run("check", d)
 check(
     rc == 1 and "AGENTS.md#dependencies" in out,

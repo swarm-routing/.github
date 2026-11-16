@@ -435,7 +435,7 @@ def calls_ns3_ci(repo_dir):
     wf = os.path.join(repo_dir, ".github", "workflows")
     names = sorted(os.listdir(wf)) if os.path.isdir(wf) else []
     uses = re.compile(
-        r"^\s*uses:\s*swarm-routing/\.github/\.github/workflows/reusable-ns3-ci\.yml@", re.M
+        r"^\s*uses:\s*[\"']?swarm-routing/\.github/\.github/workflows/reusable-ns3-ci\.yml@", re.M
     )
     return any(
         uses.search(read(os.path.join(wf, n)) or "") for n in names if n.endswith((".yml", ".yaml"))
