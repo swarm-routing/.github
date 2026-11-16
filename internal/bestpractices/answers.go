@@ -164,7 +164,8 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 	put("english", "Met", "Documentation ("+docURL+"), issues and code comments are in English.")
 	last := lastCommit(repoDir)
 	if maintained(last, today) {
-		put("maintained", "Met", "Last commit to main "+last+": "+r.base+"/commits/main.")
+		// no date: a regenerated .bestpractices.json must not change with every commit
+		put("maintained", "Met", "Commits to main within the last 365 days: "+r.base+"/commits/main.")
 	} else {
 		unknown("maintained", "The last commit is not known or is over a year old.")
 	}

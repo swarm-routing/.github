@@ -9,10 +9,18 @@
 // bestpractices.dev has no token write API: every answer is saved by a person
 // logged in to the site. Nothing here logs in or submits anything to it; the
 // site is only read, one request a second at most, never POSTed to
-// (swarm-routing/.github#23, swarm-routing/AntHocNet#790). The command line,
-// its output and its exit codes are those of the Python tool it replaces,
-// tools/bestpractices/bestpractices.py (#531), byte for byte on the fixtures
-// in testdata/.
+// (swarm-routing/.github#23, swarm-routing/AntHocNet#790). Automation stops
+// at proposals: `check` puts the site's pre-filled edit links in each
+// project's issue, and the maintainer's one click per project, Save, is the
+// only step left (maintainer decision 2026-11-16).
+//
+// It replaces tools/bestpractices/bestpractices.py (#531): the port was
+// proven byte for byte against it (#545); testdata/golden/ started as the
+// Python's output.
+//
+// Scope: every public org repository should be registered (maintainer
+// decision 2026-11-16) unless its .github/org-sync.toml sets
+// `bestpractices = false` under [settings].
 package bestpractices
 
 import (

@@ -3,16 +3,21 @@
 
 package bestpractices
 
-// The byte-identical proof (#531): testdata/golden/*.json hold what the
-// Python tool (tools/bestpractices/bestpractices.py, written by
-// testdata/gen_golden.py) printed, exited with and wrote, and every call it
-// made to the fake site and GitHub, for each case; these tests run the Go
-// port on the same inputs and compare.
+// testdata/golden/*.json hold, per case, the inputs and what the tool printed,
+// exited with and wrote, and every call it made to the fake site and GitHub.
+// They were first written by the Python tool (tools/bestpractices/
+// bestpractices.py at f34e046, the byte-identical proof of #531, PR #545);
+// a deliberate change of output rewrites them with
+//
+//	go test ./internal/bestpractices/ -run Golden -update
+//
+// and the PR shows the diff.
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +42,7 @@ type fixtureRepo struct {
 	Files map[string]string `json:"files"`
 }
 
-// makeRepo writes fixture repository name under dir, as gen_golden.py's
+// makeRepo writes fixture repository name under dir, as the Python tool's self-test's
 // make() does (a git repository with a fixed date where the fixture says so).
 func makeRepo(t *testing.T, dir, name string) string {
 	t.Helper()
@@ -86,32 +91,90 @@ func run(args []string, env Env) (int, string, string) {
 	return rc, out.String(), errOut.String()
 }
 
+var update = flag.Bool("update", false, "rewrite testdata/golden/ from this code")
+
+// golden is one golden file: its cases as plain maps, so -update rewrites
+// the outputs and keeps every input.
+type golden struct {
+	path  string
+	cases []map[string]any
+	dirty bool
+}
+
+func loadGolden(t *testing.T, name string) *golden {
+	t.Helper()
+	g := &golden{path: "testdata/golden/" + name}
+	loadJSON(t, g.path, &g.cases)
+	if len(g.cases) == 0 {
+		t.Fatalf("%s: no cases", g.path)
+	}
+	return g
+}
+
+func (g *golden) str(i int, k string) string { s, _ := g.cases[i][k].(string); return s }
+
+func (g *golden) raw(t *testing.T, i int, k string) json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(g.cases[i][k])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// check compares got with the case's field k, or records it under -update.
+func (g *golden) check(t *testing.T, i int, k string, got any) {
+	t.Helper()
+	got = normal(t, got)
+	if *update {
+		if !reflect.DeepEqual(g.cases[i][k], got) {
+			g.cases[i][k], g.dirty = got, true
+		}
+		return
+	}
+	if !reflect.DeepEqual(g.cases[i][k], got) {
+		t.Errorf("%s: %v\nwant %v", k, got, g.cases[i][k])
+	}
+}
+
+func (g *golden) save(t *testing.T) {
+	t.Helper()
+	if !g.dirty {
+		return
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", " ")
+	if err := enc.Encode(g.cases); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(g.path, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("rewrote %s", g.path)
+}
+
 func TestGoldenAnswers(t *testing.T) {
-	var cases []struct {
-		Name, Repo, Stdout, Stderr string
-		Args                       []string
-		RC                         int `json:"rc"`
-		Written                    *string
-	}
-	loadJSON(t, "testdata/golden/answers.json", &cases)
-	if len(cases) == 0 {
-		t.Fatal("no cases")
-	}
-	for _, c := range cases {
-		t.Run(c.Name, func(t *testing.T) {
+	g := loadGolden(t, "answers.json")
+	defer g.save(t)
+	for i, c := range g.cases {
+		t.Run(c["name"].(string), func(t *testing.T) {
+			var args []string
+			if err := json.Unmarshal(g.raw(t, i, "args"), &args); err != nil {
+				t.Fatal(err)
+			}
 			w := t.TempDir()
-			d := makeRepo(t, w, c.Repo)
-			rc, out, errOut := run(append([]string{"answers", d}, c.Args...), Env{})
-			out, errOut = strings.ReplaceAll(out, w, "$WORK"), strings.ReplaceAll(errOut, w, "$WORK")
-			if rc != c.RC || out != c.Stdout || errOut != c.Stderr {
-				t.Fatalf("rc %d (want %d)\nstdout:\n%s\nwant:\n%s\nstderr: %q\nwant:   %q", rc, c.RC, out, c.Stdout, errOut, c.Stderr)
+			d := makeRepo(t, w, g.str(i, "repo"))
+			rc, out, errOut := run(append([]string{"answers", d}, args...), Env{})
+			g.check(t, i, "rc", rc)
+			g.check(t, i, "stdout", strings.ReplaceAll(out, w, "$WORK"))
+			g.check(t, i, "stderr", strings.ReplaceAll(errOut, w, "$WORK"))
+			var written any
+			if b, err := os.ReadFile(filepath.Join(d, Out)); err == nil {
+				written = string(b)
 			}
-			if c.Written != nil {
-				got, err := os.ReadFile(filepath.Join(d, Out))
-				if err != nil || string(got) != *c.Written {
-					t.Fatalf("written %s: %v\n%s\nwant:\n%s", Out, err, got, *c.Written)
-				}
-			}
+			g.check(t, i, "written", written)
 		})
 	}
 }
@@ -129,63 +192,54 @@ func (l *lookup) Site(string) (any, error)                  { return nil, errors
 func (l *lookup) File(string, string) (string, bool, error) { return "", false, errors.New("unused") }
 func (l *lookup) Tree(string) (map[string]bool, error)      { return nil, errors.New("unused") }
 func (l *lookup) Repos() ([]string, error)                  { return nil, errors.New("unused") }
+func (l *lookup) HasRelease(string) (bool, error)           { return false, errors.New("unused") }
 
 func TestGoldenRegister(t *testing.T) {
-	var cases []struct {
-		Name, Stdout, Stderr string
-		Repo                 *string
-		Hits                 json.RawMessage
-		AnswersFile          bool `json:"answers_file"`
-		WriteFirst           bool `json:"write_first"`
-		RC                   int  `json:"rc"`
-		Asked                []string
-		Limit                int
-		URLs                 []string `json:"urls"`
-	}
-	loadJSON(t, "testdata/golden/register.json", &cases)
+	g := loadGolden(t, "register.json")
+	defer g.save(t)
 	fixture, err := LoadAnswers("testdata/anthocnet-answers.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range cases {
-		t.Run(c.Name, func(t *testing.T) {
-			if c.Limit > 0 {
-				urls, err := ProposalURLs("16656", fixture, "passing", c.Limit)
-				if err != nil || !reflect.DeepEqual(urls, c.URLs) {
-					t.Fatalf("%v\n%q\nwant\n%q", err, urls, c.URLs)
+	for i, c := range g.cases {
+		t.Run(c["name"].(string), func(t *testing.T) {
+			if limit, ok := c["limit"].(float64); ok {
+				urls, err := ProposalURLs("16656", fixture, "passing", int(limit))
+				if err != nil {
+					t.Fatal(err)
 				}
+				g.check(t, i, "urls", urls)
 				return
 			}
 			w := t.TempDir()
 			d := "/nonexistent"
-			if c.Repo != nil {
-				d = makeRepo(t, w, *c.Repo)
+			if repo := g.str(i, "repo"); repo != "" {
+				d = makeRepo(t, w, repo)
 			}
-			if c.WriteFirst {
+			if c["write_first"] == true {
 				if rc, _, e := run([]string{"answers", d, "--write", "--today", "2026-11-13"}, Env{}); rc != 0 {
 					t.Fatal(e)
 				}
 			}
-			hits, err := decodeJSON(c.Hits)
+			hits, err := decodeJSON(g.raw(t, i, "hits"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			l := &lookup{hits: hits.([]any)}
 			args := []string{"register", Org + "/Proto", "--dir", d, "--today", "2026-11-13"}
-			if c.AnswersFile {
+			if c["answers_file"] == true {
 				args = append(args, "--answers", "testdata/anthocnet-answers.json")
 			}
 			rc, out, errOut := run(args, Env{Remote: l})
-			out, errOut = strings.ReplaceAll(out, w, "$WORK"), strings.ReplaceAll(errOut, w, "$WORK")
-			if rc != c.RC || out != c.Stdout || errOut != c.Stderr || !reflect.DeepEqual(l.asked, c.Asked) {
-				t.Fatalf("rc %d (want %d), asked %v (want %v)\nstdout:\n%s\nwant:\n%s\nstderr: %q\nwant:   %q",
-					rc, c.RC, l.asked, c.Asked, out, c.Stdout, errOut, c.Stderr)
-			}
+			g.check(t, i, "rc", rc)
+			g.check(t, i, "stdout", strings.ReplaceAll(out, w, "$WORK"))
+			g.check(t, i, "stderr", strings.ReplaceAll(errOut, w, "$WORK"))
+			g.check(t, i, "asked", l.asked)
 		})
 	}
 }
 
-// fake is gen_golden.py's Fake: a site and GitHub built from a JSON world.
+// fake is the Python self-test's Fake: a site and GitHub built from a JSON world.
 type fake struct {
 	sites      map[string]any
 	files      map[[2]string]string
@@ -312,45 +366,36 @@ func normal(t *testing.T, v any) any {
 }
 
 func TestGoldenCheck(t *testing.T) {
-	var cases []struct {
-		Name, Token, Repos, Stdout string
-		World                      json.RawMessage
-		Issues                     bool
-		DryRun                     bool `json:"dry_run"`
-		Env                        map[string]string
-		RC                         int `json:"rc"`
-		Calls                      json.RawMessage
-		Searched                   []string
-	}
-	loadJSON(t, "testdata/golden/check.json", &cases)
-	for _, c := range cases {
-		t.Run(c.Name, func(t *testing.T) {
-			f := newFake(t, c.World)
-			env := func(k string) string {
-				if k == "BESTPRACTICES_TOKEN" {
-					return c.Token
-				}
-				return c.Env[k]
-			}
-			var out bytes.Buffer
-			rc := Check(CheckArgs{c.Repos, c.Issues, c.DryRun}, f, func(string) GitHub { return f }, env, &out)
-			var want any
-			if err := json.Unmarshal(c.Calls, &want); err != nil {
+	g := loadGolden(t, "check.json")
+	defer g.save(t)
+	for i, c := range g.cases {
+		t.Run(c["name"].(string), func(t *testing.T) {
+			f := newFake(t, g.raw(t, i, "world"))
+			var vars map[string]string
+			if err := json.Unmarshal(g.raw(t, i, "env"), &vars); err != nil {
 				t.Fatal(err)
 			}
-			got := normal(t, f.calls)
-			if f.calls == nil {
-				got = []any{}
+			env := func(k string) string {
+				if k == "BESTPRACTICES_TOKEN" {
+					return g.str(i, "token")
+				}
+				return vars[k]
 			}
-			if rc != c.RC || out.String() != c.Stdout {
-				t.Fatalf("rc %d (want %d)\nstdout:\n%s\nwant:\n%s", rc, c.RC, out.String(), c.Stdout)
+			var out bytes.Buffer
+			args := CheckArgs{g.str(i, "repos"), c["issues"] == true, c["dry_run"] == true}
+			rc := Check(args, f, func(string) GitHub { return f }, env, &out)
+			calls := f.calls
+			if calls == nil {
+				calls = []any{}
 			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("calls\n%v\nwant\n%v", got, want)
+			searched := f.searched
+			if searched == nil {
+				searched = []string{}
 			}
-			if !reflect.DeepEqual(f.searched, c.Searched) && !(len(f.searched) == 0 && len(c.Searched) == 0) {
-				t.Fatalf("searched %v, want %v", f.searched, c.Searched)
-			}
+			g.check(t, i, "rc", rc)
+			g.check(t, i, "stdout", out.String())
+			g.check(t, i, "calls", calls)
+			g.check(t, i, "searched", searched)
 		})
 	}
 }
