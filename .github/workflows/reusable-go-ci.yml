@@ -4,7 +4,8 @@ name: Reusable Go CI
 
 # The org's checks for a Go module (docs/adr/0002-pipelines-are-go.md):
 #   build         CGO_ENABLED=0 go build -trimpath ./...   (as a pipeline ships it)
-#   gofmt         gofmt -l on every tracked .go file: none may need formatting
+#   gofmt         gofmt -l on the module's tracked .go files (a nested module's
+#                 are left to its own CI): none may need formatting
 #   vet           go vet ./...
 #   staticcheck   staticcheck ./... (default checks), pinned below
 #   govulncheck   govulncheck ./... (reachable known vulnerabilities), pinned below
@@ -126,10 +127,19 @@ jobs:
         timeout-minutes: 2
         run: |
           set -euo pipefail
-          out=$(git ls-files -z -- '*.go' | xargs -0 -r gofmt -l)
+          # this module's tracked .go files: not those of a nested module
+          # (a directory below with its own go.mod), which its own CI checks
+          mapfile -t nested < <(git ls-files -- '*/go.mod' | sed 's|go\.mod$||')
+          files=()
+          while IFS= read -r -d '' f; do
+            for n in "${nested[@]}"; do [[ $f == "$n"* ]] && continue 2; done
+            files+=("$f")
+          done < <(git ls-files -z -- '*.go')
+          [ "${#files[@]}" -gt 0 ] || { echo "no .go file"; exit 0; }
+          out=$(gofmt -l "${files[@]}")
           if [ -n "$out" ]; then
             while IFS= read -r f; do echo "::error file=$f::not gofmt-formatted (run gofmt -w)"; done <<< "$out"
-            git ls-files -z -- '*.go' | xargs -0 -r gofmt -d
+            gofmt -d "${files[@]}"
             exit 1
           fi
           echo "every .go file is gofmt-formatted"
