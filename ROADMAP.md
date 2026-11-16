@@ -108,6 +108,63 @@ Three of the review's premises were out of date and are corrected by the
 rows above: protocols no longer build on swarm-core `@main`, the host order
 was already decided, and hardware does not wait for arm64 ns-3 images.
 
+**What the review leaves out** (found while checking it; each is already an
+issue, so the plan does not change, but a reader of the review should know):
+
+- **The host contract comes before any daemon.** The review writes the daemon
+  against one `core` interface. The five cores have five entry shapes and
+  AntHocNet returns its own decision type ([.github#250](https://github.com/swarm-routing/.github/issues/250)); one node-driver
+  interface is [ns3-swarm-core#71](https://github.com/swarm-routing/ns3-swarm-core/issues/71), on swarm-core's 2.0.0 line
+  ([ns3-swarm-core#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82)). HOPNET is absent from its comparison.
+- **The deterministic rung is the standalone discrete-event host**
+  ([.github#322](https://github.com/swarm-routing/.github/issues/322)), which the review does not mention. A daemon on a wall
+  clock is not reproducible from its seed, whatever its PRNG; that is why
+  results off ns-3 stay qualitative and why `benchmarks` must record the host
+  first ([benchmarks#69](https://github.com/swarm-routing/benchmarks/issues/69)). The same host is what the site's second
+  protocol needs ([swarm-routing.github.io#13](https://github.com/swarm-routing/swarm-routing.github.io/issues/13)).
+- **Scenes and measurement before code.** A daemon is done when it passes
+  named scenes with stated expectations ([.github#268](https://github.com/swarm-routing/.github/issues/268)), measured the same
+  way on every host ([.github#270](https://github.com/swarm-routing/.github/issues/270)); a ping across three namespaces is one
+  scene, not the acceptance.
+- **A daemon on a real network is an attack surface.** It listens on an
+  unauthenticated control port with `CAP_NET_ADMIN`. The decoders are the trust
+  boundary ([Termite#71](https://github.com/swarm-routing/Termite/issues/71), [HOPNET#66](https://github.com/swarm-routing/HOPNET/issues/66)), and what an install is safe
+  for is part of the packaging issue ([.github#267](https://github.com/swarm-routing/.github/issues/267)); routing security
+  ([.github#272](https://github.com/swarm-routing/.github/issues/272)) stops being optional the day a daemon leaves a lab.
+- **IPv6 has no ns-3 reference yet.** The ns-3 adapters are IPv4
+  (`Ipv4RoutingProtocol`), and [ns3-swarm-core#72](https://github.com/swarm-routing/ns3-swarm-core/issues/72) leaves IPv6 forwarding
+  on ns-3 out of scope. An IPv6 daemon would therefore have no reference rung
+  to be compared with; the identity decision should say whether that is
+  accepted.
+- **Gates still decide what counts.** The review praises the written verdict
+  on an anchor miss; two exist now (ARA's `docs/benchmarks/v0.2.0-anchor.md`,
+  HOPNET's `docs/anchor-verdict.md`). A protocol whose anchor missed can run
+  on a new host, but its numbers still do not count in comparisons.
+
+**Suggested next steps** (proposed 2026-11-16; none is decided, and each is
+the maintainer's to order):
+
+1. Write the data-plane ADR ([.github#255](https://github.com/swarm-routing/.github/issues/255)) now. It is a document, it is
+   `priority:P2`, it blocks the daemon, and the design input is fresh. Decide
+   the node identity ([ns3-swarm-core#72](https://github.com/swarm-routing/ns3-swarm-core/issues/72)) with it: both fix what is on the
+   wire.
+2. Run fitness test F2 of [.github#269](https://github.com/swarm-routing/.github/issues/269) (one best next hop instead of a
+   draw per packet) on ns-3 first. It costs one campaign and tells whether a
+   kernel forwarding mode is worth building at all.
+3. Settle the two arm64 image issues into one ([ns3-containers#11](https://github.com/swarm-routing/ns3-containers/issues/11),
+   [ns3-containers#54](https://github.com/swarm-routing/ns3-containers/issues/54)) and answer #11's three open decisions, whose
+   premise (39 images) no longer holds.
+4. File what open issues announce but nobody filed: the `benchmarks`
+   attack-grid suite and AntHocNet's phase-0 security ADR
+   ([.github#272](https://github.com/swarm-routing/.github/issues/272)), the emulation epic's child issues
+   ([.github#324](https://github.com/swarm-routing/.github/issues/324)).
+5. Answer the two decisions the review's proposals wait on: the owner of the
+   network-family list ([.github#275](https://github.com/swarm-routing/.github/issues/275)) and the gates for a protocol with
+   no paper ([.github#264](https://github.com/swarm-routing/.github/issues/264)).
+6. Housekeeping: [.github#48](https://github.com/swarm-routing/.github/issues/48)'s title still names CORE/EMANE, which moved
+   to [.github#324](https://github.com/swarm-routing/.github/issues/324); [.github#411](https://github.com/swarm-routing/.github/issues/411)'s criteria look met and are
+   unticked (to verify against each repository's workflows before closing).
+
 ## The ladder
 
 ```mermaid
