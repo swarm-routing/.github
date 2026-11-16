@@ -22,6 +22,7 @@ profile/README.md, ROADMAP.md, CONTRIBUTING.md   the org landing page, its phase
 ISSUE_TEMPLATE/, pull_request_template.md, labels.json   the default forms and the label taxonomy
 SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, DCO, .github/FUNDING.yml   the org default community files
 .clang-format, ruff.toml           the C++ style and the Python lint baseline
+go.mod, cmd/<tool>/, internal/, docker/ci-tools/   the Go pipeline tools and the ci-tools image (ADR-0002)
 tools/<tool>/                       the org's scripts, each with --self-test (checks, org-sync, org-bot, epics, zenodo, docs-review, fidelity, protocol-review, pr-status, lit-search, repo-settings, release)
 templates/                          what org-sync renders into each repository; templates/rulesets/: the settings profiles
 .github/workflows/, .github/actions/   the reusable workflows other repos call, this repo's CI and bots, the bot token
@@ -358,6 +359,7 @@ changing what the row names.
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
 | Choose a language, or write a Go pipeline tool and its CI | `docs/adr/0002-pipelines-are-go.md`, CONTRIBUTING § Languages, `reusable-go-ci.yml`; migration epic #531 |
+| Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:…` |
 | Change the licence rules or their gate | `tools/checks/check-headers.py`, `reusable-licence-check.yml`, CONTRIBUTING rule 1 |
 | Change how outside contributions are accepted (DCO, contributor copyright lines) | CONTRIBUTING "Outside contributions", `tools/checks/check-dco.py`, `reusable-dco.yml` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |

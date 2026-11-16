@@ -68,6 +68,12 @@ SUPPORT.md                      the org default support policy: issues for bugs,
                            its fixture: tools/checks/fixtures/python-ci/),
                            reusable-go-ci.yml (a Go module's build, gofmt, vet, staticcheck, govulncheck, race tests and coverage; docs/adr/0002-pipelines-are-go.md)
                            and go-ci-selftest.yml (its fixtures: tools/checks/fixtures/go-ci/good, which passes, and bad, which fails gofmt, vet, staticcheck and test)
+go.mod                     the root Go module github.com/swarm-routing/.github (go and toolchain lines; ADR-0002)
+cmd/ci-tools/              the ci-tools image's entrypoint: `ci-tools <tool> [args...]` runs /usr/local/bin/<tool>, `ci-tools list` (internal/dispatch: names, listing, exec; go test)
+cmd/fixture/               the image's fixture tool: `fixture FILE...` prints "<path> <newlines> <sha256>" (internal/fixture), what ci-tools-image.yml compares with wc -l and sha256sum
+docker/ci-tools/Dockerfile the ci-tools image: golang build stage (go vet, go test, every cmd/ built CGO_ENABLED=0 -trimpath) and a distroless static nonroot runtime, both by digest; .hadolint.yaml its hadolint settings
+.github/dependabot.yml     Dependabot version updates: the Dockerfile's two bases, the root module's dependencies
+.github/workflows/ci-tools-image.yml   the ci-tools image: reusable-go-ci on the root module, `dockerfile`: hadolint + Trivy config + golang tag = toolchain, build once, candidate push to ci-tools-dev, tests on the candidate digest, Trivy image scan; main: promote the same digest to ci-tools (sha-<sha7>, latest), SBOM, cosign, provenance, cleanup of ci-tools-dev
 docs/adr/                  the org's architecture decisions (0001: record them; 0002: pipelines are Go, their image is distroless)
 LICENSE, LICENSE-MIT, LICENSING.md   the licence per path (LICENSING.md): the tooling MIT OR GPL-2.0-only, the docs GPL-2.0-only,
                                      CODE_OF_CONDUCT.md CC-BY-4.0, DCO verbatim copies only
@@ -163,7 +169,14 @@ the Cobertura `coverage.xml`, and the `bad` one, called with
 in the `failed` output (govulncheck is proven clean only: a vulnerable
 fixture dependency would raise a real alert here). Locally, in a fixture
 directory with the `toolchain` Go: `gofmt -l .`, `go vet ./...`,
-`staticcheck ./...`, `govulncheck ./...`, `go test -race ./...`. A change to
+`staticcheck ./...`, `govulncheck ./...`, `go test -race ./...`.
+A change to the Go tools (`cmd/`, `internal/`, `go.mod`) or to
+`docker/ci-tools/` runs `ci-tools-image.yml` on its PR: the root module
+through `reusable-go-ci.yml`, the Dockerfile lint, then one build pushed as a
+`ci-tools-dev:pr-<n>-<sha7>` candidate whose digest every test runs on (a
+fork PR tests the local image); its promote, sign and attest steps are proven
+by the first run on `main`. Locally: `go test ./...` at the root, and
+`docker build -f docker/ci-tools/Dockerfile -t ci-tools . && docker run --rm ci-tools list`. A change to
 `reusable-benchmark-cell.yml` runs `benchmark-cell-selftest.yml` on its PR (one
 build-mode cell); its prebuilt mode is proven by a protocol repo's caller. A change to
 `.github/actions/setup-vcpkg/` runs `setup-vcpkg-selftest.yml` on its PR (a scratch

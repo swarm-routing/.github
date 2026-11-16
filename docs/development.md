@@ -22,6 +22,8 @@ contract); how issues and pull requests work is
 | Python | 3.11 or newer (`tomllib`) | every tool (standard library only) |
 | PyYAML | any recent | parsing the issue forms (the "Forms, labels, style parse" check) |
 | ruff | 0.17.1 | Python lint and format |
+| Go | go.mod's `toolchain` version (1.27.4) | the Go tools (`cmd/`, `internal/`) and the go-ci fixtures |
+| Docker | any recent | only to build the `ci-tools` image locally |
 | actionlint, shellcheck | `pip install actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1` | workflow lint (actionlint also shellchecks `run:` blocks) |
 | GitHub CLI `gh`, logged in | any recent | only the read-only runs against the real org, and `epics.py` |
 
@@ -48,7 +50,9 @@ is #489.
 
 ## Build
 
-Nothing compiles. Files take effect from `main`: GitHub reads the community
+Only the Go tools compile: `CGO_ENABLED=0 go build -trimpath ./...` at the
+root (the `ci-tools` image builds every `cmd/<tool>` the same way). Everything
+else takes effect from `main`: GitHub reads the community
 defaults and every `@main` workflow reference from the default branch, and
 `org-sync` renders `templates/` into each repository through org-bot's
 refresh PRs after a template change merges.
@@ -66,6 +70,7 @@ bash tools/downstream/downstream.sh --self-test
 python3 -I tools/org-sync/org_sync.py profile . --check   # the profile's badge table is today's render
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
+go test -race ./...                             # the Go tools (cmd/, internal/)
 ```
 
 Run the self-test of the tool you changed at least; [tools.md](tools.md)
@@ -93,7 +98,9 @@ Each tool's docstring (the top of the file) is its manual.
 
 ## Docker and dev containers
 
-Nothing here needs Docker. The images the reusable workflows use
+Only the `ci-tools` image is built here: `docker build -f
+docker/ci-tools/Dockerfile -t ci-tools .` from the root, then
+`docker run --rm ci-tools list`. The images the reusable workflows use
 (`ghcr.io/swarm-routing/ns3-dev`) are built in swarm-routing/ns3-containers.
 There is no `.devcontainer/`.
 
@@ -115,6 +122,8 @@ python3 -I tools/checks/check-headers.py --dual '' .   # licence headers (everyt
 | `ci.yml` | `title / title` | the PR title is a lowercase Conventional Commit | yes |
 | `review-gate.yml` | `review / coderabbit` | CodeRabbit has reviewed the PR | yes |
 | `ns3-image-selftest.yml`, `benchmark-cell-selftest.yml`, `release-selftest.yml` | | the reusable image, benchmark-cell and release workflows on fixtures | no |
+| `go-ci-selftest.yml` | | `reusable-go-ci.yml` on a passing and a failing fixture module | no |
+| `ci-tools-image.yml` | | the Go tools and the `ci-tools` image: build once, test by digest, promote on `main` | no |
 | `org-bot.yml`, `epics.yml`, `zenodo.yml`, `repo-settings.yml`, `ai-files-review.yml`, `sonar-triage.yml`, `bestpractices.yml`, `repo-metadata.yml`, `sync-labels.yml`, `scorecard.yml` | | scheduled or dispatched automation across the org (CONTRIBUTING "Automation") | no |
 
 The required checks are the ones the `main` ruleset lists: `gh api
