@@ -32,6 +32,11 @@ DIR/<repo>/.github/):
     release_environment = true          # create the `release` environment here; false: strip
                                         # the gate (reviewers, wait timer) from an existing one
 
+    [settings.environments.gitlab-write]   # any other environment, one table each
+    reviewers = ["danieljoppi"]         # required reviewers (users); absent or []: none
+    branches = ["main"]                 # deployment branches; absent or []: any branch
+    prevent_self_review = false         # default false
+
 A repository with no org-sync templates carries a settings-only file (no
 `kind`); org-sync and org-bot skip it.
 
@@ -69,6 +74,19 @@ set to null there or in the profile: that part is not managed):
   its required reviewers and wait timer (it is never deleted); absent, an
   existing environment is left alone.
 
+`[settings.environments.<name>]` declares any other environment, in every
+profile (a settings-only file too): its required reviewers (users, as the
+`release` environment), whether a reviewer may approve a run they started
+(`prevent_self_review`, default false, so the maintainer approves the runs
+his own account triggers) and its deployment branches (`branches`: a custom
+branch policy naming exactly those branches; absent or empty: any branch).
+`apply` creates a missing environment, sets its reviewers and branch policy,
+adds the missing branch policies and removes the ones it does not declare.
+The `release` environment is `release_environment`'s alone: a table for it
+next to that key is refused. An environment no table names is never touched,
+and none is ever deleted. A private repository on the free plan has neither
+reviewers nor branch policies: reported unsupported, not drift.
+
 The `main` ruleset's `code_scanning` and `code_quality` rules are kept only
 with `code_scanning = true` (a repository that never uploads CodeQL results
 would hold every PR waiting for them), and `required_status_checks` takes
@@ -99,7 +117,8 @@ declaration, `check` does the same and exits 1 on drift (or on a setting it
 cannot read), `apply` writes only the differences (`--dry-run`: says what it
 would write). A repository with no `[settings]` is never touched; the only
 rulesets managed are those named in a profile (`main`, `release-tags`), and
-none is ever deleted; neither is an environment. Without REPO the org listing
+none is ever deleted; neither is an environment (only a deployment branch
+policy an environment's table no longer names is). Without REPO the org listing
 is used (all repositories, not archived, not forks). The values of a private
 repository are never printed, only which fields differ, since the output may
 land in a public log or issue. A write the token is not allowed (HTTP 403 or
@@ -111,7 +130,7 @@ The token comes from ORG_BOT_TOKEN, else GH_TOKEN (gh's own login), never
 from the command line; GitHub is reached through `gh api`. A fine-grained
 token needs, on every repository: Administration read and write (every
 write, and reading the rulesets, security and Actions settings), Contents
-read (org-sync.toml and the workflows), Actions read (the environment),
+read (org-sync.toml and the workflows), Actions read (the environments),
 Checks read and Commit statuses read (the unrequired checks; unreadable is a
 note, not drift), Metadata read. Output is one summary line per difference (AntHocNet
 ADR-0014). Stdlib only; Python 3.11+.
@@ -170,6 +189,11 @@ FORK_PR_POLICIES = (
     "all_external_contributors",
 )
 SHARED = ("features", "security", "actions", "tag_ruleset", "release_environment")
+ENV_NAME = re.compile(r"[A-Za-z0-9._-]{1,255}")
+ENV_KEYS = ("reviewers", "branches", "prevent_self_review")
+LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})")
+# the only DELETE the tool sends: a deployment branch policy an environment no longer declares
+DELETABLE = re.compile(rf"repos/{ORG}/[^/]+/environments/[^/]+/deployment-branch-policies/\d+")
 FEATURES = (
     "has_issues",
     "has_projects",
@@ -213,7 +237,9 @@ class GitHub:
             self.env["GH_TOKEN"] = os.environ["ORG_BOT_TOKEN"]
 
     def api(self, method, path, body=None):
-        if method not in ("GET", "POST", "PUT", "PATCH") or not API_PATH.fullmatch(path):
+        if method == "DELETE" and not DELETABLE.fullmatch(path):
+            raise GhError(method, path, "refused: the only DELETE is a deployment branch policy")
+        if method not in ("GET", "POST", "PUT", "PATCH", "DELETE") or not API_PATH.fullmatch(path):
             raise GhError(method, path, "refused: not a plain API path")
         cmd = ["gh", "api", "-X", method, path]
         if body is not None:
@@ -367,7 +393,54 @@ def validate(s, private=False):
         errors += [f"{table}.{k} is not true or false" for k, v in t.items() if type(v) is not bool]
     if "release_environment" in s and type(s["release_environment"]) is not bool:
         errors.append("release_environment is not true or false")
+    errors += validate_environments(s)
     return errors
+
+
+def validate_environments(s):
+    """What is wrong with `[settings.environments]` (names and logins are not secret)."""
+    envs = s.get("environments", {})
+    if not isinstance(envs, dict):
+        return ["environments is not a table"]
+    errors = []
+    for name, e in envs.items():
+        if not ENV_NAME.fullmatch(name):
+            errors.append(f"environments: {name!r} is not an environment name")
+            continue
+        if not isinstance(e, dict):
+            errors.append(f"environments.{name} is not a table")
+            continue
+        errors += [
+            f"environments.{name}.{k} is not one of {', '.join(ENV_KEYS)}"
+            for k in e
+            if k not in ENV_KEYS
+        ]
+        rev = e.get("reviewers", [])
+        if not isinstance(rev, list) or not all(
+            isinstance(r, str) and LOGIN.fullmatch(r) for r in rev
+        ):
+            errors.append(f"environments.{name}.reviewers is not a list of user logins")
+        br = e.get("branches", [])
+        if not isinstance(br, list) or not all(isinstance(b, str) and b.strip() for b in br):
+            errors.append(f"environments.{name}.branches is not a list of branch names")
+        if type(e.get("prevent_self_review", False)) is not bool:
+            errors.append(f"environments.{name}.prevent_self_review is not true or false")
+    if "release" in envs and "release_environment" in s:
+        errors.append("environments.release next to release_environment: declare it once")
+    return errors
+
+
+def declared_environments(s):
+    """`[settings.environments]` as a list, sorted by name (validated first)."""
+    return [
+        {
+            "name": name,
+            "reviewers": sorted(e.get("reviewers", []), key=str.lower),
+            "branches": sorted(set(e.get("branches", []))),
+            "prevent_self_review": e.get("prevent_self_review", False),
+        }
+        for name, e in sorted(s.get("environments", {}).items())
+    ]
 
 
 # `pull_request:` as a key, in an `on: [...]` list, or as the only trigger
@@ -487,6 +560,7 @@ def desired(s):
         "actions": None,
         "environment": None,
         "environment_off": None,
+        "environments": declared_environments(s),
     }
     if not s.get("ruleset"):
         return want
@@ -780,6 +854,84 @@ def plan_environment(gh, res, full, env):
     )
 
 
+def plan_declared_environment(gh, res, full, env):
+    """One `[settings.environments.<name>]` table: reviewers, self-review, branch policy."""
+    name = env["name"]
+    what = f"environment {name}"
+    if res["private"] and (env["reviewers"] or env["branches"]):
+        res["notes"].append(f"unsupported here: {what} protection (private repository)")
+        return
+    path = f"repos/{full}/environments/{urllib.parse.quote(name, safe='')}"
+    got = probe(gh, res, what, path)
+    if got is None:
+        return
+    want = {"reviewers": env["reviewers"], "branches": env["branches"]}
+    want_psr = env["prevent_self_review"] if env["reviewers"] else False
+    policies = {}  # branch name -> policy id, of the live environment
+    if got[0]:
+        rules = [
+            r for r in got[1].get("protection_rules", []) if r.get("type") == "required_reviewers"
+        ]
+        reviewers = sorted(
+            (x["reviewer"].get("login", "") for x in (rules[0]["reviewers"] if rules else [])),
+            key=str.lower,
+        )
+        psr = rules[0].get("prevent_self_review", False) if rules else False
+        dbp = got[1].get("deployment_branch_policy") or {}
+        custom = bool(dbp.get("custom_branch_policies")) and not dbp.get("protected_branches")
+        if custom:
+            listed = probe(gh, res, what, f"{path}/deployment-branch-policies?per_page=100")
+            if listed is None:
+                return
+            for p in listed[1].get("branch_policies", []) if listed[0] else []:
+                if p.get("type", "branch") == "branch":
+                    policies[p["name"]] = p["id"]
+        if custom:
+            branches = sorted(policies) or ["(none)"]  # a custom policy naming no branch
+        else:
+            branches = ["(protected branches)"] if dbp else []  # [] = any branch
+        have = {"reviewers": reviewers, "branches": branches}
+        if have == want and psr == want_psr:
+            return
+    else:
+        have = "missing"
+
+    def body(gh):
+        ids = [gh.api("GET", f"users/{login}")["id"] for login in env["reviewers"]]
+        return {
+            "wait_timer": 0,
+            "prevent_self_review": want_psr,
+            "reviewers": [{"type": "User", "id": i} for i in ids],
+            "deployment_branch_policy": (
+                {"protected_branches": False, "custom_branch_policies": True}
+                if env["branches"]
+                else None
+            ),
+        }
+
+    writes = [("PUT", path, body)]
+    if env["branches"]:
+        writes += [
+            ("POST", f"{path}/deployment-branch-policies", {"name": b, "type": "branch"})
+            for b in env["branches"]
+            if b not in policies
+        ]
+        writes += [
+            ("DELETE", f"{path}/deployment-branch-policies/{i}", None)
+            for b, i in sorted(policies.items())
+            if b not in env["branches"]
+        ]
+
+    def show(x):
+        if x == "missing":
+            return x
+        r = ",".join(x["reviewers"]) or "none"
+        b = ",".join(x["branches"]) or "any"
+        return f"reviewers {r}; branches {b}"
+
+    item(res, what, show(have), show(want), *writes)
+
+
 def plan_environment_off(gh, res, full, name):
     """`release_environment = false`: an existing environment loses its gate
     (required reviewers, wait timer), keeps its deployment branch policy, and
@@ -864,6 +1016,8 @@ def plan_repo(gh, repo, local=None):
         plan_environment(gh, res, full, want["environment"])
     elif want["environment_off"]:
         plan_environment_off(gh, res, full, want["environment_off"])
+    for env in want["environments"]:
+        plan_declared_environment(gh, res, full, env)
     if want["rulesets"]:
         plan_rulesets(gh, res, full, want["rulesets"])
     if any(r["name"] == "main" for r in want["rulesets"]):
@@ -1069,6 +1223,15 @@ def run(cmd, repos, local=None, dry_run=False, gh=None):
         if res["errors"] or (cmd == "check" and drifted(res)):
             rc = 1
     return rc
+
+
+def GhErrorOf(f):
+    """The GhError f() raises, or None (self-test helper)."""
+    try:
+        f()
+    except GhError as e:
+        return e
+    return None
 
 
 def main(argv=None):
@@ -1336,6 +1499,7 @@ def self_test():
                 "can_approve_pull_request_reviews": True,
             }
             self.envs = {}
+            self.policies = {}  # (repo, environment) -> {policy id: {name, type}}
             self.rulesets = {
                 "AntHocNet": [copy.deepcopy(anthocnet_live), copy.deepcopy(tags_live)],
                 "ARA": [
@@ -1471,9 +1635,30 @@ def self_test():
                             raise GhError(method, path, "invalid approval_policy (HTTP 422)")
                         self.forkpr[repo] = dict(body)
                     return dict(self.forkpr[repo])
+            m2 = re.match(
+                r"/environments/([^/]+)/deployment-branch-policies(?:/(\d+)|\?per_page=100)?$", rest
+            )
+            if m2:
+                env = self.envs.get((repo, m2.group(1)))
+                if env is None:
+                    raise GhError(method, path, "Not Found (HTTP 404)")
+                pols = self.policies.setdefault((repo, m2.group(1)), {})
+                if method == "POST":
+                    if not (env["deployment_branch_policy"] or {}).get("custom_branch_policies"):
+                        raise GhError(method, path, "custom policies are off (HTTP 404)")
+                    self.next_id += 1
+                    pols[self.next_id] = dict(body)
+                    return {"id": self.next_id, **body}
+                if method == "DELETE":
+                    del pols[int(m2.group(2))]
+                    return {}
+                got = [{"id": i, **b} for i, b in sorted(pols.items())]
+                return {"total_count": len(got), "branch_policies": got}
             m2 = re.match(r"/environments/([^/]+)$", rest)
             if m2:
                 if method == "PUT":
+                    if body["deployment_branch_policy"] is None:
+                        self.policies.pop((repo, m2.group(1)), None)
                     rules = [{"type": "wait_timer", "wait_timer": body["wait_timer"]}]
                     if body["reviewers"]:
                         rules.append(
@@ -1908,6 +2093,121 @@ def self_test():
         rc == 0 and writes(gh) == [] and ("AntHocNet", "release") not in gh.envs,
     )
     toml["AntHocNet"] = plain_toml
+    # [settings.environments]: any other environment, its reviewers and deployment branches;
+    # one no table names is left alone, none is deleted, only an undeclared branch policy is
+    gh = FakeGitHub()
+    other = {"name": "github-pages", "protection_rules": [], "deployment_branch_policy": None}
+    gh.envs[("AntHocNet", "github-pages")] = copy.deepcopy(other)
+    toml["AntHocNet"] = plain_toml + (
+        '[settings.environments.gitlab-write]\nreviewers = ["danieljoppi"]\nbranches = ["main"]\n'
+        '[settings.environments.gitlab-read]\nbranches = ["main"]\n'
+    )
+    rc, out = go("check", ["AntHocNet"], gh)
+    check(
+        "a declared environment that is missing is drift",
+        rc == 1
+        and 'AntHocNet environment gitlab-read: differs: "missing" -> "reviewers none; branches main"'
+        in out
+        and 'AntHocNet environment gitlab-write: differs: "missing" -> '
+        '"reviewers danieljoppi; branches main"'
+        in out,
+    )
+    rc, out = go("apply", ["AntHocNet"], gh)
+    w, r = gh.envs.get(("AntHocNet", "gitlab-write")), gh.envs.get(("AntHocNet", "gitlab-read"))
+    custom = {"protected_branches": False, "custom_branch_policies": True}
+    check(
+        "apply creates both: reviewers, a custom branch policy naming main",
+        rc == 0
+        and w is not None
+        and r is not None
+        and [x["type"] for x in w["protection_rules"]] == ["wait_timer", "required_reviewers"]
+        and w["protection_rules"][1]["prevent_self_review"] is False
+        and [x["type"] for x in r["protection_rules"]] == ["wait_timer"]
+        and w["deployment_branch_policy"] == custom == r["deployment_branch_policy"]
+        and [b["name"] for b in gh.policies[("AntHocNet", "gitlab-write")].values()] == ["main"]
+        and [b["name"] for b in gh.policies[("AntHocNet", "gitlab-read")].values()] == ["main"],
+    )
+    check(
+        "an environment no table names is left alone",
+        gh.envs[("AntHocNet", "github-pages")] == other
+        and not any("github-pages" in c[1] for c in writes(gh)),
+    )
+    n = len(writes(gh))
+    rc, out = go("apply", ["AntHocNet"], gh)
+    check("declared environments in sync after apply", rc == 0 and len(writes(gh)) == n)
+    gh.next_id += 1
+    gh.policies[("AntHocNet", "gitlab-write")][gh.next_id] = {"name": "dev", "type": "branch"}
+    rc, out = go("check", ["AntHocNet"], gh)
+    check(
+        "an undeclared branch policy is drift",
+        rc == 1
+        and 'environment gitlab-write: differs: "reviewers danieljoppi; branches dev,main"' in out,
+    )
+    rc, out = go("apply", ["AntHocNet"], gh)
+    dels = [c for c in writes(gh)[n:] if c[0] == "DELETE"]
+    check(
+        "apply deletes only that branch policy",
+        rc == 0
+        and [c[1].rsplit("/", 1)[1] for c in dels] == [str(gh.next_id)]
+        and [b["name"] for b in gh.policies[("AntHocNet", "gitlab-write")].values()] == ["main"],
+    )
+    gh.envs[("AntHocNet", "gitlab-read")]["deployment_branch_policy"] = None
+    gh.policies.pop(("AntHocNet", "gitlab-read"))
+    rc, out = go("check", ["AntHocNet"], gh)
+    check(
+        "any branch where main is declared is drift",
+        rc == 1 and 'gitlab-read: differs: "reviewers none; branches any"' in out,
+    )
+    toml["AntHocNet"] = plain_toml + "[settings.environments.open]\n"
+    gh = FakeGitHub()
+    rc, out = go("apply", ["AntHocNet"], gh)
+    check(
+        "an empty table: an unprotected environment, no branch policy",
+        rc == 0
+        and gh.envs[("AntHocNet", "open")]["deployment_branch_policy"] is None
+        and not any("deployment-branch-policies" in c[1] for c in writes(gh)),
+    )
+    check("an empty table in sync after apply", go("check", ["AntHocNet"], gh)[0] == 0)
+    toml["AntHocNet"] = plain_toml
+    check(
+        "a DELETE other than a branch policy is refused before gh runs",
+        all(
+            "refused" in str(GhErrorOf(lambda p=p: GitHub().api("DELETE", p)))
+            for p in (
+                f"repos/{ORG}/x/environments/gitlab-write",
+                f"repos/{ORG}/x/rulesets/5",
+                f"repos/{ORG}/x/environments/a/deployment-branch-policies/1/../x",
+            )
+        ),
+    )
+    ok_env = {
+        "environments": {"gitlab-write": {"reviewers": ["danieljoppi"], "branches": ["main"]}}
+    }
+    check("environments valid", validate(ok_env) == [])
+    for name, envs, extra, want in (
+        ("not a table", "gitlab", {}, "environments is not a table"),
+        ("bad name", {"a b": {}}, {}, "is not an environment name"),
+        ("entry not a table", {"x": 1}, {}, "environments.x is not a table"),
+        ("unknown key", {"x": {"wait": 5}}, {}, "environments.x.wait is not one of"),
+        ("reviewers", {"x": {"reviewers": "danieljoppi"}}, {}, "x.reviewers is not a list"),
+        ("bad login", {"x": {"reviewers": ["-x"]}}, {}, "x.reviewers is not a list"),
+        ("branches", {"x": {"branches": [""]}}, {}, "x.branches is not a list"),
+        ("self review", {"x": {"prevent_self_review": 1}}, {}, "x.prevent_self_review"),
+        ("release twice", {"release": {}}, {"release_environment": True}, "declare it once"),
+    ):
+        check(
+            f"environments refused: {name}",
+            any(want in e for e in validate({"environments": envs, **extra})),
+        )
+    res = {"private": True, "notes": [], "items": [], "unreadable": []}
+    env0 = declared_environments(ok_env)[0]
+    plan_declared_environment(FakeGitHub(), res, f"{ORG}/AntHocNet", env0)
+    check(
+        "a private repository: protection unsupported, not drift",
+        res["items"] == []
+        and res["notes"]
+        == ["unsupported here: environment gitlab-write protection (private repository)"],
+    )
     one_line = {".github/workflows/t.yml": "on: [pull_request, merge_group]\njobs:\n  title:\n"}
     check(
         "merge_group found in a flow list, job id matched, reusable prefix used",
