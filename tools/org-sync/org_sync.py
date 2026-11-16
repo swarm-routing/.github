@@ -1267,6 +1267,8 @@ def items(cfg):
         ("section", "README.md", None, "badges"),
         # "Develop": where a newcomer starts, docs/development.md (#490)
         ("section", "README.md", "readme-develop.md", "develop"),
+        # the developer guide the Develop section links (#490): a seed, the repository's own once written
+        ("seed", "docs/development.md", "development.md", None),
         ("seed", "AGENTS.md", "agents/AGENTS.md.in", None),
         ("section", "AGENTS.md", "agents/org-rules.md", "org-rules"),
         ("section", "AGENTS.md", "agents/conventions.md", "conventions"),

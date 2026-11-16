@@ -50,7 +50,7 @@ templates/                      what org-sync renders: AGENTS.md org sections (i
                                 the CodeRabbit settings (.coderabbit.yaml head/tail sections, #37),
                                 codeowners/: .github/CODEOWNERS, a seed with the org's invariant paths per kind as its last section (#31),
                                 quality/: the .codecov.yml and sonar-project.properties seeds of C++ repos,
-                                development.md: the skeleton of every repository's docs/development.md, its `##` sections the standard check_docs.py enforces (#490; copied by hand, not rendered)
+                                development.md: the docs/development.md seed (written once by org-sync, then the repository's own), its `##` sections the standard check_docs.py enforces (#490)
 SECURITY.md                     the org default security policy (repos without their own get it)
 CODE_OF_CONDUCT.md              the org default code of conduct: Contributor Covenant 2.1, reports to the maintainer's GitHub profile (no email)
 SUPPORT.md                      the org default support policy: issues for bugs, features and questions, no private support

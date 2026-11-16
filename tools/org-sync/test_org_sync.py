@@ -959,6 +959,14 @@ rd = read(os.path.join(dd, "README.md"))
 s0 = rd.index("<!-- org-sync:begin develop -->")
 e0 = rd.index("<!-- org-sync:end develop -->\n\n") + len("<!-- org-sync:end develop -->\n\n")
 write(os.path.join(dd, "README.md"), rd[:s0] + rd[e0:])
+guide = read(os.path.join(dd, "docs/development.md")) or ""
+check(
+    guide.startswith("# Developer guide\n")
+    and "## Troubleshooting\n" in guide
+    and "{repo}" not in guide
+    and "/rules/branches/main" in guide,
+    "init seeds docs/development.md, the link's target, its placeholders filled",
+)
 check(run("check", dd)[0] == 1, "a README without the Develop section drifts")
 run("apply", dd)
 rd2 = read(os.path.join(dd, "README.md"))

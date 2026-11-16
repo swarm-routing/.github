@@ -1,9 +1,10 @@
 # Developer guide
 
 <!--
-The org's skeleton for docs/development.md (swarm-routing/.github#490). Keep
-every `##` heading below, in this order: tools/docs-review/check_docs.py fails
-when one is missing. Fill each from what actually runs today (the commands CI
+The org's skeleton for docs/development.md (swarm-routing/.github#490), an
+org-sync seed: written once, then the repository's own. Keep every `##`
+heading below, in this order: tools/docs-review/check_docs.py fails when one
+is missing. Fill each from what actually runs today (the commands CI
 runs, the Makefile, AGENTS.md "Build & verify"); never invent a command. Mark a
 step that only CI can run with the workflow that runs it. Write for a person
 new to the repository: plain sentences, every command copy-pasteable. A
@@ -22,8 +23,8 @@ Docker, emsdk: what this repository needs, each with the version CI uses.
 ## Get the code
 
 ```bash
-git clone https://github.com/swarm-routing/REPO.git
-cd REPO
+git clone https://github.com/{repo}.git
+cd {title}
 ```
 
 Submodules, sibling checkouts or forks the work needs.
@@ -64,7 +65,7 @@ clang-format, clang-tidy, ruff, licence headers: the commands CI runs.
 | `name.yml` | ... | yes / no |
 
 The required checks are the ones the `main` ruleset lists (`gh api
-repos/swarm-routing/REPO/rules/branches/main`).
+repos/{repo}/rules/branches/main`).
 
 ## Release
 
