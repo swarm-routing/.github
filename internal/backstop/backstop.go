@@ -82,8 +82,13 @@ func Load(data []byte) ([]Entry, error) {
 			return nil, fmt.Errorf("%s: period %q is not a duration from 1h to 744h", where, e.Period)
 		}
 		e.period = d
-		for k, v := range e.Inputs {
-			if !inputRe.MatchString(k) || len(v) > 200 {
+		keys := make([]string, 0, len(e.Inputs))
+		for k := range e.Inputs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys) // the same table, the same diagnostic
+		for _, k := range keys {
+			if !inputRe.MatchString(k) || len(e.Inputs[k]) > 200 {
 				return nil, fmt.Errorf("%s: input %q is not a plain name with a short value", where, k)
 			}
 		}
@@ -159,7 +164,7 @@ func (g GitHub) defaultBranch(repo string) (string, error) {
 	return r.DefaultBranch, nil
 }
 
-// lastRun is when the newest run of a workflow on branch started (zero: none).
+// lastRun is when the newest run of a workflow on branch started, a re-run included (zero: none).
 func (g GitHub) lastRun(repo, workflow, branch string) (time.Time, string, error) {
 	data, _, err := g.do("GET", fmt.Sprintf("repos/%s/actions/workflows/%s/runs?branch=%s&per_page=1",
 		repo, workflow, url.QueryEscape(branch)), nil)
@@ -168,8 +173,9 @@ func (g GitHub) lastRun(repo, workflow, branch string) (time.Time, string, error
 	}
 	var r struct {
 		Runs []struct {
-			CreatedAt time.Time `json:"created_at"`
-			Event     string    `json:"event"`
+			CreatedAt    time.Time `json:"created_at"`
+			RunStartedAt time.Time `json:"run_started_at"`
+			Event        string    `json:"event"`
 		} `json:"workflow_runs"`
 	}
 	if err := json.Unmarshal(data, &r); err != nil {
@@ -178,7 +184,12 @@ func (g GitHub) lastRun(repo, workflow, branch string) (time.Time, string, error
 	if len(r.Runs) == 0 {
 		return time.Time{}, "", nil
 	}
-	return r.Runs[0].CreatedAt, r.Runs[0].Event, nil
+	// a re-run keeps its created_at and resets run_started_at: the later of the two
+	t := r.Runs[0].CreatedAt
+	if r.Runs[0].RunStartedAt.After(t) {
+		t = r.Runs[0].RunStartedAt
+	}
+	return t, r.Runs[0].Event, nil
 }
 
 func (g GitHub) dispatch(repo, workflow, ref string, inputs map[string]string) error {

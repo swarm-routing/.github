@@ -24,6 +24,7 @@ var now = time.Date(2026, 11, 16, 21, 7, 0, 0, time.UTC)
 type fakeGitHub struct {
 	mu         sync.Mutex
 	last       map[string]time.Time // "repo workflow" -> newest run on main
+	rerun      map[string]time.Time // its run_started_at, when re-run later
 	dispatches []string
 	failOn     string
 	auth       []string
@@ -51,7 +52,12 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, `{"total_count": 0, "workflow_runs": []}`)
 			return
 		}
-		fmt.Fprintf(w, `{"workflow_runs": [{"created_at": %q, "event": "workflow_dispatch"}]}`, t.Format(time.RFC3339))
+		started := t
+		if re, ok := f.rerun[repo+" "+parts[4]]; ok {
+			started = re
+		}
+		fmt.Fprintf(w, `{"workflow_runs": [{"created_at": %q, "run_started_at": %q, "event": "workflow_dispatch"}]}`,
+			t.Format(time.RFC3339), started.Format(time.RFC3339))
 	case len(parts) == 6 && parts[5] == "dispatches" && r.Method == "POST":
 		if parts[4] == f.failOn {
 			http.Error(w, `{"message": "Resource not accessible by integration"}`, http.StatusForbidden)
@@ -150,6 +156,18 @@ func TestBackstop(t *testing.T) {
 	}
 }
 
+// A run re-run within the period counts from its new start, not its creation.
+func TestRerun(t *testing.T) {
+	r := "swarm-routing/ns3-upstream-report "
+	f := &fakeGitHub{last: map[string]time.Time{
+		r + "send.yml": now.Add(-5 * time.Hour), r + "read.yml": now.Add(-time.Hour),
+		r + "maintain.yml": now.Add(-time.Hour), r + "rotate.yml": now.Add(-time.Hour),
+	}, rerun: map[string]time.Time{r + "send.yml": now.Add(-20 * time.Minute)}}
+	if out := run(t, f, now, false); len(f.dispatches) != 0 || !strings.Contains(out, "send.yml: last run 2026-11-16T20:47:00Z") {
+		t.Errorf("a re-run counts: %v\n%s", f.dispatches, out)
+	}
+}
+
 func TestDryRunAndFailure(t *testing.T) {
 	f := &fakeGitHub{last: map[string]time.Time{}, failOn: "read.yml"}
 	out := run(t, f, now, true)
@@ -178,7 +196,7 @@ func TestLoad(t *testing.T) {
 		{"repo", "[[entry]]\nrepo = \"other/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\n", "not swarm-routing/<name>"},
 		{"workflow", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"../a\"\nperiod = \"1h\"\n", "not a workflow file name"},
 		{"period", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"5m\"\n", "from 1h to 744h"},
-		{"input", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\ninputs = { \"a b\" = \"x\" }\n", "plain name"},
+		{"input", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\ninputs = { \"z z\" = \"x\", \"a b\" = \"x\" }\n", `input "a b" is not`},
 		{"unknown", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\ncron = \"x\"\n", "unknown key"},
 		{"twice", strings.Repeat("[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\n", 2), "listed twice"},
 	} {
@@ -191,6 +209,9 @@ func TestLoad(t *testing.T) {
 // The repository's own table loads.
 func TestRepositoryTable(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", ".github", "backstop.toml"))
+	if os.IsNotExist(err) {
+		t.Skip("not in a checkout (the image's build stage copies only the Go code)")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
