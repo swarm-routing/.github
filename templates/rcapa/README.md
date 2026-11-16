@@ -1,11 +1,14 @@
 # RCAPA: regressions in a release of {repo}
 
 An **RCAPA** (root cause analysis with corrective and preventive actions) is
-the full record of one **regression in a published release** of this
-project: something that worked in a released version and broke after a
-change. A bug or change that never reached a release needs none (an
-ordinary `bug` issue is enough), and an upstream ns-3 bug is an `NS3-NNN` in
-swarm-routing/ns3-tools. The org's rule and its decision table are in
+the full record of one **regression in a published library**: a version of
+it that another project consumes (a release pinned by a lock, PyPI, a vcpkg
+port) worked, and a later one broke. A bug or change that never reached a
+published version needs none (an ordinary `bug` issue is enough), a Docker
+image needs one only when its composition is the cause, and an upstream
+ns-3 bug is an `NS3-NNN` in swarm-routing/ns3-tools. If nothing consumes
+this repository at a version, write here that RCAPA does not apply to its
+own changes, and why. The org's rule and its decision table are in
 [CONTRIBUTING.md, "RCAPA"](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#rcapa)
 ([ADR-0003](https://github.com/swarm-routing/.github/blob/main/docs/adr/0003-rcapa-for-ns3-bugs-and-released-regressions.md)).
 This page is the project's flow and its index.
@@ -18,10 +21,10 @@ the repository's own from here. Replace every TODO with this project's facts
 
 | | |
 |---|---|
-| Published as | TODO: the release channels this project ships (GitHub release + Zenodo DOI, PyPI, a vcpkg port, images, a site deploy, a dataset release, a plugin version), or "nothing yet: the flow starts at the first release" |
+| Published as | TODO: the versions other projects consume and who pins them (a lock, PyPI, a vcpkg port), or "RCAPA does not apply: <reason>" |
 | ID prefix | TODO: `<PREFIX>-NNN` (CONTRIBUTING "RCAPA", the prefix table) |
 | Ticket | an issue in {repo}, form *Regression in a release (RCAPA)*, title `[rcapa] <PREFIX>-NNN <short description>`, labels `rcapa` and `bug` |
-| Verified by | TODO: the check, gate or reproducer that shows the regression and its fix |
+| Verified by | TODO: the consumer's failing check on the new version against the old one, and this project's own gates |
 | Corrective action | TODO: the fix and its test, and how a fixed release is cut |
 | Preventive action | TODO: the check that would have caught it before the release |
 | Closes when | the fix is merged **and** a release of the channel above carries it |
