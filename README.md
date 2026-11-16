@@ -30,6 +30,14 @@ jobs:
 
 Inputs are documented at the top of the workflow file.
 
+## Develop
+
+New here? [docs/development.md](docs/development.md) is the developer guide:
+the tools to install, how to run every self-test and lint, how to try a
+change against another repository, what CI checks and how to read a red
+run. How changes are proposed, reviewed and released is
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Epics
 
 <!-- epics:begin -->
