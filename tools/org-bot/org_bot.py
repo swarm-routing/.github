@@ -557,6 +557,9 @@ def generate(task, repo, clone, data, out, skip=None):
         )
         if r.returncode:
             raise Failure(f"bestpractices answers: {r.stderr.strip() or r.stdout.strip()}")
+        # intent-to-add: a new file's content is in `git diff`, so the branch name
+        # (a hash of the diff) changes with it and a changed file is a new PR
+        sh(["git", "-C", clone, "add", "-N", ".bestpractices.json"])
         # its stderr: the file written, then the count by status
         out.append(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "")
         return out
