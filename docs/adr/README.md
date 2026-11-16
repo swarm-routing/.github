@@ -11,3 +11,4 @@ applies to every repository unless it says otherwise.
 |-----|----------|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions |
 | [0002](0002-pipelines-are-go.md) | Pipelines are written in Go; their image is distroless |
+| [0003](0003-rcapa-for-ns3-bugs-and-released-regressions.md) | An RCAPA for every ns-3 bug and every regression in a published release |

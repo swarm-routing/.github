@@ -491,6 +491,7 @@ def check(repo, online=False, fetch=None):
         lack = [a for a in adrs if a not in adr_index]
         if lack:
             r.add("WARN", "docs/adr", "ADRs missing from docs/adr/README.md", lack)
+    check_rcapa(repo, readme, pages, r)
 
     # --- relative links -----------------------------------------------------------
     broken = []
@@ -524,6 +525,45 @@ def check(repo, online=False, fetch=None):
         r.add("PASS", "links", "every relative link resolves")
     check_ai_facts(repo, r, online, fetch)
     return r
+
+
+# --- the project's RCAPA flow (ADR-0003) -------------------------------------
+
+RCAPA = "docs/rcapa/README.md"
+# WARN while org-bot's refresh and the per-repository flows roll out; FAIL once
+# every repository has its docs/rcapa/README.md (swarm-routing/.github ADR-0003)
+RCAPA_LEVEL = "WARN"
+
+
+def check_rcapa(repo, readme, pages, r):
+    """docs/rcapa/README.md exists, the README links it, and it indexes every RCAPA."""
+    index = read(repo, RCAPA)
+    if index is None:
+        r.add(
+            RCAPA_LEVEL,
+            "rcapa",
+            f"no {RCAPA}: the project's RCAPA flow (org-sync seeds it from templates/rcapa/)",
+        )
+    else:
+        if "TODO" in index:
+            r.add("WARN", "rcapa", f"{RCAPA} still has the seed's TODO placeholders")
+        files = sorted(
+            os.path.basename(p) for p in pages if re.match(r"docs/rcapa/rcapa-[^/]+\.md$", p)
+        )
+        lack = [f for f in files if f not in index]
+        if lack:
+            r.add("WARN", "rcapa", f"RCAPAs missing from {RCAPA}'s index", lack)
+        else:
+            r.add("PASS", "rcapa", f"{RCAPA} exists and indexes every RCAPA")
+    if readme is not None:
+        if re.search(r"\]\((?:\./)?docs/rcapa/(?:README\.md)?(?:#[^)]*)?\)", FENCE.sub("", readme)):
+            r.add("PASS", "rcapa", f"README links {RCAPA}")
+        else:
+            r.add(
+                RCAPA_LEVEL,
+                "rcapa",
+                f"README does not link {RCAPA} (org-sync's Develop section: org_sync.py apply)",
+            )
 
 
 # --- the developer guide (#490) ----------------------------------------------
@@ -1094,6 +1134,7 @@ def self_test():
         "See [its page](https://swarm-routing.github.io/projects/ARA/), the image "
         "`ghcr.io/swarm-routing/ns3-dev` and [AGENTS.md](AGENTS.md)\n\n"
         "Develop: [docs/development.md](docs/development.md)\n\n"
+        "RCAPA: [docs/rcapa/README.md](docs/rcapa/README.md)\n\n"
         "```\ncore/   the core\n```\n\n## Epics\n\nx\n\n## License\n\n[LICENSING.md](LICENSING.md)\n"
     )
     base = {
@@ -1108,6 +1149,7 @@ def self_test():
         "docs/fidelity.md": "# F\n",
         DEV_GUIDE: "# Developer guide\n\n" + "".join(f"## {h}\n\ntext\n\n" for h in DEV_HEADINGS),
         "docs/adr/README.md": "| [0001](0001-x.md) | x |\n",
+        "docs/rcapa/README.md": "# RCAPA\n\n| ID | RCAPA |\n|----|-------|\n",
         "docs/adr/0001-x.md": "# x\n",
     }
 
@@ -1419,6 +1461,23 @@ def self_test():
     expect("an orphan docs page warns", has(r, "WARN", "linked from neither"))
     r = repo({"docs/second.md": "# S\n"}, drop=("docs/README.md",))
     expect("two docs pages and no map warns", has(r, "WARN", "no docs/README.md"))
+    r = repo({})
+    expect(
+        "the rcapa flow and the README's link pass",
+        has(r, "PASS", "indexes every RCAPA") and has(r, "PASS", "README links docs/rcapa"),
+    )
+    r = repo({}, drop=("docs/rcapa/README.md",))
+    expect("no docs/rcapa/README.md warns while rolling out", has(r, "WARN", "no docs/rcapa"))
+    r = repo({"docs/rcapa/rcapa-x.md": "# AHN-001\n"})
+    expect("an RCAPA missing from the index warns", has(r, "WARN", "missing from docs/rcapa"))
+    r = repo({"docs/rcapa/README.md": "# RCAPA\n\n| Published as | TODO |\n"})
+    expect("the seed's TODOs warn", has(r, "WARN", "TODO placeholders"))
+    r = repo(
+        {"README.md": readme_ok.replace("RCAPA: [docs/rcapa/README.md](docs/rcapa/README.md)", "")}
+    )
+    expect(
+        "a README without the link to docs/rcapa warns", has(r, "WARN", "does not link docs/rcapa")
+    )
     r = repo({"docs/adr/0002-y.md": "# y\n"})
     expect("an ADR missing from the index warns", has(r, "WARN", "missing from docs/adr"))
     r = repo({"README.md": readme_ok + "\n[gone](docs/gone.md)\n"})
