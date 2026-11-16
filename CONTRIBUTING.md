@@ -478,7 +478,8 @@ here for the rest.
 The README links it through org-sync's managed `develop` section (the
 "Develop" heading, `templates/readme-develop.md`), placed before the first
 of Contributing, Epics or Licence. `tools/docs-review/check_docs.py` fails
-when the guide is missing, lacks a standard section or the README does not
+when the guide is missing, lacks a standard section, has them out of
+order or the README does not
 link it.
 
 ## Outside contributions

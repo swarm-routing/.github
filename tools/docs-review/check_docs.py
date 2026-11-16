@@ -545,13 +545,25 @@ def check_dev_guide(repo, readme, r):
         )
     else:
         heads = [h.lower() for h in dev_headings(guide)]
-        lack = [h for h in DEV_HEADINGS if not any(x.startswith(h.lower()) for x in heads)]
+        at = {
+            h: next((i for i, x in enumerate(heads) if x.startswith(h.lower())), None)
+            for h in DEV_HEADINGS
+        }
+        lack = [h for h in DEV_HEADINGS if at[h] is None]
+        found = [at[h] for h in DEV_HEADINGS if at[h] is not None]
         if lack:
             r.add("FAIL", "development", f"{DEV_GUIDE} lacks standard sections", lack)
+        elif found != sorted(found):
+            r.add(
+                "FAIL",
+                "development",
+                f"{DEV_GUIDE}'s standard sections are out of order (the template's order)",
+                DEV_HEADINGS,
+            )
         else:
             r.add("PASS", "development", f"{DEV_GUIDE} has every standard section")
     if readme is not None:
-        if re.search(r"\]\((?:\./)?docs/development\.md(?:#[^)]*)?\)", readme):
+        if re.search(r"\]\((?:\./)?docs/development\.md(?:#[^)]*)?\)", FENCE.sub("", readme)):
             r.add("PASS", "development", f"README links {DEV_GUIDE}")
         else:
             r.add(
@@ -1334,6 +1346,20 @@ def self_test():
     expect("a standard heading may go on (Build and install)", not r.fail)
     r = repo({"README.md": readme_ok.replace("[docs/development.md](docs/development.md)", "x")})
     expect("a README that does not link the guide fails", has(r, "FAIL", "does not link"))
+    r = repo(
+        {
+            "README.md": readme_ok.replace(
+                "[docs/development.md](docs/development.md)",
+                "\n```\n[docs/development.md](docs/development.md)\n```\n",
+            )
+        }
+    )
+    expect("a link inside a code block does not count", has(r, "FAIL", "does not link"))
+    swapped = base[DEV_GUIDE].replace("## Build\n", "## @@\n").replace("## Test\n", "## Build\n")
+    r = repo({DEV_GUIDE: swapped.replace("## @@\n", "## Test\n")})
+    expect("standard sections out of order fail", has(r, "FAIL", "out of order"))
+    extra = base[DEV_GUIDE].replace("## Run\n", "## Our own section\n\nx\n\n## Run\n")
+    expect("a repository's own section between them passes", not repo({DEV_GUIDE: extra}).fail)
     with open(os.path.join(ORG_ROOT, "templates", "development.md"), encoding="utf-8") as f:
         expect(
             "templates/development.md has exactly DEV_HEADINGS, in order",
