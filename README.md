@@ -1,5 +1,7 @@
 # swarm-routing/.github
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16820/badge)](https://www.bestpractices.dev/projects/16820)
+
 Org-wide defaults for every `swarm-routing` repository.
 
 | Path | Purpose |
