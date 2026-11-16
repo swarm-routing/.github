@@ -84,7 +84,7 @@ lists them in the order that matters.
 
 | Repository | Epic | Status | Sub-issues closed |
 |------------|------|--------|-------------------|
-| [.github](https://github.com/swarm-routing/.github) | [#6](https://github.com/swarm-routing/.github/issues/6) org repo template — security policy, README badges and community files, applied and kept in sync by a tool and a skill | In progress | 16 / 29 |
+| [.github](https://github.com/swarm-routing/.github) | [#6](https://github.com/swarm-routing/.github/issues/6) org repo template — security policy, README badges and community files, applied and kept in sync by a tool and a skill | In progress | 16 / 28 |
 | [.github](https://github.com/swarm-routing/.github) | [#14](https://github.com/swarm-routing/.github/issues/14) Repository hardening for every org repo: Scorecard, rulesets, merge policy, CI hygiene | In progress | 5 / 18 |
 | [.github](https://github.com/swarm-routing/.github) | [#50](https://github.com/swarm-routing/.github/issues/50) One repository per swarm protocol: create the missing ones (Termite, HOPNET) | In progress | 2 / 3 |
 | [.github](https://github.com/swarm-routing/.github) | [#107](https://github.com/swarm-routing/.github/issues/107) ns-3 images: every protocol release and campaign builds on ns3-containers | In progress | 6 / 7 |
@@ -125,7 +125,7 @@ lists them in the order that matters.
 | [ns3-containers](https://github.com/swarm-routing/ns3-containers) | [#19](https://github.com/swarm-routing/ns3-containers/issues/19) OS and compiler coverage — the platforms ns-3 supports and researchers use | In progress | 2 / 6 |
 | [ns3-containers](https://github.com/swarm-routing/ns3-containers) | [#36](https://github.com/swarm-routing/ns3-containers/issues/36) image test pipeline — every image built is tested by digest (security, structure, unit, profile, integration, regression, downstream) before any tag moves | In progress | 5 / 9 |
 | [ns3-containers](https://github.com/swarm-routing/ns3-containers) | [#172](https://github.com/swarm-routing/ns3-containers/issues/172) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 1 |
-| [ns3-containers](https://github.com/swarm-routing/ns3-containers) | [#11](https://github.com/swarm-routing/ns3-containers/issues/11) multi-platform ns3-dev images (linux/amd64 + linux/arm64) with docker buildx | Planned | no sub-issues yet |
+| [ns3-containers](https://github.com/swarm-routing/ns3-containers) | [#11](https://github.com/swarm-routing/ns3-containers/issues/11) multi-platform ns3-dev images (linux/amd64 + linux/arm64) with docker buildx | Planned | 0 / 1 |
 | [ns3-containers](https://github.com/swarm-routing/ns3-containers) | [#12](https://github.com/swarm-routing/ns3-containers/issues/12) developer documentation for the ns3-dev images (usage, per-image pages, debugging, CI/CD) kept current by AI review | Planned | 0 / 7 |
 | [ns3-containers](https://github.com/swarm-routing/ns3-containers) | [#27](https://github.com/swarm-routing/ns3-containers/issues/27) security refresh — keep the supported ns-3 release's images patched (scheduled base refresh + scan-triggered rebuilds; older releases on demand) | Planned | 0 / 4 |
 | [ns3-swarm-core](https://github.com/swarm-routing/ns3-swarm-core) | [#177](https://github.com/swarm-routing/ns3-swarm-core/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
