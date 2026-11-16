@@ -16,7 +16,7 @@
 | `SUPPORT.md` | docs: the default support policy | `GPL-2.0-only` |
 | `CODE_OF_CONDUCT.md` | the Contributor Covenant 2.1, adapted only by its contact | `CC-BY-4.0` (its own licence) |
 | `profile/`, `CONTRIBUTING.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SECURITY.md` | docs | `GPL-2.0-only` |
-| `docs/` | docs: the agent reference pages (`tools.md`, `where-to-look.md`) | `GPL-2.0-only` |
+| `docs/` | docs: the agent reference pages (`tools.md`, `where-to-look.md`), the ADRs (`docs/adr/`) | `GPL-2.0-only` |
 | `DCO` | the Developer Certificate of Origin 1.1, verbatim | its own notice: The Linux Foundation, verbatim copies only |
 | everything else | | `GPL-2.0-only` |
 
@@ -30,7 +30,9 @@ MIT option). Each source file states its licence in its
 - **The dual-licensed paths** (a simulator-free `core/`, the standalone
   tooling) may be used under MIT on their own — in another simulator, a routing
   daemon, firmware, or a closed product — keeping the copyright notice and the
-  MIT text, or under GPL-2.0-only.
+  MIT text, or under GPL-2.0-only. Each such source file (`.h`, `.hpp`,
+  `.cc`, `.cpp`, `.go`, `.py`, `.sh`) says so in its header (`//` comments
+  for C++ and Go, `#` for Python and shell).
 - **The ns-3 modules, the site, docs and data are GPL-2.0-only.** An ns-3
   module builds only inside a GPL-2.0 ns-3 tree, so an MIT option would change
   nothing for it. `CODE_OF_CONDUCT.md` is the exception: it is the Contributor

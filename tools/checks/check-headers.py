@@ -13,7 +13,10 @@ Every swarm-routing repo is licensed per directory, as AntHocNet is:
 
 The MIT option is only real while three things hold, so this gate checks them:
 
-1. every covered file carries ``SPDX-License-Identifier`` in its first lines;
+1. every covered file (C++, Go, Python, shell) carries
+   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and
+   Go, ``#`` for Python and shell; a Go file's header is followed by a blank
+   line, so it is not the package's doc comment);
 2. every covered file under a dual root carries exactly
    ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on
    purpose, with the reason in the caller);
@@ -54,7 +57,7 @@ ORG_COPYRIGHT_RE = re.compile(
     r"Daniel Joppi \(https://github\.com/swarm-routing\)\s*$"
 )
 ORG_COPYRIGHT = "Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)"
-EXTS = (".h", ".hpp", ".cc", ".cpp", ".py", ".sh")
+EXTS = (".h", ".hpp", ".cc", ".cpp", ".go", ".py", ".sh")
 CXX = (".h", ".hpp", ".cc", ".cpp")
 STD_HEADERS = frozenset(
     """
@@ -254,6 +257,28 @@ def self_test() -> int:
             "dual tool",
         ),
         (
+            "tools/cmd/x/main.go",
+            "// "
+            + ORG_COPYRIGHT
+            + "\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n\npackage main\n",
+            False,
+            "dual Go tool",
+        ),
+        (
+            "tools/cmd/x/main.go",
+            "// " + ORG_COPYRIGHT + "\n// SPDX-License-Identifier: GPL-2.0-only\n\npackage main\n",
+            True,
+            "GPL Go file in dual root",
+        ),
+        ("cmd/x/main.go", "package main\n", True, "Go file without a header"),
+        (
+            "cmd/x/main.go",
+            "//go:build linux\n\n// " + ORG_COPYRIGHT + "\n"
+            "// SPDX-License-Identifier: GPL-2.0-only\n\npackage main\n",
+            False,
+            "Go header after a build constraint",
+        ),
+        (
             "tools/gpl_glue.py",
             "# SPDX-License-Identifier: GPL-2.0-only\n",
             False,
@@ -337,6 +362,10 @@ def self_test() -> int:
             print(
                 f"SELF-TEST FAIL ({label}): expected {'a finding' if fire else 'silence'}, got {got}"
             )
+    for name in ("cmd/x/main.go", "core/a.cc", "tools/x.py", "tools/x.sh"):
+        if not name.endswith(EXTS):  # the scan covers every source type
+            fails += 1
+            print(f"SELF-TEST FAIL: {name} is not scanned")
     fails += self_test_core_dep()
     print("self-test:", "PASS" if not fails else f"{fails} FAILURE(S)")
     return 1 if fails else 0

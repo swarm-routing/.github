@@ -65,7 +65,7 @@ import sys
 import tempfile
 import tomllib
 
-SOURCE = (".h", ".hpp", ".cc", ".cpp", ".py", ".sh")
+SOURCE = (".h", ".hpp", ".cc", ".cpp", ".go", ".py", ".sh")
 CXX = (".h", ".hpp", ".cc", ".cpp")
 COPYRIGHT = "Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)"
 DUAL, GPL = "MIT OR GPL-2.0-only", "GPL-2.0-only"
