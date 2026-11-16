@@ -346,7 +346,12 @@ A consumer names a **release** of its dependency, never a moving ref:
   against the release (tag, commit, asset and SHA256), checks that the
   `Makefile` and the ns-3 CI name the tag, a benchmark cell's dependency the
   commit and `core-deps` the commit or the tag, and fails when a newer
-  swarm-core release is out; between releases nothing moves.
+  swarm-core release is out; between releases nothing moves. In vcpkg mode
+  (a root `vcpkg.json` depending on `swarm-core`) it also checks that
+  `core/CMakeLists.txt` finds the package instead of reading the lock, that
+  the `overrides` entry pins the lock's version, and that the
+  `vcpkg-configuration.json` baseline is a commit on the registry's `main`
+  whose `versions/baseline.json` holds that version and port-version.
 - **The moving-ref check** (`tools/protocol-review/check_invariants.py`, the
   `protocol-review` skill): on the lines a diff adds, a CMake `GIT_TAG` that is
   not a literal `vX.Y.Z`, a git `FetchContent` of a swarm-routing repository
@@ -356,8 +361,9 @@ A consumer names a **release** of its dependency, never a moving ref:
   fail, set in the PR that switches a repository to its lock. A moving ref
   belongs in `canary-dependencies:`.
 - The org-managed AGENTS.md section `dependencies` (`templates/agents/dependencies-lock.md`,
-  `dependencies-pin.md`) states which of the two a repository uses; org-sync
-  picks the text by the presence of `swarm-core.lock`.
+  `dependencies-pin.md`, `dependencies-vcpkg.md`) states which a repository
+  uses; org-sync picks the text by the presence of `swarm-core.lock` and of a
+  root `vcpkg.json` depending on `swarm-core` (vcpkg mode, below).
 
 ### Bumping
 
@@ -399,17 +405,67 @@ A switch from the commit pin to the lock is one PR per repository: write the
 lock with `render`, replace the git `FetchContent` with the lock reader, move
 the Makefile, `core-deps`, the ns-3 and benchmark dependencies as above, add
 `canary-dependencies:`, set `moving_refs = "fail"`, add the lock to `make dist`,
-and update AGENTS.md (swarm-routing/ARA#159 is a worked example). Later steps:
-`find_package(swarm-core CONFIG)` from an installed release, then the vcpkg
-registry (below, swarm-routing/ns3-swarm-core#135).
+and update AGENTS.md (swarm-routing/ARA#159 is a worked example). The next
+step is vcpkg mode, below.
+
+### vcpkg mode: `core/` from the published port
+
+Maintainer decision 2026-11-16 (#489): an org repository's `core/` takes
+swarm-core **through vcpkg** in manifest mode, so every PR also tests the port
+an outside consumer installs (the registry, below). The ns-3 build keeps the
+release tag, as vcpkg has no ns-3 port (#440).
+
+- **The files.** At the repository root, `vcpkg.json` depends on
+  `swarm-core` and pins it with an `overrides` entry (version and
+  `port-version`: the version is explicit, never only a `version>=` minimum);
+  `vcpkg-configuration.json` takes swarm-core from
+  swarm-routing/vcpkg-registry at a `baseline` commit of its `main` (the
+  port's version and its release asset's SHA512: reproducible as the lock is)
+  and vcpkg's helper ports (`vcpkg-cmake`, `vcpkg-cmake-config`) from the
+  `builtin` registry at a microsoft/vcpkg commit. Both files are JSON written
+  as `json.dumps(indent=2)` writes it, since org-bot rewrites them so.
+- **The CMake.** `core/CMakeLists.txt` calls `find_package(swarm-core CONFIG
+  REQUIRED)` (the installed package, swarm-routing/ns3-swarm-core#137, target
+  `swarm::core`) and reads no lock; with the vcpkg toolchain file it gets the
+  port, with `CMAKE_PREFIX_PATH` any install. As the manifest is at the root,
+  it sets `VCPKG_MANIFEST_DIR` to `..` before `project()` when the caller did
+  not. `-DSWARM_CORE_DIR=<checkout>/core` stays the development override.
+- **The lock stays**, as the record of the release the ns-3 build uses: the
+  `Makefile`, the ns-3 `dependencies:` and `core-deps` name its tag and
+  commit as above, and `make dist` ships it.
+- **The CI job.** `swarm-routing/.github/.github/actions/setup-vcpkg@main`
+  (an org composite action, so `@main` as the reusable workflows): vcpkg at a
+  pinned microsoft/vcpkg commit (its `vcpkg-commit` input; the configuration's
+  `builtin` baseline is fetched beside it, one shallow fetch each), and
+  vcpkg's binary cache on the org's GitHub Packages NuGet feed
+  (`https://nuget.pkg.github.com/swarm-routing/index.json`, through mono,
+  which the action installs). The job asks `permissions: packages: write`
+  for `GITHUB_TOKEN`, no secret; on a fork PR the cache is read-only. The
+  action's commands carry their own `timeout`; the caller caps the step with
+  `timeout-minutes` (rule 5). Its `toolchain` output is the
+  `-DCMAKE_TOOLCHAIN_FILE` value.
+- **One swarm-core per repository.** `swarm-core / pin` (vcpkg mode, see
+  Checks) fails unless the override pins the lock's version and the registry
+  baseline holds exactly that version and port-version, so the `core/` and
+  ns-3 builds never take two swarm-core releases.
+- **Bumping.** org-bot's `swarm-core-pin` task moves the lock, the pin lines,
+  the override and the registry baseline in one PR, once the registry's
+  `main` holds the new release (its port PR, opened by the release, merged);
+  until then it opens nothing and the check stays red, as in lock mode.
+- **The switch** is one PR per repository: the two vcpkg files, the CMake
+  above, the core job on `setup-vcpkg` (core tests identical before and
+  after), `make core-test` on `VCPKG_ROOT`, AGENTS.md through org-sync.
+  swarm-routing/ARA is the pilot; the site's WebAssembly build follows
+  (swarm-routing/swarm-routing.github.io#153).
 
 ### Outside the org: the vcpkg registry
 
 A project outside the org takes the simulator-free C++ cores from the org's
 vcpkg git registry, [swarm-routing/vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry)
-(epic #436, maintainer decision 2026-11-15). In-org repositories keep the
-lock above: the registry is for consumers outside the org, and later for the
-site's WebAssembly build (swarm-routing/swarm-routing.github.io#153).
+(epic #436, maintainer decision 2026-11-15). In-org repositories move onto it
+too, in vcpkg mode (above, #489), so a broken port is found by our own CI
+first; the site's WebAssembly build follows
+(swarm-routing/swarm-routing.github.io#153).
 
 - **What is a port.** One per released core: `swarm-core` today; `ara-core`,
   `beeadhoc-core`, `termite-core`, `hopnet-core` and `anthocnet-core` wait in

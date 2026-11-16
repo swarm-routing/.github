@@ -402,12 +402,19 @@ def git_slug(repo_dir):
 
 
 def swarm_core_mode(repo_dir):
-    """How the repository gets swarm-core's core/: "lock" (swarm-core.lock), "pin"
+    """How the repository gets swarm-core's core/: "vcpkg" (swarm-core.lock and a
+    vcpkg.json that depends on swarm-core, #489), "lock" (swarm-core.lock), "pin"
     (a commit SWARM_CORE_REF in core/CMakeLists.txt) or None. The `dependencies`
     section of AGENTS.md renders only where one holds, in the matching text, so
     it never says what the repository cannot back (swarm-routing/ns3-swarm-core#134)."""
     if os.path.exists(os.path.join(repo_dir, "swarm-core.lock")):
-        return "lock"
+        try:
+            deps = json.loads(read(os.path.join(repo_dir, "vcpkg.json")) or "{}")
+            deps = deps.get("dependencies") or []
+        except (ValueError, AttributeError):
+            deps = []
+        names = [d.get("name") if isinstance(d, dict) else d for d in deps]
+        return "vcpkg" if "swarm-core" in names else "lock"
     cmake = read(os.path.join(repo_dir, "core", "CMakeLists.txt")) or ""
     return "pin" if re.search(r"^\s*set\(\s*SWARM_CORE_REF\b", cmake, re.M) else None
 

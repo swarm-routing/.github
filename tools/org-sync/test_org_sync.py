@@ -1077,6 +1077,17 @@ check(
     and run("check", d)[0] == 0,
     "a lock: the lock text replaces the pin text",
 )
+write(os.path.join(d, "vcpkg.json"), '{"dependencies": ["swarm-core"]}\n')
+rc, out = run("check", d)
+check(rc == 1 and "AGENTS.md#dependencies" in out, "vcpkg.json added: the section drifts")
+run("apply", d)
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "through vcpkg in manifest mode" in agents
+    and "`FetchContent`" not in agents
+    and run("check", d)[0] == 0,
+    "vcpkg mode (#489): the vcpkg text replaces the lock text",
+)
 
 # 6. The JSON item merges only the org's keys.
 p = os.path.join(d, ".claude/settings.json")

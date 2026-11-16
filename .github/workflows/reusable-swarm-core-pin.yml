@@ -13,6 +13,8 @@ name: Reusable swarm-core pin
 # A repository with a release lock, swarm-core.lock (swarm-routing/ns3-swarm-core#134),
 # is checked in lock mode instead: one release tag everywhere, the lock verified
 # against the release, and red only when a newer swarm-core release is out.
+# With a root vcpkg.json on swarm-core (vcpkg mode, #489), also: the override
+# pins the lock's version and the swarm-routing/vcpkg-registry baseline holds it.
 # The checker is tools/checks/check-swarm-core-pin.py in swarm-routing/.github
 # (with tools/checks/release_lock.py).
 # Caller:
