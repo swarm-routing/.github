@@ -10,7 +10,10 @@ before changing anything. Org-wide conventions:
 Org-wide defaults for every `swarm-routing` repository: the profile page,
 default issue forms and PR template, the label taxonomy, the C++ style, and the
 reusable workflows other repos call (`reusable-ns3-ci.yml`, `reusable-ns3-image.yml`,
-`reusable-release.yml`, `reusable-benchmark-cell.yml`, `sync-labels.yml`).
+`reusable-release.yml`, `reusable-benchmark-cell.yml`, `reusable-python-ci.yml`,
+`reusable-go-ci.yml`, `sync-labels.yml`). Pipelines (code a workflow runs) are
+written in Go, skill scripts stay Python ([ADR-0002](docs/adr/0002-pipelines-are-go.md),
+CONTRIBUTING § Languages; the existing Python tools move one at a time, #531).
 Files here only take effect from `main` (GitHub reads community defaults and
 `@main` workflow references from the default branch).
 
@@ -22,7 +25,7 @@ SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, DCO, .github/FUNDING.yml   the org 
 tools/<tool>/                       the org's scripts, each with --self-test (checks, org-sync, org-bot, epics, zenodo, docs-review, fidelity, protocol-review, pr-status, lit-search, repo-settings, release)
 templates/                          what org-sync renders into each repository; templates/rulesets/: the settings profiles
 .github/workflows/, .github/actions/   the reusable workflows other repos call, this repo's CI and bots, the bot token
-docs/                               tools.md (every file, tool, workflow and self-test), where-to-look.md (the full task table)
+docs/                               tools.md (every file, tool, workflow and self-test), where-to-look.md (the full task table), adr/ (the org's decisions)
 ```
 
 Before adding, changing or running a tool or a workflow, read
@@ -62,7 +65,7 @@ Org-wide (1–9), then this repo's own.
    [ADR-0028](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0028-core-is-dual-licensed.md)). A
    simulator-free `core/` and the standalone tooling are `MIT OR GPL-2.0-only`;
    ns-3 modules, the site, docs and data are `GPL-2.0-only`. Every original
-   `.h`/`.hpp`/`.cc`/`.cpp`/`.py`/`.sh` starts with
+   `.h`/`.hpp`/`.cc`/`.cpp`/`.go`/`.py`/`.sh` starts with
    `// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)` +
    `// SPDX-License-Identifier: <MIT OR GPL-2.0-only | GPL-2.0-only>` (`#`
    comments where needed), matching its directory in `LICENSING.md`; an
@@ -354,6 +357,7 @@ changing what the row names.
 | Cut a release of any org repository, or change how releases are made | `.github/workflows/reusable-release.yml` |
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
+| Choose a language, or write a Go pipeline tool and its CI | `docs/adr/0002-pipelines-are-go.md`, CONTRIBUTING § Languages, `reusable-go-ci.yml`; migration epic #531 |
 | Change the licence rules or their gate | `tools/checks/check-headers.py`, `reusable-licence-check.yml`, CONTRIBUTING rule 1 |
 | Change how outside contributions are accepted (DCO, contributor copyright lines) | CONTRIBUTING "Outside contributions", `tools/checks/check-dco.py`, `reusable-dco.yml` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |

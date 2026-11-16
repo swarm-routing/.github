@@ -1,0 +1,79 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Go CI self-test
+
+# Proves reusable-go-ci.yml from this checkout on two fixture modules in
+# tools/checks/fixtures/go-ci/:
+#   good   every check passes and the job passes; the coverage artifact holds
+#          coverage.out and a Cobertura coverage.xml reading 100 %
+#   bad    builds, but gofmt, go vet, staticcheck and go test each have one
+#          finding: `failed` must be exactly "gofmt vet staticcheck test"
+#          (called with fail-on-findings: false, so this run stays green; the
+#          `failed` list is what a caller's job fails on)
+# govulncheck is proven clean only: a fixture with a vulnerable dependency
+# would raise a real Dependabot alert on this repository.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reusable-go-ci.yml', '.github/workflows/go-ci-selftest.yml', 'tools/checks/fixtures/go-ci/**']
+  pull_request:
+    paths: ['.github/workflows/reusable-go-ci.yml', '.github/workflows/go-ci-selftest.yml', 'tools/checks/fixtures/go-ci/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  good:
+    uses: ./.github/workflows/reusable-go-ci.yml
+    with:
+      working-directory: tools/checks/fixtures/go-ci/good
+      coverage-artifact: go-coverage-good
+
+  bad:
+    uses: ./.github/workflows/reusable-go-ci.yml
+    with:
+      working-directory: tools/checks/fixtures/go-ci/bad
+      coverage-artifact: go-coverage-bad
+      fail-on-findings: false
+
+  check:
+    needs: [good, bad]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Each fixture failed exactly the expected checks
+        env:
+          GOOD_RESULT: ${{ needs.good.result }}
+          GOOD: ${{ needs.good.outputs.failed }}
+          BAD_RESULT: ${{ needs.bad.result }}
+          BAD: ${{ needs.bad.outputs.failed }}
+        run: |
+          set -euo pipefail
+          echo "good: result=$GOOD_RESULT failed='$GOOD'"
+          echo "bad:  result=$BAD_RESULT failed='$BAD'"
+          if [ "$GOOD_RESULT" != success ] || [ -n "$GOOD" ]; then
+            echo "::error::the good fixture must pass every check"; exit 1
+          fi
+          [ "$BAD_RESULT" = success ] || { echo "::error::the bad fixture's job must finish (fail-on-findings: false)"; exit 1; }
+          [ "$BAD" = "gofmt vet staticcheck test" ] || { echo "::error::the bad fixture must fail exactly 'gofmt vet staticcheck test', got '$BAD'"; exit 1; }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: go-coverage-good
+          path: coverage
+      - name: The good fixture's coverage converts (Go profile and Cobertura, 100 %)
+        run: |
+          set -euo pipefail
+          cat coverage/summary.txt
+          head -n 1 coverage/coverage.out | grep -qx 'mode: atomic'
+          test -s coverage/coverage.html
+          # the root element's line-rate: 1 (gocover-cobertura writes it as "1")
+          rate=$(grep -o '<coverage line-rate="[^"]*"' coverage/coverage.xml | head -n 1 | cut -d'"' -f2)
+          echo "coverage.xml line-rate $rate"
+          [ "$rate" = 1 ] || { echo "::error::Cobertura line-rate '$rate', want 1"; exit 1; }

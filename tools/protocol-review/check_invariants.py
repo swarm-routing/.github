@@ -65,7 +65,7 @@ import sys
 import tempfile
 import tomllib
 
-SOURCE = (".h", ".hpp", ".cc", ".cpp", ".py", ".sh")
+SOURCE = (".h", ".hpp", ".cc", ".cpp", ".go", ".py", ".sh")
 CXX = (".h", ".hpp", ".cc", ".cpp")
 COPYRIGHT = "Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)"
 DUAL, GPL = "MIT OR GPL-2.0-only", "GPL-2.0-only"
@@ -179,12 +179,28 @@ def under(path, roots):
     return any(r == "" or path == r.rstrip("/") or path.startswith(r) for r in roots)
 
 
-def head(repo, f, n=6):
+COPYRIGHT_LINE = re.compile(r"^\s*(?://|#)\s*Copyright \(c\)", re.IGNORECASE)
+
+
+def head(repo, f, n=6, cap=64):
+    """The first n lines, where copyright lines after the first do not count
+    (a contributor's line never pushes the SPDX line out, as check-headers.py's
+    window); at most cap lines in all."""
+    out, counted, holders = [], 0, 0
     try:
         with open(os.path.join(repo, f), encoding="utf-8", errors="replace") as fh:
-            return [next(fh, "") for _ in range(n)]
+            for line in fh:
+                if counted >= n or len(out) >= cap:
+                    break
+                out.append(line)
+                if COPYRIGHT_LINE.match(line):
+                    holders += 1
+                    if holders > 1:
+                        continue
+                counted += 1
     except OSError:
         return []
+    return out
 
 
 class Report:
@@ -643,6 +659,22 @@ def self_test():
     expect(
         "rule 1: another copyright line with the right SPDX passes", not has(r, "FAIL", "rule 1")
     )
+    r = repo(
+        {},
+        {
+            "ns3/m.go": "//go:build linux\n\n// "
+            + COPYRIGHT
+            + "\n// Copyright (c) 2027 Ada Lovelace\n// Copyright (c) 2027 Alan Turing\n"
+            "// Copyright (c) 2027 Grace Hopper\n// SPDX-License-Identifier: GPL-2.0-only\n"
+            "\npackage m\n"
+        },
+    )
+    expect(
+        "rule 1: a Go header after a build line and three contributors passes",
+        has(r, "PASS", "rule 1") and not has(r, "FAIL", "rule 1"),
+    )
+    r = repo({}, {"ns3/m.go": "package m\n"})
+    expect("rule 1: a Go file without a header fails", has(r, "FAIL", "rule 1"))
     r = repo({}, {".claude/hooks/h.sh": "echo hi\n"})
     expect("rule 1: .claude/ is not checked", not has(r, "FAIL", "rule 1"))
 

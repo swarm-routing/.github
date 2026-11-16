@@ -17,12 +17,13 @@ is the long form.
    CI and image scripts) are `MIT OR GPL-2.0-only`; ns-3 modules, the site,
    docs and data are `GPL-2.0-only`. Each repo carries `LICENSE` (GPL-2.0),
    `LICENSE-MIT` and a `LICENSING.md` map. Every original `.h`, `.hpp`, `.cc`,
-   `.cpp`, `.py`, `.sh` starts with
+   `.cpp`, `.go`, `.py`, `.sh` starts with
    ```cpp
    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
    // SPDX-License-Identifier: MIT OR GPL-2.0-only   (or GPL-2.0-only)
    ```
-   (`#` comments for Python and shell). An outside contributor may add their
+   (`//` for C++ and Go, a Go file's header followed by a blank line so it is
+   not the package comment; `#` comments for Python and shell). An outside contributor may add their
    own `Copyright (c) <year> <Name>` line beneath the org line, never in its
    place, and signs off every commit ([Outside contributions](#outside-contributions)).
    The dependency goes one way: GPL code
@@ -567,6 +568,45 @@ first; the site's WebAssembly build follows
   registry's merge queue lands it once its required checks pass (#461; a
   refusal is a warning in the job, and then a person merges it). For a
   missed release a person runs the same command and opens the PR.
+
+## Languages
+
+Which language a piece of code is written in follows what it is
+([ADR-0002](docs/adr/0002-pipelines-are-go.md), maintainer decision
+2026-11-16):
+
+- **Pipelines are Go.** Code a workflow runs (a check, a gate, a bot task, a
+  release step) is written in Go; Python only where no reasonable Go option
+  exists, with the reason in the PR. The existing Python pipeline tools move
+  one at a time, each port proving byte-identical output with the Python
+  version on the same fixtures (epic #531); none moves in bulk.
+- **Skill scripts stay Python** by default; a skill may call a Go tool.
+- **swarm-routing/ns3-tools stays Python + C++**; protocol cores and ns-3
+  modules stay C++.
+
+A Go module follows the org's conventions:
+
+- module path `github.com/swarm-routing/<repo>`; `go.mod` carries a `go`
+  line and a `toolchain` line naming one released Go version, which CI and
+  any image build use;
+- `cmd/<tool>/` holds each command (package `main`, thin), `internal/` the
+  logic, `testdata/` the fixtures beside their tests; no `pkg/`;
+- `go test ./...` is the self-test: fixtures in `testdata/`, a fake GitHub
+  as an `httptest` server, what a Python tool's `--self-test` does;
+- the golden rules apply: deterministic output wherever it is read or
+  compared (sorted iteration, no wall clock in an output), bounded
+  structures, the licence header of rule 1 (`//` comments); standard library
+  first, a third-party module only with a reason in the PR;
+- builds are `CGO_ENABLED=0 go build -trimpath`.
+
+CI is `.github/workflows/reusable-go-ci.yml` (build, gofmt, go vet,
+staticcheck, govulncheck, `go test -race` with coverage, report-only:
+the Go profile for SonarQube Cloud, Cobertura for `reusable-codecov.yml`),
+with `actions/setup-go` pinned by SHA and the version from `go.mod`'s
+`toolchain` line, never a container. A Go tool that runs from an image is
+built multi-stage on a digest-pinned `golang` image into a digest-pinned
+`gcr.io/distroless/static-debian12:nonroot` runtime, under the gates of the
+org's other images ([Images](#images); ADR-0002 "The image rule").
 
 ## Developer guide
 

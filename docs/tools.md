@@ -65,7 +65,10 @@ SUPPORT.md                      the org default support policy: issues for bugs,
                            reusable-review-gate.yml (#294), review-gate.yml (this repository's own, from the PR's head),
                            sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, sonar-triage.yml, bestpractices.yml, org-bot.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
                            benchmark-cell-selftest.yml, setup-vcpkg-selftest.yml, python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480;
-                           its fixture: tools/checks/fixtures/python-ci/)
+                           its fixture: tools/checks/fixtures/python-ci/),
+                           reusable-go-ci.yml (a Go module's build, gofmt, vet, staticcheck, govulncheck, race tests and coverage; docs/adr/0002-pipelines-are-go.md)
+                           and go-ci-selftest.yml (its fixtures: tools/checks/fixtures/go-ci/good, which passes, and bad, which fails gofmt, vet, staticcheck and test)
+docs/adr/                  the org's architecture decisions (0001: record them; 0002: pipelines are Go, their image is distroless)
 LICENSE, LICENSE-MIT, LICENSING.md   the licence per path (LICENSING.md): the tooling MIT OR GPL-2.0-only, the docs GPL-2.0-only,
                                      CODE_OF_CONDUCT.md CC-BY-4.0, DCO verbatim copies only
 ```
@@ -153,6 +156,14 @@ takes a tag) and name `@main` in `canary-dependencies`, with a `schedule:` in
 their `on:`. A change to
 `reusable-python-ci.yml` runs `python-ci-selftest.yml` on its PR (a fixture
 tool run only as a child process must read 100 % covered, #480). A change to
+`reusable-go-ci.yml` runs `go-ci-selftest.yml` on its PR: the `good` fixture
+module must pass every check with 100 % coverage in both the Go profile and
+the Cobertura `coverage.xml`, and the `bad` one, called with
+`fail-on-findings: false`, must report exactly `gofmt vet staticcheck test`
+in the `failed` output (govulncheck is proven clean only: a vulnerable
+fixture dependency would raise a real alert here). Locally, in a fixture
+directory with the `toolchain` Go: `gofmt -l .`, `go vet ./...`,
+`staticcheck ./...`, `govulncheck ./...`, `go test -race ./...`. A change to
 `reusable-benchmark-cell.yml` runs `benchmark-cell-selftest.yml` on its PR (one
 build-mode cell); its prebuilt mode is proven by a protocol repo's caller. A change to
 `.github/actions/setup-vcpkg/` runs `setup-vcpkg-selftest.yml` on its PR (a scratch

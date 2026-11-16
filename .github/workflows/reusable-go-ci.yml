@@ -1,0 +1,252 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable Go CI
+
+# The org's checks for a Go module (docs/adr/0002-pipelines-are-go.md):
+#   build         CGO_ENABLED=0 go build -trimpath ./...   (as a pipeline ships it)
+#   gofmt         gofmt -l on the module's tracked .go files (a nested module's
+#                 are left to its own CI): none may need formatting
+#   vet           go vet ./...
+#   staticcheck   staticcheck ./... (default checks), pinned below
+#   govulncheck   govulncheck ./... (reachable known vulnerabilities), pinned below
+#   test          go test -race -covermode=atomic -coverprofile ./...
+#                 (-race needs cgo, so the tests alone run with CGO_ENABLED=1)
+# Every check runs even when an earlier one failed, so one run lists every
+# finding; the job fails at the end when any did (`fail-on-findings`).
+#
+# Go comes from actions/setup-go, its version read from the module's go.mod
+# (the `toolchain` line, else `go`) and passed as go-version, with
+# GOTOOLCHAIN=local and CGO_ENABLED=0 for the whole job: the job never
+# downloads another toolchain behind setup-go's back. Module and build caches
+# are setup-go's, keyed on go.sum (and go.mod, for a module without
+# dependencies). No container: a Go build needs nothing beyond the toolchain.
+#
+# Coverage is report-only, no threshold (AntHocNet #162, #24), as in
+# reusable-python-ci.yml. The `coverage-artifact` artifact (default
+# `go-coverage`) holds:
+#   coverage.out    the Go profile: SonarQube Cloud reads it as it is
+#                   (sonar.go.coverage.reportPaths=coverage.out)
+#   coverage.xml    Cobertura, converted by gocover-cobertura (pinned):
+#                   reusable-codecov.yml uploads it (`artifact: go-coverage`)
+#   summary.txt     go tool cover -func; coverage.html  go tool cover -html
+#
+# Outputs: `failed`, the checks that failed, space-separated in the order
+# above (empty when all passed). go-ci-selftest.yml reads it.
+#
+# Caller:
+#
+#   jobs:
+#     go:
+#       uses: swarm-routing/.github/.github/workflows/reusable-go-ci.yml@main
+#     codecov:
+#       needs: go
+#       permissions: { contents: read, id-token: write }
+#       uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main
+#       with: { artifact: go-coverage, flags: go }
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "The module's directory (where go.mod is), relative to the repository root"
+        type: string
+        default: '.'
+      packages:
+        description: "Package patterns every check runs on"
+        type: string
+        default: './...'
+      race:
+        description: "Run the tests with the race detector (needs cgo for the test binaries only)"
+        type: boolean
+        default: true
+      coverage-artifact:
+        description: "Name of the artifact holding coverage.out, coverage.xml, summary.txt and coverage.html"
+        type: string
+        default: go-coverage
+      fail-on-findings:
+        description: "Fail the job when a check fails; false only reports them in `failed` (the self-test's failing fixture)"
+        type: boolean
+        default: true
+    outputs:
+      failed:
+        description: "The checks that failed, space-separated (build gofmt vet staticcheck govulncheck test); empty when none"
+        value: ${{ jobs.go.outputs.failed }}
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      failed: ${{ steps.verdict.outputs.failed }}
+    env:
+      GOTOOLCHAIN: local
+      # cgo off everywhere (vet and the analysers see the shipped variant);
+      # only the race test run turns it on, for its test binaries
+      CGO_ENABLED: '0'
+      # pinned tools: staticcheck 2026.2.2 is module v0.8.2
+      STATICCHECK: honnef.co/go/tools/cmd/staticcheck@2026.2.2
+      GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      COBERTURA: github.com/boumenot/gocover-cobertura@v1.5.0
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # setup-go ignores go.mod's toolchain line when GOTOOLCHAIN is local,
+      # so the version is read here and passed explicitly
+      - name: Go version from go.mod (toolchain, else go)
+        id: version
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          v=$(sed -n 's/^toolchain go\([0-9][0-9.]*\)\s*$/\1/p' go.mod)
+          [ -n "$v" ] || v=$(sed -n 's/^go \([0-9][0-9.]*\)\s*$/\1/p' go.mod)
+          [ -n "$v" ] || { echo "::error file=go.mod::no toolchain or go line"; exit 1; }
+          echo "go $v"
+          echo "go=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        timeout-minutes: 5
+        with:
+          go-version: ${{ steps.version.outputs.go }}
+          cache-dependency-path: |
+            ${{ inputs.working-directory }}/go.sum
+            ${{ inputs.working-directory }}/go.mod
+      - name: Install staticcheck, govulncheck, gocover-cobertura (pinned)
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          export GOBIN="$RUNNER_TEMP/gobin"
+          for t in "$STATICCHECK" "$GOVULNCHECK" "$COBERTURA"; do go install "$t"; done
+          echo "$GOBIN" >> "$GITHUB_PATH"
+          go version
+      - name: build (CGO_ENABLED=0 -trimpath)
+        id: build
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          # shellcheck disable=SC2086  # PACKAGES word-splits on purpose
+          go build -trimpath $PACKAGES
+      - name: gofmt
+        id: gofmt
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          # this module's tracked .go files: not those of a nested module
+          # (a directory below with its own go.mod), which its own CI checks
+          mapfile -t nested < <(git ls-files -- '*/go.mod' | sed 's|go\.mod$||')
+          files=()
+          while IFS= read -r -d '' f; do
+            for n in "${nested[@]}"; do [[ $f == "$n"* ]] && continue 2; done
+            files+=("$f")
+          done < <(git ls-files -z -- '*.go')
+          [ "${#files[@]}" -gt 0 ] || { echo "no .go file"; exit 0; }
+          out=$(gofmt -l "${files[@]}")
+          if [ -n "$out" ]; then
+            while IFS= read -r f; do echo "::error file=$f::not gofmt-formatted (run gofmt -w)"; done <<< "$out"
+            gofmt -d "${files[@]}"
+            exit 1
+          fi
+          echo "every .go file is gofmt-formatted"
+      - name: go vet
+        id: vet
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          # shellcheck disable=SC2086
+          go vet $PACKAGES
+      - name: staticcheck
+        id: staticcheck
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          # shellcheck disable=SC2086
+          staticcheck $PACKAGES
+      - name: govulncheck
+        id: govulncheck
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          # shellcheck disable=SC2086
+          govulncheck $PACKAGES
+      - name: go test (-race, coverage)
+        id: test
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          RACE: ${{ inputs.race }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/go-coverage"
+          race=()
+          if [ "$RACE" = true ]; then race=(-race); export CGO_ENABLED=1; fi
+          # shellcheck disable=SC2086
+          go test "${race[@]}" -covermode=atomic -coverprofile="$RUNNER_TEMP/go-coverage/coverage.out" $PACKAGES
+      - name: Coverage report (report-only)
+        id: cov
+        if: always()
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/go-coverage"
+          # a failed build leaves no profile: nothing to report
+          if [ ! -s "$d/coverage.out" ]; then echo "no coverage profile"; exit 0; fi
+          echo "have=true" >> "$GITHUB_OUTPUT"
+          go tool cover -func="$d/coverage.out" | tee "$d/summary.txt"
+          go tool cover -html="$d/coverage.out" -o "$d/coverage.html"
+          gocover-cobertura < "$d/coverage.out" > "$d/coverage.xml"
+          { echo '### Go coverage (report-only)'; echo '```'; tail -n 1 "$d/summary.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.cov.outputs.have == 'true'
+        with:
+          name: ${{ inputs.coverage-artifact }}
+          path: ${{ runner.temp }}/go-coverage
+          retention-days: 7
+      - name: Verdict
+        id: verdict
+        if: always()
+        timeout-minutes: 1
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          GOFMT: ${{ steps.gofmt.outcome }}
+          VET: ${{ steps.vet.outcome }}
+          STATIC: ${{ steps.staticcheck.outcome }}
+          VULN: ${{ steps.govulncheck.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          FAIL: ${{ inputs.fail-on-findings }}
+        run: |
+          set -euo pipefail
+          failed=()
+          { echo '### Go checks'; echo '| check | outcome |'; echo '|---|---|'; } >> "$GITHUB_STEP_SUMMARY"
+          for pair in "build=$BUILD" "gofmt=$GOFMT" "vet=$VET" "staticcheck=$STATIC" "govulncheck=$VULN" "test=$TEST"; do
+            name=${pair%%=*}; outcome=${pair#*=}
+            echo "| $name | $outcome |" >> "$GITHUB_STEP_SUMMARY"
+            # skipped or cancelled is a failure too: the check did not pass
+            [ "$outcome" = success ] || failed+=("$name")
+          done
+          echo "failed=${failed[*]}" >> "$GITHUB_OUTPUT"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "failed: ${failed[*]}"
+            if [ "$FAIL" = true ]; then exit 1; fi
+            echo "::notice::fail-on-findings is false: reported only"
+          else
+            echo "every check passed"
+          fi
