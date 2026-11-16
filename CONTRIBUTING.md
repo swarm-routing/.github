@@ -549,7 +549,8 @@ dependencies, how to build, test, run and lint it, the Docker images and dev
 containers, what each CI workflow checks and which checks are required, how
 a release is cut (a link to [Cutting a release](#cutting-a-release)) and the
 known pitfalls. It has the `##` sections of
-[`templates/development.md`](templates/development.md), in that order:
+[`templates/development.md`](templates/development.md) (org-sync seeds it in a
+new repository; from then on it is the repository's own), in that order:
 Prerequisites, Get the code, Dependencies, Build, Test, Run, Docker and dev
 containers, Lint and format, CI map, Release, Troubleshooting; a repository
 may add its own sections and `###` subsections, and a section with nothing to
