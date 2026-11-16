@@ -102,9 +102,27 @@ repository's `cmd/`:
 - **ENTRYPOINT is a small dispatcher**, `ci-tools <tool> [args…]`, which
   executes `/usr/local/bin/<tool>`; each tool is also its own binary at that
   path. Distroless has no shell, so nothing else runs there.
-- **Workflows run a tool with `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:<digest>`**
-  and `with: args: <tool> …`: no toolchain and no shell in the job, the
-  workspace mounted as GitHub mounts it for every container action.
+- **How a workflow runs a tool: by digest, in one of two forms**, never
+  with a toolchain in the job and never with a shell in the image. The image
+  runs as `nonroot` (uid 65532). GitHub runs a `uses: docker://` step with
+  the image's own user and mounts the checkout and the file-command files
+  (`GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY`, …), which the runner's user owns:
+  a non-root container can read the checkout (its files are world-readable)
+  but cannot write to it or to those files. GitHub's Dockerfile support page
+  says Docker actions are expected to run as root for exactly this reason;
+  the image does not give up `nonroot` to meet it. Instead:
+  - a tool that **only reads** the workspace and reports through its log
+    and exit status (a check, a gate) runs as
+    `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:<digest>` with
+    `with: args: <tool> …`;
+  - a tool that **writes** (files in the checkout, step outputs, the job
+    summary) runs in a `run:` step as
+    `docker run --rm --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace ghcr.io/swarm-routing/ci-tools@sha256:<digest> <tool> …`,
+    as the runner's own user; what it hands back to the workflow it prints,
+    and the step redirects it (`>> "$GITHUB_OUTPUT"`), so the image never
+    needs the runner's file-command paths.
+  `ci-tools-image.yml` tests the first form's mount (read-only, as
+  `nonroot`); the first writing tool's PR adds a test of the second.
 - **What is tested is what is tagged** (swarm-routing/ns3-containers golden
   rule 17): a change to the Go code or the image builds the image once,
   pushes it as a candidate to `ghcr.io/swarm-routing/ci-tools-dev`, checks

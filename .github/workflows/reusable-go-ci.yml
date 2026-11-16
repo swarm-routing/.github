@@ -14,8 +14,9 @@ name: Reusable Go CI
 # Every check runs even when an earlier one failed, so one run lists every
 # finding; the job fails at the end when any did (`fail-on-findings`).
 #
-# Go comes from actions/setup-go, its version from the module's go.mod
-# (the `toolchain` line, else `go`), with GOTOOLCHAIN=local: the job never
+# Go comes from actions/setup-go, its version read from the module's go.mod
+# (the `toolchain` line, else `go`) and passed as go-version, with
+# GOTOOLCHAIN=local and CGO_ENABLED=0 for the whole job: the job never
 # downloads another toolchain behind setup-go's back. Module and build caches
 # are setup-go's, keyed on go.sum (and go.mod, for a module without
 # dependencies). No container: a Go build needs nothing beyond the toolchain.
@@ -81,6 +82,9 @@ jobs:
       failed: ${{ steps.verdict.outputs.failed }}
     env:
       GOTOOLCHAIN: local
+      # cgo off everywhere (vet and the analysers see the shipped variant);
+      # only the race test run turns it on, for its test binaries
+      CGO_ENABLED: '0'
       # pinned tools: staticcheck 2026.2.2 is module v0.8.2
       STATICCHECK: honnef.co/go/tools/cmd/staticcheck@2026.2.2
       GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
@@ -97,10 +101,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # setup-go ignores go.mod's toolchain line when GOTOOLCHAIN is local,
+      # so the version is read here and passed explicitly
+      - name: Go version from go.mod (toolchain, else go)
+        id: version
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          v=$(sed -n 's/^toolchain go\([0-9][0-9.]*\)\s*$/\1/p' go.mod)
+          [ -n "$v" ] || v=$(sed -n 's/^go \([0-9][0-9.]*\)\s*$/\1/p' go.mod)
+          [ -n "$v" ] || { echo "::error file=go.mod::no toolchain or go line"; exit 1; }
+          echo "go $v"
+          echo "go=$v" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         timeout-minutes: 5
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
+          go-version: ${{ steps.version.outputs.go }}
           cache-dependency-path: |
             ${{ inputs.working-directory }}/go.sum
             ${{ inputs.working-directory }}/go.mod
@@ -120,7 +136,7 @@ jobs:
           PACKAGES: ${{ inputs.packages }}
         run: |
           # shellcheck disable=SC2086  # PACKAGES word-splits on purpose
-          CGO_ENABLED=0 go build -trimpath $PACKAGES
+          go build -trimpath $PACKAGES
       - name: gofmt
         id: gofmt
         continue-on-error: true

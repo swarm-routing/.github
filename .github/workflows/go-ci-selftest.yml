@@ -73,10 +73,7 @@ jobs:
           cat coverage/summary.txt
           head -n 1 coverage/coverage.out | grep -qx 'mode: atomic'
           test -s coverage/coverage.html
-          python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-          root = ET.parse("coverage/coverage.xml").getroot()
-          rate = float(root.get("line-rate"))
-          assert rate == 1.0, f"Cobertura line-rate {rate}, want 1.0"
-          print("coverage.xml line-rate", rate)
-          PY
+          # the root element's line-rate: 1 (gocover-cobertura writes it as "1")
+          rate=$(grep -o '<coverage line-rate="[^"]*"' coverage/coverage.xml | head -n 1 | cut -d'"' -f2)
+          echo "coverage.xml line-rate $rate"
+          [ "$rate" = 1 ] || { echo "::error::Cobertura line-rate '$rate', want 1"; exit 1; }
