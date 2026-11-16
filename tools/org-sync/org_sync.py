@@ -425,7 +425,7 @@ def swarm_core_mode(repo_dir):
 
 
 NS3_BUILD_BULLET = re.compile(
-    r"^- \*\*The ns-3 (?:build|canary)\*\*:.*?(?=^- \*\*|\Z)", re.M | re.S
+    r"^- \*\*The ns-3 (?:build|canary)\*\*:.*?(?=(?:^- \*\*)|\Z)", re.M | re.S
 )
 
 
