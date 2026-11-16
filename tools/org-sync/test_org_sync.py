@@ -945,6 +945,27 @@ check(
     rr.index("org-sync:end citing -->\n\n## Epics") > 0 and run("check", de)[0] == 0,
     "the citing section is inserted before the first of Contributing, Epics, Licence",
 )
+# Develop (#490): every README links docs/development.md through a managed section
+rr = read(os.path.join(de, "README.md"))
+check(
+    "<!-- org-sync:begin develop -->\n## Develop\n" in rr
+    and "](docs/development.md)" in rr
+    and rr.index("org-sync:end develop") < rr.index("org-sync:begin citing") < rr.index("## Epics"),
+    "init writes the Develop section; with citing on, Develop comes first, then citing",
+)
+dd = fresh()
+run("init", dd, "--kind", "data")
+rd = read(os.path.join(dd, "README.md"))
+s0 = rd.index("<!-- org-sync:begin develop -->")
+e0 = rd.index("<!-- org-sync:end develop -->\n\n") + len("<!-- org-sync:end develop -->\n\n")
+write(os.path.join(dd, "README.md"), rd[:s0] + rd[e0:])
+check(run("check", dd)[0] == 1, "a README without the Develop section drifts")
+run("apply", dd)
+rd2 = read(os.path.join(dd, "README.md"))
+check(
+    rd2.index("org-sync:end develop -->\n\n## Contributing") > 0 and run("check", dd)[0] == 0,
+    "apply inserts the Develop section into an existing README, before Contributing",
+)
 
 dl = fresh()
 run("init", dl, "--kind", "python", "--dual", "")
@@ -1379,7 +1400,7 @@ check(
 )
 check(run("check", d5)[0] == 1, "plain check on the same tree is still red (push to main)")
 # the base's drift is judged on the merge base: a merge group's base_sha is the same call
-edit(d5, "README.md", "\n## ", "\nA line of the repository's own.\n\n## ")
+edit(d5, "README.md", "\n## Licence", "\nA line of the repository's own.\n\n## Licence")
 commit(d5, "a second queued PR in the merge group, touching no managed section")
 rc, out = run("check", "--changed-only", base, d5)
 check(

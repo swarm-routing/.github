@@ -514,6 +514,29 @@ first; the site's WebAssembly build follows
   refusal is a warning in the job, and then a person merges it). For a
   missed release a person runs the same command and opens the PR.
 
+## Developer guide
+
+Every repository has `docs/development.md`, the page a newcomer starts from
+(#490): the tools to install and their versions, how to get the code and its
+dependencies, how to build, test, run and lint it, the Docker images and dev
+containers, what each CI workflow checks and which checks are required, how
+a release is cut (a link to [Cutting a release](#cutting-a-release)) and the
+known pitfalls. It has the `##` sections of
+[`templates/development.md`](templates/development.md), in that order:
+Prerequisites, Get the code, Dependencies, Build, Test, Run, Docker and dev
+containers, Lint and format, CI map, Release, Troubleshooting; a repository
+may add its own sections and `###` subsections, and a section with nothing to
+say keeps one sentence saying so. Every command in it is one that runs today,
+copied from CI, the Makefile or AGENTS.md "Build & verify"; a step only CI
+can run names its workflow. AGENTS.md keeps what an agent needs and points
+here for the rest.
+
+The README links it through org-sync's managed `develop` section (the
+"Develop" heading, `templates/readme-develop.md`), placed before the first
+of Contributing, Epics or Licence. `tools/docs-review/check_docs.py` fails
+when the guide is missing, lacks a standard section, has them out of order
+or the README does not link it.
+
 ## Outside contributions
 
 Contributions from outside the org are welcome in every public repository:
@@ -1418,7 +1441,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | SonarQube Cloud CI analysis (compile database + gcovr coverage of the repo's own modules) | `reusable-ns3-ci.yml` `sonar` + the org secret `SONAR_TOKEN`; the repo's `sonar-project.properties` (org-sync seed). A repo with Python passes `sonar-python-coverage: python-coverage` and makes the CI job `needs:` its `reusable-python-ci.yml` job in the same workflow, so the one analysis imports coverage.py's report too (SonarQube Cloud keeps one analysis per branch) | off; skipped on fork PRs and while the project is on Automatic Analysis |
 | Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed). It uploads the `coverage` artifact, so the CI job needs `coverage` or `sonar` on and the `debug` profile | off; an upload failure, or no artifact, never fails CI |
 | Container lint and scans: hadolint, Trivy config and image reports to code scanning | `ns3-containers` `container-security.yml`, `publish-images.yml` | on there |
-| ruff check + format (org `ruff.toml`) and Python coverage, report-only | `reusable-python-ci.yml` | on in every caller |
+| ruff check + format (org `ruff.toml`) and Python coverage, report-only, child Python processes included (`patch = subprocess`, #480; a repo's own coverage config wins) | `reusable-python-ci.yml` (`measure-subprocesses: false` measures the test process only) | on in every caller |
 | OpenSSF Scorecard, report-only: score published to the OpenSSF API (badge) and SARIF to code scanning | `reusable-scorecard.yml`, called by org-sync's `.github/workflows/scorecard.yml` (weekly, on push to `main`, on demand) | on in every public repo; a private one lists the workflow in `skip` |
 
 Coverage has no threshold: read it as a map of untested paths (AntHocNet #162).

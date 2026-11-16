@@ -239,6 +239,9 @@ ADOPT_REPLACE = {("docs/references.bib", "bib-header")}
 # Sections with nothing to adopt: inserted after the first match of the regex.
 INSERT_AFTER = {
     ("README.md", "badges"): r"^# .*\n",
+    # Develop (#490): before the first of Contributing, Epics or Licence, so
+    # ahead of Releases & citing when both are new
+    ("README.md", "develop"): r"\n(?=\n?## (?:Contributing|Epics|Licen[cs]e)\b)",
     # Releases & citing: before the first of Contributing, Epics or Licence
     ("README.md", "citing"): r"\n(?=\n?## (?:Contributing|Epics|Licen[cs]e)\b)",
     # new in every AGENTS.md: placed before the repository's own table
@@ -1262,6 +1265,8 @@ def items(cfg):
     out = [
         ("seed", "README.md", "README.md.in", None),
         ("section", "README.md", None, "badges"),
+        # "Develop": where a newcomer starts, docs/development.md (#490)
+        ("section", "README.md", "readme-develop.md", "develop"),
         ("seed", "AGENTS.md", "agents/AGENTS.md.in", None),
         ("section", "AGENTS.md", "agents/org-rules.md", "org-rules"),
         ("section", "AGENTS.md", "agents/conventions.md", "conventions"),

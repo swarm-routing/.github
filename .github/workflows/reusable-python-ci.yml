@@ -10,6 +10,11 @@ name: Reusable Python lint and coverage
 # list, so a ruff upgrade never widens it silently).
 # The tests are plain scripts (stdlib, no pytest dependency): each runs under
 # `coverage run`, and a non-zero exit fails the job as it does without coverage.
+# Child Python processes are measured too (coverage.py `patch = subprocess`,
+# #480): a test that runs a tool as `python3 tool.py` counts the tool's lines.
+# A repo's own coverage config (.coveragerc, [coverage:*] in setup.cfg or
+# tox.ini, [tool.coverage.*] in pyproject.toml) wins and is used as it is;
+# `measure-subprocesses: false` turns the default off.
 #
 # Caller:
 #
@@ -42,6 +47,10 @@ on:
       python-version:
         type: string
         default: '3.13'
+      measure-subprocesses:
+        description: "Measure child Python processes the tests start (coverage.py patch = subprocess); ignored when the repo has its own coverage config"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -91,10 +100,20 @@ jobs:
         env:
           TESTS: ${{ inputs.tests }}
           SOURCE: ${{ inputs.source }}
+          SUBPROCESSES: ${{ inputs.measure-subprocesses }}
         run: |
           set -euo pipefail
           src=()
           for s in $SOURCE; do src+=(--source "$s"); done
+          if [ -f .coveragerc ] || grep -qs '^\[coverage:' setup.cfg tox.ini \
+            || grep -qs '^\[tool\.coverage' pyproject.toml; then
+            echo "using the repo's own coverage config"
+          elif [ "$SUBPROCESSES" = true ]; then
+            # child processes too (#480); coverage.py writes their data beside the parent's
+            printf '[run]\npatch = subprocess\n' > "$RUNNER_TEMP/coveragerc"
+            src+=(--rcfile "$RUNNER_TEMP/coveragerc")
+            echo "measuring child Python processes (patch = subprocess)"
+          fi
           n=0
           # shellcheck disable=SC2086  # TESTS globs on purpose
           for t in $TESTS; do

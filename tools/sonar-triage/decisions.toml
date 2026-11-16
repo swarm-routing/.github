@@ -4,8 +4,11 @@
 # Reviewed SonarQube Cloud verdicts, applied by sonar_triage.py through the
 # sonar-triage workflow (swarm-routing/.github#425). One entry per finding
 # KEY, read from the public API (api/issues/search, api/hotspots/search),
-# never typed. `plan` refuses if a key's project, rule, file or line no longer
-# match, so a moved finding is re-reviewed, not silently marked.
+# never typed. `plan` matches an entry by its key, project, rule and file and
+# refuses if one no longer matches (a substantive code change gives the finding
+# a new key, so it is re-reviewed, not silently marked); a finding whose line
+# only moved is reported, and `sonar_triage.py refresh` rewrites its `line`
+# from the API for a PR (#487).
 #
 # To record a new false positive: review it in its tracking issue, list the
 # open findings (`sonar_triage.py findings --repos <repo>`), print the entry
@@ -1115,7 +1118,7 @@ project = "swarm-routing_.github"
 key = "AaHCpQEKeDe7xtNTqKf1"
 rule = "pythonsecurity:S8705"
 file = "tools/org-bot/org_bot.py"
-line = 206
+line = 250
 decision = "falsepositive"
 reason = "FP-cli"
 
@@ -1160,7 +1163,7 @@ project = "swarm-routing_.github"
 key = "AaHd0kr7GhjC-EaUGIcw"
 rule = "pythonsecurity:S8705"
 file = "tools/release/release_check.py"
-line = 84
+line = 89
 decision = "falsepositive"
 reason = "FP-cli"
 
@@ -1169,7 +1172,7 @@ project = "swarm-routing_.github"
 key = "AaHd0kr7GhjC-EaUGIcx"
 rule = "pythonsecurity:S8707"
 file = "tools/release/release_check.py"
-line = 134
+line = 139
 decision = "falsepositive"
 reason = "FP-cli"
 
