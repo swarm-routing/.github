@@ -31,6 +31,9 @@ self-test and read-only run, and how a reusable workflow change is proven.
 
 ## Build & verify
 
+The step-by-step version for people (prerequisites, every command, the CI
+map, troubleshooting) is [`docs/development.md`](docs/development.md).
+
 No build. Before pushing:
 
 ```bash
