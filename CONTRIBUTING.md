@@ -1312,7 +1312,14 @@ actor), so the bump goes through a PR and the tag follows the merge
    **v0.1.0** (ROADMAP "Releases"), or, dispatched with `increment: MAJOR`,
    the next major of its configured version (**v1.0.0** from any 0.x).
    The input `increment` (`PATCH`, `MINOR`, `MAJOR`) forces the bump's size
-   (`cz bump --increment`) instead of the one read from the commits (#211). A run with nothing that bumps (only
+   (`cz bump --increment`) instead of the one read from the commits (#211).
+   Pass it when the version the ladder fixes differs from the one Commitizen
+   would compute: a patch the maintainer authorised while `feat` commits are
+   pending (`PATCH`; ARA and BeeAdHoc v0.2.1), or a `v1.0.0` / `v2.0.0`
+   (`MAJOR`); otherwise leave it `auto`. Every caller forwards it
+   (`increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}`
+   from a `choice` input, as in `reusable-release.yml`'s caller block), and
+   `release_check.py ready` fails a caller that does not (#512). A run with nothing that bumps (only
    `docs:`, `ci:`, …) fails, and nothing happens. The commit goes on the
    fixed branch `bot/release`, rebuilt on `main`'s tip, as the PR
    **`chore(release): bump version A to B`** (opened, or updated when one is
