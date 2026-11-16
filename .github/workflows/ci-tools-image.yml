@@ -8,7 +8,7 @@ name: ci-tools image
 # tagged.
 #
 #   go        reusable-go-ci.yml on the root module (cmd/, internal/)
-#   lint      hadolint (.hadolint.yaml), a Trivy configuration scan, and the
+#   dockerfile  hadolint (.hadolint.yaml), a Trivy configuration scan, and the
 #             golang base tag = go.mod's `toolchain` version
 #   image     build once (docker/ci-tools/Dockerfile: go vet and go test run
 #             in its build stage); on a same-repository PR and on main, push
@@ -77,7 +77,7 @@ jobs:
   go:
     uses: ./.github/workflows/reusable-go-ci.yml
 
-  lint:
+  dockerfile:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -117,7 +117,7 @@ jobs:
           echo "both bases pinned by digest"
 
   image:
-    needs: [go, lint]
+    needs: [go, dockerfile]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

@@ -73,7 +73,7 @@ cmd/ci-tools/              the ci-tools image's entrypoint: `ci-tools <tool> [ar
 cmd/fixture/               the image's fixture tool: `fixture FILE...` prints "<path> <newlines> <sha256>" (internal/fixture), what ci-tools-image.yml compares with wc -l and sha256sum
 docker/ci-tools/Dockerfile the ci-tools image: golang build stage (go vet, go test, every cmd/ built CGO_ENABLED=0 -trimpath) and a distroless static nonroot runtime, both by digest; .hadolint.yaml its hadolint settings
 .github/dependabot.yml     Dependabot version updates: the Dockerfile's two bases, the root module's dependencies
-.github/workflows/ci-tools-image.yml   the ci-tools image: reusable-go-ci on the root module, hadolint + Trivy config + golang tag = toolchain, build once, candidate push to ci-tools-dev, tests on the candidate digest, Trivy image scan; main: promote the same digest to ci-tools (sha-<sha7>, latest), SBOM, cosign, provenance, cleanup of ci-tools-dev
+.github/workflows/ci-tools-image.yml   the ci-tools image: reusable-go-ci on the root module, `dockerfile`: hadolint + Trivy config + golang tag = toolchain, build once, candidate push to ci-tools-dev, tests on the candidate digest, Trivy image scan; main: promote the same digest to ci-tools (sha-<sha7>, latest), SBOM, cosign, provenance, cleanup of ci-tools-dev
 docs/adr/                  the org's architecture decisions (0001: record them; 0002: pipelines are Go, their image is distroless)
 LICENSE, LICENSE-MIT, LICENSING.md   the licence per path (LICENSING.md): the tooling MIT OR GPL-2.0-only, the docs GPL-2.0-only,
                                      CODE_OF_CONDUCT.md CC-BY-4.0, DCO verbatim copies only
