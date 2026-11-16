@@ -84,8 +84,9 @@ session is under [.github#141](https://github.com/swarm-routing/.github/issues/1
 
 An outside review of the org and three design notes on the Linux daemon (the
 data plane, a namespace test, IPv6) were checked against every issue they
-touch on 2026-11-16. No epic and no issue was opened: each proposal already
-had an owner, so it is recorded as a comment there. Nothing in this table
+touch on 2026-11-16. Each proposal already had an owner, so it is recorded
+as a comment there; the few issues opened that day are listed under the
+table. Nothing in this table
 changes a decision, a scope or a release; a row marked out of scope or ruled
 out stays so until the maintainer reopens it on the issue named.
 
@@ -103,6 +104,33 @@ out stays so until the maintainer reopens it on the issue named.
 | Mechanisms: a repellent pheromone for congestion, evaporation driven by predicted link lifetime, cross-layer signals in reinforcement, a learned heuristic | [.github#265](https://github.com/swarm-routing/.github/issues/265), [AntHocNet#574](https://github.com/swarm-routing/AntHocNet/issues/574) | hypotheses only (default off, an A/B in every family). The signals are ports already ({L('ns3-swarm-core',73)}); lifetime and adaptive evaporation were each measured in AntHocNet and missed their target families |
 | Families: 3D aerial swarms with air-to-ground shadowing, a ground network behind satellite gateways, sub-GHz duty-cycled meshes | [.github#275](https://github.com/swarm-routing/.github/issues/275), [ns3-tools#43](https://github.com/swarm-routing/ns3-tools/issues/43) | the first two to assess against the existing FANET and SAGIN cells; LoRa mesh is **ruled out** in AntHocNet's research landscape, and its airtime-cap argument is recorded as possible new evidence |
 | Protocols: POSANT, PACONET, slime-mould routing, BeeSensor / M-IAR, an ACO and Q-learning hybrid | [.github#54](https://github.com/swarm-routing/.github/issues/54) | POSANT and PACONET added as provisional candidates (citations confirmed, papers unread); slime-mould and the sensor-network protocols stay out of scope as recorded; the hybrid names no paper and is a design ({L('.github',265)}) |
+
+Later the same day two more notes (IPv6 mechanics, hardware tiers) went to
+the same owners: the data-plane ADR ([.github#255](https://github.com/swarm-routing/.github/issues/255): duplicate address
+detection, link-local multicast, the MTU, a link-local IPv6 underlay as
+Babel uses), the identity decision ([ns3-swarm-core#72](https://github.com/swarm-routing/ns3-swarm-core/issues/72): addresses
+derived from a node's key), the testbed ([.github#259](https://github.com/swarm-routing/.github/issues/259): how a scene's
+topology is forced when every board hears every other), the link signals
+([ns3-swarm-core#73](https://github.com/swarm-routing/ns3-swarm-core/issues/73): what a real radio reports), the packages
+([.github#267](https://github.com/swarm-routing/.github/issues/267): one static binary) and the mechanism note
+([.github#265](https://github.com/swarm-routing/.github/issues/265): keeping a flow on one next hop between bursts).
+
+**Issues opened on 2026-11-16**, each announced by an existing issue or
+closing a gap the check found:
+
+- [ns3-swarm-core#191](https://github.com/swarm-routing/ns3-swarm-core/issues/191): whether the ns-3 reference rung gets an IPv6
+  adapter, so an IPv6 host run has something to be compared with (under
+  [ns3-swarm-core#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82)).
+- [benchmarks#117](https://github.com/swarm-routing/benchmarks/issues/117): the attack grid as one `benchmarks` suite, and
+  [AntHocNet#1078](https://github.com/swarm-routing/AntHocNet/issues/1078): AntHocNet's phase-0 security design ADR; both were
+  announced by [.github#272](https://github.com/swarm-routing/.github/issues/272) and not filed.
+- [.github#513](https://github.com/swarm-routing/.github/issues/513), [.github#514](https://github.com/swarm-routing/.github/issues/514), [.github#515](https://github.com/swarm-routing/.github/issues/515): the three
+  children the emulation epic ([.github#324](https://github.com/swarm-routing/.github/issues/324)) names (emulator choice
+  and container, scene translation, runner and checker).
+- In the private `papers` repository: its library restructured by topic with
+  a generated catalogue, and a reading epic with one review per group that
+  had none (security, learned routing, baselines and methodology, hosts, and
+  what the protocols' papers leave unstated about their evaluations).
 
 Three of the review's premises were out of date and are corrected by the
 rows above: protocols no longer build on swarm-core `@main`, the host order
@@ -154,16 +182,17 @@ the maintainer's to order):
 3. Settle the two arm64 image issues into one ([ns3-containers#11](https://github.com/swarm-routing/ns3-containers/issues/11),
    [ns3-containers#54](https://github.com/swarm-routing/ns3-containers/issues/54)) and answer #11's three open decisions, whose
    premise (39 images) no longer holds.
-4. File what open issues announce but nobody filed: the `benchmarks`
-   attack-grid suite and AntHocNet's phase-0 security ADR
-   ([.github#272](https://github.com/swarm-routing/.github/issues/272)), the emulation epic's child issues
-   ([.github#324](https://github.com/swarm-routing/.github/issues/324)).
+4. ~~File what open issues announce but nobody filed~~ (done 2026-11-16,
+   listed above): next is the attack grid's one definition
+   ([benchmarks#117](https://github.com/swarm-routing/benchmarks/issues/117)), which waits on the maintainer.
 5. Answer the two decisions the review's proposals wait on: the owner of the
    network-family list ([.github#275](https://github.com/swarm-routing/.github/issues/275)) and the gates for a protocol with
    no paper ([.github#264](https://github.com/swarm-routing/.github/issues/264)).
-6. Housekeeping: [.github#48](https://github.com/swarm-routing/.github/issues/48)'s title still names CORE/EMANE, which moved
-   to [.github#324](https://github.com/swarm-routing/.github/issues/324); [.github#411](https://github.com/swarm-routing/.github/issues/411)'s criteria look met and are
-   unticked (to verify against each repository's workflows before closing).
+6. Housekeeping: [.github#48](https://github.com/swarm-routing/.github/issues/48) was renamed on 2026-11-16 (CORE/EMANE
+   moved to [.github#324](https://github.com/swarm-routing/.github/issues/324)). [.github#411](https://github.com/swarm-routing/.github/issues/411) was checked: two criteria
+   are met, a run on `main` showing the canary leg is still to be linked, and
+   AntHocNet has no canary because it does not call `reusable-ns3-ci.yml`;
+   that needs a decision, recorded on the issue.
 
 ## The ladder
 
