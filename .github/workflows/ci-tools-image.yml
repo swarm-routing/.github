@@ -196,6 +196,7 @@ jobs:
           fi
           docker run --rm "$img" list | tee list.txt
           grep -qx fixture list.txt
+          grep -qx bestpractices list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
           # a tool on the workspace, mounted as `uses: docker://` mounts it
@@ -204,6 +205,23 @@ jobs:
           want=$(for f in go.mod fixture-input.txt; do echo "$f $(wc -l < "$f") $(sha256sum < "$f" | cut -d' ' -f1)"; done)
           echo "$got"
           [ "$got" = "$want" ] || { echo "::error::fixture output differs from wc -l / sha256sum:"; echo "$want"; exit 1; }
+          # bestpractices (#531), both run forms of the ADR on a copy of this
+          # checkout without .git (the image has no git, so neither may the
+          # comparison): read-only as `uses: docker://` runs it (nonroot,
+          # stdout), then writing as the runner's user (`--user`, the file in
+          # the checkout); the two must agree, and agree byte for byte with
+          # the Python tool it replaces, run on the host
+          bp="$RUNNER_TEMP/bp-fixture"; mkdir -p "$bp"
+          git archive HEAD | tar -x -C "$bp"
+          args=(answers . --slug swarm-routing/.github --today 2026-11-16)
+          docker run --rm -v "$bp:/github/workspace" -w /github/workspace "$img" bestpractices "${args[@]}" > bp-read.json
+          docker run --rm --user "$(id -u):$(id -g)" -v "$bp:/github/workspace" -w /github/workspace "$img" bestpractices "${args[@]}" --write
+          cmp bp-read.json "$bp/.bestpractices.json" || { echo "::error::the written .bestpractices.json differs from the printed one"; exit 1; }
+          [ "$(stat -c %u "$bp/.bestpractices.json")" = "$(id -u)" ] || { echo "::error::--user did not write as the runner's user"; exit 1; }
+          rm "$bp/.bestpractices.json"
+          (cd "$bp" && python3 -I "$GITHUB_WORKSPACE/tools/bestpractices/bestpractices.py" "${args[@]}") > bp-python.json
+          cmp bp-read.json bp-python.json || { diff bp-python.json bp-read.json | head -20; echo "::error::bestpractices answers differs from the Python tool"; exit 1; }
+          echo "bestpractices: both run forms agree with the Python tool ($(wc -c < bp-read.json) bytes)"
           # nonroot, and no shell to fall back to
           user=$(docker image inspect -f '{{.Config.User}}' "$img")
           [ "$user" = nonroot:nonroot ] || { echo "::error::image user is '$user'"; exit 1; }
