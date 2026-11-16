@@ -905,52 +905,7 @@ line = 1570
 decision = "falsepositive"
 reason = "FP-repofile"
 
-# ---- swarm-routing/.github (40)
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHVNSZxC8kp_Xpxz1i6"
-rule = "pythonsecurity:S8707"
-file = "tools/bestpractices/bestpractices.py"
-line = 152
-decision = "falsepositive"
-reason = "FP-cli"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHVNSZxC8kp_Xpxz1i3"
-rule = "pythonsecurity:S8705"
-file = "tools/bestpractices/bestpractices.py"
-line = 169
-decision = "falsepositive"
-reason = "FP-cli"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHVNSZxC8kp_Xpxz1i4"
-rule = "pythonsecurity:S8705"
-file = "tools/bestpractices/bestpractices.py"
-line = 177
-decision = "falsepositive"
-reason = "FP-cli"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHVNSZxC8kp_Xpxz1i7"
-rule = "pythonsecurity:S8707"
-file = "tools/bestpractices/bestpractices.py"
-line = 940
-decision = "falsepositive"
-reason = "FP-cli"
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHVNSZxC8kp_Xpxz1i5"
-rule = "pythonsecurity:S8707"
-file = "tools/bestpractices/bestpractices.py"
-line = 1041
-decision = "falsepositive"
-reason = "FP-cli"
+# ---- swarm-routing/.github (35)
 
 [[issue]]
 project = "swarm-routing_.github"
