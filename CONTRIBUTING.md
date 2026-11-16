@@ -184,6 +184,7 @@ automatic CodeRabbit review, so a new label is added there by hand):
 |---|---|---|
 | Type | exactly one; umbrellas add `epic` | `bug`, `enhancement`, `chore`, `documentation`, `verification` (+ `question`, `handoff`) |
 | ns-3 bug | on every RCAPA ticket, beside its type (`verification`) and area (`ns3`); see "ns-3 bugs (RCAPA)" below | `rcapa` |
+| Hold | stops an automated action from going out while it stays on (the upstream bridge's veto window; see "ns-3 bugs (RCAPA)" below) | `hold` |
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `learn-site`, `literature` |
 | Model | exactly one, a suggestion: what a wrong first pass costs, not code volume; only models a Claude Pro plan includes (maintainer decision, #280) | `model:haiku-5.5` (mechanical), `model:sonnet-5.5` (plumbing, tooling, docs), `model:opus-5.5` (protocol semantics, root cause, adapter work, architecture: write the design first) |
 | Priority | exactly one on non-epic issues; never on an epic | `priority:P1` (blocks the current wave's release, breaks `main`, or invalidates published numbers; a protocol's gated v0.2.0 issue while its wave is current), `priority:P2` (gates a result or feature), `priority:P3` (valuable, not blocking). Infrastructure work holds at most 30% of the work in flight (maintainer decision, #262) |
@@ -223,9 +224,35 @@ repositories. The register follows the ticket:
 
 Every workaround links its `NS3-NNN` ID: a `test/known-failures.txt` XFAIL in
 swarm-routing/ns3-containers, an ns-3 version pin in a workflow, a refused or
-restricted arm. **Upstream reports are filed by the maintainer only**, under
-their own account, from the ticket's text; an agent never posts upstream. The
-ticket records the report's link, or the decision not to file.
+restricted arm.
+
+**Upstream reports go through the bridge,**
+[swarm-routing/ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report)
+(maintainer decision 2026-11-16, swarm-routing/ns3-upstream-report#2, its
+ADR-0002). Each reported `NS3-NNN` has a **mirror ticket** there, linked from
+its RCAPA ticket and back. Nothing is pasted into GitLab by hand: an agent
+drafts the report as a pull request to that repository
+(`reports/NS3-NNN.md`, a reply as `replies/NS3-NNN/<note-id>.md`), CI checks
+it, and the merged text goes out after a veto window (24 h, 48 h for a new
+issue) announced on the mirror ticket, which the `hold` label stops. No agent
+posts upstream any other way, holds or reads the GitLab token, or approves a
+deployment. The bridge mirrors every GitLab note and the state of the issue
+and merge requests onto the mirror ticket every 6 h and flags stalls.
+
+**An RCAPA ticket stays open until the fix is in an ns-3 release we run**
+(PROC-001, swarm-routing/ns3-tools#247): filing upstream is a step, not the
+end; the ticket closes when the release ships the fix and the workarounds it
+lists are removed.
+
+**References across the two trackers** (maintainer rule 2026-11-16): on
+GitHub, an item of ours is `swarm-routing/<repo>#N` and an ns-3 item is its
+full GitLab URL (https://gitlab.com/nsnam/ns-3-dev/-/issues/N) or a link
+whose text is `nsnam/ns-3-dev#N`, never a bare `#N` (GitHub links it to the
+repository the text is in). In anything bound for GitLab, an item of ours is
+its full GitHub URL (https://github.com/swarm-routing/<repo>/issues/N), never
+`swarm-routing/<repo>#N` or a bare `#N` / `!N` (GitLab links those to a
+GitLab project or to ns-3's own issue N); an ns-3 item is `nsnam/ns-3-dev#N`
+or its full URL. The bridge's guards refuse a text that breaks the rule.
 
 **Handoffs are issues** (template *Handoff*, label `handoff`). A session that
 continues handed-off work starts from the newest open `handoff` issue for that
