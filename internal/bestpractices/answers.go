@@ -255,23 +255,30 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 			unknown(c, "No build file.")
 		}
 	}
-	testDir := regexp.MustCompile(`(^|/)tests?/`)
+	// a fixture's or an eval's tests/ is test data, not the suite (#559)
+	testDir := regexp.MustCompile(`^(.*?(^|/)tests?/)`)
 	testPy := regexp.MustCompile(`(^|/)test_[^/]+\.py$`)
+	fixture := regexp.MustCompile(`(^|/)(fixtures?|testdata|evals)/`)
 	var tests []string
 	for _, f := range r.sorted {
-		if testDir.MatchString(f) || testPy.MatchString(f) {
-			tests = append(tests, f)
+		if fixture.MatchString(f) {
+			continue
+		}
+		if m := testDir.FindStringSubmatch(f); m != nil {
+			tests = append(tests, m[1])
+		} else if testPy.MatchString(f) {
+			tests = append(tests, dirname(f)+"/")
 		}
 	}
-	selfTest := r.workflowURL(`--self-test`)
+	selfTest := r.ciURL(`--self-test`)
 	makeTest := regexp.MustCompile(`(?m)^test:`).MatchString(r.text(r.has("Makefile")))
 	if len(tests) > 0 || selfTest != "" {
 		where := selfTest
 		if len(tests) > 0 {
-			where = r.url(dirname(tests[0]) + "/")
+			where = r.url(tests[0])
 		}
 		put("test", "Met", "An automated test suite: "+where+".")
-		how, at := "the commands in the CI workflow", where
+		how, at := "the commands in the CI workflow", or(r.ciURL(testRunRx), where)
 		if makeTest {
 			how, at = "`make test`", r.url("Makefile")
 		}
@@ -280,18 +287,18 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 		unknown("test", "No test suite found.")
 		unknown("test_invocation", "No test suite found.")
 	}
-	coverage := r.workflowURL(`codecov|gcovr|--coverage|coverage run|pytest-cov`)
+	coverage := r.ciMatch(matches(coverageRx, ns3CI("coverage"), ns3CI("sonar")), ciEvents)
 	// measured is not "most": the owner reads the numbers and answers
 	if coverage != "" {
 		unknown("test_most", "The owner answers from the coverage report: "+coverage+".")
 	} else {
 		unknown("test_most", "No coverage report found.")
 	}
-	// Python's \bpull_request\b(?!_target): \b already fails before "_target"
-	if ci := r.workflowURL(`\bpull_request\b`); ci != "" {
-		put("test_continuous_integration", "Met", "GitHub Actions on every pull request: "+ci+".")
+	// a workflow that runs the tests on pull requests, not any one that runs there (#559)
+	if ci := r.prURL(testRunRx); ci != "" {
+		put("test_continuous_integration", "Met", "GitHub Actions runs the tests on every pull request: "+ci+".")
 	} else {
-		unknown("test_continuous_integration", "No workflow runs on pull requests.")
+		unknown("test_continuous_integration", "No workflow runs the tests on pull requests.")
 	}
 	policy := ""
 	for _, f := range []string{"CONTRIBUTING.md", ".github/CONTRIBUTING.md", "AGENTS.md"} {
@@ -321,8 +328,8 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 		cmakeTexts[i] = r.text(f)
 	}
 	cmakeText := strings.Join(cmakeTexts, " ")
-	strictCI := r.workflowURL(`--strict-warnings|-Werror`)
-	ruff := r.workflowURL(`\bruff\b|reusable-python-ci`)
+	strictCI := r.ciMatch(matches(strictRx, ns3CI("strict-warnings")), ciEvents)
+	ruff := r.ciURL(ruffRx)
 	wall := strings.Contains(cmakeText, "-Wall")
 	switch {
 	case len(cxx) > 0 && (wall || strictCI != ""):
@@ -374,10 +381,11 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 	}
 
 	// analysis
-	codeql := r.workflowURL(`codeql`)
-	sonar := r.workflowURL(`sonar`)
-	tidy := r.workflowURL(`clang-tidy`)
-	sa := or(codeql, sonar, tidy, ruff)
+	// an analysis step, not the word: upload-sarif is not CodeQL, `sonar: false` is no analysis (#559)
+	codeql := r.ciURL(codeqlRx)
+	sonar := r.ciMatch(matches(sonarRx, ns3CI("sonar")), ciEvents)
+	tidy := r.ciURL(tidyRx)
+	sa := or(codeql, sonar, tidy, ruff, r.ciURL(lintRx))
 	if sa != "" {
 		put("static_analysis", "Met", "Static analysis on every change: "+sa+".")
 		if codeql != "" || sonar != "" {
@@ -390,14 +398,14 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 		} else {
 			unknown("static_analysis_common_vulnerabilities", "No vulnerability-oriented analyser.")
 		}
-		saText := ""
+		often := false
 		for _, w := range r.workflows {
 			if r.url(w.file) == sa {
-				saText = w.text
+				often = w.onAny([]string{"pull_request", "push", "merge_group"})
 				break
 			}
 		}
-		if regexp.MustCompile(`\bpull_request\b|\bpush\b`).MatchString(saText) {
+		if often {
 			put("static_analysis_often", "Met", "Runs on every pull request or push: "+sa+".")
 		} else {
 			unknown("static_analysis_often", "Static analysis is not run on each change.")
@@ -408,44 +416,48 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 		}
 	}
 	unknown("static_analysis_fixed", "The owner confirms medium and higher findings are fixed promptly.")
-	fuzz := or(r.workflowURL(`fuzz`), r.grep(`-fsanitize=fuzzer|LLVMFuzzerTestOneInput`, ".txt", ".cmake", ".cc", ".cpp"))
-	san := r.workflowURL(`sanitiz|-fsanitize`)
-	if san == "" {
-		if f := r.grep(`-fsanitize=address`, "CMakeLists.txt", ".cmake"); f != "" {
-			san = r.url(f)
-		}
+	// what runs in CI, never a word in a workflow (#559)
+	fuzz := r.ciURL(fuzzRx)
+	san := or(r.ciMatch(matches(sanRx, sanCI), ciEvents), r.dockerProfile(`--enable-sanitizers|-fsanitize=[\w,-]*address`))
+	race := r.ciMatch(raceCI, ciEvents)
+	dyn, kind := fuzz, "fuzzing"
+	switch {
+	case dyn != "":
+	case san != "":
+		dyn, kind = san, "AddressSanitizer"
+	case race != "":
+		dyn, kind = race, "the Go race detector, go test -race"
 	}
-	if fuzz != "" && !strings.HasPrefix(fuzz, "https://") {
-		fuzz = r.url(fuzz)
-	}
-	dyn := or(fuzz, san)
 	if dyn != "" {
-		kind := "sanitizers"
-		if fuzz != "" {
-			kind = "fuzzing"
-		}
 		put("dynamic_analysis", "Met", "Dynamic analysis ("+kind+") in CI: "+dyn+".")
-		put("dynamic_analysis_fixed", "Met", "A sanitizer or fuzz failure fails CI and is fixed before merge: "+dyn+".")
+		if r.runsOnPR(dyn) {
+			put("dynamic_analysis_fixed", "Met",
+				"A finding fails the pull request's CI, so it is fixed before merge: "+dyn+".")
+		} else {
+			unknown("dynamic_analysis_fixed", "Dynamic analysis does not run on pull requests: "+dyn+".")
+		}
 	} else {
-		unknown("dynamic_analysis", "No fuzzing or sanitizer runs found.")
+		unknown("dynamic_analysis", "No fuzzing, sanitizer or race-detector run found in CI.")
 		unknown("dynamic_analysis_fixed", "No dynamic analysis found.")
 	}
 	switch {
 	case len(cxx) == 0:
-		put("dynamic_analysis_unsafe", "N/A", "Written in memory-safe languages only (Python, shell): "+r.base+".")
+		put("dynamic_analysis_unsafe", "N/A", "Written in memory-safe languages only ("+safeLangs(r)+"): "+r.base+".")
 	case san != "":
-		put("dynamic_analysis_unsafe", "Met", "C++ runs under AddressSanitizer and UBSan in CI: "+san+".")
+		put("dynamic_analysis_unsafe", "Met", "C/C++ tests run under AddressSanitizer in CI: "+san+".")
 	default:
 		unknown("dynamic_analysis_unsafe", "C/C++ without a sanitizer run.")
 	}
-	asserts := or(san, r.workflowURL(`\bdebug\b|CMAKE_BUILD_TYPE=Debug`))
+	asserts := or(r.ciMatch(matches(debugRx, debugCI), ciEvents), r.dockerProfile(`--enable-asserts|(^|[\s"'=])-d\s+debug\b`))
+	pyTests := r.ciURL(pyTestRx)
 	switch {
 	case len(cxx) > 0 && asserts != "":
 		put("dynamic_analysis_enable_assertions", "Met", "Tests run with assertions on (debug builds): "+asserts+".")
-	case len(cxx) == 0 && dyn != "" && r.workflowURL(`python3?\s+-\w*O|PYTHONOPTIMIZE`) == "":
-		put("dynamic_analysis_enable_assertions", "Met", "Python's assertions are on in every test run: "+dyn+".")
+	case len(cxx) == 0 && pyTests != "" && r.ciURL(pyOptRx) == "":
+		put("dynamic_analysis_enable_assertions", "Met",
+			"The Python tests run with assertions on (no -O, no PYTHONOPTIMIZE): "+pyTests+".")
 	default:
-		unknown("dynamic_analysis_enable_assertions", "No assertion-enabled dynamic analysis found.")
+		unknown("dynamic_analysis_enable_assertions", "No test run with assertions on found.")
 	}
 
 	for _, c := range ownerOnlyOrder {
@@ -464,6 +476,23 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 		return nil, failure("bestpractices: no answer for %s", strings.Join(missing, ", "))
 	}
 	return out, nil
+}
+
+// safeLangs names the memory-safe languages the repository is written in.
+func safeLangs(r *Repo) string {
+	var out []string
+	for _, l := range []struct{ ext, name string }{{".py", "Python"}, {".go", "Go"}, {".sh", "shell"}} {
+		for _, f := range r.sorted {
+			if strings.HasSuffix(f, l.ext) {
+				out = append(out, l.name)
+				break
+			}
+		}
+	}
+	if len(out) == 0 {
+		return "no C or C++"
+	}
+	return strings.Join(out, ", ")
 }
 
 // maintained: the last commit is known and at most 365 days before today.

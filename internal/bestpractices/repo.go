@@ -154,6 +154,9 @@ func isDir(p string, e fs.DirEntry) bool {
 
 type workflow struct {
 	file, text string
+	code       string          // text without comments (evidence.go)
+	on         map[string]bool // its triggers, and its local callers'
+	filtered   bool            // a paths filter limits its triggers
 }
 
 // Repo is what the answers are derived from: the files of one checkout.
@@ -193,8 +196,11 @@ func newRepo(repoDir, slug string) (*Repo, error) {
 	}
 	for _, f := range append(ci, other...) {
 		t, _ := readText(pyJoin(repoDir, f))
-		r.workflows = append(r.workflows, workflow{f, t})
+		code := stripComments(t)
+		on, filtered := triggersOf(code)
+		r.workflows = append(r.workflows, workflow{f, t, code, on, filtered})
 	}
+	resolveTriggers(r.workflows)
 	return r, nil
 }
 
@@ -228,17 +234,6 @@ func (r *Repo) url(p string) string {
 func (r *Repo) orgFile(name string) string {
 	if r.owner == Org {
 		return "https://github.com/" + Org + "/.github/blob/main/" + name
-	}
-	return ""
-}
-
-// workflowURL is the first workflow whose text matches, as a URL, else "".
-func (r *Repo) workflowURL(pattern string) string {
-	rx := regexp.MustCompile("(?im)" + pattern)
-	for _, w := range r.workflows {
-		if rx.MatchString(w.text) {
-			return r.url(w.file)
-		}
 	}
 	return ""
 }
