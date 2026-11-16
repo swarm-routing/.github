@@ -221,9 +221,16 @@ for **regressions in a published release**, and for nothing else:
 | A bug or change that never reached a release (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
 | A trivial change with no behaviour (a typo, a comment, docs wording) that affects no behaviour, output, number or released artifact | **no** |
 
-Whether a defect reached a release is read from the tags, never from
-memory: it did when the repository's latest release tag contains the commit
-that introduced it (`git tag --contains <commit>`).
+Whether a defect reached a release is read from the record, never from
+memory: in a repository that tags its releases, it did when a release tag
+contains the commit that introduced it (`git tag --contains <commit>`). A
+repository that publishes without tags (this one and swarm-routing/vcpkg-registry
+from `main`, swarm-routing/skills by its plugin version, the site by its
+deploy) states what "published" means for it in its `docs/rcapa/README.md`,
+and that page is the test there. A defect introduced after the last release
+and fixed before the next one never reached a release; a defect in a released
+version needs an RCAPA whenever it is found, also on `main` before the next
+release.
 
 For a regression in a published release:
 
