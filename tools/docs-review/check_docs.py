@@ -715,6 +715,7 @@ ORG_REPOS = (
     "skills",
     "swarm-routing.github.io",
     "vcpkg-registry",
+    "ns3-upstream-report",
     ".github",
 )
 FOREIGN = re.compile(
