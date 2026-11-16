@@ -1726,7 +1726,7 @@ def self_test():
             'echo "bestpractices: wrote $2/.bestpractices.json" >&2\n'
             'echo "bestpractices: Met 1" >&2\n'
         )
-    os.chmod(fake_bp, 0o755)
+    os.chmod(fake_bp, 0o700)  # owner only
     global BESTPRACTICES
     real_bp, BESTPRACTICES = BESTPRACTICES, fake_bp
     try:
