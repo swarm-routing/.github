@@ -1,0 +1,72 @@
+{
+ "Cc": {
+  "files": {
+   "README.md": "x\n",
+   "src/a.cc": "int a;\n"
+  }
+ },
+ "Crypt": {
+  "files": {
+   "README.md": "x\n",
+   "src/a.cc": "#include <openssl/evp.h>\n"
+  }
+ },
+ "Hm": {
+  "files": {
+   "README.md": "x\n",
+   "tools/sign.py": "import hmac\n"
+  }
+ },
+ "Opt": {
+  "files": {
+   ".github/workflows/ci.yml": "on: [pull_request]\njobs:\n  fuzz:\n    steps:\n      - run: python3 -O t/fuzz.py\n",
+   "README.md": "x\n",
+   "t/fuzz.py": "x\n"
+  }
+ },
+ "Over": {
+  "files": {
+   ".github/org-sync.toml": "bestpractices_crypto = true\n",
+   "README.md": "x\n"
+  }
+ },
+ "Proto": {
+  "files": {
+   ".cz.toml": "[tool.commitizen]\nversion = \"1.2.0\"\n",
+   ".github/org-sync.toml": "kind = \"protocol\"\nbestpractices_project = \"42\"\n",
+   ".github/workflows/ci.yml": "on:\n  pull_request:\n  push:\njobs:\n  a:\n    steps:\n      - run: cmake -DSANITIZE=ON  # -fsanitize=address debug\n      - run: gcovr\n",
+   ".github/workflows/codeql.yml": "on: [pull_request]\njobs:\n  codeql: {}\n",
+   ".github/workflows/fuzz.yml": "on: [pull_request]\njobs:\n  fuzz: {}\n",
+   "CHANGELOG.md": "## v1.2.0 (2026-10-01)\n- fix\n",
+   "CMakeLists.txt": "add_compile_options(-Wall -Wextra -Werror)\n",
+   "CONTRIBUTING.md": "Every change carries a test.\n",
+   "LICENSE": "GNU GENERAL PUBLIC LICENSE\n                       Version 2, June 1991\n",
+   "LICENSE-MIT": "MIT License\n\nPermission is hereby granted, free of charge, to any person\n",
+   "LICENSING.md": "per directory\n",
+   "Makefile": "test:\n\tctest\n",
+   "README.md": "# Proto\n",
+   "SECURITY.md": "Use GitHub private vulnerability reporting.\n",
+   "core/a.cc": "int a;\n",
+   "core/test/t.cc": "int t;\n",
+   "docs/x.md": "doc\n"
+  },
+  "git": true
+ },
+ "Tidy": {
+  "files": {
+   ".clang-tidy": "Checks: '*'\n",
+   "README.md": "x\n",
+   "src/a.cc": "int a;\n"
+  }
+ },
+ "Tools": {
+  "files": {
+   ".github/workflows/ci.yml": "on:\n  pull_request:\njobs:\n  l:\n    steps:\n      - run: ruff check tools\n      - run: python3 tools/x.py --self-test\n",
+   "CHANGELOG.md": "## v0.1.0\n- CVE-2026-0001 fixed\n",
+   "LICENSE": "MIT License\n\nPermission is hereby granted, free of charge, to any person\n",
+   "README.md": "# Tools\n",
+   "tools/test_x.py": "import x\n",
+   "tools/x.py": "import json\n"
+  }
+ }
+}
