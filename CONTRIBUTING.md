@@ -793,6 +793,7 @@ runs until their secret is set, and the secrets belong to the maintainer:
 | Workflow | What it does | Secret |
 |---|---|---|
 | `org-bot` (daily, and on every push that changes `templates/` or a generator; task `swarm-core-pin` also every three hours; on each release's `org-release` repository_dispatch, sent by `reusable-release.yml`'s `notify-org` job and AntHocNet's `release.yml`: `release` for that repository, then `release-lock` (and `swarm-core-pin` after a swarm-core release) everywhere, the hourly run staying the backstop, #479) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted, or when Zenodo holds a concept its CITATION.cff and `zenodo_concept` do not name yet (task `zenodo`, #232), or when swarm-core `main` changed `core/` since a protocol repository's pin, or, for a repository with a release lock `swarm-core.lock`, when a newer swarm-core release is out (task `swarm-core-pin`, #208, swarm-routing/ns3-swarm-core#134: `check-swarm-core-pin.py --bump` rewrites the old commit on the pin lines only, `SWARM_CORE_REF` and the workflows' `core-deps` and ns-3 dependency lines, never recorded results, docs or campaign plans, #407; one PR per repository on `org-bot/swarm-core-pin`, updated in place when swarm-core moves again). A pin or lock bump and a template refresh are never left as two PRs that each fail the other's required check (`check / org-sync`, `swarm-core / pin`; every protocol repository deadlocked that way on 2026-11-14, #429): when either task changes a repository, the other generator runs on the same clone, and if both change something they go in one PR on `org-bot/swarm-core-pin` and the bot's open template-refresh PR there is closed as superseded. Every other release lock (a root `<name>.lock` that `release_lock.py` parses, AntHocNet's `ns3-tools.lock` today) is moved by task `release-lock` when the repository it names has a newer release (#478): `release_lock.py bump --write`, every value read from the release, one PR per repository on `org-bot/release-lock`, updated in place, carrying any template drift too while the template-refresh PR stays open; a lock an open hand PR already changes is left alone, and an asset the release renamed fails that repository for a person. Its PR runs the consumer's CI and merges only through the queue when green. Every hour (task `release`, #430, #465, with `release-lock`): `release-rebuild` dispatches `bump` again where an open `bot/release` PR is behind its base, with the `increment` it records; `release-aftercare` records each release younger than 14 days once Zenodo has it (`docs/roadmap.md`'s shipped block, a `CONTRIBUTING.md`'s version-DOI rows, the archived-releases table here) and posts what `release_check.py after` still finds on the site's `[release-sync]` issue. The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents, Pull requests and Workflows read and write, and Actions read and write (`release-rebuild` dispatches a release workflow) and Issues read and write (`release-aftercare` comments on the site's `[release-sync]` issue) |
+| `bestpractices` (weekly, on demand) | `bestpractices check --issues` from the `ci-tools` image by digest: one `[bestpractices]` issue per public repository, with the proposal link(s) to Save or the registration steps ("OpenSSF Best Practices" below, #531); org-bot's task `bestpractices` regenerates `.bestpractices.json` (daily, and on each repository's `bestpractices-evidence.yml` dispatch) | The org GitHub App, else `ORG_BOT_TOKEN` (Issues read and write) |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
 | `repo-settings` (daily check; apply on every push that changes `templates/rulesets/` or the tool) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer (where `release_environment = false`, an existing `release` environment's reviewers and wait timer are removed instead); and every environment a `[settings.environments.<name>]` table declares, with its required reviewers and deployment branches (an undeclared deployment branch policy of such an environment is deleted). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles and the environments its tables name | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
@@ -1668,31 +1669,42 @@ criteria are answered. A repository that sets its own `badges` list also adds
 ### OpenSSF Best Practices
 
 bestpractices.dev has no write API: every answer is saved by a person logged
-in to the site, and no workflow logs in, keeps a session or submits answers.
-`tools/bestpractices/bestpractices.py` does the rest, read-only (#391). The
-commands below run from the repository's checkout, with `swarm-routing/.github`
-checked out next to it (as `../.github`):
+in to the site, and no workflow logs in, keeps a session or submits answers
+(maintainer decision 2026-11-13, kept 2026-11-16). Everything before that
+click is automated, read-only towards the site, by the Go tool
+`cmd/bestpractices` (`internal/bestpractices`; the port of the former
+`tools/bestpractices/bestpractices.py`, #391, #531): the maintainer's one step
+is **Save**, once per project, only when something changed. By hand, from a
+`swarm-routing/.github` checkout with the `go.mod` toolchain (or the
+`bestpractices` skill's wrapper):
 
-- **Register.** `python3 -I ../.github/tools/bestpractices/bestpractices.py register swarm-routing/<repo> --dir .`
+- **Scope.** Every public org repository is registered (maintainer decision
+  2026-11-16): each gets its `.bestpractices.json` and, until it is
+  registered, a `[bestpractices]` issue with the registration steps. A
+  repository opts out with `bestpractices = false` under `[settings]` in its
+  `.github/org-sync.toml`; its open issue then closes at the next run.
+- **Register.** `go run ./cmd/bestpractices register swarm-routing/<repo> --dir ../<repo>`
   first asks the site whether the repository is registered. If not, it says
   where to register (https://www.bestpractices.dev/en/projects/new; the site
   has no pre-filled registration form): the maintainer registers it there,
-  logged in, then runs the command again. If it is, it prints the project id,
-  the `bestpractices_project = "<id>"` line for `.github/org-sync.toml`, and
-  the site's proposal links for that project
+  logged in. If it is, it prints the project id, the
+  `bestpractices_project = "<id>"` line for `.github/org-sync.toml`, and the
+  site's proposal links for that project
   (`/en/projects/<id>/passing/edit?<criterion>_status=…`, each under 6000
   characters, the owner-only criteria left out; `--answers FILE` proposes a
-  reviewed `.bestpractices.json`): the maintainer opens each one logged in,
-  reviews the proposed answers and saves. Nothing is saved by opening a link.
+  reviewed `.bestpractices.json`). Nothing is saved by opening a link.
 - **Licence of the answers.** bestpractices.dev publishes what a project
   submits under [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/), so
   write nothing in a justification that cannot be released under it.
-- **Propose the answers.** `python3 -I ../.github/tools/bestpractices/bestpractices.py answers . --write` writes
-  `.bestpractices.json` at the repository's top level: every passing criterion
-  the repository gives evidence for, each justified by its full https URL on
-  `main`. Commit it in a PR; on the site, "Save (and continue)" with the robot
-  proposes those answers. The crypto criteria are N/A unless the code calls a
-  crypto library (`ssl`, `hmac` and `secrets` count; `hashlib` for a checksum does not) or
+- **The answers, `.bestpractices.json`.** `go run ./cmd/bestpractices answers ../<repo> --write`
+  writes it at the repository's top level: every passing criterion the
+  repository gives evidence for, each justified by its full https URL on
+  `main`. org-bot's task `bestpractices` regenerates it in every public
+  repository and opens a PR when it changes: daily, and at once when a push
+  to `main` touches the files the answers read (the org-managed
+  `bestpractices-evidence.yml` sends repository_dispatch `bestpractices`). The
+  crypto criteria are N/A unless the code calls a crypto library (`ssl`,
+  `hmac` and `secrets` count; `hashlib` for a checksum does not) or
   `.github/org-sync.toml` sets `bestpractices_crypto = true`; `test_most`,
   `tests_are_added` and `static_analysis_fixed` are left to the maintainer
   too (coverage measured is not coverage of most code; a written test policy
@@ -1702,15 +1714,22 @@ checked out next to it (as `../.github`):
   `vulnerabilities_critical_fixed`, `no_leaked_credentials`,
   `report_responses`, `enhancement_responses`,
   `vulnerability_report_response` (self-assessments, or facts behind the
-  Security tab). They are always `?` in the file, which the site ignores, as
-  is any criterion without evidence in the repository.
-- **The weekly check.** `bestpractices.yml` runs `python3 -I tools/bestpractices/bestpractices.py check` here: for
-  each public repository it reads the project's public JSON (one request a
-  second) and reports a registered repository without `bestpractices_project`,
-  answers on the site that disagree with `.bestpractices.json`, justifications
-  pointing at files no longer on `main`, and a lost level. It keeps one
-  `[bestpractices] N finding(s)` issue per repository, closed when clean. It is
-  report-only, never a required check; the fix is made on the site by a person.
+  Security tab). They are always `?` in the file and never in a proposal
+  link.
+- **The weekly check.** `bestpractices.yml` runs `bestpractices check --issues`
+  from the `ci-tools` image (by digest) with the bot's token. For each public
+  repository it reads the project's public JSON (one request a second, never a
+  POST) and keeps one `[bestpractices] N finding(s)` issue per repository: a
+  registered repository without `bestpractices_project`, answers in
+  `.bestpractices.json` the site does not have yet, answers the site
+  contradicts, justifications pointing at files no longer on `main`, a lost
+  level; or, for a repository in scope that is not registered, the
+  registration steps. A registered project's issue carries the **proposal
+  link(s) for exactly what differs**, under "Open, review, Save", and lists
+  the owner-only criteria still `?` on the site, which are never findings: they
+  neither open nor update an issue (swarm-routing/AntHocNet#790). The issue
+  updates in place when its findings or links change and closes itself when
+  the site matches. It is report-only, never a required check.
 
 ## AI agents
 
