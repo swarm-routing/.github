@@ -354,7 +354,9 @@ A consumer names a **release** of its dependency, never a moving ref:
 - **The canary.** `canary-dependencies:` of `reusable-ns3-ci.yml` names the same
   dependencies at `@main`: one non-blocking leg on push, schedule and dispatch,
   never on a pull request (#411). A red canary on `main` means the next release
-  of a dependency needs work here; it never blocks a merge.
+  of a dependency needs work here; it never blocks a merge. AntHocNet has no
+  canary leg: it does not call `reusable-ns3-ci.yml` and builds from its
+  release locks (maintainer decision 2026-11-16, #411).
 - **Development against an unreleased dependency.** `-DSWARM_CORE_DIR=<checkout>/core`
   builds `core/` on a local checkout instead of the lock; nothing committed
   names it.
