@@ -53,7 +53,7 @@ repository a library: what counts is a consumer pinning it.
 |--------|-------|
 | A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/ns3-tools, unchanged |
 | A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/ns3-tools, unchanged |
-| A **regression in a published library**: it worked in a version a consumer pins and broke in a later one | **yes**: `<PREFIX>-NNN` in the library's repository |
+| A **regression in a published library**: it worked in a version a consumer pins and broke in a later one | **yes**: `<PREFIX>-NNN` in that library's repository |
 | A bug in a Docker image (`ns3-dev`, `ci-tools`, any image) | **no** by default; **yes** only when traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image), in the repository that owns the Dockerfile (`CNT-NNN` for swarm-routing/ns3-containers) |
 | A change in a repository nothing consumes at a version: swarm-routing/.github (reusable workflows at `@main`), the site's Pages deploy, swarm-routing/skills (the plugin), swarm-routing/benchmarks (datasets), swarm-routing/ns3-upstream-report | **no** for its own changes |
 | A bug or change that never reached a published version (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
@@ -134,7 +134,7 @@ in it or an `rcapa-*.md` missing from its index.
 
 - A regression in a published library has one record that answers what
   broke, for which consumer, why our gates let it out and which release
-  fixes it, in the library's repository.
+  fixes it, in that library's repository.
 - Unreleased bugs stay cheap: no extra ceremony for what `main` catches
   before a release, which is most of them.
 - Every repository gets two seeded files under `docs/rcapa/` through the

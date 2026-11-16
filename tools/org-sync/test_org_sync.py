@@ -1765,4 +1765,15 @@ check(run("profile", dp, "--check")[0] == 0, "profile --check: today's render is
 write(pf, "# org\n")
 check(run("profile", dp)[0] == 1, "profile: no badges markers is an error")
 
+# every template org-sync renders passes the private-library guard that each
+# repository's references check applies to its text files (a template phrase
+# such as "in the library's repository" turned every refresh PR red)
+flagged = []
+for root, _, files in os.walk(os.path.join(ORG, "templates")):
+    for name in files:
+        path = os.path.join(root, name)
+        if fidelity.PRIVATE.search(read(path)):
+            flagged.append(os.path.relpath(path, ORG))
+check(not flagged, f"no template names the private paper library: {flagged}")
+
 print("org-sync self-test: OK")

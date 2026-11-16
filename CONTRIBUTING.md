@@ -224,7 +224,7 @@ is something that worked in such a version and broke in a later one.
 |--------|-------|
 | A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/ns3-tools ("ns-3 bugs (RCAPA)" below) |
 | A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/ns3-tools |
-| A regression in a published library (above) | **yes**: `<PREFIX>-NNN` in the library's repository |
+| A regression in a published library (above) | **yes**: `<PREFIX>-NNN` in that library's repository |
 | A bug in a Docker image (the `ns3-dev` images, `ci-tools`, any image) | **no** by default; **yes** only when it is traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image): then in the repository that owns that Dockerfile (`CNT-NNN` for swarm-routing/ns3-containers) |
 | A change in a repository whose output no project consumes at a version: swarm-routing/.github (reusable workflows at `@main`), the site's Pages deploy, swarm-routing/skills (the plugin), swarm-routing/benchmarks (datasets), swarm-routing/ns3-upstream-report | **no** for its own changes |
 | A bug or change that never reached a published version (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
@@ -248,7 +248,7 @@ the fix is an ordinary bug in AntHocNet.
 
 For a regression in a published library:
 
-1. **Open the ticket first**, in the library's repository, from the form
+1. **Open the ticket first**, in that library's repository, from the form
    *Regression in a release (RCAPA)* (`ISSUE_TEMPLATE/rcapa-regression.yml`):
    title `[rcapa] <PREFIX>-NNN <short description>`, labels `rcapa` and
    `bug`, a priority and a model suggestion. `NNN` is the next free number in
