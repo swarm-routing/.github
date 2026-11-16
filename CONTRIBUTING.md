@@ -1190,7 +1190,17 @@ actor), so the bump goes through a PR and the tag follows the merge
    or a previous tag Commitizen cannot see) gets a hand-written paragraph or
    the regenerated entries in a commit on the bump PR first, since the
    release notes are that section (ns3-tools v1.0.0 shipped one empty,
-   swarm-routing/ns3-tools#185).
+   swarm-routing/ns3-tools#185). The workflow enforces it (#524): a bump
+   whose section is empty warns, and its PR body asks for the paragraph; a
+   release whose merged `CHANGELOG.md` has nothing under `## vX.Y.Z` fails
+   before anything is tagged or published. A release already out with empty
+   notes (swarm-routing/BeeAdHoc v0.2.1) is mended without hands on the
+   release: write the paragraph under its heading in `CHANGELOG.md` on `main`
+   (a PR), then dispatch the caller's release workflow with mode
+   `release-notes` and `tag: vX.Y.Z`; it re-renders the notes from that
+   section with `GITHUB_TOKEN`, keeping "Verify your download" byte for byte
+   (`tools/release/release_notes.py`; the caller needs `release-notes` among
+   its `mode` options and passes `tag`).
 3. **Build.** The caller's `build` command (default `make dist`) writes the
    assets of the merged commit into `dist/`, with `RELEASE_VERSION` and
    `RELEASE_TAG` set. It may test what it built; a failure stops the release.
@@ -1259,7 +1269,7 @@ the `release` skill of swarm-routing/skills): `ready <checkout> --repo
 the Commitizen config, `make dist`, the version's row in `docs/roadmap.md`,
 no open `release:vX.Y.Z` issue, a `bot/release` PR behind `main`), and
 `after <owner>/<repo> --tag vX.Y.Z` once the bump PR merged (the release and
-its provenance, the site's `[release-sync]` issue, each consumer's lock or
+its provenance, its notes not empty, the site's `[release-sync]` issue, each consumer's lock or
 org-bot's bump PR, the vcpkg port, PyPI, the ladder marked shipped). Neither
 writes anything; the Zenodo DOI is still read with `zenodo.py status`.
 

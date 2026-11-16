@@ -110,6 +110,8 @@ jobs:
           done
           cd ../meta
           grep -q '^## v0.1.0 ' notes.md
+          # never empty notes (#524): something under the heading, above the verify block
+          awk '/^## Verify your download/ { exit } NR > 1 && NF { f = 1 } END { exit !f }' notes.md
           grep -qF 'sha256sum -c SHA256SUMS --ignore-missing' notes.md
           grep -qF "gh attestation verify fixture-0.1.0.tar.gz --repo ${REPO} --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml" notes.md
           grep -qF 'predicate-type https://cyclonedx.org/bom' notes.md
@@ -123,6 +125,30 @@ jobs:
         run: |
           test -z "$(git ls-remote --tags "${SERVER}/${REPO}.git" "refs/tags/${TAG}")"
           echo "dry run ${TAG}: complete, verified, nothing pushed or published" >> "$GITHUB_STEP_SUMMARY"
+
+  # The notes rule (#524) on a docs-only release: tools/release/release_notes.py,
+  # which the build job and mode release-notes run, against fixture-notes/
+  # (swarm-routing/BeeAdHoc v0.2.1: Commitizen's empty section, the same
+  # CHANGELOG.md with its paragraph, and the release's published body). The
+  # notes come from CHANGELOG.md, an empty section fails, and a re-render
+  # keeps the verify block byte for byte. Mode release-notes itself is proven
+  # by a caller's dispatch (swarm-routing/BeeAdHoc v0.2.1).
+  notes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: A docs-only release's notes come from CHANGELOG.md
+        run: python3 -I tools/release/release_notes.py --self-test
 
   release-major:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}

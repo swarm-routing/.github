@@ -34,6 +34,9 @@ before anything is built or proposed (swarm-routing/.github#430).
 `after` (once the bump PR merged), through `gh api` and public URLs:
   - the GitHub release of the tag is published with SHA256SUMS and the
     provenance (`*.intoto.jsonl`);
+  - its notes are not empty: something under the version heading, above
+    `## Verify your download` (else the release workflow's mode
+    `release-notes` re-renders them from CHANGELOG.md, #524);
   - the site saw it: an `[release-sync] <name> <tag>` issue in
     swarm-routing/swarm-routing.github.io (CONTRIBUTING step 6);
   - every org repository that locks this one (a root `*.lock` whose
@@ -69,6 +72,7 @@ ROADMAP = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "ROADMAP.md"
 )
 REGISTRY = "swarm-routing/vcpkg-registry"
+VERIFY = "## Verify your download"
 REUSABLE = re.compile(
     r"^[ \t]*(?:-[ \t]*)?uses:[ \t]*swarm-routing/\.github/\.github/workflows/reusable-release\.yml@",
     re.M,
@@ -405,6 +409,18 @@ def after(repo, tag, org, gh, consumers=None, roadmap=ROADMAP):
             r.add("FAIL", f"release: {tag} lacks {', '.join(missing)}")
         else:
             r.add("OK", f"release: {tag} published, {len(assets)} asset(s)")
+        # the notes above the verify block are never empty (#524)
+        body = rel.get("body") or ""
+        notes = "" if body.startswith(VERIFY) else body.split("\n" + VERIFY, 1)[0]
+        if any(ln.strip() for ln in notes.splitlines()[1:]):
+            r.add("OK", f"notes: {tag} has notes above '{VERIFY}'")
+        else:
+            r.add(
+                "FAIL",
+                f"notes: {tag}'s notes are empty (a heading at most); write the paragraph under "
+                f"'## {tag}' in CHANGELOG.md on main (a PR), then dispatch the release workflow "
+                f"with mode=release-notes tag={tag} (swarm-routing/.github#524)",
+            )
     # the site's release-sync ticket (CONTRIBUTING "Cutting a release", step 6)
     want = f"[release-sync] {name} {tag}"
     issues = gh.get_all(f"repos/{SITE}/issues?state=all&sort=created") or []
@@ -769,6 +785,7 @@ def self_test():
     routes = {
         "repos/o/r/releases/tags/v0.4.0": {
             "draft": False,
+            "body": "## v0.4.0 (2026-11-15)\n\n### Feat\n\n- x\n\n## Verify your download\n\n...\n",
             "assets": [
                 {"name": "r-0.4.0.tar.gz"},
                 {"name": "SHA256SUMS"},
@@ -845,9 +862,14 @@ def self_test():
     expect("after: PyPI has the version", has(rep, "OK", "r-tools 0.4.0 is on PyPI"))
     expect("after: the ladder not marked shipped", has(rep, "WARN", "does not mark v0.4.0"))
     expect("after: zenodo is a NEXT step", has(rep, "NEXT", "zenodo.py status --repo o/r"))
+    expect("after: the notes are not empty", has(rep, "OK", "notes: v0.4.0 has notes"))
     expect("after: no FAIL", not rep.failed())
 
-    routes["repos/o/r/releases/tags/v0.4.0"] = {"draft": False, "assets": [{"name": "x.tar.gz"}]}
+    routes["repos/o/r/releases/tags/v0.4.0"] = {
+        "draft": False,
+        "body": "## v0.4.0 (2026-11-16)\n\n\n## Verify your download\n\n...\n",  # BeeAdHoc v0.2.1's shape
+        "assets": [{"name": "x.tar.gz"}],
+    }
     del routes[f"repos/{REGISTRY}/pulls?state=open&head=swarm-routing:bot/vcpkg-r"]
     routes[f"repos/{SITE}/issues?state=all&sort=created"] = []
     routes["repos/o/b/pulls?state=open"] = []
@@ -858,6 +880,10 @@ def self_test():
         has(rep, "FAIL", "lacks SHA256SUMS, *.intoto.jsonl"),
     )
     expect("after: no vcpkg PR fails", has(rep, "FAIL", "no bot/vcpkg-r PR"))
+    expect(
+        "after: empty notes fail with the release-notes dispatch",
+        has(rep, "FAIL", "notes are empty") and has(rep, "FAIL", "mode=release-notes tag=v0.4.0"),
+    )
     expect("after: not on PyPI fails", has(rep, "FAIL", "not on PyPI"))
     expect("after: no site issue warns with the dispatch", has(rep, "WARN", "release-sync.yml"))
     expect(

@@ -136,6 +136,23 @@ name: Reusable release
 # pushed, proposed, tagged or published. The whole release (assets, notes,
 # the bump commit as a git bundle) is the `artifact` output, kept 1 day.
 #
+# Release notes are never empty (#524). They are the version's CHANGELOG.md
+# section; a release with no `feat` or `fix` commit gets only a heading from
+# Commitizen. In a bump or dry run, empty rendered notes fall back to the
+# version's section of the CHANGELOG.md the bump wrote; still empty, the run
+# warns and the bump PR's body asks for the paragraph on that PR. A release
+# whose merged CHANGELOG.md has nothing under `## vX.Y.Z` fails in the build
+# job, before anything is tagged or published (tools/release/release_notes.py
+# `notes`).
+#
+# mode `release-notes` (with `tag: vX.Y.Z`, #524) re-renders the notes of
+# that existing release: the version's CHANGELOG.md section at the dispatched
+# commit (the default branch, where a paragraph written after the release
+# lives) replaces everything above `## Verify your download`, which is kept
+# byte for byte (release_notes.py `rerender`, then read back). GITHUB_TOKEN
+# (contents: write) edits the release; nothing is built, tagged or uploaded.
+# An empty section fails the run and leaves the notes as they are.
+#
 # `mode` left empty (the default) picks from the event: a push releases
 # (when it is a merged bump PR), anything else bumps; `dry-run: true` wins.
 #
@@ -174,8 +191,9 @@ name: Reusable release
 #   on:
 #     workflow_dispatch:
 #       inputs:
-#         mode: { type: choice, options: [dry-run, bump], default: dry-run }
+#         mode: { type: choice, options: [dry-run, bump, release-notes], default: dry-run }
 #         increment: { type: choice, options: [auto, PATCH, MINOR, MAJOR], default: auto }  # no empty option (actionlint)
+#         tag: { type: string, default: '' }   # release-notes: the release to re-render, vX.Y.Z
 #     push:
 #       branches: [main]
 #   concurrency: { group: "release-${{ github.sha }}", cancel-in-progress: false }
@@ -187,6 +205,7 @@ name: Reusable release
 #       with:
 #         mode: ${{ inputs.mode }}           # empty on push: release
 #         increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}  # '' on push and for auto
+#         tag: ${{ inputs.tag }}               # '' on push
 #       secrets:
 #         BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
 #         BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -247,7 +266,7 @@ on:
         type: boolean
         default: false
       mode:
-        description: "bump (open or update the bump PR), release (publish the merged bump PR this commit is), dry-run; empty: release on push, bump otherwise"
+        description: "bump (open or update the bump PR), release (publish the merged bump PR this commit is), dry-run, release-notes (re-render the notes of the existing release `tag` from CHANGELOG.md); empty: release on push, bump otherwise"
         type: string
         default: ''
       increment:
@@ -286,6 +305,10 @@ on:
         description: "Space-separated swarm-routing/vcpkg-registry ports this release bumps (e.g. `swarm-core`); after publish the org bot opens or updates the registry PR rendered by its tools/port_bump.py. Empty (default): nothing"
         type: string
         default: ''
+      tag:
+        description: "mode release-notes only (#524): the existing release (vX.Y.Z) whose notes are re-rendered from the version's CHANGELOG.md section at the dispatched commit; the Verify your download block is kept byte for byte"
+        type: string
+        default: ''
     secrets:
       BOT_APP_ID:
         description: "The org GitHub App's ID, for the bump PR's and the release tag's token (.github/actions/bot-token)"
@@ -301,7 +324,7 @@ on:
         required: false
     outputs:
       mode:
-        description: "What the run did: bump, release, dry-run, or none (a push that is not a merged bump PR)"
+        description: "What the run did: bump, release, dry-run, release-notes, or none (a push that is not a merged bump PR)"
         value: ${{ jobs.route.outputs.mode }}
       version:
         description: "The released (or, in bump mode, proposed) version, e.g. 0.1.0"
@@ -350,6 +373,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
           INCREMENT: ${{ inputs.increment }}
           EVENT: ${{ github.event_name }}
+          TAG_IN: ${{ inputs.tag }}
         run: |
           case "$INCREMENT" in
             ''|PATCH|MINOR|MAJOR) ;;
@@ -366,9 +390,16 @@ jobs:
             if [ "$EVENT" = push ]; then mode=release; else mode=bump; fi
           fi
           case "$mode" in
-            bump|release|dry-run) ;;
-            *) echo "::error::mode '$mode': use bump, release or dry-run"; exit 1 ;;
+            bump|release|dry-run|release-notes) ;;
+            *) echo "::error::mode '$mode': use bump, release, dry-run or release-notes"; exit 1 ;;
           esac
+          if [ "$mode" = release-notes ]; then
+            if ! [[ "$TAG_IN" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::mode release-notes needs tag: vX.Y.Z (got '${TAG_IN}')"; exit 1
+            fi
+          elif [ -n "$TAG_IN" ]; then
+            echo "::notice::tag: $TAG_IN applies to mode release-notes only; a $mode ignores it"
+          fi
           base="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)"
           echo "base=${base}" >> "$GITHUB_OUTPUT"
           if [ "$mode" != dry-run ] && [ "$GITHUB_REF" != "refs/heads/${base}" ]; then
@@ -407,7 +438,7 @@ jobs:
   # bump mode) the caller's build, the SBOM and the checksums.
   build:
     needs: route
-    if: ${{ needs.route.outputs.mode != 'none' }}
+    if: ${{ needs.route.outputs.mode != 'none' && needs.route.outputs.mode != 'release-notes' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -419,6 +450,7 @@ jobs:
       name: ${{ steps.bump.outputs.name }}
       artifact: ${{ steps.bump.outputs.artifact }}
       commit: ${{ steps.bump.outputs.commit }}
+      notes-empty: ${{ steps.bump.outputs.notes-empty }}
     env:
       WD: ${{ inputs.working-directory }}
       DIST_IN: ${{ inputs.dist-dir }}
@@ -466,6 +498,24 @@ jobs:
           python -m pip install --quiet --only-binary=:all: --require-hashes -r "$req"
           cz version
 
+      # The org's release tools (tools/release/: release_check.py for the
+      # ladder gate, release_notes.py for the notes), this repository's at
+      # main, read into the runner's temp directory (never into the caller's
+      # checkout, which the build and the SBOM read); when the caller is this
+      # repository (release-selftest.yml), its own checkout's.
+      - name: Org release tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for t in release_check.py release_notes.py; do
+            if [ "$GITHUB_REPOSITORY" = swarm-routing/.github ]; then
+              cp "tools/release/$t" "$RUNNER_TEMP/$t"
+            else
+              gh api -H 'Accept: application/vnd.github.raw' \
+                "repos/swarm-routing/.github/contents/tools/release/${t}?ref=main" > "$RUNNER_TEMP/$t"
+            fi
+          done
+
       - name: Version (bump and dry-run, on the runner only; release, the merged commit's)
         id: bump
         env:
@@ -500,13 +550,18 @@ jobs:
               fi
               echo "::notice::${tag} already tags ${GITHUB_SHA}: a re-run, publish resumes"
             fi
-            # The notes: this version's section of the changelog the bump wrote.
-            awk -v h="## ${tag}" 'index($0, h " ") == 1 || $0 == h { p = 1; print; next } p && /^## / { exit } p' \
-              CHANGELOG.md > "$OUT/meta/changes.md" 2> /dev/null || true
-            if [ ! -s "$OUT/meta/changes.md" ]; then
-              echo "::warning::no '## ${tag}' section in ${WD}/CHANGELOG.md; the notes carry only the heading"
-              printf '## %s\n' "$tag" > "$OUT/meta/changes.md"
+            # The notes: this version's section of the changelog the bump PR
+            # merged (the commit this run tags). Empty notes never ship
+            # (#524): a section with nothing under its heading (a release with
+            # no feat or fix, whose paragraph was not written on the bump PR)
+            # fails here, before anything is built, tagged or published.
+            : > "$RUNNER_TEMP/rendered.md"
+            if ! python3 -I "$RUNNER_TEMP/release_notes.py" notes --rendered "$RUNNER_TEMP/rendered.md" \
+                 --changelog CHANGELOG.md --tag "$tag" --out "$OUT/meta/changes.md" --require-body; then
+              echo "::error::${WD}/CHANGELOG.md at ${GITHUB_SHA} has no paragraph under '## ${tag}': a release with empty notes is never published. Nothing was tagged or published (CONTRIBUTING \"Cutting a release\": the paragraph is written on the bump PR)"
+              exit 1
             fi
+            echo "notes-empty=false" >> "$GITHUB_OUTPUT"
             commit="$GITHUB_SHA"
           else
             # The first release is v0.1.0 (ROADMAP "Releases", .github#81); after
@@ -533,6 +588,19 @@ jobs:
             fi
             ver="$(cz version --project)"
             tag="v${ver}"
+            # Rendered notes with nothing under the heading (no feat or fix,
+            # #524): the version's section of the CHANGELOG.md the bump wrote,
+            # else they stay empty, and then the bump PR says so and a
+            # release from it fails before publishing.
+            src="$(python3 -I "$RUNNER_TEMP/release_notes.py" notes --rendered "$OUT/meta/changes.md" \
+                     --changelog CHANGELOG.md --tag "$tag" --out "$OUT/meta/changes.md")"
+            echo "$src"
+            if [ "$src" = "notes: empty" ]; then
+              echo "notes-empty=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::${tag} has empty notes (no feat or fix since the last tag): write its paragraph under '## ${tag}' in CHANGELOG.md on the bump PR before merging, or the release fails before publishing (#524)"
+            else
+              echo "notes-empty=false" >> "$GITHUB_OUTPUT"
+            fi
             if [ "$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")" != "$(git rev-parse HEAD)" ]; then
               echo "::error::Commitizen did not tag HEAD as ${tag}: set tag_format = \"v\$version\""
               exit 1
@@ -580,13 +648,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail   # the checker's exit 1 must survive the tee
-          tool="$RUNNER_TEMP/release_check.py"
-          if [ "$GITHUB_REPOSITORY" = swarm-routing/.github ]; then
-            cp tools/release/release_check.py "$tool"
-          else
-            gh api -H 'Accept: application/vnd.github.raw' \
-              'repos/swarm-routing/.github/contents/tools/release/release_check.py?ref=main' > "$tool"
-          fi
+          tool="$RUNNER_TEMP/release_check.py"   # the org release tools step's
           if ! python3 -I "$tool" ladder . --version "$RELEASE_VERSION" | tee "$RUNNER_TEMP/ladder.txt"; then
             echo "::error::docs/roadmap.md has no row for ${RELEASE_TAG}: add the version and its exit criteria to the ladder in a PR, then dispatch again (CONTRIBUTING \"Cutting a release\", #430)"
             exit 1
@@ -1329,6 +1391,7 @@ jobs:
       OLD: ${{ needs.build.outputs.old-version }}
       BASE: ${{ needs.route.outputs.base }}
       INCREMENT: ${{ inputs.increment }}
+      NOTES_EMPTY: ${{ needs.build.outputs.notes-empty }}
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -1385,6 +1448,11 @@ jobs:
             echo
             echo "**Merging this PR releases v${VER}.** The release workflow runs on the merge: it builds, attests and verifies the merged commit, tags it v${VER} and publishes the GitHub release (swarm-routing/.github \`reusable-release.yml\`)."
             echo
+            if [ "$NOTES_EMPTY" = true ]; then
+              echo "> [!WARNING]"
+              echo "> **The notes of v${VER} are empty**: no \`feat\` or \`fix\` commit since the last tag, so \`CHANGELOG.md\` has nothing under \`## v${VER}\`. Write the release's paragraph there, in a commit on this PR, before merging: a release with empty notes fails before anything is tagged or published (swarm-routing/.github#524)."
+              echo
+            fi
             echo "If \`${BASE}\` moves before the merge, org-bot's \`release-rebuild\` task dispatches the release workflow with mode \`bump\` again within the hour, with the same \`increment\`, and that rebuilds this branch on the new tip (swarm-routing/.github#430); a dispatch by hand does the same."
             echo
             echo "Opened by run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
@@ -1403,3 +1471,65 @@ jobs:
           fi
           echo "url=${url}" >> "$GITHUB_OUTPUT"
           echo "### ${title}: ${url}" >> "$GITHUB_STEP_SUMMARY"
+
+  # mode release-notes (#524): the notes of an existing release, re-rendered
+  # from the version's CHANGELOG.md section as it stands at the dispatched
+  # commit (a paragraph written after the release, swarm-routing/BeeAdHoc#165),
+  # with GITHUB_TOKEN. Everything from `## Verify your download` on is kept
+  # byte for byte; only the part above it changes, and only when the section
+  # has a paragraph. tools/release/release_notes.py `rerender` does the cut.
+  release-notes:
+    needs: route
+    if: ${{ needs.route.outputs.mode == 'release-notes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write   # edit the release
+    env:
+      TAG: ${{ inputs.tag }}
+      WD: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      # The CHANGELOG.md to read; no code of the caller's runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Re-render the notes from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tool="$RUNNER_TEMP/release_notes.py"
+          if [ "$GITHUB_REPOSITORY" = swarm-routing/.github ]; then
+            cp tools/release/release_notes.py "$tool"
+          else
+            gh api -H 'Accept: application/vnd.github.raw' \
+              'repos/swarm-routing/.github/contents/tools/release/release_notes.py?ref=main' > "$tool"
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" > "$RUNNER_TEMP/before.json"
+          id="$(jq -r .id "$RUNNER_TEMP/before.json")"
+          if ! verdict="$(python3 -I "$tool" rerender --release-json "$RUNNER_TEMP/before.json" \
+                 --changelog "${WD}/CHANGELOG.md" --tag "$TAG" --out "$RUNNER_TEMP/payload.json")"; then
+            echo "::error::the notes of ${TAG} were left as they are (the reason is above)"
+            exit 1
+          fi
+          if [ "$verdict" = unchanged ]; then
+            echo "${TAG}: the notes already carry CHANGELOG.md's section; nothing edited" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${id}" --input "$RUNNER_TEMP/payload.json" > /dev/null
+          # Read back: the body is the one sent, so the verify block is the old one, byte for byte.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" > "$RUNNER_TEMP/after.json"
+          jq -e --slurpfile p "$RUNNER_TEMP/payload.json" '.body == $p[0].body' "$RUNNER_TEMP/after.json" > /dev/null
+          jq -e --slurpfile b "$RUNNER_TEMP/before.json" \
+            '(.body | .[index("## Verify your download"):]) == ($b[0].body | .[index("## Verify your download"):])' \
+            "$RUNNER_TEMP/after.json" > /dev/null
+          {
+            echo "### ${TAG}: notes re-rendered from ${WD}/CHANGELOG.md at ${GITHUB_SHA}"
+            echo
+            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG} (the Verify your download block is unchanged)"
+          } >> "$GITHUB_STEP_SUMMARY"
