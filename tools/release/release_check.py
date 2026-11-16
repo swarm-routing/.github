@@ -153,12 +153,20 @@ def read(path):
 
 def with_inputs(text):
     """{input: value} of every `with:` block of a job that calls
-    reusable-release.yml, read by indentation (stdlib, no YAML parser): a
-    commented line is not a key, a key belongs to the block it is indented
-    under, and a block scalar (`|`, `>-`) takes its indented lines, joined by
-    spaces."""
-    lines = text.splitlines()
+    reusable-release.yml, merged (with_blocks has them one per call)."""
     out = {}
+    for block in with_blocks(text):
+        out.update(block)
+    return out
+
+
+def with_blocks(text):
+    """[{input: value}], one per job that calls reusable-release.yml, read by
+    indentation (stdlib, no YAML parser): a commented line is not a key, a key
+    belongs to the block it is indented under, and a block scalar (`|`, `>-`)
+    takes its indented lines, joined by spaces."""
+    lines = text.splitlines()
+    blocks = []
 
     def indent(ln):
         return len(ln) - len(ln.lstrip(" "))
@@ -169,6 +177,8 @@ def with_inputs(text):
     for i, ln in enumerate(lines):
         if not REUSABLE.match(ln):
             continue
+        out = {}
+        blocks.append(out)
         # `uses:` and `with:` are siblings: the same indentation (a `- uses:` counts its dash)
         level = indent(ln.replace("- ", "  ", 1))
         k = i + 1
@@ -195,7 +205,7 @@ def with_inputs(text):
                         k += 1
                     val = " ".join(b for b in body if b)
                 out[key] = val.strip().strip("\"'")
-    return out
+    return blocks
 
 
 def caller_workflows(texts):
@@ -293,12 +303,19 @@ def ready(repo_dir, repo, version, gh):
         inputs.update(with_inputs(t))
     own = [t for n, t in flows if n == "release.yml" and not callers]
     own_live = "\n".join(COMMENT.sub("", ln) for ln in own[0].splitlines()) if own else ""
-    if (callers and "increment" in inputs) or (own and INCREMENT.search(own_live)):
+    # every call of reusable-release.yml forwards it, not just one of them
+    missing = [
+        f".github/workflows/{n} (call {k + 1})"
+        for n, t in callers
+        for k, b in enumerate(with_blocks(t))
+        if "increment" not in b
+    ]
+    if (callers and not missing) or (own and INCREMENT.search(own_live)):
         r.add("OK", "increment: the dispatch input reaches the bump")
     elif callers:
         r.add(
             "FAIL",
-            "increment: the caller does not forward the `increment` input "
+            f"increment: {', '.join(missing)}: the caller does not forward the `increment` input "
             "(a choice auto/PATCH/MINOR/MAJOR, passed as "
             "`increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}`; "
             "swarm-routing/.github#512)",
@@ -707,6 +724,29 @@ def self_test():
         expect(
             "ready: a caller that drops increment fails (#512)",
             has(rep, "FAIL", "caller does not forward the `increment` input"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(caller + caller.split("jobs:\n", 1)[1].replace("release:", "again:"))
+        with open(os.path.join(d, ".github/workflows/other.yml"), "w", encoding="utf-8") as fh:
+            fh.write(caller.replace("increment", "# increment"))
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: one caller of several that drops increment is named, the others not",
+            has(rep, "FAIL", "other.yml (call 1): the caller does not forward")
+            and not has(rep, "FAIL", "release.yml (call"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(
+                caller
+                + caller.split("jobs:\n", 1)[1]
+                .replace("release:", "again:")
+                .replace("increment", "# increment")
+            )
+        os.remove(os.path.join(d, ".github/workflows/other.yml"))
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: the second of two calls in one file that drops increment fails",
+            has(rep, "FAIL", "release.yml (call 2)") and not has(rep, "FAIL", "(call 1)"),
         )
         own = "on:\n  workflow_dispatch:\n    inputs:\n      mode: {type: string}\njobs: {}\n"
         with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
