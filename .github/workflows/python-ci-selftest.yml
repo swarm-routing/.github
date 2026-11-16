@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Python CI self-test
+
+# Proves reusable-python-ci.yml from this checkout measures child Python
+# processes by default (#480): tools/checks/fixtures/python-ci/test_tool.py
+# runs tool.py only as `python3 -I tool.py` from another directory, so tool.py
+# is covered only if the subprocess is measured. The check job reads the
+# coverage report the reusable workflow uploads.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reusable-python-ci.yml', '.github/workflows/python-ci-selftest.yml', 'tools/checks/fixtures/python-ci/**']
+  pull_request:
+    paths: ['.github/workflows/reusable-python-ci.yml', '.github/workflows/python-ci-selftest.yml', 'tools/checks/fixtures/python-ci/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    uses: ./.github/workflows/reusable-python-ci.yml
+    with:
+      paths: tools/checks/fixtures/python-ci
+      tests: tools/checks/fixtures/python-ci/test_*.py
+      source: tools/checks/fixtures/python-ci
+
+  check:
+    needs: python
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-coverage
+          path: coverage
+      - name: tool.py is covered through its child process
+        run: |
+          cat coverage/summary.txt
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          rates = {c.get("filename"): float(c.get("line-rate"))
+                   for c in ET.parse("coverage/coverage.xml").iter("class")}
+          print(rates)
+          tool = [r for f, r in rates.items() if f.endswith("tool.py") and "test_" not in f]
+          assert tool and tool[0] == 1.0, f"tool.py not fully measured: {rates}"
+          PY
