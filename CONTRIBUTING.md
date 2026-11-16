@@ -1034,7 +1034,7 @@ rate limit and was archived from its tag by `zenodo.py create` on 2026-11-11
 | HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.1.0 [10.5281/zenodo.24125266](https://doi.org/10.5281/zenodo.24125266) |
 | ns3-containers | [10.5281/zenodo.24202109](https://doi.org/10.5281/zenodo.24202109) | v1.0.0 [10.5281/zenodo.24202110](https://doi.org/10.5281/zenodo.24202110) |
 | ns3-swarm-core | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v0.4.0 [10.5281/zenodo.24238876](https://doi.org/10.5281/zenodo.24238876) |
-| ns3-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v1.1.1 [10.5281/zenodo.24254998](https://doi.org/10.5281/zenodo.24254998) |
+| ns3-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v1.1.2 [10.5281/zenodo.24262076](https://doi.org/10.5281/zenodo.24262076) |
 | Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
 <!-- zenodo:archived:end -->
 
