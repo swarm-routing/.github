@@ -182,6 +182,7 @@ DEFAULT_REPOS = [
     "Termite",
     "HOPNET",
     "vcpkg-registry",
+    "ns3-upstream-report",
 ]
 FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "error"}
 SEVERITIES = ("critical", "major", "minor", "trivial", "nitpick", "info")
