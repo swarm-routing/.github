@@ -278,7 +278,7 @@ adds its row here):
 | swarm-routing/BeeAdHoc | `BAH` | the `beeadhoc-core` vcpkg port |
 | swarm-routing/HOPNET | `HOP` | the `hopnet-core` vcpkg port, once published |
 | swarm-routing/Termite | `TRM` | the `termite-core` vcpkg port, once published |
-| swarm-routing/vcpkg-registry | `VCP` | port recipes at a registry baseline |
+| swarm-routing/vcpkg-registry | `VCP` (maintainer decision, 2026-11-16) | port recipes at a registry baseline: a regression in a published port is a `VCP-NNN` there |
 | swarm-routing/ns3-containers | `CNT` | image composition only (the table above) |
 
 ### ns-3 bugs (RCAPA)
