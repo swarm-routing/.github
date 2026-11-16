@@ -1530,6 +1530,17 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
   package's newest image, its untagged versions and the signatures of the
   images it keeps (#371). Commit a campaign's plan, with its image digest,
   before dispatching it.
+- **The CI tools image** `ghcr.io/swarm-routing/ci-tools` carries the org's
+  Go pipeline tools (ADR-0002): built from this repository's `cmd/` by
+  `ci-tools-image.yml` on `docker/ci-tools/Dockerfile` (a digest-pinned
+  `golang` build stage at go.mod's `toolchain` version, a digest-pinned
+  `gcr.io/distroless/static-debian12:nonroot` runtime, the `ci-tools`
+  dispatcher as entrypoint). It is built once per change, pushed as a
+  candidate to `ci-tools-dev`, tested on that digest, and on `main` the same
+  digest is copied to `ci-tools` (no rebuild), signed and attested; a
+  workflow runs a tool with `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:<digest>`
+  and `with: args: <tool> …`, never a tag. Dependabot keeps both bases
+  current (`.github/dependabot.yml`).
 
 ## Quality gates
 

@@ -1,0 +1,21 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+#
+# Version updates for the ci-tools image (docs/adr/0002-pipelines-are-go.md):
+# its two digest-pinned bases and the root Go module's dependencies. A bump of
+# the golang image also needs go.mod's `toolchain` line moved to the same
+# version (ci-tools-image.yml fails until it is).
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /docker/ci-tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"

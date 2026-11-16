@@ -1,0 +1,311 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: ci-tools image
+
+# Builds ghcr.io/swarm-routing/ci-tools, the image the org's Go pipeline
+# tools ship in (docs/adr/0002-pipelines-are-go.md), on the rule of
+# swarm-routing/ns3-containers' golden rule 17: what is tested is what is
+# tagged.
+#
+#   go        reusable-go-ci.yml on the root module (cmd/, internal/)
+#   lint      hadolint (.hadolint.yaml), a Trivy configuration scan, and the
+#             golang base tag = go.mod's `toolchain` version
+#   image     build once (docker/ci-tools/Dockerfile: go vet and go test run
+#             in its build stage); on a same-repository PR and on main, push
+#             it as a candidate to ghcr.io/swarm-routing/ci-tools-dev and check
+#             the pushed manifest is the image built; then every test runs on
+#             that digest (a fork PR, which cannot push, tests the local
+#             image): the dispatcher's usage and `list`, the fixture tool on
+#             the mounted workspace as `uses: docker://` mounts it, compared
+#             with wc -l and sha256sum, user nonroot, no shell in the image,
+#             and Trivy on the image (HIGH/CRITICAL with a fix fails)
+#   promote   main only: the same digest copied to ci-tools:sha-<sha7> and
+#             ci-tools:latest by a registry copy (no rebuild; the copy's
+#             digest must equal the candidate's), a CycloneDX SBOM (Trivy),
+#             a keyless cosign signature, build provenance and SBOM
+#             attestations, then `cosign verify`
+#   cleanup   main only: ci-tools-dev candidates older than 2 days that no
+#             committed file pins (reusable-dev-image-cleanup.yml)
+#
+# Workflows run a tool by digest, never by tag:
+#   - uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:<digest>
+#     with:
+#       args: <tool> <args...>
+# A new tool's workflow self-test runs the candidate the same way here, with
+# `docker run` on the candidate digest (a `uses:` cannot take an expression).
+#
+# Permissions: read by default; the image job adds packages: write (push the
+# candidate), the promote job packages: write, id-token: write (keyless
+# signing, attestations) and attestations: write.
+on:
+  pull_request:
+    paths:
+      - go.mod
+      - go.sum
+      - 'cmd/**'
+      - 'internal/**'
+      - 'docker/ci-tools/**'
+      - .hadolint.yaml
+      - .github/workflows/ci-tools-image.yml
+      - .github/workflows/reusable-go-ci.yml
+  push:
+    branches: [main]
+    paths:
+      - go.mod
+      - go.sum
+      - 'cmd/**'
+      - 'internal/**'
+      - 'docker/ci-tools/**'
+      - .hadolint.yaml
+      - .github/workflows/ci-tools-image.yml
+      - .github/workflows/reusable-go-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-tools-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CANDIDATES: ghcr.io/swarm-routing/ci-tools-dev
+  IMAGE: ghcr.io/swarm-routing/ci-tools
+  TRIVY: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+
+jobs:
+  go:
+    uses: ./.github/workflows/reusable-go-ci.yml
+
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        timeout-minutes: 3
+        with:
+          dockerfile: docker/ci-tools/Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: warning
+      - name: Trivy configuration scan
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/docker/ci-tools:/src:ro" "$TRIVY" config --quiet \
+            --exit-code 1 --severity MEDIUM,HIGH,CRITICAL /src
+      - name: The golang base is go.mod's toolchain
+        run: |
+          set -euo pipefail
+          want=$(sed -n 's/^toolchain go//p' go.mod)
+          have=$(sed -n 's/^FROM golang:\([0-9.]*\)-.*/\1/p' docker/ci-tools/Dockerfile)
+          echo "go.mod toolchain: $want; Dockerfile golang: $have"
+          if [ -z "$want" ] || [ "$want" != "$have" ]; then
+            echo "::error file=docker/ci-tools/Dockerfile::the golang base ($have) must be go.mod's toolchain ($want): move both together"
+            exit 1
+          fi
+          grep -Eq '^FROM golang:[^ ]+@sha256:[0-9a-f]{64} AS build$' docker/ci-tools/Dockerfile
+          grep -Eq '^FROM gcr\.io/distroless/static-debian12:nonroot@sha256:[0-9a-f]{64}$' docker/ci-tools/Dockerfile
+          echo "both bases pinned by digest"
+
+  image:
+    needs: [go, lint]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build once
+        id: build
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          docker build --pull -f docker/ci-tools/Dockerfile \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "io.github.swarm-routing.build-run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -t ci-tools:candidate .
+          echo "id=$(docker image inspect -f '{{.Id}}' ci-tools:candidate)" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        timeout-minutes: 2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push the candidate and check it is the image built
+        id: push
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        timeout-minutes: 5
+        env:
+          ID: ${{ steps.build.outputs.id }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -n "$PR" ]; then tag="pr-$PR-${GITHUB_SHA::7}"; else tag="main-${GITHUB_SHA::7}"; fi
+          docker tag ci-tools:candidate "$CANDIDATES:$tag"
+          docker push --quiet "$CANDIDATES:$tag"
+          digest=$(docker buildx imagetools inspect "$CANDIDATES:$tag" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+          docker buildx imagetools inspect --raw "$CANDIDATES@$digest" > "$RUNNER_TEMP/manifest.json"
+          python3 - "$RUNNER_TEMP/manifest.json" "$digest" "$ID" <<'PY'
+          import json, sys
+          m, digest, local = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+          ok = {digest} | ({m["config"]["digest"]} if "config" in m else set())
+          if local not in ok:
+              sys.exit(f"pushed {digest} is not the built image {local} (config/manifest {sorted(ok)})")
+          print(f"pushed {digest} = built {local}")
+          PY
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "candidate \`$CANDIDATES@$digest\` (\`$tag\`)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Test on the candidate digest
+        timeout-minutes: 10
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DIGEST" ]; then
+            docker rmi ci-tools:candidate > /dev/null
+            img="$CANDIDATES@$DIGEST"; docker pull --quiet "$img"
+          else
+            img=ci-tools:candidate; echo "::notice::fork PR: testing the local image, nothing pushed"
+          fi
+          echo "testing $img"
+          # the dispatcher: usage (exit 2) with no tool, `list` names the tools
+          rc=0; docker run --rm "$img" 2> usage.txt || rc=$?
+          if [ "$rc" != 2 ] || ! grep -q '^usage: ci-tools <tool>' usage.txt; then
+            cat usage.txt; echo "::error::no-argument run: exit $rc"; exit 1
+          fi
+          docker run --rm "$img" list | tee list.txt
+          grep -qx fixture list.txt
+          rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
+          [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
+          # a tool on the workspace, mounted as `uses: docker://` mounts it
+          printf 'a\nb\n' > fixture-input.txt
+          got=$(docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" fixture go.mod fixture-input.txt)
+          want=$(for f in go.mod fixture-input.txt; do echo "$f $(wc -l < "$f") $(sha256sum < "$f" | cut -d' ' -f1)"; done)
+          echo "$got"
+          [ "$got" = "$want" ] || { echo "::error::fixture output differs from wc -l / sha256sum:"; echo "$want"; exit 1; }
+          # nonroot, and no shell to fall back to
+          user=$(docker image inspect -f '{{.Config.User}}' "$img")
+          [ "$user" = nonroot:nonroot ] || { echo "::error::image user is '$user'"; exit 1; }
+          if docker run --rm --entrypoint /bin/sh "$img" -c true 2> /dev/null; then
+            echo "::error::the image has a shell"; exit 1
+          fi
+          echo "dispatcher, fixture tool, user and no-shell checks passed on $img"
+          echo "img=$img" >> "$GITHUB_ENV"
+      - name: Trivy on the image (HIGH/CRITICAL with a fix fails)
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY" image --quiet \
+            --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL "$img"
+
+  promote:
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.image.outputs.digest != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        timeout-minutes: 2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote the tested digest (registry copy, no rebuild)
+        timeout-minutes: 5
+        env:
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "$IMAGE:sha-${GITHUB_SHA::7}" -t "$IMAGE:latest" "$CANDIDATES@$DIGEST"
+          got=$(docker buildx imagetools inspect "$IMAGE:sha-${GITHUB_SHA::7}" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+          [ "$got" = "$DIGEST" ] || { echo "::error::promoted $got is not the tested $DIGEST"; exit 1; }
+          { echo "promoted \`$IMAGE@$DIGEST\` (\`sha-${GITHUB_SHA::7}\`, \`latest\`)"; echo
+            echo "pin it: \`uses: docker://$IMAGE@$DIGEST\`"; } >> "$GITHUB_STEP_SUMMARY"
+      - name: SBOM (CycloneDX, Trivy pinned by digest)
+        timeout-minutes: 5
+        env:
+          REF: ${{ env.IMAGE }}@${{ needs.image.outputs.digest }}
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Trivy runs as root: write through stdout so the runner owns the file.
+          docker run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD "$TRIVY" image --quiet \
+            --image-src remote --format cyclonedx "$REF" > sbom.cdx.json
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        timeout-minutes: 3
+      - name: Sign (keyless, by digest)
+        timeout-minutes: 3
+        env:
+          REF: ${{ env.IMAGE }}@${{ needs.image.outputs.digest }}
+        run: cosign sign --yes "$REF"
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        timeout-minutes: 3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ needs.image.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        timeout-minutes: 3
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ needs.image.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+      - name: Verify the signature
+        timeout-minutes: 3
+        env:
+          REF: ${{ env.IMAGE }}@${{ needs.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign verify \
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/ci-tools-image.yml@refs/heads/main" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$REF" > /dev/null
+          echo "signature verified for \`$REF\`" >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup:
+    needs: promote
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/reusable-dev-image-cleanup.yml
+    with:
+      packages: ci-tools-dev

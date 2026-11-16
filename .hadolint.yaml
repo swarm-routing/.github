@@ -1,0 +1,8 @@
+# hadolint settings for docker/ci-tools/Dockerfile (ci-tools-image.yml; run
+# locally with `hadolint docker/ci-tools/Dockerfile`, which reads this file).
+# A warning or worse fails; the bases are pinned by digest from these
+# registries only.
+failure-threshold: warning
+trustedRegistries:
+  - docker.io
+  - gcr.io
