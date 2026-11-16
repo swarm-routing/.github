@@ -184,7 +184,7 @@ automatic CodeRabbit review, so a new label is added there by hand):
 | Kind | Rule | Labels |
 |---|---|---|
 | Type | exactly one; umbrellas add `epic` | `bug`, `enhancement`, `chore`, `documentation`, `verification` (+ `question`, `handoff`) |
-| RCAPA | on every RCAPA ticket: an ns-3 bug beside `verification` and `ns3` ("ns-3 bugs (RCAPA)" below), a regression in a published release beside `bug` ("RCAPA" below) | `rcapa` |
+| RCAPA | on every RCAPA ticket: an ns-3 bug beside `verification` and `ns3` ("ns-3 bugs (RCAPA)" below), a regression in a published library beside `bug` ("RCAPA" below) | `rcapa` |
 | ns-3 upstream | on every `NS3-NNN` RCAPA ticket, beside `rcapa` (never on a regression or a `PROC-NNN`): it counts the open upstream ns-3 bugs for ns3-tools' "ns-3 bugs" badge | `ns3-upstream` |
 | Hold | stops an automated action from going out while it stays on (the upstream bridge's veto window; see "ns-3 bugs (RCAPA)" below) | `hold` |
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `learn-site`, `literature` |
@@ -210,36 +210,49 @@ An **RCAPA** (root cause analysis with corrective and preventive actions) is
 a ticket first, then a document: five whys, each cited; a reproducer;
 diagrams; the corrective and preventive actions, linked; a timeline
 ([ADR-0003](docs/adr/0003-rcapa-for-ns3-bugs-and-released-regressions.md);
-maintainer decision 2026-11-16). It is required for upstream ns-3 bugs and
-for **regressions in a published release**, and for nothing else:
+maintainer decisions 2026-11-16). It is required for upstream ns-3 bugs and
+for **regressions in a published library**, and for nothing else.
+
+**Published** means a library another project consumes at a specific
+version: a swarm-core release (the protocols' `swarm-core.lock`, the vcpkg
+baseline), an ns3-tools release (AntHocNet's `ns3-tools.lock`, PyPI), a
+protocol core's vcpkg port, a port recipe in swarm-routing/vcpkg-registry at
+a baseline, and any other release a consumer pins by version. A regression
+is something that worked in such a version and broke in a later one.
 
 | Defect | RCAPA |
 |--------|-------|
 | A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/ns3-tools ("ns-3 bugs (RCAPA)" below) |
 | A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/ns3-tools |
-| A regression in a published release: something that worked in a released version (a GitHub release, its Zenodo DOI, a PyPI package, a vcpkg port) and broke after a change, so the defect is in a published release or was found against one | **yes**: `<PREFIX>-NNN` in the repository that owns the defect |
-| A bug or change that never reached a release (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
+| A regression in a published library (above) | **yes**: `<PREFIX>-NNN` in the library's repository |
+| A bug in a Docker image (the `ns3-dev` images, `ci-tools`, any image) | **no** by default; **yes** only when it is traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image): then in the repository that owns that Dockerfile (`CNT-NNN` for swarm-routing/ns3-containers) |
+| A change in a repository whose output no project consumes at a version: swarm-routing/.github (reusable workflows at `@main`), the site's Pages deploy, swarm-routing/skills (the plugin), swarm-routing/benchmarks (datasets), swarm-routing/ns3-upstream-report | **no** for its own changes |
+| A bug or change that never reached a published version (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
 | A trivial change with no behaviour (a typo, a comment, docs wording) that affects no behaviour, output, number or released artifact | **no** |
 
-Whether a defect reached a release is read from the record, never from
-memory: in a repository that tags its releases, it did when a release tag
-contains the commit that introduced it (`git tag --contains <commit>`). A
-repository that publishes without tags (this one and swarm-routing/vcpkg-registry
-from `main`, swarm-routing/skills by its plugin version, the site by its
-deploy) states what "published" means for it in its `docs/rcapa/README.md`,
-and that page is the test there. A defect introduced after the last release
-and fixed before the next one never reached a release; a defect in a released
-version needs an RCAPA whenever it is found, also on `main` before the next
-release.
+Whether a defect reached a published version is read from the record, never
+from memory: a release tag contains the commit that introduced it
+(`git tag --contains <commit>`), or, for a vcpkg port recipe, a registry
+baseline does. A defect introduced after the last release and fixed before
+the next one never reached a published version.
 
-For a regression in a published release:
+**Worked example.** AntHocNet bumps its `swarm-core.lock` to a new swarm-core
+release and a check that passed on the old one fails. The suspect is a bug in
+the released swarm-core: the RCAPA is an `SWC-NNN` ticket in
+swarm-routing/ns3-swarm-core, opened from AntHocNet's finding (its issue or
+PR linked), and the regression is verified with AntHocNet's failing check on
+the new release against the old one. It closes when a swarm-core release
+carries the fix and AntHocNet's lock bump to it is green. If the cause turns
+out to be AntHocNet's own use of the library, the ticket says so and closes;
+the fix is an ordinary bug in AntHocNet.
 
-1. **Open the ticket first**, in the repository that owns the defect, from
-   the form *Regression in a release (RCAPA)*
-   (`ISSUE_TEMPLATE/rcapa-regression.yml`): title
-   `[rcapa] <PREFIX>-NNN <short description>`, labels `rcapa` and `bug`, a
-   priority and a model suggestion. `NNN` is the next free number in that
-   repository's `docs/rcapa/README.md`.
+For a regression in a published library:
+
+1. **Open the ticket first**, in the library's repository, from the form
+   *Regression in a release (RCAPA)* (`ISSUE_TEMPLATE/rcapa-regression.yml`):
+   title `[rcapa] <PREFIX>-NNN <short description>`, labels `rcapa` and
+   `bug`, a priority and a model suggestion. `NNN` is the next free number in
+   that repository's `docs/rcapa/README.md`.
 2. Copy `docs/rcapa/_template.md` (seeded by org-sync from
    `templates/rcapa/`) to `docs/rcapa/rcapa-<short-description>.md`
    (lowercase, hyphens: what breaks) and add its row to
@@ -249,26 +262,24 @@ For a regression in a published release:
    ns-3's; never a bare `#N`.
 4. **The ticket stays open until the corrective action is merged and a
    release carries the fix** (PROC-001's rule, swarm-routing/ns3-tools#247,
-   generalised).
+   generalised), and the consumer that found it runs green on that release.
 
-ID prefixes, one per repository (a new repository adds its row here):
+Every repository keeps `docs/rcapa/README.md`, linked from its README: its
+flow where RCAPA applies, and where it does not, the plain statement and the
+reason. ID prefixes, for the repositories where RCAPA applies (a new library
+adds its row here):
 
-| Repository | Prefix |
-|------------|--------|
-| swarm-routing/.github | `ORG` |
-| swarm-routing/AntHocNet | `AHN` |
-| swarm-routing/ARA | `ARA` |
-| swarm-routing/BeeAdHoc | `BAH` |
-| swarm-routing/HOPNET | `HOP` |
-| swarm-routing/Termite | `TRM` |
-| swarm-routing/ns3-swarm-core | `SWC` |
-| swarm-routing/ns3-tools | `NST` (its own code; ns-3 bugs keep `NS3`, process defects `PROC`) |
-| swarm-routing/ns3-containers | `CNT` |
-| swarm-routing/ns3-upstream-report | `UPR` |
-| swarm-routing/benchmarks | `BEN` |
-| swarm-routing/skills | `SKL` |
-| swarm-routing/swarm-routing.github.io | `SITE` |
-| swarm-routing/vcpkg-registry | `VCP` |
+| Repository | Prefix | Published as |
+|------------|--------|--------------|
+| swarm-routing/ns3-swarm-core | `SWC` | releases: `swarm-core.lock`, the `swarm-core` vcpkg port |
+| swarm-routing/ns3-tools | `NST` (its own code; ns-3 bugs keep `NS3`, process defects `PROC`) | releases: `ns3-tools.lock`, PyPI |
+| swarm-routing/AntHocNet | `AHN` | the `anthocnet-core` vcpkg port, once published |
+| swarm-routing/ARA | `ARA` | the `ara-core` vcpkg port |
+| swarm-routing/BeeAdHoc | `BAH` | the `beeadhoc-core` vcpkg port |
+| swarm-routing/HOPNET | `HOP` | the `hopnet-core` vcpkg port, once published |
+| swarm-routing/Termite | `TRM` | the `termite-core` vcpkg port, once published |
+| swarm-routing/vcpkg-registry | `VCP` | port recipes at a registry baseline |
+| swarm-routing/ns3-containers | `CNT` | image composition only (the table above) |
 
 ### ns-3 bugs (RCAPA)
 
