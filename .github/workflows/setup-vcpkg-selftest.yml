@@ -43,9 +43,10 @@ jobs:
           set -euo pipefail
           work="$RUNNER_TEMP/consumer"
           mkdir -p "$work"
-          reg=$(git ls-remote https://github.com/swarm-routing/vcpkg-registry.git refs/heads/main | cut -f1)
-          read -r ver pv < <(curl -fsSL "https://raw.githubusercontent.com/swarm-routing/vcpkg-registry/$reg/versions/baseline.json" \
-            | python3 -I -c 'import json,sys; e=json.load(sys.stdin)["default"]["swarm-core"]; print(e["baseline"], e.get("port-version", 0))')
+          git clone -q --depth 1 https://github.com/swarm-routing/vcpkg-registry.git "$RUNNER_TEMP/registry"
+          reg=$(git -C "$RUNNER_TEMP/registry" rev-parse HEAD)
+          read -r ver pv < <(python3 -I -c 'import json,sys; e=json.load(open(sys.argv[1]))["default"]["swarm-core"]; print(e["baseline"], e.get("port-version", 0))' \
+            "$RUNNER_TEMP/registry/versions/baseline.json")
           python3 -I - "$work" "$reg" "$ver" "$pv" <<'PY'
           import json, os, sys
           work, reg, version, pv = sys.argv[1:]
