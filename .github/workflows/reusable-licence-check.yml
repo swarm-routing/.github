@@ -10,14 +10,12 @@ name: Reusable licence check
 # `core-deps` names other repositories' dual-licensed cores a core builds on
 # (a protocol's core/ on swarm-core's), as `owner/repo@ref:subdir`: each is
 # fetched at that ref, and a core may include its files when they carry
-# `MIT OR GPL-2.0-only` themselves (check-headers --core-dep).
-# The checker is cmd/check-headers in swarm-routing/.github, run from the
-# ci-tools image by digest as `uses: docker://` runs a read-only tool
-# (ADR-0002, #531): it reads the checkout and the git index, no git needed.
-# That container sees only the workspace, so the fetched cores go in
-# .licence-core-deps/ there (refused when the checkout tracks it, emptied
-# first, never in the git index, so never scanned); the list of them stays
-# under $RUNNER_TEMP, where a PR cannot plant it.
+# `MIT OR GPL-2.0-only` themselves (check-headers --core-dep). The fetched
+# trees and their list live under $RUNNER_TEMP, never in the checkout.
+# The checker is cmd/check-headers in swarm-routing/.github (the Go port of
+# tools/checks/check-headers.py, #531), run from the ci-tools image by digest
+# with `docker run`: the checkout and the fetched cores mounted read-only, as
+# the image's nonroot user; it reads the git index itself (no git in the image).
 on:
   workflow_call:
     inputs:
@@ -65,13 +63,9 @@ jobs:
         env:
           CORE_DEPS: ${{ inputs.core-deps }}
         run: |
-          # In the checkout (the container sees only the workspace), under a
-          # directory the checkout may not track; the list outside it.
-          base=.licence-core-deps
-          if [ -n "$(git ls-files -- "$base")" ]; then
-            echo "::error::$base/ is tracked: the licence check fetches the cores there"; exit 1
-          fi
-          rm -rf "$base"; mkdir -p "$base"; : > "$RUNNER_TEMP/core-deps.list"
+          # Outside the checkout, so a PR cannot plant the list or a dependency.
+          base="$RUNNER_TEMP/core-deps"
+          rm -rf "$base"; mkdir -p "$base"; : > "$base.list"
           i=0
           for spec in $CORE_DEPS; do
             repo=${spec%%@*}; rest=${spec#*@}; ref=${rest%%:*}; sub=${rest#*:}
@@ -83,46 +77,30 @@ jobs:
             git -C "$dir" fetch -q --depth 1 "https://github.com/$repo" "$ref"
             git -C "$dir" checkout -q --detach FETCH_HEAD
             [ -d "$dir/$sub" ] || { echo "::error::$repo@$ref has no $sub/"; exit 1; }
-            echo "$dir/$sub" >> "$RUNNER_TEMP/core-deps.list"
+            echo "$dir/$sub" >> "$base.list"
           done
-      - name: The checker's arguments
-        id: args
+      - name: SPDX headers and the one-way include rule
+        timeout-minutes: 4  # the image pull (about 15 MB) and two runs of a few seconds
         env:
           DUAL: ${{ inputs.dual-roots }}
           CORE: ${{ inputs.core-roots }}
           CORE_DEPS: ${{ inputs.core-deps }}
           GPL_ONLY: ${{ inputs.gpl-only }}
           EXCLUDE: ${{ inputs.exclude }}
+          # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md); sha-328d5d4
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:602462891c03d1a5557901037a7169394538523fe9e9dac7b4884cd1d651a0b0
         run: |
-          # One line for the container's args; each value is one word (the
-          # inputs are space-split, as before), and the runner reads a double
-          # quote in args as quoting, so a value holding one is refused. An
-          # empty exclude is the same as none, so it is left out.
-          args="check-headers"
-          add() {
-            case "$2" in *'"'*) echo "::error::$1 '$2' holds a double quote"; exit 1;; esac
-            args="$args $1 $2"
-          }
-          for d in $DUAL; do add --dual "$d"; done
-          for c in $CORE; do add --core "$c"; done
-          for g in $GPL_ONLY; do add --gpl-only "$g"; done
-          # Only the list the fetch step just wrote, and only when deps are declared.
+          args=()
+          for d in $DUAL; do args+=(--dual "$d"); done
+          for c in $CORE; do args+=(--core "$c"); done
+          for g in $GPL_ONLY; do args+=(--gpl-only "$g"); done
+          run=(docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace)
+          # Only the list the fetch step just wrote, and only when deps are declared;
+          # the fetched trees are mounted read-only at /core-deps.
           if [ -n "$CORE_DEPS" ]; then
-            while read -r dep; do add --core-dep "$dep"; done < "$RUNNER_TEMP/core-deps.list"
+            run+=(-v "$RUNNER_TEMP/core-deps:/core-deps:ro")
+            while read -r dep; do args+=(--core-dep "/core-deps/${dep#"$RUNNER_TEMP/core-deps/"}"); done < "$RUNNER_TEMP/core-deps.list"
           fi
-          if [ -n "$EXCLUDE" ]; then
-            case "$EXCLUDE" in *[[:space:]]*) echo "::error::exclude '$EXCLUDE' holds whitespace"; exit 1;; esac
-            add --exclude "$EXCLUDE"
-          fi
-          echo "args=$args ." >> "$GITHUB_OUTPUT"
-          echo "$args ."
-      - name: check-headers self-test
-        uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:602462891c03d1a5557901037a7169394538523fe9e9dac7b4884cd1d651a0b0 # sha-328d5d4
-        timeout-minutes: 3
-        with:
-          args: check-headers --self-test
-      - name: SPDX headers and the one-way include rule
-        uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:602462891c03d1a5557901037a7169394538523fe9e9dac7b4884cd1d651a0b0 # sha-328d5d4
-        timeout-minutes: 3
-        with:
-          args: ${{ steps.args.outputs.args }}
+          docker pull --quiet "$IMG"
+          "${run[@]}" "$IMG" check-headers --self-test
+          "${run[@]}" "$IMG" check-headers "${args[@]}" --exclude "$EXCLUDE" .

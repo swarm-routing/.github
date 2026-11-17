@@ -4,9 +4,8 @@ name: licence check self-test
 
 # Proves reusable-licence-check.yml from this checkout, as a caller runs it:
 # this repository's own tooling roots (everything here is dual), a core-deps
-# entry (fetched into the workspace the ci-tools container sees) and an
-# exclude pattern with a backslash, parentheses and a bar (the container's
-# args line). The findings themselves are proven by internal/checkheaders'
+# entry (mounted into the ci-tools container at /core-deps) and an exclude
+# pattern with a backslash, parentheses and a bar. The findings themselves are proven by internal/checkheaders'
 # tests; a caller's PR (#531) proves a failing tree fails.
 on:
   pull_request:
