@@ -103,9 +103,9 @@ only always-running jobs. `merge_queue = true` adds the `merge_queue` rule
 (MERGE_QUEUE: squash, every PR of a group green, groups of up to 5, a
 120-minute check timeout for ns-3 CI; a table overrides any of them). It
 needs a ruleset profile and `required_checks`, and the workflow producing each
-required check (a workflow that runs on `pull_request`, with a job named, or
-with the id, the check's first ` / ` segment; `${{ }}` in a name matches any
-text) must also run on `merge_group`, or the queue waits for a
+required check (a workflow that runs on `pull_request` with no `paths:`
+filter, with a job named, or with the id, the check's first ` / ` segment;
+`${{ }}` in a name matches any text) must also run on `merge_group`, or the queue waits for a
 check that never comes: a repository where one does not is refused before
 anything is written, as for the Actions allowed list. GitHub offers merge
 queues on public organization repositories (and private ones on Enterprise
@@ -462,6 +462,28 @@ def runs_on_pr(text):
     return any(r.search(text) for r in PR_TRIGGERS)
 
 
+PR_KEY = re.compile(r"^([ \t]*)pull_request[ \t]*:[ \t]*(?:#.*)?\n", re.M)
+
+
+def pr_path_filtered(text):
+    """Whether the workflow's `pull_request:` trigger has a `paths:` or
+    `paths-ignore:` filter. Such a workflow skips some PRs, so it can never be
+    what reports a required check (CONTRIBUTING "Settings are code"); a job of
+    it that shares a required check's name is another check (#576)."""
+    m = PR_KEY.search(text)
+    if not m:
+        return False
+    indent = len(m.group(1))
+    for line in text[m.end() :].splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            return False
+        if re.match(r"[ \t]*paths(?:-ignore)?[ \t]*:", line):
+            return True
+    return False
+
+
 NAME_LINE = re.compile(r"^[ \t]+name:[ \t]*(\S.*)$", re.M)
 
 
@@ -516,8 +538,9 @@ def without_merge_group(checks, workflows):
     with a job named (or with the id) the check's first ` / ` segment, or one
     found whose triggers have no merge_group. Only workflows that run on
     pull_request can report a required check, so a reusable (workflow_call)
-    workflow whose job carries the same name is not one of them; and a check
-    `X / Y` is reported only by a job X that calls a reusable workflow."""
+    workflow whose job carries the same name is not one of them, nor one whose
+    pull_request trigger is path-filtered (#576); and a check `X / Y` is
+    reported only by a job X that calls a reusable workflow."""
     out = []
     for c in checks:
         job = c.split(" / ")[0]
@@ -525,7 +548,10 @@ def without_merge_group(checks, workflows):
         found = [
             t
             for p, t in workflows.items()
-            if "/workflows/" in p and runs_on_pr(t) and reports_as(t, job, nested)
+            if "/workflows/" in p
+            and runs_on_pr(t)
+            and not pr_path_filtered(t)
+            and reports_as(t, job, nested)
         ]
         if not found or not all(MERGE_GROUP.search(t) for t in found):
             out.append(c)
@@ -2294,6 +2320,51 @@ def self_test():
     check(
         "a name that is only an expression names no check",
         without_merge_group(["python / python"], {**reusable, **only_expr}) == [],
+    )
+    # #576: a path-filtered self-test whose job shares the required check's name
+    selftest = (
+        "on:\n  push:\n    branches: [main]\n  pull_request:\n"
+        "    paths: ['.github/workflows/reusable-python-ci.yml']\n  workflow_dispatch:\n"
+        "jobs:\n  python:\n    uses: ./.github/workflows/reusable-python-ci.yml\n"
+    )
+    collide = {**reusable, ".github/workflows/python-ci-selftest.yml": selftest}
+    check(
+        "a path-filtered workflow sharing a required check's name is not its workflow (#576)",
+        without_merge_group(["python / python"], collide) == [],
+    )
+    check(
+        "a path-filtered workflow alone does not report a required check",
+        without_merge_group(
+            ["python / python"], {".github/workflows/python-ci-selftest.yml": selftest}
+        )
+        == ["python / python"],
+    )
+    check(
+        "the same name without merge_group, unfiltered, still refuses",
+        without_merge_group(
+            ["python / python"],
+            {
+                **collide,
+                ".github/workflows/python-ci-selftest.yml": selftest.replace(
+                    "    paths: ['.github/workflows/reusable-python-ci.yml']\n", ""
+                ),
+            },
+        )
+        == ["python / python"],
+    )
+    check(
+        "paths and paths-ignore under pull_request filter; under push or a sibling they do not",
+        [
+            pr_path_filtered(t)
+            for t in (
+                "on:\n  pull_request:\n    paths: [a]\n",
+                "on:\n  pull_request:\n    branches: [main]\n    paths-ignore: [a]\n",
+                "on:\n  push:\n    paths: [a]\n  pull_request:\n  merge_group:\n",
+                "on:\n  pull_request:\n    types: [opened]\njobs:\n  paths:\n",
+                "on: [pull_request]\n",
+            )
+        ]
+        == [True, True, False, False, False],
     )
     check(
         "pull_request as a key, in a list, as the only trigger; not pull_request_target",
