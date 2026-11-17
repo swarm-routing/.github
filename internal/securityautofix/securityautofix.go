@@ -7,19 +7,20 @@
 // no token that can push, and this package decides what it may work on and
 // whether its change may become a pull request:
 //
-//   - pick lists the repository's open code-scanning and secret-scanning
-//     alerts with the bot's token. An alert an open `bug` issue already names
-//     is handled. A secret alert gets a P1 rotation issue (rotation needs the
-//     maintainer's accounts: never an agent's fix). A policy alert (Scorecard:
-//     branch protection, code review, ...) gets a dismissal proposal for the
-//     maintainer, who alone dismisses an alert. A code alert with no fix
-//     branch yet is a candidate for the agent; pick prints at most max of
-//     them, lowest number first. Dependabot alerts are left to Dependabot's own
-//     security updates.
+//   - pick reads the repository's open `security` tickets, which the hourly
+//     security-alerts task keeps one per alert (cmd/security-alerts), and
+//     acts on those for code-scanning alerts. A policy finding (Scorecard:
+//     branch protection, code review, ...) gets a proposal comment once: the
+//     settings-as-code change that fixes it, where one does, else a dismissal
+//     for the maintainer, who alone dismisses an alert. A code finding with
+//     no fix branch and no no-fix comment is a candidate for the agent; pick
+//     prints the lowest-numbered one. Secret tickets are the maintainer's
+//     rotation, Dependabot ones Dependabot's security update: never the
+//     agent's.
 //   - guard reads the agent's staged diff and refuses it unless it adds or
 //     changes a test, changes code beside it, touches no workflow, CI or
 //     check configuration, deletes no test and adds no suppression comment.
-//   - failed opens the issue that records an alert the agent could not fix,
+//   - failed records on the ticket that the agent did not fix the alert,
 //     so the next pick leaves it to the maintainer.
 package securityautofix
 
@@ -150,7 +151,7 @@ type Alert struct {
 		Description string `json:"description"`
 		Severity    string `json:"security_severity_level"`
 	} `json:"rule"`
-	SecretType string `json:"secret_type_display_name"`
+	State string `json:"state"`
 }
 
 // policyTools are the analysers whose alerts are repository policy, not
@@ -169,230 +170,213 @@ type issue struct {
 	PR     any    `json:"pull_request"`
 }
 
-// namesURL reports whether text names url followed by its end or a
-// non-digit, so alert 1's URL never matches alert 10's (as bestpractices,
-// swarm-routing/.github#621).
-func namesURL(text, url string) bool {
-	for off := 0; ; {
-		i := strings.Index(text[off:], url)
-		if i < 0 {
-			return false
-		}
-		end := off + i + len(url)
-		if end == len(text) || text[end] < '0' || text[end] > '9' {
-			return true
-		}
-		off += i + 1
-	}
+type comment struct {
+	Body string `json:"body"`
 }
 
-// handledBy is the open bug issue naming the alert's URL, or 0.
-func handledBy(issues []issue, url string) int {
+// Comment markers: the pipeline's own comments on a ticket.
+const (
+	ProposalMarker = "<!-- security-autofix: proposal -->"
+	FailedMarker   = "<!-- security-autofix: no fix -->"
+)
+
+var ticketRe = regexp.MustCompile(`<!-- security-alert: (https://github\.com/[^/\s]+/[^/\s]+/security/code-scanning/([0-9]+)) -->`)
+
+// Ticket is a `security` issue for a code-scanning alert.
+type Ticket struct {
+	Issue  int
+	URL    string
+	Number int // the alert's
+}
+
+// tickets are the open `security` issues whose marker names a code-scanning
+// alert of repo; secret and Dependabot tickets are not the agent's.
+func tickets(issues []issue, repo string) []Ticket {
+	var out []Ticket
 	for _, i := range issues {
-		if i.PR == nil && namesURL(i.Body, url) {
-			return i.Number
+		if i.PR != nil {
+			continue
 		}
+		m := ticketRe.FindStringSubmatch(i.Body)
+		if m == nil || !strings.HasPrefix(m[1], "https://github.com/"+repo+"/") {
+			continue
+		}
+		n, _ := strconv.Atoi(m[2])
+		out = append(out, Ticket{Issue: i.Number, URL: m[1], Number: n})
 	}
-	return 0
+	sort.Slice(out, func(a, b int) bool { return out[a].Number < out[b].Number })
+	return out
 }
 
-// Action is what pick did, or would do, for one alert.
+// Action is what pick did, or would do, for one ticket.
 type Action struct {
-	Kind   string // "code scanning", "secret scanning"
+	Issue  int
 	Number int
-	What   string // "handled by #N", "fix branch exists", "rotation issue", "dismissal proposal", "candidate", "later"
-	Issue  int    // the issue opened, when one was
+	What   string
 }
 
 func (a Action) String() string {
-	s := fmt.Sprintf("%s alert #%d: %s", a.Kind, a.Number, a.What)
-	if a.Issue > 0 {
-		s += fmt.Sprintf(" (#%d)", a.Issue)
-	}
-	return s
+	return fmt.Sprintf("#%d (code scanning alert #%d): %s", a.Issue, a.Number, a.What)
 }
 
-// clip shortens alert text quoted in an issue; it is data, quoted, never
+// clip shortens alert text quoted in a comment; it is data, quoted, never
 // instructions.
 func clip(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
-	s = strings.NewReplacer("`", "'", "@", "(at)").Replace(s)
+	s = strings.NewReplacer("`", "'", "@", "(at)", "<", "‹", ">", "›").Replace(s)
 	if len(s) > n {
 		s = s[:n] + "..."
 	}
 	return s
 }
 
-func rotationIssue(a Alert) (string, string) {
-	kind := clip(a.SecretType, 80)
-	if kind == "" {
-		kind = "a secret"
+// settingsFix names the `[settings]` change that answers a Scorecard check,
+// where one exists (settings are code: a PR to the repository's
+// .github/org-sync.toml or to swarm-routing/.github templates/rulesets/).
+var settingsFix = map[string]string{
+	"BranchProtectionID": "the `main` ruleset of the repository's profile in swarm-routing/.github " +
+		"`templates/rulesets/` (or its `[settings] ruleset`): required reviews, status checks, no force push",
+	"CodeReviewID": "required approving reviews in the repository's ruleset profile (`templates/rulesets/`); " +
+		"in a one-maintainer org this is usually a dismissal: every change is reviewed by CodeRabbit's gate instead",
+	"DependencyUpdateToolID": "Dependabot version updates (`.github/dependabot.yml`); security updates are " +
+		"already on through `defaults.json`",
+	"SASTID":           "CodeQL default setup (`codeql_default_setup` in `defaults.json`), or the repository's own CodeQL workflow",
+	"SecurityPolicyID": "`SECURITY.md` from org-sync's template",
+}
+
+// ProposalBody is the comment a policy finding gets.
+func ProposalBody(a Alert) string {
+	rule := clip(a.Rule.ID, 60)
+	lines := []string{ProposalMarker, "## Proposal (security autofix)", "",
+		fmt.Sprintf("Code scanning alert #%d is a repository policy finding from %s (`%s`), not a defect in the code: "+
+			"no code fix applies.", a.Number, clip(a.Tool.Name, 40), rule), "",
+		"> " + clip(a.Rule.Description, 300), ""}
+	if fix, ok := settingsFix[a.Rule.ID]; ok {
+		lines = append(lines, "**A settings-as-code change fixes it:** "+fix+". That PR is the maintainer's "+
+			"call: it changes how the repository is governed.", "",
+			"**Or dismiss it** on the alert with the reason, when the policy is set on purpose.")
+	} else {
+		lines = append(lines, "**Dismiss it** on the alert with the reason (the policy is set on purpose, or does "+
+			"not apply here), or change the policy through `[settings]` in `.github/org-sync.toml`.")
 	}
-	title := fmt.Sprintf("[security] rotate the secret of secret scanning alert #%d", a.Number)
-	body := strings.Join([]string{"## Context", "",
-		"Secret scanning found a leaked credential (`" + kind + "`): " + a.URL, "",
-		"The automated security pipeline (swarm-routing/.github#629, `security-autofix.yml`) never " +
-			"fixes a leaked secret: rotating it needs the maintainer's accounts. Removing it from the " +
-			"tree does not revoke it.", "",
-		"## Acceptance criteria", "",
-		"- [ ] The maintainer revokes the credential at its issuer and issues a new one where needed.",
-		"- [ ] The alert is closed as revoked.",
-	}, "\n") + Footer
-	return title, body
+	lines = append(lines, "", "Dismissing an alert is the maintainer's decision: no agent or task dismisses one "+
+		"(swarm-routing/.github#629). This ticket closes by itself once the alert is no longer open.")
+	return strings.Join(lines, "\n") + Footer
 }
 
-func dismissalIssue(a Alert) (string, string) {
-	title := fmt.Sprintf("[security] dismissal proposal: code scanning alert #%d (%s)", a.Number, clip(a.Rule.ID, 60))
-	body := strings.Join([]string{"## Context", "",
-		fmt.Sprintf("An open %s alert is a repository policy finding, not a defect in the code: %s",
-			clip(a.Tool.Name, 40), a.URL), "",
-		"> " + clip(a.Rule.Description, 300), "",
-		"The automated security pipeline (swarm-routing/.github#629, `security-autofix.yml`) cannot fix " +
-			"it in code, and an agent never dismisses an alert. This is the maintainer's decision: dismiss it " +
-			"on the alert with its reason (the policy is set on purpose, or not applicable here), or change " +
-			"the policy through `[settings]` in `.github/org-sync.toml`.", "",
-		"## Acceptance criteria", "",
-		"- [ ] The maintainer dismisses the alert with its reason, or the policy changes and the alert closes.",
-	}, "\n") + Footer
-	return title, body
-}
-
-// FailedIssue is the issue that records an alert the agent did not fix.
-func FailedIssue(number int, url, why, runURL string) (string, string) {
-	title := fmt.Sprintf("[security] no automated fix for code scanning alert #%d", number)
+// FailedBody is the comment that records an alert the agent did not fix.
+func FailedBody(why, runURL string) string {
 	run := ""
 	if runURL != "" {
 		run = " Run: " + runURL + "."
 	}
-	body := strings.Join([]string{"## Context", "",
-		"The automated security pipeline (swarm-routing/.github#629, `security-autofix.yml`) did not " +
-			"produce a fix the guard accepts for " + url + "." + run, "",
-		"Why: " + clip(why, 500), "",
-		"The pipeline leaves this alert alone while this issue is open.", "",
-		"## Acceptance criteria", "",
-		"- [ ] The alert is fixed (a reproducing test first), or dismissed by the maintainer with its reason.",
+	return strings.Join([]string{FailedMarker, "## No automated fix", "",
+		"The security autofix (swarm-routing/.github#629) produced no change the guard accepts." + run, "",
+		"Why: " + clip(why, 1500), "",
+		"The pipeline leaves this alert to the maintainer: fix it by hand (a reproducing test first), or dismiss it " +
+			"with its reason. Delete this comment to let the pipeline try again.",
 	}, "\n") + Footer
-	return title, body
 }
 
-// Labels: a leaked secret is P1; the rest P2. The weekly bestpractices check
-// escalates an alert past its age guard on its own (#629).
-func labels(p string) []string {
-	return []string{"bug", "ci", "model:haiku-5.5", "priority:" + p}
+func (g GitHub) comments(repo string, n int) ([]comment, error) {
+	return list[comment](g, fmt.Sprintf("repos/%s/issues/%d/comments?sort=created", repo, n))
 }
 
-func (g GitHub) openIssue(repo, title, body, priority string) (int, error) {
-	data, err := g.do("POST", "repos/"+repo+"/issues",
-		map[string]any{"title": title, "body": body, "labels": labels(priority)})
-	if err != nil {
-		return 0, err
+func hasMarker(cs []comment, marker string) bool {
+	for _, c := range cs {
+		if strings.Contains(c.Body, marker) {
+			return true
+		}
 	}
-	var got issue
-	err = json.Unmarshal(data, &got)
-	return got.Number, err
+	return false
 }
 
-// Pick acts on the open alerts and returns the code-scanning alerts the
-// agent should fix (at most limit, oldest first) with a line per alert.
-func Pick(g GitHub, repo string, limit int, dry bool) ([]int, []Action, error) {
-	issues, err := list[issue](g, "repos/"+repo+"/issues?state=open&labels=bug")
+// Pick reads the repository's open `security` tickets for code-scanning
+// alerts (kept by the security-alerts task) and returns the alert and ticket
+// numbers the agent should fix, lowest alert number first, at most limit.
+// A policy finding's ticket gets a proposal comment once; a ticket with a
+// fix branch, or with the pipeline's no-fix comment, is skipped.
+func Pick(g GitHub, repo string, limit int, dry bool) ([]Ticket, []Action, error) {
+	issues, err := list[issue](g, "repos/"+repo+"/issues?state=open&labels=security")
 	if err != nil {
 		return nil, nil, err
 	}
 	var acts []Action
-	secrets, err := list[Alert](g, "repos/"+repo+"/secret-scanning/alerts?state=open")
-	if err != nil {
-		return nil, nil, err
-	}
-	code, err := list[Alert](g, "repos/"+repo+"/code-scanning/alerts?state=open")
-	if err != nil {
-		return nil, nil, err
-	}
-	sort.Slice(secrets, func(i, j int) bool { return secrets[i].Number < secrets[j].Number })
-	sort.Slice(code, func(i, j int) bool { return code[i].Number < code[j].Number })
-	open := func(kind string, a Alert, what, title, body, prio string) error {
-		act := Action{Kind: kind, Number: a.Number, What: what}
-		if !dry {
-			n, err := g.openIssue(repo, title, body, prio)
-			if err != nil {
-				return err
-			}
-			act.Issue = n
-			issues = append(issues, issue{Number: n, Body: body})
-		} else {
-			act.What = "would open a " + what
-		}
-		acts = append(acts, act)
-		return nil
-	}
-	for _, a := range secrets {
-		if n := handledBy(issues, a.URL); n > 0 {
-			acts = append(acts, Action{Kind: "secret scanning", Number: a.Number, What: fmt.Sprintf("handled by #%d", n)})
-			continue
-		}
-		t, b := rotationIssue(a)
-		if err := open("secret scanning", a, "rotation issue", t, b, "P1"); err != nil {
+	var fix []Ticket
+	for _, t := range tickets(issues, repo) {
+		act := Action{Issue: t.Issue, Number: t.Number}
+		data, err := g.do("GET", fmt.Sprintf("repos/%s/code-scanning/alerts/%d", repo, t.Number), nil)
+		if err != nil {
 			return nil, acts, err
 		}
-	}
-	var fix []int
-	for _, a := range code {
-		if n := handledBy(issues, a.URL); n > 0 {
-			acts = append(acts, Action{Kind: "code scanning", Number: a.Number, What: fmt.Sprintf("handled by #%d", n)})
+		var a Alert
+		if err := json.Unmarshal(data, &a); err != nil {
+			return nil, acts, err
+		}
+		if a.State != "" && a.State != "open" {
+			act.What = "the alert is " + a.State + " (security-alerts closes the ticket)"
+			acts = append(acts, act)
 			continue
+		}
+		cs, err := g.comments(repo, t.Issue)
+		if err != nil {
+			return nil, acts, err
 		}
 		if a.Policy() {
-			t, b := dismissalIssue(a)
-			if err := open("code scanning", a, "dismissal proposal", t, b, "P2"); err != nil {
-				return nil, acts, err
+			switch {
+			case hasMarker(cs, ProposalMarker):
+				act.What = "policy finding, proposal posted"
+			case dry:
+				act.What = "policy finding: would post a proposal"
+			default:
+				if _, err := g.do("POST", fmt.Sprintf("repos/%s/issues/%d/comments", repo, t.Issue),
+					map[string]any{"body": ProposalBody(a)}); err != nil {
+					return nil, acts, err
+				}
+				act.What = "policy finding: proposal posted"
 			}
+			acts = append(acts, act)
 			continue
 		}
-		_, err := g.do("GET", "repos/"+repo+"/git/ref/heads/"+Branch(a.Number), nil)
+		if hasMarker(cs, FailedMarker) {
+			act.What = "left to the maintainer (no automated fix)"
+			acts = append(acts, act)
+			continue
+		}
+		_, err = g.do("GET", "repos/"+repo+"/git/ref/heads/"+Branch(t.Number), nil)
 		switch {
 		case err == nil:
-			acts = append(acts, Action{Kind: "code scanning", Number: a.Number, What: "fix branch exists: " + Branch(a.Number)})
-			continue
+			act.What = "fix branch exists: " + Branch(t.Number)
 		case !notFound(err):
 			return nil, acts, err
+		case len(fix) < limit:
+			fix = append(fix, t)
+			act.What = "candidate for the agent"
+		default:
+			act.What = "later (one fix a run)"
 		}
-		if len(fix) < limit {
-			fix = append(fix, a.Number)
-			acts = append(acts, Action{Kind: "code scanning", Number: a.Number, What: "candidate for the agent"})
-		} else {
-			acts = append(acts, Action{Kind: "code scanning", Number: a.Number, What: "later (one fix a run)"})
-		}
+		acts = append(acts, act)
 	}
 	return fix, acts, nil
 }
 
-// Failed opens the issue for an alert the agent did not fix, unless an open
-// bug issue already names the alert.
-func Failed(g GitHub, repo string, number int, why, runURL string, dry bool) (string, error) {
-	data, err := g.do("GET", fmt.Sprintf("repos/%s/code-scanning/alerts/%d", repo, number), nil)
+// Failed records, on the alert's ticket, that the agent did not fix it.
+func Failed(g GitHub, repo string, ticket int, why, runURL string, dry bool) (string, error) {
+	cs, err := g.comments(repo, ticket)
 	if err != nil {
 		return "", err
 	}
-	var a Alert
-	if err := json.Unmarshal(data, &a); err != nil {
-		return "", err
+	if hasMarker(cs, FailedMarker) {
+		return fmt.Sprintf("#%d: already recorded", ticket), nil
 	}
-	issues, err := list[issue](g, "repos/"+repo+"/issues?state=open&labels=bug")
-	if err != nil {
-		return "", err
-	}
-	if n := handledBy(issues, a.URL); n > 0 {
-		return fmt.Sprintf("already recorded in #%d", n), nil
-	}
-	t, b := FailedIssue(number, a.URL, why, runURL)
 	if dry {
-		return "would open: " + t, nil
+		return fmt.Sprintf("#%d: would record no fix", ticket), nil
 	}
-	n, err := g.openIssue(repo, t, b, "P2")
-	if err != nil {
+	if _, err := g.do("POST", fmt.Sprintf("repos/%s/issues/%d/comments", repo, ticket),
+		map[string]any{"body": FailedBody(why, runURL)}); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("opened #%d: %s", n, t), nil
+	return fmt.Sprintf("#%d: recorded no fix", ticket), nil
 }
 
 // --- guard ---
@@ -495,13 +479,14 @@ func Guard(diff string) []string {
 
 const usage = `usage: security-autofix pick --repo OWNER/NAME [--max N] [--dry-run]
        security-autofix guard DIFF
-       security-autofix failed --repo OWNER/NAME --alert N --why TEXT [--run URL] [--dry-run]
+       security-autofix failed --repo OWNER/NAME --ticket N --why TEXT [--run URL] [--dry-run]
 
-pick: act on the repository's open alerts (GH_TOKEN: the bot's token); prints
-  one line per alert, then "fix=<n>" (empty: nothing for the agent).
+pick: read the repository's open security tickets for code-scanning alerts
+  (GH_TOKEN: issues write, security-events read); prints one line per ticket,
+  then "fix=<alert> ticket=<issue>" (both empty: nothing for the agent).
 guard: refuse the agent's staged diff (git diff --cached --no-renames) unless
   it is a tested code fix that leaves every check alone; exit 1 refused.
-failed: record an alert the agent did not fix.`
+failed: record on the ticket that the agent did not fix its alert.`
 
 // Main is the command: args after the tool name.
 func Main(args []string, getenv func(string) string, client *http.Client, api string, readFile func(string) ([]byte, error), stdout, stderr io.Writer) int {
@@ -550,7 +535,7 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 			repo = rest[i+1]
 		case "--max":
 			maxS = rest[i+1]
-		case "--alert":
+		case "--ticket":
 			alertS = rest[i+1]
 		case "--why":
 			why = rest[i+1]
@@ -587,16 +572,16 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 			fmt.Fprintln(stderr, "security-autofix pick:", err)
 			return 1
 		}
-		var s []string
-		for _, n := range fix {
-			s = append(s, strconv.Itoa(n))
+		alert, ticket := "", ""
+		if len(fix) > 0 {
+			alert, ticket = strconv.Itoa(fix[0].Number), strconv.Itoa(fix[0].Issue)
 		}
-		fmt.Fprintln(stdout, "fix="+strings.Join(s, " "))
+		fmt.Fprintln(stdout, "fix="+alert+" ticket="+ticket)
 		return 0
 	case "failed":
 		n, err := strconv.Atoi(alertS)
 		if err != nil || n <= 0 || why == "" {
-			fmt.Fprintln(stderr, "security-autofix failed: --alert N and --why TEXT are required")
+			fmt.Fprintln(stderr, "security-autofix failed: --ticket N and --why TEXT are required")
 			return 2
 		}
 		out, err := Failed(g, repo, n, why, run, dry)
