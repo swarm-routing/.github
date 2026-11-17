@@ -168,6 +168,13 @@ name: Reusable release
 # 0.x version releases 1.0.0 as its first release. A release run ignores the
 # input (the merged bump PR already carries the version).
 #
+# `first-release-from-config` (#636; bump and dry-run only, default false):
+# with no `v*` tag yet, Commitizen bumps from the version in the caller's
+# config by the commits, as every later release does, instead of releasing
+# 0.1.0. For a repository that already published versions without tags
+# (swarm-routing/skills: plugin.json at 0.32.x), so its first tag continues
+# that numbering. With a tag it changes nothing; `increment` still applies.
+#
 # The caller needs a Commitizen config (`[tool.commitizen]` in pyproject.toml,
 # or .cz.toml) in `working-directory`, with `tag_format = "v$version"` and
 # `major_version_zero = true` while 0.x (CONTRIBUTING "Releases and DOIs" has
@@ -273,6 +280,10 @@ on:
         description: "bump and dry-run: force the bump's size, PATCH, MINOR or MAJOR (cz bump --increment); empty: from the commits, as before. MAJOR with no v* tag releases the configured 0.x version's major (1.0.0) instead of 0.1.0"
         type: string
         default: ''
+      first-release-from-config:
+        description: "bump and dry-run, with no v* tag yet: bump from the Commitizen config's version by the commits (or `increment`) instead of releasing 0.1.0, for a repository whose versions predate its tags (#636). Default false: the first release is 0.1.0"
+        type: boolean
+        default: false
       zenodo:
         description: "After a release is published, archive it on Zenodo with its own assets (needs the ZENODO_TOKEN secret; turn Zenodo's GitHub integration off for the repository)"
         type: boolean
@@ -521,6 +532,7 @@ jobs:
         env:
           PR_VERSION: ${{ needs.route.outputs.version }}
           INCREMENT: ${{ inputs.increment }}
+          FROM_CONFIG: ${{ inputs.first-release-from-config && 'config' || '' }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -568,9 +580,16 @@ jobs:
             # that Commitizen computes the next version from the commits, or
             # takes the size `increment` forces (#211). With no tag and
             # increment MAJOR, the first release is the configured version's
-            # next major (0.x -> 1.0.0), not 0.1.0.
+            # next major (0.x -> 1.0.0), not 0.1.0. With
+            # first-release-from-config, the first release is bumped from the
+            # configured version like any later one (#636).
             bump_args=()
-            if [ -z "$(git tag --list 'v[0-9]*')" ] && [ "$INCREMENT" != MAJOR ]; then
+            if [ -z "$(git tag --list 'v[0-9]*')" ] && [ -n "$FROM_CONFIG" ]; then
+              echo "::notice::no v* tag yet: first-release-from-config, bumping from $(cz version --project)"
+              if [ -n "$INCREMENT" ]; then
+                bump_args=(--increment "$INCREMENT")
+              fi
+            elif [ -z "$(git tag --list 'v[0-9]*')" ] && [ "$INCREMENT" != MAJOR ]; then
               bump_args=(0.1.0)
               if [ -n "$INCREMENT" ]; then
                 echo "::notice::no v* tag yet: the first release is 0.1.0, increment $INCREMENT is not used"
@@ -624,9 +643,10 @@ jobs:
             echo "old-version=${old}"
             echo "tag=${tag}"
             echo "name=${name}"
-            # A forced increment names its own artifact, so two calls in one
-            # run (release-selftest.yml's legs) do not collide.
-            echo "artifact=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}${INCREMENT:+-${INCREMENT,,}}"
+            # A forced increment (or first-release-from-config) names its own
+            # artifact, so two calls in one run (release-selftest.yml's legs)
+            # do not collide.
+            echo "artifact=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}${INCREMENT:+-${INCREMENT,,}}${FROM_CONFIG:+-${FROM_CONFIG}}"
             # Fixed before anything else runs: propose pushes only this commit,
             # whatever a later step does to the bundle on disk.
             echo "commit=${commit}"

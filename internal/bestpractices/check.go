@@ -547,6 +547,7 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 	for _, t := range todo {
 		var info, items, links, ownerLines []string
 		var body, head string
+		var hist HistoryReport
 		if t.outOfScope {
 			// not registered, out of scope: nothing to find; an issue left
 			// open from when it was in scope is closed
@@ -602,6 +603,9 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 			reader, _ := r.(AlertReader)
 			owner := ownerAnswers(att, t.repo, proposed, tree, reader)
 			proposed = owner.merge(proposed)
+			hreader, _ := r.(HistoryReader)
+			hist = historyAnswers(hreader, t.repo, proposed)
+			proposed = hist.merge(proposed)
 			rep := Findings(t.repo, data, proposed, tree)
 			info, items = rep.Info, rep.Items
 			items = append(items, ownerDrift(data, owner)...)
@@ -613,16 +617,6 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 					for _, u := range owner.Unread {
 						fmt.Fprintf(stdout, "%s: FAILED: the alerts: %s\n", head, u)
 					}
-				}
-			}
-			if args.Issues {
-				bugs, err := alertBugs(gh, t.repo, owner, dryRun)
-				if err != nil {
-					broken++
-					fmt.Fprintf(stdout, "%s: FAILED: the alert bugs: %s\n", head, described(err))
-				}
-				for _, b := range bugs {
-					fmt.Fprintf(stdout, "    alert bug: %s\n", b)
 				}
 			}
 			if !t.configured {
@@ -666,6 +660,11 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 		}
 		for i, l := range links {
 			fmt.Fprintf(stdout, "    proposal %d: %s\n", i+1, l)
+		}
+		for _, c := range Passing { // what the history did not show (#634)
+			if why, ok := hist.Blocked[c]; ok {
+				fmt.Fprintf(stdout, "    %s ?: %s\n", c, why)
+			}
 		}
 	}
 	if projects+unregistered == 0 && broken == 0 {
@@ -723,7 +722,10 @@ func read(r Remote, t target) (map[string]any, map[string]any, map[string]bool, 
 }
 
 // ownerLeft are the criteria Derive leaves to the owner (`?` in the file by
-// design): a site answer there is the owner's, never drift.
+// design): a site answer there is the owner's, never drift. test_most and
+// tests_are_added are read from the history by the check, and
+// static_analysis_fixed is derived where a finding blocks the merge (#634);
+// where the evidence is missing, a site answer stays the owner's.
 func ownerLeft(c string) bool {
 	if OwnerOnly[c] || c == "test_most" || c == "tests_are_added" || c == "static_analysis_fixed" {
 		return true
@@ -793,78 +795,4 @@ func ownerDrift(data map[string]any, owner OwnerReport) []string {
 		out = append(out, "open security alert blocks an owner-only answer: "+a.String())
 	}
 	return out
-}
-
-// namesURL reports whether text names url followed by its end or a
-// non-digit, so an alert's URL never matches a longer alert number
-// (`…/code-scanning/1` in `…/code-scanning/10`, #621).
-func namesURL(text, url string) bool {
-	for i := strings.Index(text, url); i >= 0; {
-		end := i + len(url)
-		if end == len(text) || text[end] < '0' || text[end] > '9' {
-			return true
-		}
-		next := strings.Index(text[i+1:], url)
-		if next < 0 {
-			return false
-		}
-		i += 1 + next
-	}
-	return false
-}
-
-// alertBugs opens one bug per open alert that blocks an attested answer,
-// unless an open issue already names the alert's URL.
-func alertBugs(gh GitHub, repo string, owner OwnerReport, dryRun bool) ([]string, error) {
-	if len(owner.Alerts) == 0 || gh == nil {
-		return nil, nil
-	}
-	got, err := gh.API("GET", fmt.Sprintf("repos/%s/%s/issues?state=open&labels=bug&per_page=100", Org, repo), nil, true)
-	if err != nil {
-		return nil, err
-	}
-	list, _ := got.([]any)
-	var out []string
-	for _, a := range owner.Alerts {
-		found := ""
-		for _, x := range list {
-			i, _ := x.(map[string]any)
-			if b, _ := i["body"].(string); namesURL(b, a.url) {
-				found = pyStr(i["number"])
-				break
-			}
-		}
-		if found != "" {
-			out = append(out, "#"+found+" (open) "+a.url)
-			continue
-		}
-		if dryRun {
-			out = append(out, "would open: "+a.url)
-			continue
-		}
-		title := fmt.Sprintf("%s open %s alert #%s", Prefix, a.kind, a.number)
-		do := "- [ ] The alert is fixed, or dismissed by the maintainer with its reason on the alert."
-		if a.kind == "secret scanning" {
-			// rotation needs the maintainer's accounts: never an agent's fix (#629)
-			do = "- [ ] The maintainer rotates the secret, then closes the alert as revoked."
-		}
-		body := strings.Join([]string{"## Context", "",
-			"The weekly `bestpractices` check (swarm-routing/.github `cmd/bestpractices`) found an open " +
-				"security alert that keeps an owner-only OpenSSF Best Practices answer `?` " +
-				"(swarm-routing/.github#559, swarm-routing/.github#629): a secret alert, or a vulnerability " +
-				"alert past its age guard (" + fmt.Sprintf("medium or higher: %d days, critical: %d days", EscalateDays, CriticalDays) +
-				") that the automated fix has not closed:", "",
-			"- " + a.String(), "",
-			"## Acceptance criteria", "",
-			do,
-			"- [ ] The next weekly check proposes the answer again on the `[bestpractices]` issue."}, "\n") + Footer
-		res, err := gh.API("POST", fmt.Sprintf("repos/%s/%s/issues", Org, repo),
-			map[string]any{"title": title, "body": body, "labels": []any{"bug", "packaging", "model:haiku-5.5", "priority:P1"}}, false)
-		if err != nil {
-			return out, err
-		}
-		m, _ := res.(map[string]any)
-		out = append(out, "opened #"+pyStr(m["number"])+" "+a.url)
-	}
-	return out, nil
 }

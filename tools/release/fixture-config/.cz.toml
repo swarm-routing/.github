@@ -1,0 +1,15 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+# The release self-test's third caller (.github/workflows/release-selftest.yml,
+# leg `release-config`, #636): a repository whose versions predate its tags
+# (as swarm-routing/skills' plugin.json at 0.32.x), released with
+# `first-release-from-config: true`. With no v* tag and this repository's feat
+# commits, the dry run must compute 0.33.0, not 0.1.0. Never released.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.32.2"
+version_scheme = "semver"
+tag_format = "v$version"
+major_version_zero = true
+update_changelog_on_bump = true
+version_files = ["VERSION"]

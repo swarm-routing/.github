@@ -288,9 +288,9 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 		unknown("test_invocation", "No test suite found.")
 	}
 	coverage := r.ciMatch(matches(coverageRx, ns3CI("coverage"), ns3CI("sonar")), ciEvents)
-	// measured is not "most": the owner reads the numbers and answers
+	// measured is not "most": the weekly check reads the number (history.go, #634)
 	if coverage != "" {
-		unknown("test_most", "The owner answers from the coverage report: "+coverage+".")
+		unknown("test_most", "The weekly check reads the coverage of main from Codecov: "+coverage+".")
 	} else {
 		unknown("test_most", "No coverage report found.")
 	}
@@ -315,8 +315,9 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 	}
 	if policyURL != "" {
 		put("test_policy", "Met", "New functionality needs tests: "+policyURL+".")
-		// the policy is written; that recent changes followed it is history, the owner's call
-		unknown("tests_are_added", "The owner confirms recent changes followed "+policyURL+".")
+		// the policy is written; that recent changes followed it is history,
+		// which the weekly check reads from the merged pull requests (history.go, #634)
+		unknown("tests_are_added", "The weekly check reads whether recent pull requests followed "+policyURL+".")
 		put("tests_documented_added", "Met", "The test policy is in the contribution instructions: "+policyURL+".")
 	} else {
 		for _, c := range []string{"test_policy", "tests_are_added", "tests_documented_added"} {
@@ -415,7 +416,32 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 			unknown(c, "No static analysis found.")
 		}
 	}
-	unknown("static_analysis_fixed", "The owner confirms medium and higher findings are fixed promptly.")
+	// a finding blocks the merge, so it is fixed before the change lands
+	// (#634): the ruleset's CodeQL gate, or an analyser a required check runs
+	settings, _ := r.cfg["settings"].(map[string]any)
+	var required []string
+	if l, ok := settings["required_checks"].([]any); ok {
+		for _, x := range l {
+			if s, ok := x.(string); ok {
+				required = append(required, s)
+			}
+		}
+	}
+	var fixed []string
+	if v, ok := settings["code_scanning"].(bool); ok && v {
+		fixed = append(fixed, "The main ruleset (code_scanning = true in "+r.url(Config)+
+			") holds a pull request while CodeQL reports a high-or-higher security alert in it.")
+	}
+	if tool, check, at := r.requiredRun(required); tool != "" {
+		fixed = append(fixed, fmt.Sprintf("A %s finding fails the required check %q on every pull request: %s.",
+			tool, check, at))
+	}
+	if len(fixed) > 0 {
+		put("static_analysis_fixed", "Met", strings.Join(fixed, " ")+" So a finding is fixed before the change merges.")
+	} else {
+		unknown("static_analysis_fixed", "No static-analysis finding blocks a merge: no CodeQL ruleset gate "+
+			"(code_scanning in "+Config+") and no analyser run by a required check.")
+	}
 	// what runs in CI, never a word in a workflow (#559)
 	fuzz := r.ciURL(fuzzRx)
 	san := or(r.ciMatch(matches(sanRx, sanCI), ciEvents), r.dockerProfile(`--enable-sanitizers|-fsanitize=[\w,-]*address`))

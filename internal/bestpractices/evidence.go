@@ -299,5 +299,142 @@ func raceCI(w workflow) bool {
 	return b != "" && on(b, "race", true)
 }
 
+// gateTools are the static analysers whose finding fails their run (exit
+// non-zero), for static_analysis_fixed (#634). CodeQL is not one: an alert
+// does not fail its job, the ruleset's code_scanning rule holds the merge.
+var gateTools = []struct{ name, pattern string }{
+	{"ruff", ruffRx},
+	{"staticcheck", `\bstaticcheck\b|\bgolangci-lint\b|reusable-go-ci\.yml`},
+	{"clang-tidy", `\b(run-)?clang-tidy\b[^\n]*-warnings-as-errors`},
+	{"shellcheck, actionlint or hadolint", lintRx},
+}
+
+// job is one job of a workflow: its id, its name: and its code.
+type job struct {
+	id, name, code string
+	needs          []string
+}
+
+var (
+	jobsKey  = regexp.MustCompile(`^jobs:\s*$`)
+	jobKey   = regexp.MustCompile(`^(\s+)([\w-]+):\s*$`)
+	needsKey = regexp.MustCompile(`^\s+needs:\s*(.*)$`)
+	nameKey  = regexp.MustCompile(`^\s+name:\s*(.+)$`)
+	listItem = regexp.MustCompile(`^\s+-\s*([\w-]+)`)
+	idWord   = regexp.MustCompile(`[\w-]+`)
+)
+
+// jobsOf splits a workflow's code into its jobs.
+func jobsOf(code string) []job {
+	var out []job
+	lines := strings.Split(code, "\n")
+	in, indent := false, -1
+	for i := 0; i < len(lines); i++ {
+		l := lines[i]
+		if !in {
+			in = jobsKey.MatchString(l)
+			continue
+		}
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		ind := len(l) - len(strings.TrimLeft(l, " "))
+		if ind == 0 {
+			break
+		}
+		m := jobKey.FindStringSubmatch(l)
+		if m == nil || (indent >= 0 && ind != indent) {
+			continue
+		}
+		indent = ind
+		j := job{id: m[2]}
+		var block []string
+		for i+1 < len(lines) {
+			n := lines[i+1]
+			if strings.TrimSpace(n) != "" && len(n)-len(strings.TrimLeft(n, " ")) <= ind {
+				break
+			}
+			i++
+			block = append(block, n)
+		}
+		for k, b := range block {
+			if len(b)-len(strings.TrimLeft(b, " ")) != ind+2 {
+				continue
+			}
+			if nm := nameKey.FindStringSubmatch(b); nm != nil && j.name == "" {
+				j.name = strings.Trim(strings.TrimSpace(nm[1]), `'"`)
+			}
+			if nd := needsKey.FindStringSubmatch(b); nd != nil {
+				if rest := strings.TrimSpace(nd[1]); rest != "" {
+					j.needs = idWord.FindAllString(rest, -1)
+				} else {
+					for _, b2 := range block[k+1:] {
+						it := listItem.FindStringSubmatch(b2)
+						if it == nil {
+							break
+						}
+						j.needs = append(j.needs, it[1])
+					}
+				}
+			}
+		}
+		j.code = strings.Join(block, "\n")
+		out = append(out, j)
+	}
+	return out
+}
+
+// checkBase is a check run's name as a required check names it: the
+// calling job's part before " / ", without a matrix suffix " (...)".
+func checkBase(name string) string {
+	name, _, _ = strings.Cut(name, " / ")
+	name, _, _ = strings.Cut(name, " (")
+	return strings.TrimSpace(name)
+}
+
+// requiredRun finds a static analyser of gateTools that a required check
+// runs on every pull request: the check's job, or a job it needs, runs it.
+// It returns the tool, the required check and the workflow's URL.
+func (r *Repo) requiredRun(required []string) (string, string, string) {
+	for _, filtered := range []bool{false, true} {
+		for _, w := range r.workflows {
+			if w.filtered != filtered || !w.onAny(prEvents) {
+				continue
+			}
+			jobs := jobsOf(w.code)
+			byID := map[string]job{}
+			for _, j := range jobs {
+				byID[j.id] = j
+			}
+			for _, rc := range required {
+				base := checkBase(rc)
+				seen := map[string]bool{}
+				var todo []string
+				for _, j := range jobs {
+					if base != "" && (j.id == base || checkBase(j.name) == base) {
+						todo = append(todo, j.id)
+					}
+				}
+				for len(todo) > 0 {
+					id := todo[0]
+					todo = todo[1:]
+					j, ok := byID[id]
+					if !ok || seen[id] {
+						continue
+					}
+					seen[id] = true
+					todo = append(todo, j.needs...)
+					for _, t := range gateTools {
+						if regexp.MustCompile("(?im)" + t.pattern).MatchString(j.code) {
+							return t.name, rc, r.url(w.file)
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", "", ""
+}
+
 func sanCI(w workflow) bool   { return ns3Profile(w.code, "sanitized") }
 func debugCI(w workflow) bool { return ns3Profile(w.code, "debug") }
