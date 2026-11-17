@@ -251,6 +251,7 @@ jobs:
           grep -qx check-headers list.txt
           grep -qx branch-sweep list.txt
           grep -qx release-sync-watch list.txt
+          grep -qx security-autofix list.txt
           grep -qx labels list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
@@ -291,6 +292,14 @@ jobs:
           docker run --rm -e GH_TOKEN "$img" release-sync-watch --dry-run --repos .github,AntHocNet | tee release-sync.txt
           grep -Eq '^release-sync-watch: ' release-sync.txt \
             || { echo "::error::release-sync-watch: no summary line"; exit 1; }
+          # security-autofix (#629): the guard on two diffs in the mounted workspace,
+          # read-only as nonroot, as reusable-security-autofix.yml runs it
+          printf 'diff --git a/src/a.c b/src/a.c\n+fix\ndiff --git a/tests/test_a.c b/tests/test_a.c\n+test\n' > sa-good.diff
+          printf 'diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\n+x\n' > sa-bad.diff
+          docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" security-autofix guard sa-good.diff \
+            || { echo "::error::security-autofix guard refused a tested fix"; exit 1; }
+          rc=0; docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" security-autofix guard sa-bad.diff || rc=$?
+          [ "$rc" = 1 ] || { echo "::error::security-autofix guard: a workflow change must exit 1, got $rc"; exit 1; }
           # check-headers (#531): read-only as nonroot, as reusable-licence-check.yml runs it, with no
           # git in the image (it reads the index); its self-test, then this
           # checkout, which must pass (the Python twin it was compared with is gone, #578)
