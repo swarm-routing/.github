@@ -29,9 +29,10 @@ jobs:
           persist-credentials: false
       - name: Licence headers (the whole repo is tooling, so all of it is dual)
         run: |
-          python3 -I tools/checks/check-headers.py --self-test
+          # the Go gate through the local launcher, as `make headers` runs it (#578)
+          tools/checks/check-headers.sh --self-test
           python3 -I tools/checks/check-dco.py --self-test
-          python3 -I tools/checks/check-headers.py --dual '' .
+          tools/checks/check-headers.sh --dual '' .
           for f in LICENSE LICENSE-MIT LICENSING.md; do test -f "$f"; done
       - name: swarm-core pin self-test (tools/checks)
         run: python3 -I tools/checks/check-swarm-core-pin.py --self-test

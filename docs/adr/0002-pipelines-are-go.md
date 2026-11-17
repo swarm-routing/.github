@@ -67,7 +67,7 @@ runs in Actions and in images. This ADR records it.
   and randomness, byte-identical reruns); bounded structures (every queue,
   cache and retry loop carries a cap); licence headers as C++ (`//` comments;
   `tools/` and `cmd/`/`internal/` of a tooling repository are
-  `MIT OR GPL-2.0-only`), checked by `tools/checks/check-headers.py`.
+  `MIT OR GPL-2.0-only`), checked by `cmd/check-headers`.
 - **Dependencies:** standard library first; a third-party module only with a
   reason in the PR, pinned in `go.sum`, scanned by govulncheck.
 

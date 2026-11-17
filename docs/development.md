@@ -110,7 +110,7 @@ There is no `.devcontainer/`.
 actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 ruff check tools && ruff format --check tools # as reusable-python-ci.yml, with this repository's ruff.toml
 ruff format tools                             # fix formatting
-python3 -I tools/checks/check-headers.py --dual '' .   # licence headers (everything here is dual-licensed tooling)
+tools/checks/check-headers.sh --dual '' .   # licence headers (everything here is dual-licensed tooling); the Go gate in docker, or built with go
 ```
 
 ## CI map
