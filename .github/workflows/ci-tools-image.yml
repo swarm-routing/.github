@@ -37,8 +37,9 @@ name: ci-tools image
 # candidate digest. The image has no git and no gh.
 #
 # Permissions: read by default; the image job adds packages: write (push the
-# candidate), the promote job packages: write, id-token: write (keyless
-# signing, attestations) and attestations: write.
+# candidate) and pull-requests: read (branch-sweep's dry run), the promote job
+# packages: write, id-token: write (keyless signing, attestations) and
+# attestations: write.
 on:
   pull_request:
     paths:
@@ -125,6 +126,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      pull-requests: read  # branch-sweep's dry run reads this repository's PRs
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
@@ -182,7 +184,7 @@ jobs:
         timeout-minutes: 10
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
-          GH_TOKEN: ${{ github.token }}  # backstop's dry run reads runs (no rate limit of an anonymous runner)
+          GH_TOKEN: ${{ github.token }}  # backstop's and branch-sweep's dry runs read (no rate limit of an anonymous runner)
         run: |
           set -euo pipefail
           if [ -n "$DIGEST" ]; then
@@ -202,6 +204,7 @@ jobs:
           grep -qx bestpractices list.txt
           grep -qx backstop list.txt
           grep -qx check-headers list.txt
+          grep -qx branch-sweep list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
           # a tool on the workspace, mounted as a workflow's `docker run` mounts it
@@ -228,6 +231,11 @@ jobs:
           docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" backstop --dry-run | tee backstop.txt
           [ "$(grep -c ': dry run: would dispatch\|: nothing to do$' backstop.txt)" = "$(grep -c '^\[\[entry\]\]' .github/backstop.toml)" ] \
             || { echo "::error::backstop: not one line per entry of .github/backstop.toml"; exit 1; }
+          # branch-sweep (#595): a read-only dry run on this repository as nonroot
+          # (the workflow token reads its branches, PRs and commits; nothing is deleted)
+          docker run --rm -e GH_TOKEN "$img" branch-sweep --dry-run --repos .github | tee branch-sweep.txt
+          grep -Eq '^branch-sweep: 1 repositories, would delete [0-9]+ branches, kept [0-9]+' branch-sweep.txt \
+            || { echo "::error::branch-sweep: no summary line"; exit 1; }
           # check-headers (#531): read-only as nonroot, as reusable-licence-check.yml runs it, with no
           # git in the image (it reads the index); its self-test, then this
           # checkout byte for byte against the Python tool (stdout, exit code)
