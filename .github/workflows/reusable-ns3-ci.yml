@@ -187,6 +187,10 @@ on:
         description: "Space-separated files under a dual root that stay GPL-2.0-only"
         type: string
         default: ''
+      docs-only-paths:
+        description: "Extended regex of changed paths that need no ns-3 build: a pull_request or merge_group whose every changed file matches it skips the build legs' steps (each leg still reports, green; #505). Pushes and dispatches always build. Empty: never skip"
+        type: string
+        default: '\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$'
     secrets:
       SONAR_TOKEN:
         description: "SonarQube Cloud token for the `sonar` input; absent (fork PRs): the analysis is skipped"
@@ -196,10 +200,65 @@ permissions:
   contents: read
 
 jobs:
+  # Docs-only changes skip the ns-3 build (#505). A pull_request or merge_group
+  # whose every changed file matches `docs-only-paths` (prose, docs, issue
+  # forms, repository metadata no build reads) needs no ns-3 image: the build
+  # legs below still start, so every required check (`ns-<ver> <profile>`)
+  # reports, but run on the bare runner with every step skipped, in seconds.
+  # A skipped matrix job would report under its unexpanded name and leave a
+  # required check pending, so the skip is inside the job, never `if:` on it.
+  # Any doubt (an API error, 300 or more files, an empty diff) builds.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.diff.outputs.build }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          DOCS: ${{ inputs.docs-only-paths }}
+        run: |
+          build=true
+          if { [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; } && [ -n "$DOCS" ] && [ -n "$BASE" ] && [ -n "$HEAD" ]; then
+            # three-dot compare: the change itself, against its merge base
+            if files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files | if length < 300 then .[].filename else error("300 or more files") end'); then
+              printf 'changed:\n%s\n' "$files"
+              if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE -- "$DOCS"; then
+                build=false
+              fi
+            else
+              echo "::warning::could not list the changed files; building"
+            fi
+          fi
+          echo "build=$build"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          if [ "$build" = false ]; then
+            echo "::notice::docs-only change: the ns-3 build legs skip their steps (#505)"
+            echo "Docs-only change: the ns-3 build legs report without building (docs-only-paths, swarm-routing/.github#505)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build:
     name: ns-${{ matrix.version }} ${{ matrix.profile }}${{ matrix.deps == 'canary' && ' canary' || '' }}
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # A newer push to the same pull request cancels this leg (#505); pushes,
+    # merge groups and dispatches each get their own group, never cancelled.
+    # inputs.modules keeps two calls in one caller workflow apart.
+    concurrency:
+      group: ns3-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}-${{ inputs.modules }}-${{ matrix.version }}-${{ matrix.profile }}-${{ matrix.deps }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     # the dependency canary (#411) reports, never fails the run
     continue-on-error: ${{ matrix.deps == 'canary' }}
     permissions:
@@ -214,7 +273,8 @@ jobs:
         # one canary leg on the first version's debug image, outside PRs and the merge queue
         include: ${{ fromJSON((inputs.canary-dependencies != '' && contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)) && format('[{{"version":{0},"profile":"debug","deps":"canary"}}]', toJSON(fromJSON(inputs.ns3-versions)[0])) || '[]') }}
     container:
-      image: ghcr.io/swarm-routing/ns3-dev:${{ matrix.version }}-${{ matrix.profile }}
+      # empty on a docs-only change: the leg runs on the bare runner, no image pulled
+      image: ${{ needs.changes.outputs.build == 'true' && format('ghcr.io/swarm-routing/ns3-dev:{0}-{1}', matrix.version, matrix.profile) || '' }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -229,14 +289,18 @@ jobs:
     # No Harden-Runner here (#164): a job that runs entirely in a container
     # cannot take it on a GitHub-hosted runner (it needs sudo on the VM).
     steps:
+      - name: Docs-only change, nothing to build
+        if: needs.changes.outputs.build != 'true'
+        run: echo "docs-only change, no ns-3 build on this leg (#505)"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.build == 'true'
         with:
           path: src
           persist-credentials: false
           # SonarQube Cloud reads the history (blame, new code); the rest needs none
           fetch-depth: ${{ inputs.sonar && '0' || '1' }}
       - name: Check out dependencies
-        if: (matrix.deps == 'canary' && inputs.canary-dependencies || inputs.dependencies) != ''
+        if: needs.changes.outputs.build == 'true' && (matrix.deps == 'canary' && inputs.canary-dependencies || inputs.dependencies) != ''
         env:
           DEPS: ${{ matrix.deps == 'canary' && inputs.canary-dependencies || inputs.dependencies }}
           TOKEN: ${{ github.token }}
@@ -255,6 +319,7 @@ jobs:
             echo "dependency $name: $repo@$ref ($(git -C "$dest" rev-parse --short HEAD))"
           done <<< "$DEPS"
       - name: Build + test
+        if: needs.changes.outputs.build == 'true'
         env:
           MODULES: ${{ inputs.modules }}
           SUITES: ${{ inputs.test-suites }}
@@ -296,7 +361,7 @@ jobs:
           fi
           ns3-build-contrib "${args[@]}"
       - name: Determinism (same seed byte-identical, another seed differs)
-        if: inputs.determinism != ''
+        if: needs.changes.outputs.build == 'true' && inputs.determinism != ''
         env:
           PROGS: ${{ inputs.determinism }}
           NORMALIZE: ${{ inputs.determinism-normalize }}
@@ -331,7 +396,7 @@ jobs:
           done <<< "$PROGS"
           [ "$fails" = 0 ]
       - name: Coverage report (gcovr; report-only)
-        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
+        if: needs.changes.outputs.build == 'true' && (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
         env:
           EXCLUDE: ${{ inputs.coverage-exclude }}
           SONAR: ${{ inputs.sonar }}
@@ -399,7 +464,7 @@ jobs:
           fi
       - name: SonarQube Cloud — token, analysis method, compile database
         id: sonar
-        if: inputs.sonar && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
+        if: needs.changes.outputs.build == 'true' && inputs.sonar && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -534,7 +599,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
+        if: needs.changes.outputs.build == 'true' && (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
         with:
           name: coverage
           path: coverage

@@ -78,6 +78,12 @@ jobs:
   go:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # A newer push to the same pull request cancels this job (#505); pushes,
+    # merge groups and dispatches each get their own group, never cancelled.
+    # inputs.working-directory and inputs.packages keep two calls in one caller workflow apart.
+    concurrency:
+      group: go-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}-${{ inputs.working-directory }}-${{ inputs.packages }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     outputs:
       failed: ${{ steps.verdict.outputs.failed }}
     env:

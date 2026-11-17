@@ -376,6 +376,24 @@ defaults in `templates/agents/agent-defaults.md`).
   that produces a required check runs `on: merge_group` there; the reusable
   PR-title check skips itself on a merge group (a skipped check passes) and
   the org-sync check judges the group's own change against its base.
+- **Runners are shared, so CI stays cheap where it can** (#505). The org has
+  20 concurrent jobs for every repository together; on 2026-11-16 a fan-out of
+  22 refresh PRs and 9 docs PRs filled them for an hour and a release's
+  publish job waited 19 minutes for a runner. So: (1) a docs-only change
+  (every changed file matches `reusable-ns3-ci.yml`'s `docs-only-paths`:
+  prose, `docs/`, issue forms, repository metadata) runs no ns-3 build on a
+  pull request or in the merge queue: each `ns-<ver> <profile>` leg still
+  reports, green, on the bare runner with its steps skipped (a skip by
+  `if:` on a matrix job would leave the required check pending; a
+  repository's own heavy workflows follow AntHocNet's `changes` job and one
+  gate check); (2) a newer push to a pull request cancels the older run
+  (`concurrency` keyed on the PR number with `cancel-in-progress` on
+  `pull_request` only, in the reusable ns-3, Python and Go CI and in each
+  repository's own PR workflows; a push to `main`, a merge group, a release
+  or a dispatch is never cancelled); (3) org-bot opens its whole-org refreshes
+  (epics, org-sync, bestpractices) four at a time and waits for the queue
+  between batches (`tools/org-bot/org_bot.py`, `Throttle`); (4) release jobs
+  keep their own concurrency groups, never cancelled.
 - **`main` takes no direct push** in any repo: the `main` ruleset requires a
   PR and the required checks. It does not require an up-to-date branch
   (`strict_required_status_checks_policy` is off in every profile, maintainer
