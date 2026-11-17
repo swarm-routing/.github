@@ -42,7 +42,7 @@ permissions:
 jobs:
   licence:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -80,7 +80,7 @@ jobs:
             echo "$dir/$sub" >> "$base.list"
           done
       - name: SPDX headers and the one-way include rule
-        timeout-minutes: 4  # the image pull (about 15 MB) and two runs of a few seconds
+        timeout-minutes: 6  # the image pull (about 15 MB, up to 90 s of retries) and two runs of a few seconds
         env:
           DUAL: ${{ inputs.dual-roots }}
           CORE: ${{ inputs.core-roots }}
@@ -101,6 +101,13 @@ jobs:
             run+=(-v "$RUNNER_TEMP/core-deps:/core-deps:ro")
             while read -r dep; do args+=(--core-dep "/core-deps/${dep#"$RUNNER_TEMP/core-deps/"}"); done < "$RUNNER_TEMP/core-deps.list"
           fi
-          docker pull --quiet "$IMG"
+          # GHCR answered `denied` and then `not found` for this public digest for a few
+          # minutes on 2026-11-17 (04:53-04:58Z, with no login in this job), so a pull
+          # gets three more tries before the gate fails (#578)
+          for delay in 15 30 45 0; do
+            docker pull --quiet "$IMG" && break
+            [ "$delay" -gt 0 ] || { echo "::error::could not pull $IMG"; exit 1; }
+            echo "pull failed; retrying in $delay s" >&2; sleep "$delay"
+          done
           "${run[@]}" "$IMG" check-headers --self-test
           "${run[@]}" "$IMG" check-headers "${args[@]}" --exclude "$EXCLUDE" .
