@@ -87,8 +87,8 @@ jobs:
           CORE_DEPS: ${{ inputs.core-deps }}
           GPL_ONLY: ${{ inputs.gpl-only }}
           EXCLUDE: ${{ inputs.exclude }}
-          # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md); sha-328d5d4
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:c4a8db27766add567ae654771fa86210047edc1589c43071e3a15a21a2e0f1ff
+          # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md); sha-bd03540
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:47de777a458c52a808a970ba1c2cd1a557c991c26deebde249f5ee9c95a75547
         run: |
           args=()
           for d in $DUAL; do args+=(--dual "$d"); done
