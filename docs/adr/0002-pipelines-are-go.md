@@ -211,6 +211,11 @@ write GraphQL lacks. The exception is narrow:
   `--dry-run` prints the diff without a write;
 - its writes are bounded (400 a run) and paced (0.7 s apart, one request per
   item), under GitHub's secondary rate limits on content-creating requests;
+- the org App's token may be refused a project's visibility (GitHub:
+  "Viewer not authorized to change project visibility", the pilot's first
+  run): `project-sync` sets it in a mutation of its own, warns with the
+  maintainer's one-time step (the project's Settings, Visibility: Public)
+  and syncs the rest;
 - a view cannot be updated or deleted by any API: a view whose layout drifts
   is reported, and the maintainer deletes it in the project for the next run
   to recreate it.

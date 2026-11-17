@@ -54,6 +54,9 @@ const (
 type Result struct {
 	Wanted, Added, Updated, Removed, Views, Refused int
 	Deferred                                        bool
+	// VisibilityRefused: the token may not make the project public (a
+	// maintainer step, reported as a warning; the run still succeeds)
+	VisibilityRefused bool
 }
 
 type syncer struct {
@@ -189,13 +192,29 @@ func (s *syncer) sync(issues []Issue) error {
 	return s.views(p)
 }
 
+// VisibilityRefused is the error text GitHub returns when the token may not
+// change a project's visibility.
+const VisibilityRefused = "not authorized to change project visibility"
+
 func (s *syncer) project(p *Project) error {
+	if p.Public != s.d.Public {
+		s.say("project %q: %sset public", s.d.Title, s.would())
+		if !s.dry && s.write() {
+			err := s.g.GraphQL(mSetPublic, map[string]any{"p": p.ID, "public": s.d.Public}, nil)
+			s.g.pause()
+			switch {
+			case err != nil && strings.Contains(err.Error(), VisibilityRefused):
+				// a one-time maintainer step; everything else still syncs
+				s.res.VisibilityRefused = true
+				s.say("::warning::project %q: this token may not change its visibility: the maintainer makes it public once (the project's Settings, Visibility: Public)", s.d.Title)
+			case err != nil:
+				return err
+			}
+		}
+	}
 	var diff []string
 	if p.Title != s.d.Title {
 		diff = append(diff, "title")
-	}
-	if p.Public != s.d.Public {
-		diff = append(diff, "public")
 	}
 	if p.ShortDescription != s.d.ShortDescription {
 		diff = append(diff, "description")
@@ -211,7 +230,7 @@ func (s *syncer) project(p *Project) error {
 		return nil
 	}
 	defer s.g.pause()
-	return s.g.GraphQL(mUpdateProject, map[string]any{"p": p.ID, "title": s.d.Title, "public": s.d.Public,
+	return s.g.GraphQL(mUpdateProject, map[string]any{"p": p.ID, "title": s.d.Title,
 		"desc": s.d.ShortDescription, "readme": s.d.Readme}, nil)
 }
 
