@@ -847,7 +847,22 @@ runs until their secret is set, and the secrets belong to the maintainer:
 | `epics-refresh` (on `repository_dispatch` `epics`, which each repository's org-managed `epics-changed.yml` sends when an issue change can move an epic list; on this repository's own issues; hourly, for a sub-issue added or removed; #572) | Waits five minutes for a burst of issue events to end (a newer event cancels the wait), then runs org-bot's `epics` task: one refresh PR per repository whose `## Epics` section (and, here, ROADMAP.md and the profile) drifted, auto-merged through the queue ("Epics are the public plan" above) | The org GitHub App, else `ORG_BOT_TOKEN` (as `org-bot`) |
 | `repo-settings` (daily check; apply on every push here that changes `templates/rulesets/`, the tool or this repository's `.github/org-sync.toml`; apply to one repository on its `repo-settings` repository_dispatch, which its org-managed `settings-apply.yml` sends when a push to its `main` changes its `.github/org-sync.toml`, #569; on demand, `plan` or `apply`, the fallback) | Keeps each repository's settings equal to the `[settings]` table of its `.github/org-sync.toml` and its profile in `templates/rulesets/` (`tools/repo-settings/repo_settings.py`): description, homepage, topics; merge settings (squash only, PR title and body as the commit, delete the branch, auto-merge allowed, always suggest updating PR branches) and features (issues on; wiki, projects, discussions off); the `main` ruleset and the `release-tags` ruleset (v* tags cannot be deleted, force-pushed or moved); security features, only ever turned on (Dependabot alerts and security updates, secret scanning and push protection, private vulnerability reporting, CodeQL default setup except where the repository runs its own CodeQL workflow; on a private repository the free plan offers only the Dependabot ones, the rest is reported unsupported); the Actions policy (selected actions: GitHub's own plus the list in `templates/rulesets/defaults.json`, `GITHUB_TOKEN` read-only by default, Actions may not approve PRs, and a fork PR's workflows wait for a maintainer's approval whenever its author is neither a collaborator on the repository nor a member of the org: `all_external_contributors`, the strictest of GitHub's three fork-PR approval policies, on public repositories; a private repository's fork-PR workflow setting is not managed); and, where enabled, a `release` environment with the maintainer as required reviewer (where `release_environment = false`, an existing `release` environment's reviewers and wait timer are removed instead); and every environment a `[settings.environments.<name>]` table declares, with its required reviewers and deployment branches (an undeclared deployment branch policy of such an environment is deleted). The daily check opens, updates or closes one `[settings]` drift issue; a private repository's values are never printed. It never deletes a ruleset or an environment, never turns a security feature off, and only manages the rulesets named in its profiles and the environments its tables name | The org GitHub App, else `ORG_BOT_TOKEN` (a fine-grained token). Either needs, on every repository, besides org-bot's: **Administration: read and write** (every settings write, and reading rulesets, security and Actions settings), **Contents: read** (each `org-sync.toml` and the workflows), **Actions: read** (the `release` environment), Metadata: read. No Dependabot alerts, Secret scanning alerts or Code scanning alerts permission is needed: those cover the alerts, not the settings. The App already has Administration: write; check it also has the reads. Until the token has them, apply reports `refused` (or `unreadable`) and only the check runs |
 
-Each adopting repository's `org-sync` check (`reusable-org-sync-check.yml`)
+Each adopting repository pins the swarm-routing/.github commit its
+org-managed files were rendered from, in `.github/org-sync.lock` (#586), and
+its `org-sync` check (`reusable-org-sync-check.yml`) renders the templates and
+tools at that commit, not at `main`. `org_sync.py apply` writes the lock when
+it changes a file or the lock is missing, from a clean checkout on `main` (or
+a detached HEAD in CI) only, so org-bot's refresh PR moves the pin and the
+rendered text together, the `swarm-core.lock` model; a commit here that
+renders nothing new for a repository moves nothing there. A template merge
+here therefore turns no other repository's check red, on a PR or on `main`:
+`check / org-sync` is red only when the repository differs from what it pins.
+The lock is not in `.github/org-sync.toml` because that file is the
+repository's own configuration (and a push that changes it re-applies the
+repository's settings, #569), while the lock is machine-written state; never
+edit it by hand. A repository without a lock, a caller passing `pinned:
+false`, or one naming another `org-ref` is checked against `org-ref` as
+before. On top of the pin, the check
 judges a PR by its own change only (#159): on `pull_request` and
 `merge_group` it runs `org_sync.py check --changed-only` against the base, so
 an item fails only when it drifts at the PR's head and either did not drift at
@@ -859,8 +874,8 @@ Editing `.github/org-sync.toml` alone (a `[settings]` key such as
 left on the base is a `::warning::` annotation per item, naming it, and the
 check passes. A template change here therefore never turns red the open PRs
 of the adopting repositories; they merge as they are, and org-bot's refresh PR
-brings the templates in. A push to `main` keeps the full check, so drift there
-stays visible until the refresh PR merges. A caller that wants the full check on
+brings the templates in. A push to `main` keeps the full check against the
+pin. A caller that wants the full check on
 PRs too passes `full-check-on-pr: true`.
 
 **A change to an org-managed section is a template change here, never a hand

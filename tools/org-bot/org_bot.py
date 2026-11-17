@@ -423,9 +423,17 @@ def git_env(token):
     return env
 
 
+# org_sync.py apply's template pin (#586): which swarm-routing/.github commit
+# rendered a change is not part of the change, so a new commit here that
+# renders the same text keeps the open refresh PR instead of replacing it
+ORG_SYNC_LOCK = ".github/org-sync.lock"
+LOCK_COMMIT = re.compile(r'^([+-]?commit = ")[0-9a-f]{40}"', re.M)
+
+
 def branch_for(task, diff):
     if task in FIXED_BRANCH:
         return f"org-bot/{task}"
+    diff = LOCK_COMMIT.sub(r'\1<pin>"', diff)
     return f"org-bot/{task}-{hashlib.sha256(diff.encode()).hexdigest()[:8]}"
 
 
@@ -443,6 +451,8 @@ def branch_has(clone, branch, env):
     ).stdout.split()
     for path in changed:
         theirs = sh(["git", "-C", clone, "show", f"FETCH_HEAD:{path}"], env=env, check=False)
+        if path == ORG_SYNC_LOCK and not theirs.returncode:
+            continue  # an older template pin with the same render (#586)
         with open(os.path.join(clone, path), encoding="utf-8", errors="replace") as fh:
             if theirs.returncode or theirs.stdout != fh.read():
                 return False
@@ -1306,6 +1316,16 @@ def self_test():
     def check(name, cond):
         if not cond:
             failures.append(name)
+
+    # the template pin (#586): a refresh rendered from a newer commit with the
+    # same text is the same branch; a different text is not
+    lock_diff = (
+        '--- a/.github/org-sync.lock\n+++ b/.github/org-sync.lock\n-commit = "{}"\n+commit = "{}"\n'
+    )
+    same_a = branch_for("org-sync", lock_diff.format("a" * 40, "b" * 40) + "+text\n")
+    same_b = branch_for("org-sync", lock_diff.format("a" * 40, "c" * 40) + "+text\n")
+    other = branch_for("org-sync", lock_diff.format("a" * 40, "c" * 40) + "+other\n")
+    check("the template pin is not part of the branch name", same_a == same_b != other)
 
     work = tempfile.mkdtemp(prefix="org-bot-test-")
     env = git_env(None)

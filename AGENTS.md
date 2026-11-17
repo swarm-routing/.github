@@ -376,7 +376,7 @@ changing what the row names.
 | Change how outside contributions are accepted (DCO, contributor copyright lines) | CONTRIBUTING "Outside contributions", `tools/checks/check-dco.py`, `reusable-dco.yml` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
 | List an org skill in every repo's AGENTS.md | `templates/agents/skills.md` |
-| Change what every repo shares (org sections, badges, SECURITY, ADR template, Makefile) | `templates/` + `tools/org-sync/org_sync.py`; a template change turns every adopting repo's `org-sync` check red until its refresh PR lands |
+| Change what every repo shares (org sections, badges, SECURITY, ADR template, Makefile) | `templates/` + `tools/org-sync/org_sync.py`; each repo is checked at the commit its `.github/org-sync.lock` pins, so a template change turns nothing red: org-bot's refresh PR moves the pin and the text together (#586) |
 | Bring a repo onto the templates | `tools/org-sync/org_sync.py init` (new repo) or `plan` → `apply` → `check` |
 | Change the org security policy | `SECURITY.md`, `templates/SECURITY.md.in`; write no claim a repo cannot back |
 | Record an ns-3 bug, or look one up (RCAPA) | swarm-routing/ns3-tools `docs/ns3-bugs.md`, `docs/ns3-rcapa/`; form `ISSUE_TEMPLATE/rcapa.yml` |
