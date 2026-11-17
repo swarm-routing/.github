@@ -43,6 +43,13 @@ name: org-bot
 #   bestpractices-evidence.yml sends when a push to main touches the evidence
 #   files; those runs have their own concurrency group per repository, so a
 #   pending org-release run is never replaced by one.
+# - branch-sweep (daily, with `all`; #595): the Go tool `branch-sweep`
+#   (cmd/branch-sweep, run from the ci-tools image by digest) deletes stale
+#   branches in every unarchived org repository: a branch whose PRs all closed
+#   more than 2 days ago with no commit since and no open PR on it, and a
+#   claude/* or org-bot/* branch with no PR and no commit for 7 days; never the
+#   default branch, main, bot/release, gh-readonly-queue/*, release branches, a
+#   protected branch or a tag. Each deletion is a line of the run's summary.
 # - fan-out in bounded batches (#505): epics, org-sync and bestpractices open
 #   at most 4 new PRs at a time, then wait (2 min, then while the org holds
 #   more than 10 queued runs, 30 min in all) before the next 4; what the run
@@ -96,7 +103,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -162,6 +169,7 @@ jobs:
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Refresh
+        if: env.TASK != 'branch-sweep'
         env:
           ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
           ORG_BOT_GIT_NAME: ${{ steps.bot.outputs.git-name }}
@@ -207,6 +215,28 @@ jobs:
             python3 -I tools/org-bot/org_bot.py run --task "$task" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
           done
           exit "$failed"
+      - name: Stale branches (branch-sweep, daily)
+        # cmd/branch-sweep from the ci-tools image by digest (#595): in every
+        # unarchived org repository, a branch whose PRs all closed more than 2
+        # days ago (no commit since, no open PR on it) and a claude/* or org-bot/*
+        # branch with no PR and no commit for 7 days; never the default branch,
+        # main, bot/release, gh-readonly-queue/*, release branches, a protected
+        # branch or a tag. The daily run and a dispatch of `all` or `branch-sweep`;
+        # it runs even when Refresh failed. Deleting needs Contents: write.
+        if: >-
+          ${{ !cancelled() && steps.bot.outcome == 'success'
+              && ((github.event_name == 'schedule' && env.TASK == 'all')
+                  || (github.event_name == 'workflow_dispatch' && (env.TASK == 'all' || env.TASK == 'branch-sweep'))) }}
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:3025aaf76875da5cefd4f4a238948a1877bdb9878f9248b8a982f52b0e21e2a8  # promoted from 726394e (#597)
+        run: |
+          set -o pipefail
+          args=()
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          docker run --rm -e GH_TOKEN "$IMG" branch-sweep "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
         if: ${{ always() }}
         run: |
