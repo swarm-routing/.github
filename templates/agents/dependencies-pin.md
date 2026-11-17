@@ -5,8 +5,10 @@
   workflow's swarm-core `core-deps` and the `swarm-core=` dependency of
   `.github/workflows/benchmark-cell.yml` name the same commit; the
   `swarm-core / pin` check (swarm-routing/.github
-  `tools/checks/check-swarm-core-pin.py`) fails when they disagree or when
-  swarm-core `main` changed `core/` since the pin. org-bot's `swarm-core-pin`
+  `tools/checks/check-swarm-core-pin.py`) fails when they disagree, and
+  reports swarm-core `main` changing `core/` since the pin
+  (swarm-routing/.github#586: a warning on a PR or a merge group, red on
+  `main` only while org-bot's bump PR is open). org-bot's `swarm-core-pin`
   task then opens the bump PR (`org-bot/swarm-core-pin`), touching only those
   lines, `benchmark-cell.yml` included; review it and let it merge rather than bumping by hand.
 - **The ns-3 build**: the `dependencies` input of

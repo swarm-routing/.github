@@ -1831,6 +1831,18 @@ check(
 )
 check(run("check", dk)[0] == 0, "the lock is not drift")
 write(os.path.join(dk, ".github/workflows/dco.yml"), "hand edit\n")
+err = io.StringIO()
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+    rc = org_sync.main(["check", dk])
+check(
+    rc == 1
+    and f"this repository pins {SHA_A[:12]}" in err.getvalue()
+    and f"ORG_REF={SHA_A}" in err.getvalue(),
+    "check names the pin when the templates are another commit (no re-apply on unrelated PRs)",
+)
+run("apply", dk)  # back in sync (the lock moves to SHA_B with it)
+write(lock, 'commit = "' + SHA_A + '"\n')
+write(os.path.join(dk, ".github/workflows/dco.yml"), "hand edit\n")
 rc, out = run("apply", dk)
 check(
     rc == 0

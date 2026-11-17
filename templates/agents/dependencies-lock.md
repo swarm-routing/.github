@@ -10,7 +10,9 @@
   takes a commit) name the commit the tag names.
 - **Bumping**: never by hand. The `swarm-core / pin` check (swarm-routing/.github
   `tools/checks/check-swarm-core-pin.py`, lock mode) verifies the lock against
-  the release and fails when a newer swarm-core release is out; org-bot's
+  the release, fails when the places disagree, and reports a newer swarm-core
+  release (swarm-routing/.github#586: a warning on a PR or a merge group, red on
+  `main` only while org-bot's bump PR is open); org-bot's
   `swarm-core-pin` task then opens the bump PR (`org-bot/swarm-core-pin`) with
   the lock written from that release and the tag and its commit moved on
   every line above, the `swarm-core=` dependency of
