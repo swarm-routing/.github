@@ -124,7 +124,7 @@ python3 -I tools/checks/check-headers.py --dual '' .   # licence headers (everyt
 | `ns3-image-selftest.yml`, `benchmark-cell-selftest.yml`, `release-selftest.yml` | | the reusable image, benchmark-cell and release workflows on fixtures | no |
 | `go-ci-selftest.yml` | | `reusable-go-ci.yml` on a passing and a failing fixture module | no |
 | `ci-tools-image.yml` | | the Go tools and the `ci-tools` image: build once, test by digest, promote on `main` | no |
-| `org-bot.yml`, `epics.yml`, `zenodo.yml`, `repo-settings.yml`, `ai-files-review.yml`, `sonar-triage.yml`, `bestpractices.yml`, `repo-metadata.yml`, `sync-labels.yml`, `scorecard.yml` | | scheduled or dispatched automation across the org (CONTRIBUTING "Automation") | no |
+| `org-bot.yml`, `epics.yml`, `zenodo.yml`, `repo-settings.yml`, `ai-files-review.yml`, `sonar-triage.yml`, `bestpractices.yml`, `repo-metadata.yml`, `sync-labels.yml`, `labels.yml`, `scorecard.yml` | | scheduled or dispatched automation across the org (CONTRIBUTING "Automation") | no |
 
 The required checks are the ones the `main` ruleset lists: `gh api
 repos/swarm-routing/.github/rules/branches/main`. `main` merges through a
