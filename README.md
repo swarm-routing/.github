@@ -9,7 +9,7 @@ Org-wide defaults for every `swarm-routing` repository.
 | `profile/README.md` | The org profile page |
 | `CONTRIBUTING.md` | Invariants, issue body shape and label taxonomy (from AntHocNet's ADR-0013) |
 | `ISSUE_TEMPLATE/`, `pull_request_template.md` | Default forms for repos without their own |
-| `labels.json` + `.github/workflows/sync-labels.yml` | The label taxonomy and the reusable workflow that applies it to a repo |
+| `labels.json` + `.github/workflows/labels.yml`, `sync-labels.yml` | The label taxonomy; `labels.yml` applies it to every org repository (private ones included) when it changes, `sync-labels.yml` is the reusable workflow a repo calls monthly |
 | `ROADMAP.md`, `tools/epics/epics.py` | The org plan, and every repository's epics generated into it, into each README and into the profile |
 | `tools/org-bot/org_bot.py` + `.github/workflows/org-bot.yml` | Daily and on every template change: opens the PRs that refresh each repository's epic list and org-managed files (needs the org GitHub App's secrets, else the `ORG_BOT_TOKEN` secret; CONTRIBUTING, Automation) |
 | `tools/zenodo/zenodo.py` + `.github/workflows/zenodo.yml` | Daily: every release of every repository whose `CITATION.cff` names a Zenodo DOI is on Zenodo; one the GitHub integration missed is archived (CONTRIBUTING, Releases and DOIs) |

@@ -121,7 +121,7 @@ Org-wide (1–9), then this repo's own.
 9. **Nothing shipped depends on `.claude/`.** Skills hold procedures; scripts
    that anything shipped needs live in `tools/` (AntHocNet ADR-0014).
 10. **Reusable workflows are a public contract.** Callers pin `@main`: never rename or remove an input, never change a default's meaning; add inputs with backward-compatible defaults. A breaking change needs a new file or a tag, announced in an issue in every caller repo.
-11. **`labels.json` is the taxonomy.** Change it together with `CONTRIBUTING.md` and the issue forms; `sync-labels` never deletes labels, so a rename is a manual migration recorded in an issue.
+11. **`labels.json` is the taxonomy.** Change it together with `CONTRIBUTING.md` and the issue forms; `sync-labels` never deletes labels, nor does the `labels` workflow that applies it to every repository on change, so a rename is a manual migration recorded in an issue.
 12. **The issue forms stay AntHocNet's shape.** Same fields, same body sections; org-specific additions only (areas, Depends on, literature).
 
 ## Conventions
@@ -137,12 +137,13 @@ Org-wide (1–9), then this repo's own.
   (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
   gates the issue: that label set is the version's scope,
   and the version is released when its issues are done (CONTRIBUTING
-  "Cutting a release"). Labels come from `labels.json` via the `sync-labels`
-  workflow, the shared `release:v0.1.0` to `release:v0.4.0` and
-  `release:v1.0.0` among them; a version outside that set is added to
-  `swarm-routing/.github`'s `labels.json` (and CONTRIBUTING's label table)
-  when a ladder needs it, and reaches a repository when its `sync-labels` runs
-  (monthly, or dispatched after the change merges),
+  "Cutting a release"). Labels come from `labels.json`, which `.github`'s
+  `labels` workflow applies to every repository, private ones included, as
+  soon as it changes (never deleting a label), the shared `release:v0.1.0`
+  to `release:v0.4.0` and `release:v1.0.0` among them; a version outside
+  that set is added to `swarm-routing/.github`'s `labels.json` (and
+  CONTRIBUTING's label table) when a ladder needs it, and reaches every
+  repository when that change merges,
   or, in a repository that keeps its own release labels (AntHocNet), created
   there with `gh label create release:vX.Y.Z` when its ladder adds the version.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
