@@ -130,6 +130,18 @@ is the long form.
    swarm-core's `ci.yml` `cxx-standard` job checks its `core/` against the
    image, and `swarm::core` passes the standard on to every protocol core:
    swarm-routing/ns3-swarm-core#141, its `docs/api-policy.md` "C++ standard").
+8. **If we can automate, we always automate** (maintainer rule 2026-11-17).
+   Anything that can run as a pipeline runs as one: a check, a bump, a
+   dispatch after a merge, a refresh, a recovery after a missed run. A step
+   stays manual only when no API or permission exists for it (name the
+   missing one), or when it is a decision the maintainer reserves: cutting a
+   release, approving a gated publish, answering a maintainer-only choice.
+   Every remaining manual step is listed in #568 with its reason and its
+   tracking issue; a manual step found later goes there too, and one that
+   becomes automatable gets its own issue. The precedent is
+   swarm-routing/ns3-upstream-report's
+   [ADR-0002](https://github.com/swarm-routing/ns3-upstream-report/blob/main/docs/adr/0002-a-zero-manual-pipeline-to-ns-3s-gitlab.md),
+   a zero-manual pipeline to ns-3's GitLab.
 
 ## Issues
 
