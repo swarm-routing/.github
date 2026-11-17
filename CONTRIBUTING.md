@@ -207,6 +207,7 @@ monthly; nothing is added by hand):
 | Type | exactly one; umbrellas add `epic` | `bug`, `enhancement`, `chore`, `documentation`, `verification` (+ `question`, `handoff`) |
 | RCAPA | on every RCAPA ticket: an ns-3 bug beside `verification` and `ns3` ("ns-3 bugs (RCAPA)" below), a regression in a published library beside `bug` ("RCAPA" below) | `rcapa` |
 | ns-3 upstream | on every `NS3-NNN` RCAPA ticket, beside `rcapa` (never on a regression or a `PROC-NNN`): it counts the open upstream ns-3 bugs for ns3-tools' "ns-3 bugs" badge | `ns3-upstream` |
+| Security | on every ticket the hourly `security-alerts` task keeps, one per open security alert, beside `bug` ("Security alerts" below); never set by hand | `security` |
 | Hold | stops an automated action from going out while it stays on (the upstream bridge's veto window; see "ns-3 bugs (RCAPA)" below) | `hold` |
 | Area | one or more | `protocol`, `adapter`, `ns3`, `benchmark`, `observability`, `packaging`, `ci`, `learn-site`, `literature` |
 | Model | exactly one, a suggestion: what a wrong first pass costs, not code volume; only models a Claude Pro plan includes (maintainer decision, #280) | `model:haiku-5.5` (mechanical), `model:sonnet-5.5` (plumbing, tooling, docs), `model:opus-5.5` (protocol semantics, root cause, adapter work, architecture: write the design first) |
@@ -1070,6 +1071,49 @@ Creating the App (an org owner, once):
    `ORG_BOT_TOKEN` (and `REPO_SETTINGS_TOKEN`) secrets and revoke the personal
    token. The fallback then does nothing, and can be removed in a later PR.
 
+### Security alerts
+
+Every open GitHub security alert is a ticket (maintainer decision
+2026-11-17, #629). The Go task `security-alerts` (`cmd/security-alerts`,
+the `ci-tools` image by digest) runs hourly from org-bot with the org App's
+token, which reads Code scanning, Dependabot and Secret scanning alerts. It
+lists every open code-scanning (CodeQL, Scorecard), Dependabot and
+secret-scanning alert in every unarchived org repository; GitHub's alert
+events cannot trigger a workflow, so the hourly poll is the trigger. In the
+alert's repository it keeps one issue per alert:
+
+- **Labels:** `security`, `bug` and `ci`, a model suggestion, and a
+  priority from the severity: critical or high is `priority:P1`, medium
+  `P2`, low `P3`. A leaked secret is always P1.
+- **Its alert:** the alert's URL is held in a hidden marker, matched to a
+  boundary (#621), so alert 1's ticket never stands for alert 10. An open
+  `bug` issue that already names the alert, such as one the `bestpractices`
+  check opened before this task, is adopted, not duplicated.
+- **Kept current:** the ticket is updated in place, and the task closes it
+  with a comment once the alert is no longer open (fixed, or dismissed by
+  the maintainer). It closes a ticket only when it could read that kind of
+  alert.
+- **The SLA:** an alert open more than 14 days (critical) or 45 days (medium
+  or higher) is past its SLA, and its ticket becomes P1. The weekly
+  `bestpractices` check withdraws its two vulnerability answers on the same
+  thresholds ("OpenSSF Best Practices" below).
+- **Who acts,** as the ticket says:
+  - a code finding is fixed by an agent's test-first PR (#629, stage 3);
+  - a policy finding (Scorecard) gets a proposal: a `[settings]` change, or
+    a dismissal with its reason;
+  - a Dependabot alert gets Dependabot's own security-update PR, on in every
+    repository through `defaults.json`;
+  - a leaked secret is rotated by the maintainer.
+
+  Dismissing an alert and rotating a secret stay the maintainer's: no task
+  or agent does either.
+- **The weekly summary:** each Monday the task also keeps
+  `[security] open alerts across the org`, an issue in this repository. It
+  lists the open alerts by repository and severity, the oldest age, those
+  past the SLA, the fix PRs merged that week, and those waiting for the
+  maintainer. Private repositories are named only as `private repository N`
+  (#622).
+
 ## Releases and DOIs
 
 A citable repository carries a `CITATION.cff` whose `doi:` is its Zenodo
@@ -1873,7 +1917,9 @@ is **Save**, once per project, only when something changed. By hand, from a
   turns the run red (the org App needs read access to code-scanning,
   Dependabot and secret-scanning alerts); it leaves `no_leaked_credentials`
   `?` but not the two defaults. An alert that withdraws an answer is a
-  finding and gets its own `bug` issue, `priority:P1`. The other three,
+  finding; its issue is the alert's `security` ticket, which the hourly
+  `security-alerts` task keeps and raises to `priority:P1` on the same
+  thresholds. The other three,
   `report_responses`, `enhancement_responses` and
   `vulnerability_report_response`, the weekly check reads from the
   repository's history (`history.go`, #613) and proposes Met only when
