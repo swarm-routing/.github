@@ -57,7 +57,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == "GET" && r.URL.Path == "/orgs/swarm-routing/repos":
 		if r.URL.Query().Get("type") != "all" {
-			http.Error(w, "type", 400)
+			http.Error(w, "type", http.StatusBadRequest)
 			return
 		}
 		lo, hi := slice(len(f.repos))
@@ -65,11 +65,11 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case len(parts) >= 4 && parts[0] == "repos" && parts[1] == "swarm-routing" && parts[3] == "labels":
 		repo := parts[2]
 		if _, ok := f.labels[repo]; !ok {
-			http.Error(w, `{"message": "Not Found"}`, 404)
+			http.Error(w, `{"message": "Not Found"}`, http.StatusNotFound)
 			return
 		}
 		if r.Method != "GET" && repo == f.failRepo {
-			http.Error(w, `{"message": "Resource not accessible by integration"}`, 403)
+			http.Error(w, `{"message": "Resource not accessible by integration"}`, http.StatusForbidden)
 			return
 		}
 		var body map[string]string
@@ -84,7 +84,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(ls[lo:hi])
 		case r.Method == "POST" && len(parts) == 4:
 			f.labels[repo] = append(f.labels[repo], Label{body["name"], body["color"], body["description"]})
-			w.WriteHeader(201)
+			w.WriteHeader(http.StatusCreated)
 			fmt.Fprint(w, `{}`)
 		case r.Method == "PATCH" && len(parts) == 5:
 			name, _ := url.PathUnescape(parts[4])
@@ -95,12 +95,12 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			http.Error(w, `{"message": "Not Found"}`, 404)
+			http.Error(w, `{"message": "Not Found"}`, http.StatusNotFound)
 		default:
-			http.Error(w, `{"message": "unexpected"}`, 500)
+			http.Error(w, `{"message": "unexpected"}`, http.StatusInternalServerError)
 		}
 	default:
-		http.Error(w, `{"message": "unexpected"}`, 500)
+		http.Error(w, `{"message": "unexpected"}`, http.StatusInternalServerError)
 	}
 }
 
