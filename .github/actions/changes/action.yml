@@ -44,7 +44,7 @@ inputs:
       docs-only. The default is reusable-ns3-ci.yml's `docs-only-paths`
       (docs-only-selftest.yml keeps the two equal).
     required: false
-    default: '\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$'
+    default: '\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$|^\.github/org-sync\.lock$'
   token:
     description: A token that reads the repository's commits (GITHUB_TOKEN with contents read)
     required: false
