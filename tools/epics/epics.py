@@ -414,7 +414,7 @@ def fallback_test(ok, data):
             if path.startswith(f"orgs/{ORG}/repos"):
                 if forbid:
                     raise GhError(path, "gh: sessions are bound to their repositories (HTTP 403)")
-                return [repo("x"), repo("y"), repo("papers", private=True)]
+                return [repo("x"), repo("y"), repo("secret-lib", private=True)]
             if "/issues?" in path:
                 return []
             return repo(path.split("/")[2])
@@ -437,7 +437,12 @@ def fallback_test(ok, data):
         sys.stderr = quiet
         try:
             gh_api = fake(False)
-            ok(names(fetch(roadmap=roadmap)) == ["x", "y"], "org listing, private dropped")
+            listed = fetch(roadmap=roadmap)
+            ok(names(listed) == ["x", "y"], "org listing, private dropped")
+            ok(  # every section is published: a private repository is never named (#622)
+                "secret-lib" not in roadmap_section(listed) + profile_section(listed),
+                "a private repository never reaches a generated section",
+            )
             ok(f"repos/{ORG}/x" not in calls, "the listing needs no per-repository read")
             gh_api, calls[:] = fake(True), []
             got = names(fetch(roadmap=roadmap))
@@ -479,7 +484,7 @@ def self_test():
     ok(GhError("x", "gh: Not Found (HTTP 404)").missing, "404 is a missing README")
     ok(not GhError("x", "gh: API rate limit exceeded (HTTP 403)").missing, "403 is an error")
     try:
-        find(data, "papers")
+        find(data, "secret-lib")
         ok(False, "unknown repo accepted")
     except SystemExit:
         pass

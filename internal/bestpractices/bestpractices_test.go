@@ -296,7 +296,7 @@ func TestHTTP(t *testing.T) {
 		case "/orgs/swarm-routing/repos":
 			if r.URL.Query().Get("page") == "" {
 				w.Header().Set("Link", `<`+api.URL+`/orgs/swarm-routing/repos?page=2>; rel="next"`)
-				w.Write([]byte(`[{"name": "b", "archived": false, "private": false}, {"name": "old", "archived": true, "private": false}]`))
+				w.Write([]byte(`[{"name": "b", "archived": false, "private": false}, {"name": "old", "archived": true, "private": false}, {"name": "secret-lib", "archived": false, "private": true}]`))
 				return
 			}
 			w.Write([]byte(`[{"name": "a", "archived": false, "private": false}]`))
@@ -317,7 +317,8 @@ func TestHTTP(t *testing.T) {
 	defer api.Close()
 	g := NewHTTP("tok", api.URL)
 	if repos, err := g.Repos(); err != nil || !reflect.DeepEqual(repos, []string{"a", "b"}) {
-		t.Fatalf("repos over two pages, archived left out: %v %v", repos, err)
+		// a private repository is never checked, so never named in a public log (swarm-routing/.github#622)
+		t.Fatalf("repos over two pages, archived and private left out: %v %v", repos, err)
 	}
 	if text, ok, err := g.File("a", "x"); err != nil || !ok || text != "hello" {
 		t.Fatalf("file: %q %v %v", text, ok, err)

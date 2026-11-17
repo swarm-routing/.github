@@ -31,6 +31,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/swarm-routing/.github/internal/repomask"
 )
 
 // Org is the organization swept.
@@ -338,7 +340,7 @@ func (g GitHub) sweepRepo(r Repo, label string, now time.Time, dry, verbose bool
 		if r.Private { // a private repository's branch names and paths never reach a public log
 			name = fmt.Sprintf("branch %d", i+1)
 			show = func(e error) error {
-				return errors.New(strings.NewReplacer(r.FullName, "<private>", url.QueryEscape(b.Name), "<branch>",
+				return errors.New(strings.NewReplacer(r.FullName, repomask.Hidden, url.QueryEscape(b.Name), "<branch>",
 					refPath(b.Name), "<branch>", b.Name, "<branch>").Replace(e.Error()))
 			}
 		}
@@ -409,13 +411,10 @@ func Run(g GitHub, names []string, now time.Time, dry, verbose bool, out io.Writ
 	if err != nil {
 		return res, err
 	}
-	budget, failed, private := MaxDeletes, 0, 0
+	budget, failed := MaxDeletes, 0
+	var mask repomask.Masker // a private repository is never named in the output, which a public workflow log holds
 	for _, r := range repos {
-		label := r.Name
-		if r.Private { // never named in the output, which a public workflow log holds
-			private++
-			label = fmt.Sprintf("private repository %d", private)
-		}
+		label := mask.Repo(r.Name, r.Private, r.FullName, r.Name)
 		if r.Archived {
 			fmt.Fprintf(out, "%s: archived, skipped\n", label)
 			continue
@@ -425,11 +424,7 @@ func Run(g GitHub, names []string, now time.Time, dry, verbose bool, out io.Writ
 			continue
 		}
 		if err := g.sweepRepo(r, label, now, dry, verbose, &budget, &res, out); err != nil {
-			msg := err.Error()
-			if r.Private {
-				msg = strings.ReplaceAll(msg, r.FullName, "<private>")
-			}
-			fmt.Fprintf(out, "%s: error: %s\n", label, msg)
+			fmt.Fprintf(out, "%s: error: %v\n", label, mask.Error(err))
 			failed++
 		}
 	}

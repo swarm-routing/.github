@@ -165,8 +165,8 @@ func org() *fakeGitHub {
 			{name: "ns3-tools", releases: []fRel{{tag: "v1.2.0", published: ago(3 * time.Hour)}}},                                                                                                  // issue, run in progress: waiting
 			{name: "skills", releases: []fRel{{tag: "v0.3.0", published: ago(4 * time.Hour)}, {tag: "v0.4.0-rc1", published: ago(2 * time.Hour), prerelease: true}, {tag: "v0.5.0", draft: true}}}, // newest real one is synced
 			{name: "AntHocNet"}, // no release
-			{name: "papers", private: true, releases: []fRel{{tag: "v1.0.0", published: ago(2 * time.Hour)}}}, // private: never
-			{name: "old", archived: true, releases: []fRel{{tag: "v1.0.0", published: ago(2 * time.Hour)}}},   // archived: never
+			{name: "secret-lib", private: true, releases: []fRel{{tag: "v1.0.0", published: ago(2 * time.Hour)}}}, // private: never
+			{name: "old", archived: true, releases: []fRel{{tag: "v1.0.0", published: ago(2 * time.Hour)}}},       // archived: never
 		},
 		issues: []fIssue{
 			{number: 300, title: "[release-sync] ns3-tools v1.2.0", created: ago(2 * time.Hour)},
@@ -219,7 +219,7 @@ func TestWatch(t *testing.T) {
 			t.Errorf("missing %q in\n%s", line, out)
 		}
 	}
-	for _, x := range []string{"Termite", "papers", "old", "AntHocNet v"} {
+	for _, x := range []string{"Termite", "secret-lib", "private repository", "old", "AntHocNet v"} {
 		if strings.Contains(out, x) {
 			t.Errorf("%s must not be listed:\n%s", x, out)
 		}
@@ -316,5 +316,19 @@ func TestCommand(t *testing.T) {
 	}
 	if rc := Main([]string{"--repos", "a/b"}, env, srv.Client(), srv.URL, &out, &errb); rc != 1 {
 		t.Errorf("a bad repository name: rc %d", rc)
+	}
+}
+
+// A private repository is never named in the output, which a public log holds
+// (swarm-routing/.github#622): the listing leaves it out, and named with
+// --repos it is printed masked.
+func TestPrivateNeverNamed(t *testing.T) {
+	out, err := watch(t, org(), now, true, "secret-lib", "BeeAdHoc")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if strings.Contains(out, "secret-lib") || !strings.Contains(out, "private repository 1: private, skipped\n") ||
+		!strings.Contains(out, "BeeAdHoc v0.1.0") {
+		t.Errorf("output:\n%s", out)
 	}
 }

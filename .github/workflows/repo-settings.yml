@@ -116,7 +116,7 @@ jobs:
             fi
             REPOS="${DISPATCHED#swarm-routing/}"
             args=(--org-only)
-            echo "repository_dispatch from ${DISPATCHED}: apply ${REPOS}"
+            echo "repository_dispatch: apply the repository it names (not printed: it may be private, #622)"
           fi
           rc=0
           # shellcheck disable=SC2086  # REPOS is a space-separated list
@@ -169,8 +169,9 @@ jobs:
               return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
           listed, seen, unsure = {}, set(), set()
           for ln in open(os.path.join(os.environ["RUNNER_TEMP"], "settings.txt"), encoding="utf-8"):
-              m = re.match(r"([^ :]+)(?: \(private\))?[ :]", ln)
-              if not m:
+              # a private repository is printed as "private repository N" and never gets an issue (#622)
+              m = re.match(r"([^ :]+)[ :]", ln)
+              if not m or ln.startswith("private repository "):
                   continue
               repo = m.group(1)
               seen.add(repo)

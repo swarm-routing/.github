@@ -473,7 +473,7 @@ def self_test():
             {**repo, "name": "empty"},
             {**repo, "name": "old", "archived": True},
             {**repo, "name": "forked", "fork": True},
-            {**repo, "name": "papers", "private": True},
+            {**repo, "name": "secret-lib", "private": True},
         ]
 
         def package():

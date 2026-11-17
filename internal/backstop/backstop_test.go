@@ -27,6 +27,7 @@ type fakeGitHub struct {
 	rerun      map[string]time.Time // its run_started_at, when re-run later
 	dispatches []string
 	failOn     string
+	private    map[string]bool // repo -> private
 	auth       []string
 	methods    []string
 }
@@ -41,7 +42,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repo := parts[0] + "/" + parts[1]
 	switch {
 	case len(parts) == 2:
-		fmt.Fprint(w, `{"default_branch": "main"}`)
+		fmt.Fprintf(w, `{"default_branch": "main", "private": %v}`, f.private[repo])
 	case len(parts) == 6 && parts[5] == "runs":
 		if r.URL.Query().Get("branch") != "main" {
 			http.Error(w, "branch", 400)
@@ -247,5 +248,50 @@ func TestMain_(t *testing.T) {
 	out.Reset()
 	if code := Main([]string{"--config", "t.toml"}, tok, srv.Client(), srv.URL, &out, &errb); code != 0 || len(f.dispatches) != 4 {
 		t.Errorf("with a token it dispatches: %d %q", code, out.String())
+	}
+}
+
+// A private repository's name never reaches the output, which a public log
+// holds (swarm-routing/.github#622): its rows read "private repository N",
+// and its name is scrubbed from an error.
+func TestPrivateNeverNamed(t *testing.T) {
+	const tbl = `
+[[entry]]
+repo = "swarm-routing/secret-lib"
+workflow = "send.yml"
+period = "1h"
+
+[[entry]]
+repo = "swarm-routing/secret-lib"
+workflow = "fail.yml"
+period = "1h"
+
+[[entry]]
+repo = "swarm-routing/open"
+workflow = "send.yml"
+period = "1h"
+`
+	f := &fakeGitHub{last: map[string]time.Time{}, failOn: "fail.yml",
+		private: map[string]bool{"swarm-routing/secret-lib": true}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	entries, err := Load([]byte(tbl))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	_ = Run(GitHub{API: srv.URL, Token: "tok", Client: srv.Client()}, entries, now, false, &out)
+	got := out.String()
+	if strings.Contains(got, "secret-lib") {
+		t.Errorf("a private repository's name reached the output:\n%s", got)
+	}
+	for _, line := range []string{
+		"private repository 1 send.yml: no run yet: dispatched on main with no inputs\n",
+		"private repository 1 fail.yml: no run yet: dispatch failed: POST repos/<private>/actions/workflows/fail.yml/dispatches: HTTP 403",
+		"swarm-routing/open send.yml: no run yet: dispatched on main with no inputs\n",
+	} {
+		if !strings.Contains(got, line) {
+			t.Errorf("missing %q in\n%s", line, got)
+		}
 	}
 }

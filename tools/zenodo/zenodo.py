@@ -2674,6 +2674,19 @@ def self_test():
         Checkout(tmp).file("org/R", "CITATION.cff", ref="v1") == NEW
         and Checkout(tmp).file("org/R", ".github/org-sync.toml") is None,
     )
+    # the org listing never yields a private repository, so no output names one (#622)
+    listing = GitHub()
+    listing.paged = lambda path: [
+        {"name": "R"},
+        {"name": "secret-lib", "private": True},
+        {"name": "copy", "fork": True},
+        {"name": "old", "archived": True},
+    ]
+    check(
+        "org listing: private, forks and archived left out",
+        listing.org_repos("org") == ["R"]
+        and listing.org_repos("org", archived=True) == ["R", "old"],
+    )
     srv.shutdown()
     for f in failures:
         print(f"FAIL: {f}")

@@ -29,6 +29,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/swarm-routing/.github/internal/repomask"
 )
 
 // Org is the organisation whose repositories get the labels.
@@ -335,19 +337,16 @@ func names(cs []Change) string {
 // Run applies want to every repository in repos, one line per repository. It
 // tries every repository and returns an error when any of them failed.
 func Run(g GitHub, want []Label, repos []Repo, dry bool, out io.Writer) error {
-	failed, private := 0, 0
+	failed := 0
+	var mask repomask.Masker
 	for _, r := range repos {
-		name := Org + "/" + r.Name
-		if r.Private {
-			private++
-			name = fmt.Sprintf("private repository %d", private)
-		}
+		name := mask.Repo(Org+"/"+r.Name, r.Private, Org+"/"+r.Name, r.Name)
 		have, err := g.labels(r.Name)
 		if err != nil {
-			fmt.Fprintf(out, "%s: error: reading its labels: %v\n", name, err)
+			fmt.Fprintf(out, "%s: error: reading its labels: %v\n", name, mask.Error(err))
 			failed++
 			if errors.Is(err, ErrRateLimited) {
-				return fmt.Errorf("stopped at %s: %w", name, err)
+				return fmt.Errorf("stopped at %s: %w", name, mask.Error(err))
 			}
 			continue
 		}
@@ -372,9 +371,9 @@ func Run(g GitHub, want []Label, repos []Repo, dry bool, out io.Writer) error {
 		bad := 0
 		for _, c := range plan {
 			if err := g.apply(r.Name, c); err != nil {
-				fmt.Fprintf(out, "%s: error: %s: %v\n", name, c.Label.Name, err)
+				fmt.Fprintf(out, "%s: error: %s: %v\n", name, c.Label.Name, mask.Error(err))
 				if errors.Is(err, ErrRateLimited) {
-					return fmt.Errorf("stopped at %s: %w", name, err)
+					return fmt.Errorf("stopped at %s: %w", name, mask.Error(err))
 				}
 				bad++
 			}

@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/swarm-routing/.github/internal/repomask"
 )
 
 // Slack is taken off each period, so a backstop that runs every hour still
@@ -149,19 +151,23 @@ func (g GitHub) do(method, path string, body any) ([]byte, int, error) {
 	return data, resp.StatusCode, nil
 }
 
-// defaultBranch is the repository's default branch.
-func (g GitHub) defaultBranch(repo string) (string, error) {
+// repoInfo is the repository's default branch and whether it is private.
+type repoInfo struct {
+	DefaultBranch string `json:"default_branch"`
+	Private       bool   `json:"private"`
+}
+
+// info reads the repository's default branch and visibility.
+func (g GitHub) info(repo string) (repoInfo, error) {
+	var r repoInfo
 	data, _, err := g.do("GET", "repos/"+repo, nil)
 	if err != nil {
-		return "", err
-	}
-	var r struct {
-		DefaultBranch string `json:"default_branch"`
+		return r, err
 	}
 	if err := json.Unmarshal(data, &r); err != nil || r.DefaultBranch == "" {
-		return "", fmt.Errorf("repos/%s: no default branch", repo)
+		return r, fmt.Errorf("repos/%s: no default branch", repo)
 	}
-	return r.DefaultBranch, nil
+	return r, nil
 }
 
 // lastRun is when the newest run of a workflow on branch started, a re-run included (zero: none).
@@ -218,25 +224,29 @@ func inputsText(in map[string]string) string {
 }
 
 // Run checks every entry and dispatches what is due; one line per entry. It tries
-// every entry and returns an error when any of them failed.
+// every entry and returns an error when any of them failed. A private
+// repository is printed as "private repository N" (the log is public) and its
+// name is scrubbed from every error.
 func Run(g GitHub, entries []Entry, now time.Time, dry bool, out io.Writer) error {
 	failed := 0
-	branches := map[string]string{}
+	repos := map[string]repoInfo{}
+	var mask repomask.Masker
 	for _, e := range entries {
-		name := e.Repo + " " + e.Workflow
-		br, ok := branches[e.Repo]
+		ri, ok := repos[e.Repo]
 		if !ok {
-			b, err := g.defaultBranch(e.Repo)
+			r, err := g.info(e.Repo)
 			if err != nil {
-				fmt.Fprintf(out, "%s: error: %v\n", name, err)
+				fmt.Fprintf(out, "%s %s: error: %v\n", e.Repo, e.Workflow, err)
 				failed++
 				continue
 			}
-			br, branches[e.Repo] = b, b
+			ri, repos[e.Repo] = r, r
 		}
+		br := ri.DefaultBranch
+		name := mask.Repo(e.Repo, ri.Private, e.Repo, strings.TrimPrefix(e.Repo, "swarm-routing/")) + " " + e.Workflow
 		last, event, err := g.lastRun(e.Repo, e.Workflow, br)
 		if err != nil {
-			fmt.Fprintf(out, "%s: error: %v\n", name, err)
+			fmt.Fprintf(out, "%s: error: %v\n", name, mask.Error(err))
 			failed++
 			continue
 		}
@@ -255,7 +265,7 @@ func Run(g GitHub, entries []Entry, now time.Time, dry bool, out io.Writer) erro
 			continue
 		}
 		if err := g.dispatch(e.Repo, e.Workflow, br, e.Inputs); err != nil {
-			fmt.Fprintf(out, "%s: %s: dispatch failed: %v\n", name, since, err)
+			fmt.Fprintf(out, "%s: %s: dispatch failed: %v\n", name, since, mask.Error(err))
 			failed++
 			continue
 		}
