@@ -6,8 +6,10 @@ package checkheaders
 // testdata/golden.json holds, per case, what the Python tool printed and
 // exited with on a fixture repository of testdata/fixtures.json. It was
 // written by testdata/gen_golden.py from tools/checks/check-headers.py at
-// 864d9b1, the byte-identical proof of #531; a deliberate change of output
-// rewrites it with
+// 864d9b1, the byte-identical proof of #531. Both are deleted (#578): the
+// generator only meant something against the Python reference, so the
+// goldens stay frozen as the Python wrote them (`git show 328d5d4:<path>`
+// recovers both). A deliberate change of output rewrites them with
 //
 //	go test ./internal/checkheaders/ -run Golden -update
 //
@@ -67,7 +69,7 @@ var gitEnv = []string{
 
 var defaultSteps = [][]string{{"git", "init", "-q", "-b", "main", "."}, {"git", "add", "-A"}}
 
-// buildFixture materialises one fixture as gen_golden.py's build() does.
+// buildFixture materialises one fixture as the former gen_golden.py's build() did.
 func buildFixture(t *testing.T, fx fixture, d string) {
 	t.Helper()
 	write := func(rel string, b []byte) {
