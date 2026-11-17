@@ -214,39 +214,19 @@ jobs:
     permissions:
       contents: read
     outputs:
-      build: ${{ steps.diff.outputs.build }}
+      build: ${{ steps.diff.outputs.docs-only != 'true' }}
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
           egress-policy: audit
+      # the org's one docs-only test (#581), with this workflow's pattern
       - id: diff
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
-          DOCS: ${{ inputs.docs-only-paths }}
-        run: |
-          build=true
-          if { [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; } && [ -n "$DOCS" ] && [ -n "$BASE" ] && [ -n "$HEAD" ]; then
-            # three-dot compare: the change itself, against its merge base
-            if files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files | if length < 300 then .[].filename else error("300 or more files") end'); then
-              printf 'changed:\n%s\n' "$files"
-              if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE -- "$DOCS"; then
-                build=false
-              fi
-            else
-              echo "::warning::could not list the changed files; building"
-            fi
-          fi
-          echo "build=$build"
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-          if [ "$build" = false ]; then
-            echo "::notice::docs-only change: the ns-3 build legs skip their steps (#505)"
-            echo "Docs-only change: the ns-3 build legs report without building (docs-only-paths, swarm-routing/.github#505)." >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: swarm-routing/.github/.github/actions/changes@main
+        timeout-minutes: 2
+        with:
+          paths: ${{ inputs.docs-only-paths }}
 
   build:
     name: ns-${{ matrix.version }} ${{ matrix.profile }}${{ matrix.deps == 'canary' && ' canary' || '' }}

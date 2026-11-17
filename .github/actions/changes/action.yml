@@ -1,0 +1,85 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: changes
+description: >-
+  Whether a pull request or merge group changes only docs (#581): every changed
+  file matches `paths`, the same default pattern as reusable-ns3-ci.yml's
+  `docs-only-paths` (#505). A repository's heavy jobs read the output and skip
+  their steps, so every required check still reports, green.
+# The org's one docs-only test, for every repository's own heavy jobs. Never a
+# `paths:` filter on a workflow that produces a required check (CONTRIBUTING
+# "Settings are code"); the job starts, reports, and skips its work inside:
+#
+#   jobs:
+#     changes:
+#       runs-on: ubuntu-24.04
+#       timeout-minutes: 5
+#       outputs:
+#         docs-only: ${{ steps.changes.outputs.docs-only }}
+#       steps:
+#         - uses: swarm-routing/.github/.github/actions/changes@main
+#           id: changes
+#           timeout-minutes: 2
+#     heavy:
+#       needs: changes
+#       container:   # a container job: no image on a docs-only change
+#         image: ${{ needs.changes.outputs.docs-only != 'true' && 'ghcr.io/…' || '' }}
+#       steps:
+#         - if: needs.changes.outputs.docs-only == 'true'
+#           run: echo "docs-only change, nothing to do (swarm-routing/.github#581)"
+#         - if: needs.changes.outputs.docs-only != 'true'
+#           uses: actions/checkout@…
+#         …every other step with the same `if:`
+#
+# A workflow with one heavy job can run the action as its first step instead
+# (`steps.changes.outputs.docs-only`). Pushes, schedules and dispatches are
+# never docs-only; any doubt (an API error, 300 or more files, an empty diff)
+# is not docs-only either. A matrix job skipped with a job-level `if:` reports
+# under its unexpanded name and leaves a required check pending, so the skip
+# is in the steps.
+inputs:
+  paths:
+    description: >-
+      Extended regex of changed paths that need no build or test; empty: never
+      docs-only. The default is reusable-ns3-ci.yml's `docs-only-paths`
+      (docs-only-selftest.yml keeps the two equal).
+    required: false
+    default: '\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$'
+  token:
+    description: A token that reads the repository's commits (GITHUB_TOKEN with contents read)
+    required: false
+    default: ${{ github.token }}
+outputs:
+  docs-only:
+    description: "'true' when the pull request or merge group changes only files matching `paths`; 'false' otherwise"
+    value: ${{ steps.diff.outputs.docs-only }}
+runs:
+  using: composite
+  steps:
+    - id: diff
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        EVENT: ${{ github.event_name }}
+        BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        DOCS: ${{ inputs.paths }}
+      run: |
+        docs_only=false
+        if { [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; } && [ -n "$DOCS" ] && [ -n "$BASE" ] && [ -n "$HEAD" ]; then
+          # three-dot compare: the change itself, against its merge base
+          if files=$(timeout 60 gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files | if length < 300 then .[].filename else error("300 or more files") end'); then
+            printf 'changed:\n%s\n' "$files"
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE -- "$DOCS"; then
+              docs_only=true
+            fi
+          else
+            echo "::warning::could not list the changed files; not docs-only"
+          fi
+        fi
+        echo "docs-only=$docs_only"
+        echo "docs-only=$docs_only" >> "$GITHUB_OUTPUT"
+        if [ "$docs_only" = true ]; then
+          echo "::notice::docs-only change: the heavy jobs skip their steps (swarm-routing/.github#581)"
+          echo "Docs-only change: the heavy jobs report without running (swarm-routing/.github#581)." >> "$GITHUB_STEP_SUMMARY"
+        fi

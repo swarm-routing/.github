@@ -57,13 +57,14 @@ CODE_OF_CONDUCT.md              the org default code of conduct: Contributor Cov
 SUPPORT.md                      the org default support policy: issues for bugs, features and questions, no private support
 .github/FUNDING.yml             the org default Sponsor button (GitHub Sponsors: danieljoppi)
 .github/actions/bot-token/      the bots' token: the org GitHub App's installation token, else ORG_BOT_TOKEN (#21; CONTRIBUTING "The bot's GitHub App")
+.github/actions/changes/        the org's one docs-only test (#581): `docs-only` is 'true' when every file a pull request or merge group changes matches `paths` (default: reusable-ns3-ci.yml's `docs-only-paths`, which runs it too); each repository's heavy jobs `needs:` a `changes` job and skip their steps on it (CONTRIBUTING "Runners are shared"); callers use it `@main`
 .github/actions/setup-vcpkg/    vcpkg for a protocol's core job (#489, CONTRIBUTING "vcpkg mode"): microsoft/vcpkg at a pinned commit plus the repository's builtin baseline (shallow fetches), bootstrapped; the binary cache on the org's GitHub Packages NuGet feed through mono (`binary-cache`: auto = readwrite, read on a fork PR; off); outputs `toolchain`; callers use it `@main` with `packages: write`
 .github/workflows/         reusable-ns3-ci.yml, reusable-ns3-image.yml, reusable-release.yml, reusable-benchmark-cell.yml, reusable-python-ci.yml,
                            reusable-pr-title.yml, reusable-licence-check.yml, reusable-dco.yml, reusable-org-sync-check.yml, reusable-codecov.yml, reusable-scorecard.yml, reusable-swarm-core-pin.yml,
                            reusable-dev-image-cleanup.yml (#371),
                            reusable-review-gate.yml (#294), review-gate.yml (this repository's own, from the PR's head),
                            sync-labels.yml, epics.yml, ai-files-review.yml, zenodo.yml, sonar-triage.yml, bestpractices.yml, org-bot.yml, epics-refresh.yml (an issue change that can move an epic list, sent by each repository's epics-changed.yml or seen here, waits five minutes in a job that a newer event cancels, then runs org-bot's `epics` task; hourly for a sub-issue added or removed, #572), backstop.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
-                           benchmark-cell-selftest.yml, setup-vcpkg-selftest.yml, python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480, and every one of two `source` items, #530;
+                           benchmark-cell-selftest.yml, setup-vcpkg-selftest.yml, docs-only-selftest.yml (.github/actions/changes on its own PR: the default says 'false', a match-all pattern 'true', an empty one 'false'; its default equals reusable-ns3-ci.yml's, #581), python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480, and every one of two `source` items, #530;
                            its fixtures: tools/checks/fixtures/python-ci/, python-ci-lib/),
                            reusable-go-ci.yml (a Go module's build, gofmt, vet, staticcheck, govulncheck, race tests and coverage; docs/adr/0002-pipelines-are-go.md)
                            and go-ci-selftest.yml (its fixtures: tools/checks/fixtures/go-ci/good, which passes, and bad, which fails gofmt, vet, staticcheck and test),
@@ -198,6 +199,9 @@ build-mode cell); its prebuilt mode is proven by a protocol repo's caller. A cha
 `.github/actions/setup-vcpkg/` runs `setup-vcpkg-selftest.yml` on its PR (a scratch
 swarm-core consumer on the registry's `main`, the binary cache off and on); a
 protocol's core job (swarm-routing/ARA, the pilot of #489) proves it in use. A change to
+`.github/actions/changes/` runs `docs-only-selftest.yml` on its PR, then by a
+draft PR in a caller that touches only a `.md` file: every heavy job reports
+green with its steps skipped (#581). A change to
 `reusable-ns3-image.yml` runs `ns3-image-selftest.yml` on its PR (build and
 test only); its push, sign and attest steps are proven by a `push: true`
 caller after merge. A change to `reusable-release.yml` runs `release-selftest.yml`
