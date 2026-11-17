@@ -529,7 +529,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#323](https://github.com/swarm-routing/.github/issues/323) Linux daemon host: every core over real sockets, packaged for amd64 and arm64 | Planned | 0 / 5 |
 | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
-| [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | Planned | 0 / 1 |
+| [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | Planned | 0 / 2 |
 
 <details><summary>Closed: 2 epics</summary>
 
