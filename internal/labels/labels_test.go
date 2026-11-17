@@ -6,6 +6,7 @@ package labels
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -346,13 +347,13 @@ func TestRateLimitCooldown(t *testing.T) {
 		!strings.Contains(out.String(), "swarm-routing/alpha: created 0 [], updated 2 [epic, priority:P1], 0 failed\n") {
 		t.Errorf("one cooldown of 30s, then the write lands: %v %v\n%s", err, waits, out.String())
 	}
-	// still limited after the retry: reported, the wait bounded, no third try
+	// the cooldown each answer asks for
 	for _, c := range []struct {
 		h    http.Header
 		code int
 		want time.Duration
 	}{
-		{http.Header{"Retry-After": {"3600"}}, http.StatusTooManyRequests, MaxCooldown},
+		{http.Header{"Retry-After": {"3600"}}, http.StatusTooManyRequests, time.Hour},
 		{http.Header{}, http.StatusTooManyRequests, MaxCooldown},
 		{http.Header{"X-Ratelimit-Remaining": {"0"}, "X-Ratelimit-Reset": {"0"}}, http.StatusForbidden, time.Second},
 		{http.Header{}, http.StatusForbidden, 0},
@@ -361,16 +362,33 @@ func TestRateLimitCooldown(t *testing.T) {
 			t.Errorf("%d %v: cooldown %v, want %v", c.code, c.h, got, c.want)
 		}
 	}
-	calls := 0
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, `{"message": "slow down"}`, http.StatusTooManyRequests)
-	}))
-	defer srv2.Close()
-	waits = nil
-	g2 := GitHub{API: srv2.URL, Client: srv2.Client(), Sleep: func(d time.Duration) { waits = append(waits, d) }}
-	if _, err := g2.do("GET", "x", nil); err == nil || calls != 2 || len(waits) != 1 || !strings.Contains(err.Error(), "HTTP 429 slow down") {
-		t.Errorf("one retry only: %v calls=%d waits=%v", err, calls, waits)
+	// still limited after the retry, or a cooldown past the bound: the run
+	// stops there, with no request before GitHub allows it
+	for _, c := range []struct {
+		retryAfter string
+		calls      int
+		waits      int
+	}{{"1", 2, 1}, {"3600", 1, 0}} {
+		var paths []string
+		srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.Method+" "+r.URL.Path)
+			if r.URL.Path == "/orgs/swarm-routing/repos" {
+				fmt.Fprint(w, `[{"name": "alpha"}, {"name": "beta"}]`)
+				return
+			}
+			w.Header().Set("Retry-After", c.retryAfter)
+			http.Error(w, `{"message": "slow down"}`, http.StatusTooManyRequests)
+		}))
+		waits = nil
+		g2 := GitHub{API: srv2.URL, Client: srv2.Client(), Sleep: func(d time.Duration) { waits = append(waits, d) }}
+		repos, _ := g2.Repos()
+		paths = nil
+		var out bytes.Buffer
+		err := Run(g2, want, repos, false, &out)
+		srv2.Close()
+		if !errors.Is(err, ErrRateLimited) || len(paths) != c.calls || len(waits) != c.waits ||
+			strings.Contains(strings.Join(paths, " "), "/beta/") || !strings.Contains(out.String(), "HTTP 429 slow down") {
+			t.Errorf("Retry-After %s: stop: %v paths=%v waits=%v\n%s", c.retryAfter, err, paths, waits, out.String())
+		}
 	}
 }

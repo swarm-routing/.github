@@ -100,8 +100,13 @@ type GitHub struct {
 }
 
 // MaxCooldown bounds the wait after a rate-limit answer; the request is then
-// retried once.
+// retried once. A longer cooldown, or a retry rate-limited again, stops the
+// run (ErrRateLimited): no request goes out before GitHub allows it, and
+// the next run (weekly, or the next labels.json change) starts over.
 const MaxCooldown = 60 * time.Second
+
+// ErrRateLimited is returned when GitHub's cooldown cannot be waited out.
+var ErrRateLimited = errors.New("rate limited")
 
 func (g GitHub) do(method, path string, body any) ([]byte, error) {
 	var payload []byte
@@ -114,8 +119,11 @@ func (g GitHub) do(method, path string, body any) ([]byte, error) {
 	}
 	for attempt := 1; ; attempt++ {
 		data, wait, err := g.once(method, path, payload)
-		if wait == 0 || attempt == 2 {
+		if wait == 0 {
 			return data, err
+		}
+		if attempt == 2 || wait > MaxCooldown {
+			return nil, fmt.Errorf("%w (cooldown %s): %v", ErrRateLimited, wait.Round(time.Second), err)
 		}
 		if g.Sleep != nil {
 			g.Sleep(wait)
@@ -178,7 +186,8 @@ func (g GitHub) once(method, path string, payload []byte) ([]byte, time.Duration
 	return nil, cooldown(resp), fmt.Errorf("%s: HTTP %d %s", method, resp.StatusCode, m.Message)
 }
 
-// cooldown is the wait a rate-limit answer asks for (bounded), else 0.
+// cooldown is the wait a rate-limit answer asks for (at least a second;
+// MaxCooldown when it names none), else 0.
 func cooldown(resp *http.Response) time.Duration {
 	ra := resp.Header.Get("Retry-After")
 	left := resp.Header.Get("X-RateLimit-Remaining")
@@ -195,9 +204,6 @@ func cooldown(resp *http.Response) time.Duration {
 	}
 	if d < time.Second {
 		d = time.Second
-	}
-	if d > MaxCooldown {
-		d = MaxCooldown
 	}
 	return d
 }
@@ -336,6 +342,9 @@ func Run(g GitHub, want []Label, repos []Repo, dry bool, out io.Writer) error {
 		if err != nil {
 			fmt.Fprintf(out, "%s: error: reading its labels: %v\n", name, err)
 			failed++
+			if errors.Is(err, ErrRateLimited) {
+				return fmt.Errorf("stopped at %s: %w", name, err)
+			}
 			continue
 		}
 		plan := Plan(want, have)
@@ -360,6 +369,9 @@ func Run(g GitHub, want []Label, repos []Repo, dry bool, out io.Writer) error {
 		for _, c := range plan {
 			if err := g.apply(r.Name, c); err != nil {
 				fmt.Fprintf(out, "%s: error: %s: %v\n", name, c.Label.Name, err)
+				if errors.Is(err, ErrRateLimited) {
+					return fmt.Errorf("stopped at %s: %w", name, err)
+				}
 				bad++
 			}
 		}
