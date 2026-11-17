@@ -24,6 +24,10 @@ type fakeHistory struct {
 	files    map[string][]any
 	coverage any
 	err      error
+	// the issue history (#613)
+	issues, comments, advisories any
+	issueErr                     error
+	since                        string
 }
 
 func (f *fakeHistory) ClosedPulls(string) (any, error) { return f.pulls, f.err }
@@ -31,6 +35,28 @@ func (f *fakeHistory) PullFiles(_, n string) (any, error) {
 	return f.files[n], nil
 }
 func (f *fakeHistory) Coverage(string) (any, error) { return f.coverage, nil }
+func (f *fakeHistory) Issues(_, label, since string) (any, error) {
+	f.since = since
+	var out []any
+	il, _ := f.issues.([]any)
+	for _, x := range il {
+		if strings.Contains(fmt.Sprint(x.(map[string]any)["labels"]), "name:"+label+"]") {
+			out = append(out, x)
+		}
+	}
+	return out, f.issueErr
+}
+func (f *fakeHistory) IssueComments(_, n string) (any, error) {
+	var out []any
+	cl, _ := f.comments.([]any)
+	for _, x := range cl {
+		if strings.HasSuffix(x.(map[string]any)["issue_url"].(string), "/issues/"+n) {
+			out = append(out, x)
+		}
+	}
+	return out, nil
+}
+func (f *fakeHistory) Advisories(string) (any, error) { return f.advisories, nil }
 
 // add records a merged pull request and its files.
 func (f *fakeHistory) add(n int, title, merged string, files ...string) {
@@ -228,4 +254,100 @@ jobs:
 		".github/workflows/codeql.yml": "on:\n  pull_request:\njobs:\n  analyze:\n    steps:\n      - uses: github/codeql-action/analyze@v3\n",
 	})
 	wantStatus(t, codeql, "?", "static_analysis_fixed")
+}
+
+// issue is one issue of the fake history: number, label, author
+// association, opened, closed ("" open).
+func issue(n int, label, assoc, opened, closed string) map[string]any {
+	m := map[string]any{"number": n, "url": fmt.Sprintf("https://api.github.com/repos/swarm-routing/X/issues/%d", n),
+		"author_association": assoc, "user": map[string]any{"type": "User"},
+		"labels": []any{map[string]any{"name": label}}, "created_at": opened, "closed_at": nil}
+	if closed != "" {
+		m["closed_at"] = closed
+	}
+	return m
+}
+
+func comment(n int, assoc, userType, at string) map[string]any {
+	return map[string]any{"issue_url": fmt.Sprintf("https://api.github.com/repos/swarm-routing/X/issues/%d", n),
+		"author_association": assoc, "user": map[string]any{"type": userType}, "created_at": at}
+}
+
+// #613: a responsive history proposes Met with the numbers; an unresponsive
+// or empty one leaves `?`, with the numbers.
+func TestResponseTimes(t *testing.T) {
+	setNow(t, "2026-11-17T00:00:00Z")
+	f := &fakeHistory{
+		issues: []any{
+			issue(1, "bug", "NONE", "2026-09-01T00:00:00Z", ""),                            // a maintainer's comment on day 2
+			issue(2, "bug", "CONTRIBUTOR", "2026-09-05T00:00:00Z", "2026-09-10T00:00:00Z"), // closed on day 5
+			issue(3, "bug", "NONE", "2026-08-01T00:00:00Z", ""),                            // only a late answer
+			issue(4, "bug", "MEMBER", "2026-08-01T00:00:00Z", ""),                          // the project's own: not counted
+			issue(5, "bug", "NONE", "2026-11-10T00:00:00Z", ""),                            // 7 days old, unanswered: pending
+			issue(6, "bug", "NONE", "2025-06-01T00:00:00Z", ""),                            // older than 12 months
+			issue(7, "enhancement", "NONE", "2026-10-01T00:00:00Z", ""),                    // the author's own comment only
+			map[string]any{"number": 8, "pull_request": map[string]any{}, "author_association": "NONE",
+				"created_at": "2026-10-01T00:00:00Z", "labels": []any{map[string]any{"name": "bug"}}},
+		},
+		comments: []any{
+			comment(1, "MEMBER", "User", "2026-09-03T00:00:00Z"),
+			comment(3, "OWNER", "User", "2026-09-01T00:00:00Z"),
+			comment(7, "NONE", "User", "2026-10-02T00:00:00Z"),
+		},
+		advisories: []any{
+			map[string]any{"created_at": "2026-10-01T00:00:00Z", "published_at": "2026-10-08T00:00:00Z"},
+			map[string]any{"created_at": "2026-09-01T00:00:00Z", "closed_at": "2026-09-03T00:00:00Z"},
+			map[string]any{"created_at": "2025-09-01T00:00:00Z"}, // older than 6 months
+		},
+	}
+	h := historyAnswers(f, "X", nil)
+	if a, ok := h.Answers["report_responses"]; !ok || !strings.Contains(a[1], "2 of the 3 bug reports from outside the project") {
+		t.Errorf("bugs: a majority answered within 14 days: %v %v", a, h.Blocked["report_responses"])
+	}
+	if !strings.HasPrefix(h.Blocked["enhancement_responses"], "0 of the 1 enhancement reports") {
+		t.Errorf("enhancements: the author's comment is no response: %v", h.Blocked)
+	}
+	if a, ok := h.Answers["vulnerability_report_response"]; !ok || !strings.Contains(a[1], "2 of the 2 vulnerability reports") {
+		t.Errorf("advisories answered in time: %v %v", a, h.Blocked)
+	}
+	if f.since != "2025-11-17T00:00:00Z" {
+		t.Errorf("the issues of the last 12 months: since %s", f.since)
+	}
+
+	// a bot's answer counts; a late one, an empty history and a report in triage do not
+	f.comments = append(f.comments.([]any), comment(7, "NONE", "Bot", "2026-10-03T00:00:00Z"))
+	f.advisories = []any{map[string]any{"created_at": "2026-10-01T00:00:00Z"}}
+	h = historyAnswers(f, "X", nil)
+	if _, ok := h.Answers["enhancement_responses"]; !ok {
+		t.Errorf("a bot's response counts: %v", h.Blocked)
+	}
+	if !strings.HasPrefix(h.Blocked["vulnerability_report_response"], "0 of the 1 vulnerability reports") {
+		t.Errorf("a report still in triage: ?: %v", h.Blocked)
+	}
+	empty := historyAnswers(&fakeHistory{issues: []any{}, comments: []any{}, advisories: []any{}}, "X", nil)
+	for _, c := range []string{"report_responses", "enhancement_responses", "vulnerability_report_response"} {
+		if _, ok := empty.Answers[c]; ok || !strings.HasPrefix(empty.Blocked[c], "0 of the 0 ") {
+			t.Errorf("%s: an empty history: ?: %v", c, empty.Blocked[c])
+		}
+	}
+	none := historyAnswers(&fakeHistory{issueErr: errors.New("x")}, "X", nil)
+	if !strings.HasPrefix(none.Blocked["report_responses"], "cannot read the bug reports") ||
+		none.Blocked["vulnerability_report_response"] != "the security advisories are not available (HTTP 404)" {
+		t.Errorf("unreadable: ?: %v", none.Blocked)
+	}
+	// proposed once Met: the owner-only list loses it, the proposal link carries it
+	ans := Answers{{"description_good", "Met", "d"}, {"report_responses", "Met", "x"}, {"enhancement_responses", "?", "y"}}
+	links, err := proposalURLs("7", ans, "passing", ProposalLimit, FromHistory)
+	if err != nil || len(links) != 1 || !strings.Contains(links[0], "report_responses_status=Met") ||
+		strings.Contains(links[0], "enhancement_responses") {
+		t.Errorf("a response-time criterion the history shows is proposed: %v", links)
+	}
+	if links, _ := ProposalURLs("7", ans, "passing", ProposalLimit); strings.Contains(links[0], "report_responses") {
+		t.Errorf("never from an answers file (register): %v", links)
+	}
+	m := HistoryReport{Blocked: map[string]string{"report_responses": "0 of the 0"}}.merge(
+		map[string]any{"report_responses_status": "Met"})
+	if m["report_responses_status"] != "?" {
+		t.Error("a hand-edited Met in the file gives way to what the history shows")
+	}
 }

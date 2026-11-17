@@ -1960,7 +1960,18 @@ is **Save**, once per project, only when something changed. By hand, from a
   `?` but not the two defaults. An alert that withdraws an answer is a
   finding; its issue is the alert's `security` ticket, which the hourly
   `security-alerts` task keeps and raises to `priority:P1` on the same
-  thresholds. The other three are never in a proposal link.
+  thresholds. The other three,
+  `report_responses`, `enhancement_responses` and
+  `vulnerability_report_response`, the weekly check reads from the
+  repository's history (`history.go`, #613) and proposes Met only when
+  the data shows it: a majority of the `bug` (`enhancement`) issues opened
+  in the last 12 months by someone outside the project (not an owner,
+  member, collaborator or bot) had a maintainer's or a bot's comment, or
+  were closed, within 14 days (a report younger than 14 days and not yet
+  answered is not counted); every private vulnerability report (security
+  advisory) of the last 6 months was published or closed within 14 days.
+  An empty history, or one that does not show it, leaves them `?`, with the
+  numbers and the query in the owner-only list; never from a file.
 - **The weekly check.** `bestpractices.yml` runs `bestpractices check --issues`
   from the `ci-tools` image (by digest) with the bot's token. For each public
   repository it reads the project's public JSON (one request a second, never a

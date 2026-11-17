@@ -181,7 +181,7 @@ func Findings(repo string, data, proposed map[string]any, tree map[string]bool) 
 		pyStr(get(data, "badge_percentage_0", "?")))}
 	answered := func(c string) bool {
 		want := proposed[c+"_status"]
-		return truthy(want) && !unanswered(want) && (!OwnerOnly[c] || Attested[c])
+		return truthy(want) && !unanswered(want) && (!OwnerOnly[c] || Attested[c] || FromHistory[c])
 	}
 	var out, missing []string
 	for _, c := range Passing {
@@ -270,7 +270,8 @@ func proposalLinks(project string, proposed map[string]any, rep Report) ([]strin
 			ans = append(ans, Answer{c, pyStr(proposed[c+"_status"]), why})
 		}
 	}
-	return ProposalURLs(project, ans, "passing", ProposalLimit)
+	// FromHistory: in proposed only as the check read them (HistoryReport.merge)
+	return proposalURLs(project, ans, "passing", ProposalLimit, FromHistory)
 }
 
 // Title is the issue's title for these findings.
@@ -341,8 +342,9 @@ func ownerSection(ownerOpen []string, owner OwnerReport) []string {
 	lines := []string{"", "## Only the owner can answer", "",
 		"Still `?` on the site and not proposed (swarm-routing/AntHocNet#790). Five are " +
 			"attested by the maintainer in `" + OwnerFile + "` (swarm-routing/.github) and proposed " +
-			"above once the check finds nothing against them; the others are never proposed. " +
-			"Listed here, not counted as findings:", ""}
+			"above once the check finds nothing against them; the three response-time criteria are " +
+			"proposed when the repository's issues and security advisories show them " +
+			"(swarm-routing/.github#613). Listed here, not counted as findings:", ""}
 	for _, c := range ownerOpen {
 		l := "- `" + c + "`"
 		if why, ok := owner.Blocked[c]; ok {
@@ -606,6 +608,11 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 			hreader, _ := r.(HistoryReader)
 			hist = historyAnswers(hreader, t.repo, proposed)
 			proposed = hist.merge(proposed)
+			for c := range FromHistory { // the numbers go in the owner-only list (#613)
+				if why, ok := hist.Blocked[c]; ok {
+					owner.Blocked[c] = why
+				}
+			}
 			rep := Findings(t.repo, data, proposed, tree)
 			info, items = rep.Info, rep.Items
 			items = append(items, ownerDrift(data, owner)...)

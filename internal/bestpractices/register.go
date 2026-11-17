@@ -91,10 +91,17 @@ func LoadAnswers(path string) (Answers, error) {
 // at most limit characters, never splitting one criterion's pair. Opening
 // one changes nothing: the logged-in maintainer reviews and saves.
 func ProposalURLs(project string, ans Answers, section string, limit int) ([]string, error) {
+	return proposalURLs(project, ans, section, limit, nil)
+}
+
+// proposalURLs is ProposalURLs that also proposes the owner-only criteria
+// in also: the check's answers read from the history (FromHistory, #613),
+// which no answers file carries.
+func proposalURLs(project string, ans Answers, section string, limit int, also map[string]bool) ([]string, error) {
 	base := fmt.Sprintf("%s/en/projects/%s/%s/edit?", Site, project, section)
 	var urls, cur []string
 	for _, a := range ans {
-		if a.Status == "?" || a.Status == "unknown" || (OwnerOnly[a.Criterion] && !Attested[a.Criterion]) {
+		if a.Status == "?" || a.Status == "unknown" || (OwnerOnly[a.Criterion] && !Attested[a.Criterion] && !also[a.Criterion]) {
 			continue
 		}
 		part := quote(a.Criterion+"_status") + "=" + quote(a.Status)
