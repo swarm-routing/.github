@@ -63,8 +63,21 @@ lines as above, the override, and the baseline to the registry's `main`, but
 only once the registry's `main` holds the new release (its port PR merged):
 until then it bumps nothing and says it waits (exit 0).
 
+Stale pin (#586): a pin that is consistent but out of date (a newer release
+in lock mode, swarm-core main's core/ moved in commit mode) is a finding the
+repository's own change did not cause, so `--stale` says how to report it:
+`fail` (the default, and a local run), `warn` (a `::warning::` line, exit 0:
+reusable-swarm-core-pin.yml passes it on pull_request and merge_group, so a
+release never turns an unrelated PR red), or `bump-pr` (a push to main, a
+schedule: red only while org-bot's bump branch `org-bot/swarm-core-pin` exists
+in GITHUB_REPOSITORY, read with GH_TOKEN; before org-bot proposes it, or if
+the lookup fails, a warning). Every other finding, a pin the files disagree
+on or a lock that does not verify, is the repository's own and fails in every
+mode.
+
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
-  check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--registry URL_OR_PATH] [--bump]
+  check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--registry URL_OR_PATH]
+                          [--stale fail|warn|bump-pr] [--bump]
   check-swarm-core-pin.py --self-test
 
 `--releases` (default https://github.com) is where lock mode reads tags and
@@ -81,6 +94,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script's dir
 import release_lock  # noqa: E402
@@ -106,6 +121,8 @@ VCPKG_MANIFEST = "vcpkg.json"
 VCPKG_CONFIG = "vcpkg-configuration.json"
 PORT = "swarm-core"
 FIND_PACKAGE = re.compile(r"^[^#\n]*find_package\(\s*swarm-core\b[^#\n)]*\bCONFIG\b", re.M)
+BUMP_BRANCH = "org-bot/swarm-core-pin"  # org_bot.py's FIXED_BRANCH for the task (#208)
+STALE_MODES = ("fail", "warn", "bump-pr")
 
 
 def git(*args, cwd=None):
@@ -172,17 +189,64 @@ def core_change(pin, url):
 
 
 def check_main(pin, url):
-    """Errors when swarm-core main's core/ is not the pinned commit's (blobless clone)."""
+    """(errors, stale, main): errors when swarm-core cannot be read, stale when
+    swarm-core main's core/ is not the pinned commit's (blobless clone)."""
     err, main, stat, _ = core_change(pin, url)
     if err:
-        return [err], main
+        return [err], [], main
     if stat:
-        return [
-            f"swarm-core main ({main}) changed core/ since the pin ({pin}): bump "
-            f"SWARM_CORE_REF in {CMAKE}, the Makefile and every core-deps to {main}",
-            *stat,
-        ], main
-    return [], main
+        return (
+            [],
+            [
+                f"swarm-core main ({main}) changed core/ since the pin ({pin}): bump "
+                f"SWARM_CORE_REF in {CMAKE}, the Makefile and every core-deps to {main}",
+                *stat,
+            ],
+            main,
+        )
+    return [], [], main
+
+
+def bump_pr_open():
+    """True when org-bot's bump branch exists in GITHUB_REPOSITORY (its PR is
+    open: the branch goes when the PR merges or is superseded), None when
+    that cannot be read."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if not repo:
+        return None
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    req = urllib.request.Request(f"{api}/repos/{repo}/branches/{BUMP_BRANCH}")
+    req.add_header("Accept", "application/vnd.github+json")
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            return True
+    except urllib.error.HTTPError as e:
+        return False if e.code == 404 else None
+    except (urllib.error.URLError, OSError):
+        return None
+
+
+def judge_stale(stale, mode):
+    """The stale findings that fail under `mode`; the rest are printed as
+    warnings (#586)."""
+    if not stale or mode == "fail":
+        return stale
+    if mode == "bump-pr":
+        found = bump_pr_open()
+        if found:
+            return [*stale[:1], f"org-bot's bump PR ({BUMP_BRANCH}) is open: merge it", *stale[1:]]
+        why = "not yet proposed" if found is False else "cannot be read"
+    else:
+        why = "the change under test did not cause it"
+    print(
+        f"::warning title=swarm-core pin::{stale[0]} ({why}; org-bot's swarm-core-pin task bumps it)"
+    )
+    for line in stale[1:]:
+        print(f"note {line}")
+    return []
 
 
 def pin_places():
@@ -456,8 +520,9 @@ def retag(line, patterns, old, new):
     return line
 
 
-def run_lock(releases, registry=REGISTRY):
+def run_lock(releases, registry=REGISTRY, stale_mode="fail"):
     prefix, values, errors = check_lock_files()
+    stale = []
     newest = None
     vcpkg = vcpkg_mode()
     if values and vcpkg:
@@ -470,17 +535,22 @@ def run_lock(releases, registry=REGISTRY):
             errors.append(str(e))
         tag = values[f"{prefix}_TAG"]
         if newest and release_lock.version_key(newest) > release_lock.version_key(tag):
-            errors.append(
+            stale.append(
                 f"swarm-core {newest} is released; {LOCK} names {tag}: bump the lock and "
                 f"every pin place to {newest} (org-bot's swarm-core-pin task opens that PR)"
             )
+    stale_failed = judge_stale(stale, stale_mode)
+    errors += stale_failed
     for e in errors:
         print(f"FAIL {e}")
     if errors:
         print(f"swarm-core pin (lock): {len(errors)} problem(s)")
         return 1
     also = f", {VCPKG_MANIFEST} and the registry baseline agree" if vcpkg else ""
-    print(f"swarm-core pin (lock): ok, {LOCK} names {tag}, the newest swarm-core release{also}")
+    newest_note = (
+        " (a newer release is out: a warning above)" if stale else ", the newest swarm-core release"
+    )
+    print(f"swarm-core pin (lock): ok, {LOCK} names {tag}{newest_note}{also}")
     return 0
 
 
@@ -580,17 +650,20 @@ def bump_lock(releases, registry=REGISTRY):
     return 0
 
 
-def run(url):
+def run(url, stale_mode="fail"):
     pin, errors = check_files()
-    main = None
+    main, stale = None, []
     if pin:
-        more, main = check_main(pin, url)
-        errors += more
+        more, stale, main = check_main(pin, url)
+        errors += more + judge_stale(stale, stale_mode)
     for e in errors:
         print(f"FAIL {e}")
     if errors:
         print(f"swarm-core pin: {len(errors)} problem(s)")
         return 1
+    if stale:
+        print(f"swarm-core pin: ok, the pin is one commit ({pin}); main moved: a warning above")
+        return 0
     print(f"swarm-core pin: ok, core/ at {pin} is swarm-core main's ({main})")
     return 0
 
@@ -685,6 +758,31 @@ def self_test():
             and f"swarm-core main ({c}) changed core/ since the pin ({a})" in out
             and "core/a.h" in out,
         )
+        # #586: on a PR the stale pin is a warning, but a pin the files disagree
+        # on still fails
+        here = os.getcwd()
+        os.chdir(os.path.join(t, "stale"))
+        try:
+            import contextlib
+            import io
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc_warn = run(url, "warn")
+        finally:
+            os.chdir(here)
+        check(
+            "swarm-core main changed core/, --stale warn: a warning, exit 0",
+            rc_warn == 0 and "::warning title=swarm-core pin::swarm-core main" in buf.getvalue(),
+        )
+        disagree = protocol(os.path.join(t, "stale-disagree"), a, c, a)
+        os.chdir(disagree)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc_dis = run(url, "warn")
+        finally:
+            os.chdir(here)
+        check("--stale warn still fails a pin the files disagree on", rc_dis == 1)
         rc, out = go(protocol(os.path.join(t, "new"), c, c, c), url)
         check("bumped pin: ok", rc == 0)
 
@@ -805,7 +903,7 @@ def self_test():
                     f.write(body)
             return d
 
-        def golock(repo, bump_mode=False):
+        def golock(repo, bump_mode=False, stale=None):
             import contextlib
             import io
 
@@ -813,7 +911,11 @@ def self_test():
             try:
                 os.chdir(repo)
                 with contextlib.redirect_stdout(out):
-                    rc = main(["--releases", base] + (["--bump"] if bump_mode else []))
+                    rc = main(
+                        ["--releases", base]
+                        + (["--bump"] if bump_mode else [])
+                        + (["--stale", stale] if stale else [])
+                    )
             finally:
                 os.chdir(here)
             return rc, out.getvalue()
@@ -882,6 +984,25 @@ def self_test():
             f.write("SWARM_CORE_REF?=v0.3.0\n")  # no spaces: --bump must still move it
         rc, out = golock(current)
         check("lock: a newer release fails the check", rc == 1 and "v0.4.0 is released" in out)
+        # #586: on a PR or a merge group a newer release is a warning; on main it
+        # fails only while org-bot's bump branch exists
+        rc, out = golock(current, stale="warn")
+        check(
+            "lock: --stale warn passes a newer release with a warning",
+            rc == 0 and "::warning title=swarm-core pin::swarm-core v0.4.0 is released" in out,
+        )
+        real_bump_pr_open = globals()["bump_pr_open"]
+        try:
+            for found, want_rc in ((True, 1), (False, 0), (None, 0)):
+                globals()["bump_pr_open"] = lambda found=found: found
+                rc, out = golock(current, stale="bump-pr")
+                check(
+                    f"lock: --stale bump-pr with the bump branch {found}: exit {want_rc}",
+                    rc == want_rc
+                    and ("bump PR (org-bot/swarm-core-pin) is open" in out) == (want_rc == 1),
+                )
+        finally:
+            globals()["bump_pr_open"] = real_bump_pr_open
         rc, out = golock(current, bump_mode=True)
         with open(os.path.join(current, LOCK), encoding="utf-8") as f:
             lock_text = f.read()
@@ -1058,6 +1179,13 @@ def main(argv=None):
         default=REGISTRY + ".git",
         help="vcpkg mode: swarm-routing/vcpkg-registry's git URL or a local path",
     )
+    p.add_argument(
+        "--stale",
+        choices=STALE_MODES,
+        default="fail",
+        help="how an out-of-date but consistent pin is reported: fail, warn (a PR or merge "
+        "group), bump-pr (fail only while org-bot's bump branch exists, #586)",
+    )
     p.add_argument("--self-test", action="store_true")
     a = p.parse_args(argv)
     if a.self_test:
@@ -1065,8 +1193,8 @@ def main(argv=None):
     if os.path.exists(LOCK):
         if a.bump:
             return bump_lock(a.releases, a.registry)
-        return run_lock(a.releases, a.registry)
-    return bump(a.swarm_core) if a.bump else run(a.swarm_core)
+        return run_lock(a.releases, a.registry, a.stale)
+    return bump(a.swarm_core) if a.bump else run(a.swarm_core, a.stale)
 
 
 if __name__ == "__main__":
