@@ -184,7 +184,7 @@ jobs:
         timeout-minutes: 10
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
-          GH_TOKEN: ${{ github.token }}  # backstop's, labels' and branch-sweep's dry runs read the API (no rate limit of an anonymous runner)
+          GH_TOKEN: ${{ github.token }}  # backstop's, labels', branch-sweep's and release-sync-watch's dry runs read the API (no rate limit of an anonymous runner)
         run: |
           set -euo pipefail
           if [ -n "$DIGEST" ]; then
@@ -205,6 +205,7 @@ jobs:
           grep -qx backstop list.txt
           grep -qx check-headers list.txt
           grep -qx branch-sweep list.txt
+          grep -qx release-sync-watch list.txt
           grep -qx labels list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
@@ -240,6 +241,11 @@ jobs:
           docker run --rm -e GH_TOKEN "$img" branch-sweep --dry-run --repos .github | tee branch-sweep.txt
           grep -Eq '^branch-sweep: 1 repositories, would delete [0-9]+ branches, kept [0-9]+' branch-sweep.txt \
             || { echo "::error::branch-sweep: no summary line"; exit 1; }
+          # release-sync-watch (#571): a read-only dry run on two repositories
+          # (the workflow token reads their releases and the site's issues and runs)
+          docker run --rm -e GH_TOKEN "$img" release-sync-watch --dry-run --repos .github,AntHocNet | tee release-sync.txt
+          grep -Eq '^release-sync-watch: ' release-sync.txt \
+            || { echo "::error::release-sync-watch: no summary line"; exit 1; }
           # check-headers (#531): read-only as nonroot, as reusable-licence-check.yml runs it, with no
           # git in the image (it reads the index); its self-test, then this
           # checkout byte for byte against the Python tool (stdout, exit code)
