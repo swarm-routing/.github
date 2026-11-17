@@ -81,7 +81,7 @@ cmd/labels/                labels.json on every org repository, private ones inc
 cmd/fixture/               the image's fixture tool: `fixture FILE...` prints "<path> <newlines> <sha256>" (internal/fixture), what ci-tools-image.yml compares with wc -l and sha256sum
 docker/ci-tools/Dockerfile the ci-tools image: golang build stage (go vet, go test, every cmd/ built CGO_ENABLED=0 -trimpath) and a distroless static nonroot runtime, both by digest; .hadolint.yaml its hadolint settings
 .github/dependabot.yml     Dependabot version updates: the Dockerfile's two bases, the root module's dependencies
-.github/workflows/ci-tools-image.yml   the ci-tools image: reusable-go-ci on the root module, `dockerfile`: hadolint + Trivy config + golang tag = toolchain, build once, candidate push to ci-tools-dev, tests on the candidate digest, Trivy image scan; main: promote the same digest to ci-tools (sha-<sha7>, latest), SBOM, cosign, provenance, cleanup of ci-tools-dev
+.github/workflows/ci-tools-image.yml   the ci-tools image, on every PR and merge group: `changes` (any changed path in BUILD_PATHS, the push trigger's list), and the required check `ci-tools image gate` (green when no build path changed or when go, dockerfile and image all passed, #610); reusable-go-ci on the root module, `dockerfile`: hadolint + Trivy config + golang tag = toolchain, build once, candidate push to ci-tools-dev, tests on the candidate digest, Trivy image scan; main: promote the same digest to ci-tools (sha-<sha7>, latest), SBOM, cosign, provenance, cleanup of ci-tools-dev
 docs/adr/                  the org's architecture decisions (0001: record them; 0002: pipelines are Go, their image is distroless)
 LICENSE, LICENSE-MIT, LICENSING.md   the licence per path (LICENSING.md): the tooling MIT OR GPL-2.0-only, the docs GPL-2.0-only,
                                      CODE_OF_CONDUCT.md CC-BY-4.0, DCO verbatim copies only
@@ -195,7 +195,8 @@ fixture dependency would raise a real alert here). Locally, in a fixture
 directory with the `toolchain` Go: `gofmt -l .`, `go vet ./...`,
 `staticcheck ./...`, `govulncheck ./...`, `go test -race ./...`.
 A change to the Go tools (`cmd/`, `internal/`, `go.mod`) or to
-`docker/ci-tools/` runs `ci-tools-image.yml` on its PR: the root module
+`docker/ci-tools/` builds in `ci-tools-image.yml` on its PR (every other PR
+gets its required `ci-tools image gate` green in seconds, #610): the root module
 through `reusable-go-ci.yml`, the Dockerfile lint, then one build pushed as a
 `ci-tools-dev:pr-<n>-<sha7>` candidate whose digest every test runs on (a
 fork PR tests the local image); its promote, sign and attest steps are proven
