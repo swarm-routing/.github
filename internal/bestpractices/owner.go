@@ -24,6 +24,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/swarm-routing/.github/internal/securityalerts"
 )
 
 // OwnerFile is the attestation, in swarm-routing/.github.
@@ -48,9 +50,11 @@ var now = time.Now
 // medium-or-higher alert open more than EscalateDays, and
 // vulnerabilities_critical_fixed by a critical one open more than
 // CriticalDays.
+// They are the security-alerts task's SLA, which raises the alert's ticket
+// to P1 on the same thresholds (#629).
 const (
-	EscalateDays = 45
-	CriticalDays = 14
+	EscalateDays = securityalerts.EscalateDays
+	CriticalDays = securityalerts.CriticalDays
 )
 
 // Attestation is OwnerFile: per criterion its status and justification.

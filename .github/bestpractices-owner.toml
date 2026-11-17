@@ -15,7 +15,8 @@
 #   (security-autofix.yml), and the check, reading the repository's open
 #   code-scanning and Dependabot alerts with the bot's token, withdraws
 #   them only for a medium-or-higher alert open more than 45 days or a
-#   critical one open more than 14 days, and opens a P1 issue for it;
+#   critical one open more than 14 days, the SLA on which the security-alerts
+#   task raises the alert's ticket to P1;
 # - no_leaked_credentials is proposed only when the check reads the
 #   secret-scanning alerts and none is open. An unreadable listing, or an
 #   open alert, leaves it `?`.
