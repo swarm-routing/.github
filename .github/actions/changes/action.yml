@@ -67,8 +67,9 @@ runs:
       run: |
         docs_only=false
         if { [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; } && [ -n "$DOCS" ] && [ -n "$BASE" ] && [ -n "$HEAD" ]; then
-          # three-dot compare: the change itself, against its merge base
-          if files=$(timeout 60 gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files | if length < 300 then .[].filename else error("300 or more files") end'); then
+          # three-dot compare: the change itself, against its merge base; a
+          # rename lists both paths, so moving a source into docs/ is not docs-only
+          if files=$(timeout 60 gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files | if length < 300 then .[] | .filename, (.previous_filename // empty) else error("300 or more files") end'); then
             printf 'changed:\n%s\n' "$files"
             if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE -- "$DOCS"; then
               docs_only=true
