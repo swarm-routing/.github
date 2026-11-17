@@ -353,9 +353,10 @@ func ownerSection(ownerOpen []string, owner OwnerReport) []string {
 		lines = append(lines, l)
 	}
 	if len(owner.Unread) > 0 {
-		lines = append(lines, "", "The check could not read these alert listings with the bot's token, "+
-			"so the criteria they back stay `?` (the org App needs read access to Code scanning "+
-			"alerts / Security events, Dependabot alerts and Secret scanning alerts):", "")
+		lines = append(lines, "", "The check could not read these alert listings with the bot's token "+
+			"(the org App needs read access to Code scanning alerts / Security events, Dependabot alerts "+
+			"and Secret scanning alerts); an unreadable secret-scanning listing keeps `no_leaked_credentials` "+
+			"`?`, the vulnerability answers stay Met by default (swarm-routing/.github#629):", "")
 		for _, u := range owner.Unread {
 			lines = append(lines, "- "+u)
 		}
@@ -842,16 +843,23 @@ func alertBugs(gh GitHub, repo string, owner OwnerReport, dryRun bool) ([]string
 			continue
 		}
 		title := fmt.Sprintf("%s open %s alert #%s", Prefix, a.kind, a.number)
+		do := "- [ ] The alert is fixed, or dismissed by the maintainer with its reason on the alert."
+		if a.kind == "secret scanning" {
+			// rotation needs the maintainer's accounts: never an agent's fix (#629)
+			do = "- [ ] The maintainer rotates the secret, then closes the alert as revoked."
+		}
 		body := strings.Join([]string{"## Context", "",
 			"The weekly `bestpractices` check (swarm-routing/.github `cmd/bestpractices`) found an open " +
 				"security alert that keeps an owner-only OpenSSF Best Practices answer `?` " +
-				"(swarm-routing/.github#559, swarm-routing/AntHocNet#790):", "",
+				"(swarm-routing/.github#559, swarm-routing/.github#629): a secret alert, or a vulnerability " +
+				"alert past its age guard (" + fmt.Sprintf("medium or higher: %d days, critical: %d days", EscalateDays, CriticalDays) +
+				") that the automated fix has not closed:", "",
 			"- " + a.String(), "",
 			"## Acceptance criteria", "",
-			"- [ ] The alert is fixed, or dismissed with its reason on the alert.",
+			do,
 			"- [ ] The next weekly check proposes the answer again on the `[bestpractices]` issue."}, "\n") + Footer
 		res, err := gh.API("POST", fmt.Sprintf("repos/%s/%s/issues", Org, repo),
-			map[string]any{"title": title, "body": body, "labels": []any{"bug", "packaging", "model:haiku-5.5", "priority:P2"}}, false)
+			map[string]any{"title": title, "body": body, "labels": []any{"bug", "packaging", "model:haiku-5.5", "priority:P1"}}, false)
 		if err != nil {
 			return out, err
 		}

@@ -905,16 +905,7 @@ line = 1570
 decision = "falsepositive"
 reason = "FP-repofile"
 
-# ---- swarm-routing/.github (35)
-
-[[issue]]
-project = "swarm-routing_.github"
-key = "AaHCpQEceDe7xtNTqKgC"
-rule = "pythonsecurity:S8707"
-file = "tools/checks/check-headers.py"
-line = 214
-decision = "falsepositive"
-reason = "FP-cli"
+# ---- swarm-routing/.github (34)
 
 [[issue]]
 project = "swarm-routing_.github"

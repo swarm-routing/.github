@@ -302,14 +302,11 @@ jobs:
           [ "$rc" = 1 ] || { echo "::error::security-autofix guard: a workflow change must exit 1, got $rc"; exit 1; }
           # check-headers (#531): read-only as nonroot, as reusable-licence-check.yml runs it, with no
           # git in the image (it reads the index); its self-test, then this
-          # checkout byte for byte against the Python tool (stdout, exit code)
+          # checkout, which must pass (the Python twin it was compared with is gone, #578)
           [ "$(docker run --rm "$img" check-headers --self-test)" = "self-test: PASS" ] \
             || { echo "::error::check-headers --self-test"; exit 1; }
-          rc_go=0; docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' . > "$RUNNER_TEMP/ch-go.txt" || rc_go=$?
-          rc_py=0; python3 -I tools/checks/check-headers.py --dual '' . > "$RUNNER_TEMP/ch-py.txt" || rc_py=$?
-          cat "$RUNNER_TEMP/ch-go.txt"
-          { cmp "$RUNNER_TEMP/ch-py.txt" "$RUNNER_TEMP/ch-go.txt" && [ "$rc_go" = "$rc_py" ]; } \
-            || { echo "::error::check-headers: the Go tool (exit $rc_go) differs from the Python one (exit $rc_py)"; diff "$RUNNER_TEMP/ch-py.txt" "$RUNNER_TEMP/ch-go.txt"; exit 1; }
+          docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' . \
+            || { echo "::error::check-headers on this checkout"; exit 1; }
           # nonroot, and no shell to fall back to
           user=$(docker image inspect -f '{{.Config.User}}' "$img")
           [ "$user" = nonroot:nonroot ] || { echo "::error::image user is '$user'"; exit 1; }

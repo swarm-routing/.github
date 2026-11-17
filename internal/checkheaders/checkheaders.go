@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR GPL-2.0-only
 
 // Package checkheaders is the licence-header gate for swarm-routing repos
-// (AntHocNet's rules, ADR-0028), the Go port of tools/checks/check-headers.py
+// (AntHocNet's rules, ADR-0028), the Go port of the former tools/checks/check-headers.py
 // (#531), byte for byte: the same findings, output and exit codes for the
 // same arguments and tree. The rules are in help.txt (the Python tool's
 // docstring, which its --help prints).
