@@ -94,7 +94,7 @@ func ProposalURLs(project string, ans Answers, section string, limit int) ([]str
 	base := fmt.Sprintf("%s/en/projects/%s/%s/edit?", Site, project, section)
 	var urls, cur []string
 	for _, a := range ans {
-		if a.Status == "?" || a.Status == "unknown" || OwnerOnly[a.Criterion] {
+		if a.Status == "?" || a.Status == "unknown" || (OwnerOnly[a.Criterion] && !Attested[a.Criterion]) {
 			continue
 		}
 		part := quote(a.Criterion+"_status") + "=" + quote(a.Status)

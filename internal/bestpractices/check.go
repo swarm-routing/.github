@@ -181,7 +181,7 @@ func Findings(repo string, data, proposed map[string]any, tree map[string]bool) 
 		pyStr(get(data, "badge_percentage_0", "?")))}
 	answered := func(c string) bool {
 		want := proposed[c+"_status"]
-		return truthy(want) && !unanswered(want) && !OwnerOnly[c]
+		return truthy(want) && !unanswered(want) && (!OwnerOnly[c] || Attested[c])
 	}
 	var out, missing []string
 	for _, c := range Passing {
@@ -240,7 +240,7 @@ func Findings(repo string, data, proposed map[string]any, tree map[string]bool) 
 		}
 	}
 	for _, c := range Passing {
-		if OwnerOnly[c] && unanswered(data[c+"_status"]) {
+		if OwnerOnly[c] && unanswered(data[c+"_status"]) && !rep.Propose[c] {
 			rep.OwnerOpen = append(rep.OwnerOpen, c)
 		}
 	}
@@ -280,7 +280,7 @@ func Title(items []string) string { return fmt.Sprintf("%s %d finding(s)", Prefi
 // proposal links that fix what the repository can answer, then the
 // owner-only criteria still open (listed, never a finding, so they alone
 // neither open nor update an issue).
-func Body(repo, project string, items, links, ownerOpen []string, runURL string) string {
+func Body(repo, project string, items, links, ownerOpen []string, owner OwnerReport, runURL string) string {
 	run := "."
 	if runURL != "" {
 		run = fmt.Sprintf(" ([run](%s)).", runURL)
@@ -303,7 +303,9 @@ func Body(repo, project string, items, links, ownerOpen []string, runURL string)
 		lines = append(lines,
 			"**Open, review, Save.** Each link opens the project's form, logged in, with the "+
 				"answers from `"+Out+"` on main filled in; nothing changes until you press "+
-				"\"Save (and continue)\". Owner-only criteria are left out.",
+				"\"Save (and continue)\". The owner-only criteria the maintainer attested "+
+				"(`"+OwnerFile+"` in swarm-routing/.github) are included when the check finds "+
+				"nothing against them; the other owner-only criteria are left out.",
 			"")
 		for i, l := range links {
 			lines = append(lines, fmt.Sprintf("%d. %s", i+1, l))
@@ -312,14 +314,7 @@ func Body(repo, project string, items, links, ownerOpen []string, runURL string)
 		lines = append(lines, fmt.Sprintf("Nothing to propose from `%s`: answer on the site, "+
 			"logged in at %s/projects/%s/passing (a lost level is answered there first).", Out, Site, project))
 	}
-	if len(ownerOpen) > 0 {
-		lines = append(lines, "", "## Only the owner can answer", "",
-			"Still `?` on the site; no repository file shows them, so they are never proposed "+
-				"(swarm-routing/AntHocNet#790). Listed here, not counted as findings:", "")
-		for _, c := range ownerOpen {
-			lines = append(lines, "- `"+c+"`")
-		}
-	}
+	lines = append(lines, ownerSection(ownerOpen, owner)...)
 	lines = append(lines,
 		"",
 		"## Scope",
@@ -331,6 +326,38 @@ func Body(repo, project string, items, links, ownerOpen []string, runURL string)
 		"This issue is updated in place by the weekly run and closed when the entry matches.",
 	)
 	return strings.Join(lines, "\n") + Footer
+}
+
+// ownerSection is the "Only the owner can answer" section: the owner-only
+// criteria still `?` on the site and not proposed, each with why, and the
+// alert listings the token could not read.
+func ownerSection(ownerOpen []string, owner OwnerReport) []string {
+	if len(ownerOpen) == 0 && len(owner.Unread) == 0 {
+		return nil
+	}
+	lines := []string{"", "## Only the owner can answer", "",
+		"Still `?` on the site and not proposed (swarm-routing/AntHocNet#790). Five are " +
+			"attested by the maintainer in `" + OwnerFile + "` (swarm-routing/.github) and proposed " +
+			"above once the check finds nothing against them; the others are never proposed. " +
+			"Listed here, not counted as findings:", ""}
+	for _, c := range ownerOpen {
+		l := "- `" + c + "`"
+		if why, ok := owner.Blocked[c]; ok {
+			l += ": " + why
+		} else if !Attested[c] {
+			l += ": not attested; answered on the site only"
+		}
+		lines = append(lines, l)
+	}
+	if len(owner.Unread) > 0 {
+		lines = append(lines, "", "The check could not read these alert listings with the bot's token, "+
+			"so the criteria they back stay `?` (the org App needs read access to Code scanning "+
+			"alerts / Security events, Dependabot alerts and Secret scanning alerts):", "")
+		for _, u := range owner.Unread {
+			lines = append(lines, "- "+u)
+		}
+	}
+	return lines
 }
 
 // RegisterBody is the issue's body for a repository in scope that is not
@@ -370,8 +397,12 @@ const notRegistered = "not registered on bestpractices.dev"
 
 var proposalLine = Site + "/en/projects/"
 
-// sameIssue: the open issue already lists these findings and these links.
-func sameIssue(body string, items, links []string) bool {
+// sameIssue: the open issue already lists these findings and these links,
+// and the same owner-only section.
+func sameIssue(body string, items, links []string, owner []string) bool {
+	if owner != nil && !strings.Contains(body, strings.Join(owner, "\n")) {
+		return false
+	}
 	var got, gotLinks []string
 	for _, x := range strings.Split(body, "\n") {
 		x = strings.TrimSuffix(x, "\r")
@@ -397,7 +428,7 @@ func equal(a, b []string) bool {
 	return true
 }
 
-func syncIssue(gh GitHub, repo string, items, links []string, body string, dryRun bool, runURL string) (string, error) {
+func syncIssue(gh GitHub, repo string, items, links, owner []string, body string, dryRun bool, runURL string) (string, error) {
 	got, err := gh.API("GET", fmt.Sprintf("repos/%s/%s/issues?state=open&labels=chore&per_page=100", Org, repo), nil, true)
 	if err != nil {
 		return "", err
@@ -455,7 +486,7 @@ func syncIssue(gh GitHub, repo string, items, links []string, body string, dryRu
 	}
 	n := pyStr(issue["number"])
 	oldBody, _ := issue["body"].(string)
-	if issue["title"] == title && sameIssue(oldBody, items, links) {
+	if issue["title"] == title && sameIssue(oldBody, items, links, owner) {
 		return "unchanged #" + n, nil
 	}
 	if !dryRun {
@@ -500,15 +531,17 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 		fmt.Fprintln(stdout, line)
 	}
 	projects, unregistered, drift, broken := 0, 0, 0, len(failed)
+	var att *Attestation
+	attLoaded := false
 	for _, t := range todo {
-		var info, items, links []string
+		var info, items, links, ownerLines []string
 		var body, head string
 		if t.outOfScope {
 			// not registered, out of scope: nothing to find; an issue left
 			// open from when it was in scope is closed
 			action := ""
 			if args.Issues {
-				a, err := syncIssue(gh, t.repo, nil, nil, "", dryRun, runURL)
+				a, err := syncIssue(gh, t.repo, nil, nil, nil, "", dryRun, runURL)
 				switch {
 				case err != nil:
 					broken++
@@ -548,8 +581,32 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 				fmt.Fprintf(stdout, "%s: FAILED: the project's repo_url is %s\n", head, pyStr(data["repo_url"]))
 				continue
 			}
+			if !attLoaded {
+				attLoaded = true
+				if att, err = LoadAttestation(r); err != nil {
+					fmt.Fprintf(stdout, "bestpractices: %s: %s\n", OwnerFile, described(err))
+					att = nil
+				}
+			}
+			reader, _ := r.(AlertReader)
+			owner := ownerAnswers(att, t.repo, proposed, tree, reader)
+			proposed = owner.merge(proposed)
 			rep := Findings(t.repo, data, proposed, tree)
 			info, items = rep.Info, rep.Items
+			items = append(items, ownerDrift(data, owner)...)
+			if len(owner.Unread) > 0 {
+				info = append(info, fmt.Sprintf("%d alert listing(s) unreadable", len(owner.Unread)))
+			}
+			if args.Issues {
+				bugs, err := alertBugs(gh, t.repo, owner, dryRun)
+				if err != nil {
+					broken++
+					fmt.Fprintf(stdout, "%s: FAILED: the alert bugs: %s\n", head, described(err))
+				}
+				for _, b := range bugs {
+					fmt.Fprintf(stdout, "    alert bug: %s\n", b)
+				}
+			}
 			if !t.configured {
 				items = append([]string{fmt.Sprintf("registered as project %s, but %s has no "+
 					"bestpractices_project = \"%s\"", t.project, Config, t.project)}, items...)
@@ -562,14 +619,15 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 			if len(links) > 0 {
 				info = append(info, fmt.Sprintf("%d proposal link(s)", len(links)))
 			}
-			body = Body(t.repo, t.project, items, links, rep.OwnerOpen, runURL)
+			body = Body(t.repo, t.project, items, links, rep.OwnerOpen, owner, runURL)
+			ownerLines = ownerSection(rep.OwnerOpen, owner)
 		}
 		if len(items) > 0 {
 			drift++
 		}
 		action := ""
 		if args.Issues {
-			a, err := syncIssue(gh, t.repo, items, links, body, dryRun, runURL)
+			a, err := syncIssue(gh, t.repo, items, links, ownerLines, body, dryRun, runURL)
 			if err != nil {
 				broken++
 				action = "; issue: FAILED: " + described(err)
@@ -701,4 +759,69 @@ func staleEvidence(repo string, data, proposed map[string]any, propose map[strin
 		}
 	}
 	return out
+}
+
+// ownerDrift: an attested criterion the site says is Met while an open
+// alert stands against it; and each open alert that blocks one.
+func ownerDrift(data map[string]any, owner OwnerReport) []string {
+	var out []string
+	for _, c := range attestedOrder {
+		why, blocked := owner.Blocked[c]
+		if blocked && strings.HasPrefix(why, "open ") && pyEqual(data[c+"_status"], "Met") {
+			out = append(out, fmt.Sprintf("%s: the site says Met, but %s", c, why))
+		}
+	}
+	for _, a := range owner.Alerts {
+		out = append(out, "open security alert blocks an owner-only answer: "+a.String())
+	}
+	return out
+}
+
+// alertBugs opens one bug per open alert that blocks an attested answer,
+// unless an open issue already names the alert's URL.
+func alertBugs(gh GitHub, repo string, owner OwnerReport, dryRun bool) ([]string, error) {
+	if len(owner.Alerts) == 0 || gh == nil {
+		return nil, nil
+	}
+	got, err := gh.API("GET", fmt.Sprintf("repos/%s/%s/issues?state=open&labels=bug&per_page=100", Org, repo), nil, true)
+	if err != nil {
+		return nil, err
+	}
+	list, _ := got.([]any)
+	var out []string
+	for _, a := range owner.Alerts {
+		found := ""
+		for _, x := range list {
+			i, _ := x.(map[string]any)
+			if b, _ := i["body"].(string); strings.Contains(b, a.url) {
+				found = pyStr(i["number"])
+				break
+			}
+		}
+		if found != "" {
+			out = append(out, "#"+found+" (open) "+a.url)
+			continue
+		}
+		if dryRun {
+			out = append(out, "would open: "+a.url)
+			continue
+		}
+		title := fmt.Sprintf("%s open %s alert #%s", Prefix, a.kind, a.number)
+		body := strings.Join([]string{"## Context", "",
+			"The weekly `bestpractices` check (swarm-routing/.github `cmd/bestpractices`) found an open " +
+				"security alert that keeps an owner-only OpenSSF Best Practices answer `?` " +
+				"(swarm-routing/.github#559, swarm-routing/AntHocNet#790):", "",
+			"- " + a.String(), "",
+			"## Acceptance criteria", "",
+			"- [ ] The alert is fixed, or dismissed with its reason on the alert.",
+			"- [ ] The next weekly check proposes the answer again on the `[bestpractices]` issue."}, "\n") + Footer
+		res, err := gh.API("POST", fmt.Sprintf("repos/%s/%s/issues", Org, repo),
+			map[string]any{"title": title, "body": body, "labels": []any{"bug", "packaging", "model:haiku-5.5", "priority:P2"}}, false)
+		if err != nil {
+			return out, err
+		}
+		m, _ := res.(map[string]any)
+		out = append(out, "opened #"+pyStr(m["number"])+" "+a.url)
+	}
+	return out, nil
 }
