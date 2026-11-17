@@ -37,13 +37,14 @@ type fixture struct {
 }
 
 type goldenCase struct {
-	Fixture string   `json:"fixture"`
-	Cwd     string   `json:"cwd"`
-	Args    []string `json:"args"`
-	RC      int      `json:"rc"`
-	Stdout  string   `json:"stdout"`
-	Stderr  string   `json:"stderr"`
-	Crash   bool     `json:"crash"`
+	Fixture string            `json:"fixture"`
+	Cwd     string            `json:"cwd"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
+	RC      int               `json:"rc"`
+	Stdout  string            `json:"stdout"`
+	Stderr  string            `json:"stderr"`
+	Crash   bool              `json:"crash"`
 }
 
 type selfTestGolden struct {
@@ -157,6 +158,17 @@ func TestGolden(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		func() {
 			t.Chdir(filepath.Join(root, c.Fixture, c.Cwd))
+			for k, v := range c.Env {
+				old, had := os.LookupEnv(k)
+				os.Setenv(k, v)
+				defer func() {
+					if had {
+						os.Setenv(k, old)
+					} else {
+						os.Unsetenv(k)
+					}
+				}()
+			}
 			rc := Main(args, &stdout, &stderr)
 			name := c.Fixture + "/" + c.Cwd + " " + strings.Join(c.Args, " ")
 			if *update {

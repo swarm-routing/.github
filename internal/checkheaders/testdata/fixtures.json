@@ -1,4 +1,30 @@
 {
+ "altindex": {
+  "files": {
+   "tools/bad.py": "# no header\n",
+   "tools/good.py": "# SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "tools/good.py"
+   ],
+   [
+    "sh",
+    "-c",
+    "GIT_INDEX_FILE=.git/alt git add tools/bad.py"
+   ]
+  ]
+ },
  "broken": {
   "files": {
    "core/a.h": "// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
@@ -230,6 +256,33 @@
     "main",
     "--object-format=sha256",
     "."
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ]
+  ]
+ },
+ "sha256quoted": {
+  "files": {
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"a.h\"\n#include <ns3/x.h>\n",
+   "core/a.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "--object-format=sha256",
+    "."
+   ],
+   [
+    "sh",
+    "-c",
+    "sed -i 's/objectformat = sha256/objectFormat = \"sha256\" ; quoted, with a comment/' .git/config"
    ],
    [
     "git",

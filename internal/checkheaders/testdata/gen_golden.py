@@ -38,7 +38,8 @@ GIT_ENV = {
 }
 DEFAULT_STEPS = [["git", "init", "-q", "-b", "main", "."], ["git", "add", "-A"]]
 
-# Each case: fixture, working directory inside it, arguments. {dep} is the
+# Each case: fixture, working directory inside it, arguments, and optionally
+# extra environment variables. {dep} is the
 # `dep` fixture's core/ directory, {depdir} the `dep` fixture itself.
 CASES = [
     ("plain", ".", ["--dual", "core/", "--dual", "tools/", "--core", "core/", "."]),
@@ -97,6 +98,11 @@ CASES = [
     ("worktree", "wt", ["--dual", "core/"]),
     ("worktree", "wt/core", ["--dual", ""]),
     ("empty", ".", ["--dual", "core/"]),
+    ("sha256quoted", ".", ["--dual", "core/", "--core", "core/"]),
+    ("altindex", ".", ["--dual", "tools/"]),
+    ("altindex", ".", ["--dual", "tools/"], {"GIT_INDEX_FILE": ".git/alt"}),
+    ("altindex", "tools", ["--dual", ""], {"GIT_INDEX_FILE": ".git/alt"}),
+    ("altindex", ".", ["--dual", "tools/"], {"GIT_INDEX_FILE": ".git/missing"}),
     ("notgit", ".", ["--dual", "core/"]),
     ("plain", ".", ["--dual", "core/", "nonexistent-dir"]),
     ("usesdep", ".", ["--dual", "core/", "--core", "core/"]),
@@ -198,7 +204,8 @@ def main() -> int:
         prog.symlink_to(tool)
         for name, fx in spec.items():
             build(fx, root / name, env)
-        for fixture, cwd, args in CASES:
+        for fixture, cwd, args, *rest in CASES:
+            extra = rest[0] if rest else {}
             real = [
                 a.replace("{depdir}", str(root / "dep")).replace(
                     "{dep}", str(root / "dep" / "core")
@@ -208,7 +215,7 @@ def main() -> int:
             r = subprocess.run(
                 [sys.executable, "-I", str(prog), *real],
                 cwd=root / fixture / cwd,
-                env={k: v for k, v in env.items() if k != "COLUMNS"},
+                env={**{k: v for k, v in env.items() if k != "COLUMNS"}, **extra},
                 capture_output=True,
             )
             stderr = r.stderr.decode("utf-8")
@@ -218,6 +225,7 @@ def main() -> int:
                     "fixture": fixture,
                     "cwd": cwd,
                     "args": args,
+                    "env": extra,
                     "rc": r.returncode,
                     "stdout": r.stdout.decode("utf-8"),
                     "stderr": "" if crash else stderr,

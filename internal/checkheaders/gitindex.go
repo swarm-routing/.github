@@ -54,7 +54,7 @@ func LsFiles(dir string) ([]string, error) {
 		}
 		prefix = filepath.ToSlash(r) + "/"
 	}
-	entries, err := readIndex(gitDir)
+	entries, err := readIndex(top, gitDir)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,8 @@ func findRepo(dir string) (top, gitDir string, err error) {
 }
 
 // hashSize is the object id size of the repository at gitDir: 32 bytes when
-// its config says objectformat = sha256 (a worktree's lives in commondir).
+// its config's [extensions] objectFormat is sha256 (a worktree's config is in
+// its commondir).
 func hashSize(gitDir string) int {
 	cfg := filepath.Join(gitDir, "config")
 	if b, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
@@ -114,17 +115,62 @@ func hashSize(gitDir string) int {
 	if err != nil {
 		return sha1.Size
 	}
+	section := ""
 	for _, line := range strings.Split(string(b), "\n") {
-		k, v, ok := strings.Cut(strings.ToLower(strings.TrimSpace(line)), "=")
-		if ok && strings.TrimSpace(k) == "objectformat" && strings.TrimSpace(v) == "sha256" {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "[") {
+			if end := strings.IndexByte(t, ']'); end > 0 {
+				section = strings.ToLower(strings.TrimSpace(t[1:end]))
+			}
+			continue
+		}
+		k, v, ok := strings.Cut(t, "=")
+		if ok && section == "extensions" && strings.EqualFold(strings.TrimSpace(k), "objectformat") &&
+			strings.EqualFold(configValue(v), "sha256") {
 			return sha256.Size
 		}
 	}
 	return sha1.Size
 }
 
-func readIndex(gitDir string) ([]string, error) {
-	b, err := os.ReadFile(filepath.Join(gitDir, "index"))
+// configValue decodes a git config value: double quotes removed, backslash
+// escapes applied, a comment (# or ;) outside quotes dropped, the
+// surrounding whitespace trimmed.
+func configValue(v string) string {
+	var sb strings.Builder
+	quoted := false
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		switch {
+		case c == '"':
+			quoted = !quoted
+		case c == '\\' && i+1 < len(v):
+			i++
+			sb.WriteByte(v[i])
+		case !quoted && (c == '#' || c == ';'):
+			return strings.TrimSpace(sb.String())
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+// indexPath is the index git reads: GIT_INDEX_FILE when set (a relative one
+// from the top of the work tree, as git resolves it after moving there), else
+// the git directory's index.
+func indexPath(top, gitDir string) string {
+	if p := os.Getenv("GIT_INDEX_FILE"); p != "" {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(top, p)
+		}
+		return p
+	}
+	return filepath.Join(gitDir, "index")
+}
+
+func readIndex(top, gitDir string) ([]string, error) {
+	b, err := os.ReadFile(indexPath(top, gitDir))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil // a repository with nothing staged lists nothing
 	}
