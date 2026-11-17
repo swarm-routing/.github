@@ -1944,6 +1944,21 @@ def git(repo_dir, *args, binary=False):
     return r.stdout
 
 
+# files outside the managed items that decide what renders (the swarm-core mode
+# of the dependencies section, the citing section, badges): the base's tree is
+# rendered with them too, or its drift is misjudged as the change's own (#586)
+RENDER_INPUTS = (
+    "swarm-core.lock",
+    "vcpkg.json",
+    "core/CMakeLists.txt",
+    "CHANGELOG.md",
+    "CITATION.cff",
+    "docs/fidelity.md",
+    "docs/ns3-bugs.md",
+    BIB,
+)
+
+
 def base_drift(repo_dir, base, slug):
     """The labels of the items that drift at `base`'s merge base with HEAD,
     judged with the same templates on that commit's own tree (its config, its
@@ -1962,7 +1977,7 @@ def base_drift(repo_dir, base, slug):
             cfg = load_config(tmp, slug)
         except (SettingsOnly, SystemExit, tomllib.TOMLDecodeError):
             return None
-        paths = sorted({i[1] for i in items(cfg)} | {".github", "SECURITY.md"})
+        paths = sorted({i[1] for i in items(cfg)} | {".github", "SECURITY.md"} | set(RENDER_INPUTS))
         names = git(repo_dir, "ls-tree", "-r", "--name-only", rev, "--", *paths).splitlines()
         if names:
             data = git(repo_dir, "archive", "--format=tar", rev, "--", *names, binary=True)
@@ -1971,6 +1986,8 @@ def base_drift(repo_dir, base, slug):
                     tar.extractall(tmp, filter="data")
                 else:  # Python 3.11 before 3.11.4
                     tar.extractall(tmp)  # our own git objects, filtered by path above
+        # the config was read before the tree was there: the mode it reads from the tree
+        cfg["swarm_core_mode"] = swarm_core_mode(tmp)
         return {
             drift_key(item, status)
             for item, status, _, _ in plan(cfg, tmp)
