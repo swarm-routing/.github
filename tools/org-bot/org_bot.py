@@ -748,7 +748,18 @@ def supersede(gh, full, olds, number):
             {"body": f"Superseded by #{number}, which carries the newer generated change."},
         )
         gh.api("PATCH", f"repos/{full}/pulls/{old['number']}", {"state": "closed"})
-        gh.api("DELETE", f"repos/{full}/git/refs/heads/{old['head']['ref']}")
+        delete_branch(gh, full, old["head"]["ref"])
+
+
+def delete_branch(gh, full, branch):
+    """Delete a bot branch; one already gone (its PR merged and the branch was
+    auto-deleted between the listing and now, as two runs racing on an epic
+    burst can make it) is not a failure (#572)."""
+    try:
+        gh.api("DELETE", f"repos/{full}/git/refs/heads/{branch}")
+    except Failure as e:
+        if "Reference does not exist" not in str(e):
+            raise
 
 
 def close_stale(gh, repo, task, notes, dry_run):
@@ -774,7 +785,7 @@ def close_stale(gh, repo, task, notes, dry_run):
             {"body": f"Closed by org-bot: nothing left for it to bump ({why})."},
         )
         gh.api("PATCH", f"repos/{full}/pulls/{p['number']}", {"state": "closed"})
-        gh.api("DELETE", f"repos/{full}/git/refs/heads/{branch}")
+        delete_branch(gh, full, branch)
     print(f"{repo} {task}: up to date{closed_note(mine).replace('superseded', 'stale')}")
     return {"number": None, "closed": [p["number"] for p in mine]} if mine else None
 
@@ -1375,12 +1386,14 @@ def self_test():
     class FakeGitHub:
         env = dict(os.environ)
 
-        def __init__(self, open_prs=(), merge_queue=False, refuse=False):
+        def __init__(self, open_prs=(), merge_queue=False, refuse=False, gone=()):
             self.calls, self.open = [], list(open_prs)
-            self.merge_queue, self.refuse = merge_queue, refuse
+            self.merge_queue, self.refuse, self.gone = merge_queue, refuse, set(gone)
 
         def api(self, method, path, body=None):
             self.calls.append((method, path, body))
+            if method == "DELETE" and path.rsplit("/heads/", 1)[-1] in self.gone:
+                raise Failure(f"gh api DELETE {path}: gh: Reference does not exist (HTTP 422)")
             if method == "GET" and "/pulls?" in path:
                 return self.open
             if method == "GET" and "/rules/branches/main?" in path:
@@ -1532,6 +1545,23 @@ def self_test():
     )
     check("no merge queue: auto-merge not touched", gh.auto_merged() == [])
     check("no merge queue: logged", "opened #42" in out and "no merge queue on main" in out)
+    # the superseded PR's branch already gone (merged and auto-deleted meanwhile, #572):
+    # not a failure, the new PR still opens
+    gh = FakeGitHub(
+        [
+            {
+                "number": 7,
+                "head": {"ref": "org-bot/epics-00000000", "repo": {"full_name": f"{ORG}/alpha"}},
+            }
+        ],
+        gone={"org-bot/epics-00000000"},
+    )
+    sh(["git", "--git-dir", os.path.join(remotes, ORG, "alpha.git"), "branch", "-D", branch])
+    res, out = go(gh)
+    check(
+        "superseded branch already gone: no failure",
+        "closed #7 as superseded" in out and "opened #42" in out and "FAILED" not in out,
+    )
     # a merge queue on main: the new PR gets auto-merge, the older one is superseded
     gh = FakeGitHub(
         [
