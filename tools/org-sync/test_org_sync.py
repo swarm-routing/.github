@@ -20,6 +20,10 @@ sys.path.insert(0, os.path.join(HERE, "..", "zenodo"))
 import zenodo  # noqa: E402
 
 ORG = org_sync.ORG
+# the template pin (#586): no lock unless a test names a commit, so the
+# fixtures render the same on a feature branch, a dirty tree and CI
+REAL_ORG_COMMIT = org_sync.org_commit
+org_sync.org_commit = lambda: (None, "self-test")
 
 
 def run(*argv):
@@ -1796,5 +1800,97 @@ for root, _, files in os.walk(os.path.join(ORG, "templates")):
         if fidelity.PRIVATE.search(read(path)):
             flagged.append(os.path.relpath(path, ORG))
 check(not flagged, f"no template names the private paper library: {flagged}")
+
+# 12. The template pin (#586): apply records the commit it rendered from in
+# .github/org-sync.lock when it changes a file or the lock is missing, never
+# otherwise, and never from a feature branch or a dirty tree.
+SHA_A, SHA_B = "a" * 40, "b" * 40
+dk = fresh()
+run("init", dk, "--kind", "data")
+lock = os.path.join(dk, org_sync.LOCK)
+check(not os.path.exists(lock), "no lock when the template commit cannot be named")
+org_sync.org_commit = lambda: (SHA_A, "")
+rc, out = run("apply", dk)
+check(
+    rc == 0 and f"create    {org_sync.LOCK}" in out and org_sync.read_lock(dk) == SHA_A,
+    "a missing lock is written even when nothing else changed (the migration)",
+)
+# the workflow's own expression, read from it
+wf = read(os.path.join(ORG, ".github", "workflows", "reusable-org-sync-check.yml"))
+expr = re.search(r"sed -nE '([^']+)'", wf).group(1)
+got = subprocess.run(["sed", "-nE", expr, lock], capture_output=True, text=True).stdout.strip()
+check(
+    got == SHA_A,
+    "reusable-org-sync-check.yml reads the commit from the lock apply writes",
+)
+org_sync.org_commit = lambda: (SHA_B, "")
+rc, out = run("apply", dk)
+check(
+    rc == 0 and "nothing to do" in out and org_sync.read_lock(dk) == SHA_A,
+    "a newer commit that renders nothing new leaves the lock alone (no refresh PR)",
+)
+check(run("check", dk)[0] == 0, "the lock is not drift")
+write(os.path.join(dk, ".github/workflows/dco.yml"), "hand edit\n")
+rc, out = run("apply", dk)
+check(
+    rc == 0
+    and "update    .github/workflows/dco.yml" in out
+    and f"update    {org_sync.LOCK}" in out
+    and org_sync.read_lock(dk) == SHA_B,
+    "an apply that changes a file moves the lock with it",
+)
+org_sync.org_commit = lambda: (None, "the templates are on branch topic, not main")
+write(lock, 'commit = "' + SHA_A + '"\n')
+write(os.path.join(dk, ".github/workflows/dco.yml"), "hand edit\n")
+rc, out = run("apply", dk)
+check(
+    org_sync.read_lock(dk) == SHA_A
+    and "update    .github/workflows/dco.yml" in out
+    and "kept      .github/org-sync.lock: the templates are on branch topic" in out,
+    "a feature-branch or dirty checkout keeps the lock and says why",
+)
+# org_commit on a real git checkout: main and clean is a commit, a branch or a
+# dirty template is not
+with tempfile.TemporaryDirectory() as og:
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+
+    def og_git(*a):
+        return subprocess.run(
+            ["git", "-C", og, "-c", "user.name=t", "-c", "user.email=t@x", *a],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+        ).stdout.strip()
+
+    og_git("init", "-q", "-b", "main")
+    os.makedirs(os.path.join(og, "templates"))
+    write(os.path.join(og, "templates", "t"), "x\n")
+    og_git("add", "-A")
+    og_git("commit", "-q", "-m", "t")
+    head = og_git("rev-parse", "HEAD")
+    saved = org_sync.ORG
+    org_sync.ORG = og
+    try:
+        on_main = REAL_ORG_COMMIT()
+        og_git("checkout", "-q", "--detach")
+        detached = REAL_ORG_COMMIT()
+        write(os.path.join(og, "templates", "t"), "y\n")
+        dirty = REAL_ORG_COMMIT()
+        og_git("checkout", "-q", "--", ".")
+        og_git("checkout", "-q", "-b", "topic")
+        branch = REAL_ORG_COMMIT()
+    finally:
+        org_sync.ORG = saved
+    check(
+        on_main == (head, "")
+        and detached == (head, "")
+        and dirty[0] is None
+        and "uncommitted" in dirty[1]
+        and branch[0] is None
+        and "topic" in branch[1],
+        "org_commit: main or detached and clean names HEAD; a dirty tree or a branch does not",
+    )
+org_sync.org_commit = lambda: (None, "self-test")
 
 print("org-sync self-test: OK")
