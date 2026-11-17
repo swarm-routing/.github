@@ -1428,6 +1428,34 @@ check(
     "--changed-only: a PR that edits a managed file or deletes a seed is red",
 )
 
+# #586: the base is rendered with every file the render reads, not only the
+# managed ones: a vcpkg-mode repository (swarm-core.lock + vcpkg.json) whose
+# dependencies section a newer template changed, and a PR that touches no
+# managed file, passes (the base's tree without vcpkg.json rendered no
+# dependencies section, so the drift read as the PR's own)
+dv2 = fresh()
+write(os.path.join(dv2, "swarm-core.lock"), "SWARM_CORE_TAG=v1.0.0\n")
+write(os.path.join(dv2, "vcpkg.json"), '{"dependencies": ["swarm-core"]}\n')
+run("init", dv2, "--kind", "protocol")
+check(
+    "<!-- org-sync:begin dependencies -->" in read(os.path.join(dv2, "AGENTS.md")),
+    "vcpkg mode renders the dependencies section",
+)
+text = read(os.path.join(dv2, "AGENTS.md"))
+write(
+    os.path.join(dv2, "AGENTS.md"),
+    re.sub(r"(<!-- org-sync:begin dependencies -->\n)", r"\1- an older template line\n", text),
+)
+base = commit(dv2, "main, rendered from an older dependencies template")
+os.makedirs(os.path.join(dv2, "src"))
+write(os.path.join(dv2, "src/x.cc"), "int x;\n")
+commit(dv2, "a PR that touches no managed file")
+rc, out = run("check", "--changed-only", base, dv2)
+check(
+    rc == 0 and f"{WARN}AGENTS.md#dependencies: update" in out,
+    "--changed-only: the base is rendered in its own swarm-core mode (vcpkg.json, the lock)",
+)
+
 # hunk text that looks like a file header (`-- `/`++ ` lines) is content, not a path
 d4 = fresh()
 run("init", d4, "--kind", "python")
@@ -1830,6 +1858,18 @@ check(
     "a newer commit that renders nothing new leaves the lock alone (no refresh PR)",
 )
 check(run("check", dk)[0] == 0, "the lock is not drift")
+write(os.path.join(dk, ".github/workflows/dco.yml"), "hand edit\n")
+err = io.StringIO()
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+    rc = org_sync.main(["check", dk])
+check(
+    rc == 1
+    and f"this repository pins {SHA_A[:12]}" in err.getvalue()
+    and f"ORG_REF={SHA_A}" in err.getvalue(),
+    "check names the pin when the templates are another commit (no re-apply on unrelated PRs)",
+)
+run("apply", dk)  # back in sync (the lock moves to SHA_B with it)
+write(lock, 'commit = "' + SHA_A + '"\n')
 write(os.path.join(dk, ".github/workflows/dco.yml"), "hand edit\n")
 rc, out = run("apply", dk)
 check(

@@ -1,0 +1,64 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: docs-only self-test
+
+# Proves .github/actions/changes from this checkout (#581): on its own pull
+# request (which changes the action, not docs) the default pattern says
+# 'false', a pattern every path matches says 'true', an empty pattern says
+# 'false'; on a dispatch every case says 'false'. Its default pattern is
+# reusable-ns3-ci.yml's `docs-only-paths` default, character for character.
+# Every repository's heavy jobs are the callers that prove it in use.
+on:
+  pull_request:
+    paths: ['.github/actions/changes/**', '.github/workflows/docs-only-selftest.yml', '.github/workflows/reusable-ns3-ci.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: default
+        uses: ./.github/actions/changes
+        timeout-minutes: 2
+      - id: all
+        uses: ./.github/actions/changes
+        timeout-minutes: 2
+        with:
+          paths: '.'
+      - id: none
+        uses: ./.github/actions/changes
+        timeout-minutes: 2
+        with:
+          paths: ''
+      - name: The outputs match the event
+        env:
+          EVENT: ${{ github.event_name }}
+          DEFAULT: ${{ steps.default.outputs.docs-only }}
+          ALL: ${{ steps.all.outputs.docs-only }}
+          NONE: ${{ steps.none.outputs.docs-only }}
+        run: |
+          echo "event=$EVENT default=$DEFAULT all=$ALL none=$NONE"
+          want_all=false
+          [ "$EVENT" = pull_request ] && want_all=true
+          [ "$DEFAULT" = false ] && [ "$ALL" = "$want_all" ] && [ "$NONE" = false ]
+      - name: The default pattern is reusable-ns3-ci.yml's docs-only-paths
+        run: |
+          python3 - <<'PY'
+          import yaml
+          action = yaml.safe_load(open(".github/actions/changes/action.yml"))["inputs"]["paths"]["default"]
+          ci = yaml.safe_load(open(".github/workflows/reusable-ns3-ci.yml"))[True]["workflow_call"]["inputs"]["docs-only-paths"]["default"]
+          print(action)
+          assert action == ci, f"the two defaults differ:\n{action}\n{ci}"
+          PY

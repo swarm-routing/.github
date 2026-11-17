@@ -11,12 +11,16 @@ PLATFORM  ?=
 # container kind: the image's Dockerfile and its build arguments
 DOCKERFILE ?= @DOCKERFILE@
 BUILD_ARGS ?=
-# The org tooling (check-headers.py, org-sync): a shallow clone, refreshed to ORG_REF.
+# The org tooling (check-headers.py, org-sync): a shallow clone, refreshed to ORG_REF,
+# by default the template commit .github/org-sync.lock pins, as CI checks (#586).
 ORG_DIR   ?= $(HOME)/.cache/swarm-routing/dotgithub
-ORG_REF   ?= main
+ORG_REF   ?= $(or $(shell sed -nE 's/^commit = "([0-9a-f]{40})"[[:space:]]*$$/\1/p' .github/org-sync.lock 2>/dev/null),main)
+# make pre-push TITLE='type(scope): subject': the PR title rule of reusable-pr-title.yml
+export TITLE
+TITLE_RE  := ^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^A-Z ](.*[^ ])?$$
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools
+.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools pre-push
 
 help: ## list the targets
 	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z0-9_-]+:.*## /{printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -53,3 +57,8 @@ org-sync-check: org-tools ## org-managed files match the org templates
 check: lint test headers org-sync-check ## everything CI gates on
 
 ci: check ## exactly what CI runs
+
+pre-push: check ## before every push: make check, then TITLE='type(scope): subject' (the PR title)
+	@[ -n "$$TITLE" ] || { echo "make pre-push: pass TITLE='<the PR title>'" >&2; exit 2; }
+	@printf '%s\n' "$$TITLE" | grep -Eq '$(TITLE_RE)' || { echo "PR title is not a lowercase Conventional Commit: $$TITLE" >&2; exit 1; }
+	@echo "pre-push: ok ($$TITLE)"

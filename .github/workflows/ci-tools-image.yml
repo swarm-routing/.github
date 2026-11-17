@@ -184,7 +184,7 @@ jobs:
         timeout-minutes: 10
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
-          GH_TOKEN: ${{ github.token }}  # backstop's and branch-sweep's dry runs read (no rate limit of an anonymous runner)
+          GH_TOKEN: ${{ github.token }}  # backstop's, labels' and branch-sweep's dry runs read the API (no rate limit of an anonymous runner)
         run: |
           set -euo pipefail
           if [ -n "$DIGEST" ]; then
@@ -205,8 +205,12 @@ jobs:
           grep -qx backstop list.txt
           grep -qx check-headers list.txt
           grep -qx branch-sweep list.txt
+          grep -qx labels list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
+          # labels (#570): this checkout's labels.json against the public repositories, read only
+          docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" labels --dry-run | tee labels.txt
+          grep -q '^swarm-routing/\.github: ' labels.txt
           # a tool on the workspace, mounted as a workflow's `docker run` mounts it
           printf 'a\nb\n' > fixture-input.txt
           got=$(docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" fixture go.mod fixture-input.txt)
