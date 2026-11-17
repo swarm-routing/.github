@@ -28,9 +28,12 @@ type HTTP struct {
 	SiteURL string // default Site
 	APIURL  string // default https://api.github.com
 	Token   string // GitHub token; empty: anonymous reads
-	Sleep   func(time.Duration)
-	Now     func() time.Time
-	last    time.Time
+	// CodecovURL is Codecov's API (default https://api.codecov.io), read
+	// without a token
+	CodecovURL string
+	Sleep      func(time.Duration)
+	Now        func() time.Time
+	last       time.Time
 }
 
 // NewHTTP returns the real network with token for GitHub.

@@ -1833,10 +1833,21 @@ is **Save**, once per project, only when something changed. By hand, from a
   `bestpractices-evidence.yml` sends repository_dispatch `bestpractices`). The
   crypto criteria are N/A unless the code calls a crypto library (`ssl`,
   `hmac` and `secrets` count; `hashlib` for a checksum does not) or
-  `.github/org-sync.toml` sets `bestpractices_crypto = true`; `test_most`,
-  `tests_are_added` and `static_analysis_fixed` are left to the maintainer
-  too (coverage measured is not coverage of most code; a written test policy
-  is not proof it was followed).
+  `.github/org-sync.toml` sets `bestpractices_crypto = true`.
+  `static_analysis_fixed` is Met only where a static-analysis finding
+  blocks the merge: the ruleset's CodeQL gate (`code_scanning = true` under
+  `[settings]`), or an analyser whose finding fails its run (ruff,
+  staticcheck, shellcheck, actionlint, hadolint, clang-tidy with warnings as
+  errors) in a job a `required_checks` entry runs, itself or through
+  `needs:` (#634). `test_most` and `tests_are_added` stay `?` in the file
+  (org-bot's checkout is shallow and offline) and are read by the weekly
+  check from the history (`history.go`, #634): `tests_are_added` is
+  proposed Met when the repository has a written test policy and at least
+  half of its 10 most recent merged `feat`/`fix` pull requests that change
+  code also change a test (at least 3 such pull requests);
+  `test_most` when Codecov's public record of `main`, at most 90 days old,
+  covers more than 50%. Otherwise they stay `?`, and the check's output
+  says what it read.
 - **The maintainer answers the owner-only criteria** on the site:
   `know_secure_design`, `know_common_errors`, `vulnerabilities_fixed_60_days`,
   `vulnerabilities_critical_fixed`, `no_leaked_credentials`,

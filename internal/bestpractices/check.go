@@ -547,6 +547,7 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 	for _, t := range todo {
 		var info, items, links, ownerLines []string
 		var body, head string
+		var hist HistoryReport
 		if t.outOfScope {
 			// not registered, out of scope: nothing to find; an issue left
 			// open from when it was in scope is closed
@@ -602,6 +603,9 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 			reader, _ := r.(AlertReader)
 			owner := ownerAnswers(att, t.repo, proposed, tree, reader)
 			proposed = owner.merge(proposed)
+			hreader, _ := r.(HistoryReader)
+			hist = historyAnswers(hreader, t.repo, proposed)
+			proposed = hist.merge(proposed)
 			rep := Findings(t.repo, data, proposed, tree)
 			info, items = rep.Info, rep.Items
 			items = append(items, ownerDrift(data, owner)...)
@@ -667,6 +671,11 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 		for i, l := range links {
 			fmt.Fprintf(stdout, "    proposal %d: %s\n", i+1, l)
 		}
+		for _, c := range Passing { // what the history did not show (#634)
+			if why, ok := hist.Blocked[c]; ok {
+				fmt.Fprintf(stdout, "    %s ?: %s\n", c, why)
+			}
+		}
 	}
 	if projects+unregistered == 0 && broken == 0 {
 		fmt.Fprintf(stdout, "bestpractices: no repository is registered or in scope (%s)\n", Config)
@@ -723,7 +732,10 @@ func read(r Remote, t target) (map[string]any, map[string]any, map[string]bool, 
 }
 
 // ownerLeft are the criteria Derive leaves to the owner (`?` in the file by
-// design): a site answer there is the owner's, never drift.
+// design): a site answer there is the owner's, never drift. test_most and
+// tests_are_added are read from the history by the check, and
+// static_analysis_fixed is derived where a finding blocks the merge (#634);
+// where the evidence is missing, a site answer stays the owner's.
 func ownerLeft(c string) bool {
 	if OwnerOnly[c] || c == "test_most" || c == "tests_are_added" || c == "static_analysis_fixed" {
 		return true
