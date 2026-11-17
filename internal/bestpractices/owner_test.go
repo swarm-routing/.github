@@ -8,6 +8,7 @@ package bestpractices
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -153,6 +154,66 @@ func TestOwnerOpenAlertBlocks(t *testing.T) {
 	}
 }
 
+// The age guard (#629): a young alert keeps the default Met, a medium one
+// older than 45 days withdraws vulnerabilities_fixed_60_days, a critical one
+// older than 14 days withdraws vulnerabilities_critical_fixed.
+func TestOwnerAgeGuard(t *testing.T) {
+	setNow(t, "2026-11-17T00:00:00Z")
+	cs := func(n int, created, sev string) map[string]any {
+		return map[string]any{"number": n, "html_url": fmt.Sprintf("https://github.com/swarm-routing/X/security/code-scanning/%d", n),
+			"created_at": created, "rule": map[string]any{"security_severity_level": sev}}
+	}
+	dep := func(n int, created, sev string) map[string]any {
+		return map[string]any{"number": n, "html_url": fmt.Sprintf("https://github.com/swarm-routing/X/security/dependabot/%d", n),
+			"created_at": created, "security_advisory": map[string]any{"severity": sev}}
+	}
+	cases := []struct {
+		name            string
+		cs, dep         []any
+		fixed, critical bool // the answer stands
+	}{
+		{"young alerts keep Met", []any{cs(1, "2026-11-10T00:00:00Z", "critical"), cs(2, "2026-10-10T00:00:00Z", "high")},
+			[]any{dep(1, "2026-11-04T00:00:00Z", "moderate")}, true, true},
+		{"a medium alert past 45 days", []any{cs(3, "2026-10-01T00:00:00Z", "medium")}, nil, false, true},
+		{"a moderate Dependabot alert past 45 days", nil, []any{dep(2, "2026-09-30T00:00:00Z", "moderate")}, false, true},
+		{"a low alert never", []any{cs(4, "2026-01-01T00:00:00Z", "low")}, nil, true, true},
+		{"a critical alert past 14 days", []any{cs(5, "2026-11-01T00:00:00Z", "critical")}, nil, true, false},
+		{"a critical alert past 45 days", nil, []any{dep(3, "2026-09-01T00:00:00Z", "critical")}, false, false},
+	}
+	for _, c := range cases {
+		f := clean()
+		if c.cs != nil {
+			f.lists["code-scanning/alerts"] = c.cs
+		}
+		if c.dep != nil {
+			f.lists["dependabot/alerts"] = c.dep
+		}
+		o := ownerAnswers(attestation(t), "X", evidence, nil, f)
+		_, fixed := o.Answers["vulnerabilities_fixed_60_days"]
+		_, critical := o.Answers["vulnerabilities_critical_fixed"]
+		if fixed != c.fixed || critical != c.critical {
+			t.Errorf("%s: fixed_60_days %v (want %v), critical_fixed %v (want %v): %v", c.name, fixed, c.fixed,
+				critical, c.critical, o.Blocked)
+		}
+		if (fixed && critical) != (len(o.Alerts) == 0) {
+			t.Errorf("%s: an alert is listed (and gets its P1 bug) only when it withdraws an answer: %v", c.name, o.Alerts)
+		}
+	}
+	gh := &fakeIssues{}
+	o := ownerAnswers(attestation(t), "X", evidence, nil, func() *fakeAlerts {
+		f := clean()
+		f.lists["code-scanning/alerts"] = []any{cs(5, "2026-11-01T00:00:00Z", "critical")}
+		return f
+	}())
+	if _, err := alertBugs(gh, "X", o, false); err != nil || len(gh.labels) != 1 || !strings.Contains(gh.labels[0], "priority:P1") {
+		t.Errorf("an escalated alert opens a P1 bug: %v %v", gh.labels, err)
+	}
+	if a := o.Answers["vulnerabilities_fixed_60_days"][1]; !strings.Contains(a, "more than 45 days") ||
+		!strings.Contains(a, "security-autofix.yml") {
+		t.Errorf("the answer names the guard: %s", a)
+	}
+}
+
 // Alert 1's URL is a prefix of alert 10's: each must match only its own
 // issue (#621; AntHocNet's alerts 1 and 10 both matched one issue).
 func TestAlertBugsURLBoundary(t *testing.T) {
@@ -185,9 +246,12 @@ func TestOwnerUnreadableBlocks(t *testing.T) {
 	f.errs["dependabot/alerts"] = failure("gh api GET repos/swarm-routing/X/dependabot/alerts: Resource not accessible by integration (HTTP 403)")
 	delete(f.lists, "secret-scanning/alerts") // 404: off, or no access
 	o := ownerAnswers(attestation(t), "X", evidence, nil, f)
-	for _, c := range []string{"vulnerabilities_fixed_60_days", "vulnerabilities_critical_fixed", "no_leaked_credentials"} {
-		if _, ok := o.Answers[c]; ok || !strings.HasPrefix(o.Blocked[c], "cannot read") {
-			t.Errorf("%s: an unreadable listing blocks it: %q", c, o.Blocked[c])
+	if _, ok := o.Answers["no_leaked_credentials"]; ok || !strings.HasPrefix(o.Blocked["no_leaked_credentials"], "cannot read") {
+		t.Errorf("no_leaked_credentials: an unreadable listing blocks it: %q", o.Blocked["no_leaked_credentials"])
+	}
+	for _, c := range []string{"vulnerabilities_fixed_60_days", "vulnerabilities_critical_fixed"} {
+		if _, ok := o.Answers[c]; !ok {
+			t.Errorf("%s: Met by default, an unreadable listing is only reported (#629): %q", c, o.Blocked[c])
 		}
 	}
 	if _, ok := o.Answers["know_secure_design"]; !ok {
@@ -201,8 +265,8 @@ func TestOwnerUnreadableBlocks(t *testing.T) {
 		!strings.Contains(sec, "- `report_responses`: not attested") || !strings.Contains(sec, "Dependabot alerts") {
 		t.Errorf("owner section:\n%s", sec)
 	}
-	if o := ownerAnswers(attestation(t), "X", evidence, nil, nil); len(o.Answers) != 2 {
-		t.Errorf("no alert reader: only the two attestations: %v", o.Answers)
+	if o := ownerAnswers(attestation(t), "X", evidence, nil, nil); len(o.Answers) != 4 || o.Blocked["no_leaked_credentials"] == "" {
+		t.Errorf("no alert reader: the two attestations and the two default vulnerability answers: %v", o.Answers)
 	}
 	if o := ownerAnswers(nil, "X", evidence, nil, clean()); len(o.Answers) != 0 || len(o.Blocked) != 5 {
 		t.Error("no attestation: nothing proposed")
@@ -271,6 +335,7 @@ func TestCheckIssuesExit(t *testing.T) {
 type fakeIssues struct {
 	open   []any
 	posted []string
+	labels []string
 }
 
 func (f *fakeIssues) API(method, path string, body map[string]any, paginate bool) (any, error) {
@@ -278,6 +343,7 @@ func (f *fakeIssues) API(method, path string, body map[string]any, paginate bool
 		return f.open, nil
 	}
 	f.posted = append(f.posted, pyStr(body["body"]))
+	f.labels = append(f.labels, fmt.Sprint(body["labels"]))
 	return map[string]any{"number": 100 + len(f.posted)}, nil
 }
 
