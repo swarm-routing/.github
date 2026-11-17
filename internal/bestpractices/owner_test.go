@@ -79,8 +79,10 @@ func TestOwnerAllClear(t *testing.T) {
 		t.Fatalf("all clear: %+v", o)
 	}
 	for c, a := range o.Answers {
-		if a[0] != "Met" || !strings.Contains(a[1], att.URL) {
-			t.Errorf("%s cites the attestation: %s", c, a[1])
+		cites := strings.Contains(a[1], att.URL)
+		if a[0] != "Met" || cites != (c == "know_secure_design") ||
+			(!cites && !strings.HasSuffix(a[1], "(maintainer attestation, 2026-11-17, cited in know_secure_design)")) {
+			t.Errorf("%s cites the attestation once, the others name that answer: %s", c, a[1])
 		}
 	}
 	if !strings.Contains(o.Answers["know_secure_design"][1], "core is kept free") {

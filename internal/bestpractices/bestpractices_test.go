@@ -9,10 +9,14 @@ package bestpractices
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -196,14 +200,69 @@ func TestProposalURLs(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal("every answer once, in order, owner-only left out")
 	}
-	small, _ := ProposalURLs("16656", fixture, "passing", 3000)
-	if len(small) <= len(urls) {
+	large, _ := ProposalURLs("16656", fixture, "passing", 6000)
+	if len(large) >= len(urls) {
 		t.Fatal("a small limit splits more")
 	}
 	if _, err := ProposalURLs("16656", fixture, "passing", 100); err == nil {
 		t.Fatal("an answer alone over the limit is refused")
 	}
 }
+
+// Every proposal link stays under the cap, which stays at most 1800: the site
+// keeps the link in its session cookie while the maintainer logs in, and a
+// 6 KB link overflowed it (#626). Covers the fixture with the attested
+// answers merged in, and every link recorded in the goldens.
+func TestProposalLinksUnderCap(t *testing.T) {
+	if ProposalLimit > 1800 {
+		t.Fatalf("ProposalLimit %d: over the 1800 the site survives (#626)", ProposalLimit)
+	}
+	fixture, err := LoadAnswers("testdata/anthocnet-answers.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposed := map[string]any{}
+	for _, a := range fixture {
+		proposed[a.Criterion+"_status"], proposed[a.Criterion+"_justification"] = a.Status, a.Why
+	}
+	o := ownerAnswers(attestation(t), "X", proposed, map[string]bool{"core": true}, clean())
+	proposed = o.merge(proposed)
+	rep := Report{Propose: map[string]bool{}}
+	for _, c := range Passing {
+		rep.Propose[c] = true
+	}
+	links, err := proposalLinks("16656", proposed, rep)
+	if err != nil || len(links) < 2 {
+		t.Fatalf("links: %v %d", err, len(links))
+	}
+	for _, l := range links {
+		if len(l) > ProposalLimit {
+			t.Errorf("a link of %d characters, over %d", len(l), ProposalLimit)
+		}
+	}
+	if n := strings.Count(strings.Join(links, ""), quote("bestpractices-owner.toml")); n != 1 {
+		t.Errorf("the attestation's URL in the links %d times, want once", n)
+	}
+	body := Body("X", "16656", []string{"f"}, links, nil, OwnerReport{}, "")
+	if !strings.Contains(body, fmt.Sprintf("1. Link 1 of %d: %s\n", len(links), links[0])) ||
+		!strings.Contains(body, Site+"/en/login first") || !sameIssue(body, []string{"f"}, links, nil) {
+		t.Error("the body numbers the links (link i of N), says to log in first, and reads back the same")
+	}
+	files, _ := filepath.Glob("testdata/golden/*.json")
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range linkRx.FindAllString(string(b), -1) {
+			if len(l) > ProposalLimit {
+				t.Errorf("%s: a link of %d characters, over %d", f, len(l), ProposalLimit)
+			}
+		}
+	}
+}
+
+var linkRx = regexp.MustCompile(regexp.QuoteMeta(Site) + `/en/projects/\d+/passing/edit\?[^\s"\\]+`)
 
 func TestCLIErrors(t *testing.T) {
 	for _, args := range [][]string{nil, {"nope"}, {"answers"}, {"register", "x"}, {"check", "extra"}, {"answers", ".", "--bogus"}, {"answers", ".", "--today"}} {
