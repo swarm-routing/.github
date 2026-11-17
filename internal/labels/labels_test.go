@@ -1,0 +1,282 @@
+// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+// SPDX-License-Identifier: MIT OR GPL-2.0-only
+
+package labels
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+)
+
+const taxonomy = `{"_comment": "x", "labels": [
+  {"name": "bug", "color": "d73a4a", "description": "Type: defect"},
+  {"name": "epic", "color": "3E4B9E", "description": "Umbrella"},
+  {"name": "priority:P1", "color": "b60205", "description": "Blocks"}
+]}`
+
+// fakeGitHub holds each repository's labels and records every request.
+type fakeGitHub struct {
+	mu       sync.Mutex
+	repos    []map[string]any
+	labels   map[string][]Label // repo name -> labels
+	failRepo string             // writes there answer 403
+	calls    []string
+	auth     []string
+}
+
+func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, r.Method+" "+r.URL.Path)
+	f.auth = append(f.auth, r.Header.Get("Authorization"))
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	per, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	slice := func(n int) (int, int) {
+		lo, hi := (page-1)*per, page*per
+		if lo > n {
+			lo = n
+		}
+		if hi > n {
+			hi = n
+		}
+		return lo, hi
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	switch {
+	case r.Method == "GET" && r.URL.Path == "/orgs/swarm-routing/repos":
+		if r.URL.Query().Get("type") != "all" {
+			http.Error(w, "type", 400)
+			return
+		}
+		lo, hi := slice(len(f.repos))
+		_ = json.NewEncoder(w).Encode(f.repos[lo:hi])
+	case len(parts) >= 4 && parts[0] == "repos" && parts[1] == "swarm-routing" && parts[3] == "labels":
+		repo := parts[2]
+		if _, ok := f.labels[repo]; !ok {
+			http.Error(w, `{"message": "Not Found"}`, 404)
+			return
+		}
+		if r.Method != "GET" && repo == f.failRepo {
+			http.Error(w, `{"message": "Resource not accessible by integration"}`, 403)
+			return
+		}
+		var body map[string]string
+		if r.Body != nil {
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &body)
+		}
+		switch {
+		case r.Method == "GET" && len(parts) == 4:
+			ls := f.labels[repo]
+			lo, hi := slice(len(ls))
+			_ = json.NewEncoder(w).Encode(ls[lo:hi])
+		case r.Method == "POST" && len(parts) == 4:
+			f.labels[repo] = append(f.labels[repo], Label{body["name"], body["color"], body["description"]})
+			w.WriteHeader(201)
+			fmt.Fprint(w, `{}`)
+		case r.Method == "PATCH" && len(parts) == 5:
+			name, _ := url.PathUnescape(parts[4])
+			for i, l := range f.labels[repo] {
+				if l.Name == name {
+					f.labels[repo][i] = Label{body["new_name"], body["color"], body["description"]}
+					fmt.Fprint(w, `{}`)
+					return
+				}
+			}
+			http.Error(w, `{"message": "Not Found"}`, 404)
+		default:
+			http.Error(w, `{"message": "unexpected"}`, 500)
+		}
+	default:
+		http.Error(w, `{"message": "unexpected"}`, 500)
+	}
+}
+
+func newFake() *fakeGitHub {
+	return &fakeGitHub{
+		repos: []map[string]any{
+			{"name": "beta", "private": false},
+			{"name": "alpha", "private": false},
+			{"name": "secret-lib", "private": true},
+			{"name": "old", "private": false, "archived": true},
+		},
+		labels: map[string][]Label{
+			"alpha": {
+				{"bug", "d73a4a", "Type: defect"},
+				{"Epic", "3e4b9e", "Umbrella"},      // name's case differs: updated
+				{"priority:P1", "000000", "Blocks"}, // colour differs: updated
+				{"local-only", "ffffff", "kept"},    // not in the taxonomy: kept
+			},
+			"beta":       {{"bug", "D73A4A", "Type: defect"}, {"epic", "3e4b9e", "Umbrella"}, {"priority:P1", "b60205", "Blocks"}},
+			"secret-lib": {{"wontfix", "ffffff", "private label"}},
+			"old":        {},
+		},
+	}
+}
+
+func run(t *testing.T, f *fakeGitHub, args []string, token string) (int, string, string) {
+	t.Helper()
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "labels.json"), []byte(taxonomy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+	_ = os.Chdir(dir)
+	var out, errb bytes.Buffer
+	env := func(k string) string { return map[string]string{"GH_TOKEN": token}[k] }
+	code := Main(args, env, srv.Client(), srv.URL, &out, &errb)
+	return code, out.String(), errb.String()
+}
+
+func TestApply(t *testing.T) {
+	f := newFake()
+	code, out, errs := run(t, f, nil, "tok")
+	want := "swarm-routing/alpha: created 0 [], updated 2 [epic, priority:P1], 0 failed\n" +
+		"swarm-routing/beta: up to date (3 labels)\n" +
+		"private repository 1: created 3 [bug, epic, priority:P1], updated 0 [], 0 failed\n"
+	if code != 0 || out != want {
+		t.Fatalf("exit %d\nout:\n%s\nwant:\n%s\nerr: %s", code, out, want, errs)
+	}
+	if strings.Contains(out+errs, "secret-lib") || strings.Contains(out+errs, "wontfix") {
+		t.Error("a private repository's name or labels reached the output")
+	}
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "DELETE") {
+			t.Errorf("a label was deleted: %s", c)
+		}
+		if strings.Contains(c, "/old/") {
+			t.Errorf("an archived repository was touched: %s", c)
+		}
+	}
+	for _, a := range f.auth {
+		if a != "Bearer tok" {
+			t.Errorf("token header %q", a)
+		}
+	}
+	got := func(repo string) string {
+		var s []string
+		for _, l := range f.labels[repo] {
+			s = append(s, l.Name+"/"+l.Color+"/"+l.Description)
+		}
+		sort.Strings(s)
+		return strings.Join(s, " ")
+	}
+	if g := got("alpha"); g != "bug/d73a4a/Type: defect epic/3e4b9e/Umbrella local-only/ffffff/kept priority:P1/b60205/Blocks" {
+		t.Errorf("alpha: %s", g)
+	}
+	if g := got("secret-lib"); g != "bug/d73a4a/Type: defect epic/3e4b9e/Umbrella priority:P1/b60205/Blocks wontfix/ffffff/private label" {
+		t.Errorf("the private repository keeps its own label and gets the taxonomy: %s", g)
+	}
+	// idempotent: a second run writes nothing
+	n := len(f.calls)
+	code, out, _ = run(t, f, nil, "tok")
+	if code != 0 || strings.Count(out, "up to date") != 3 {
+		t.Errorf("second run:\n%s", out)
+	}
+	for _, c := range f.calls[n:] {
+		if !strings.HasPrefix(c, "GET ") {
+			t.Errorf("a second run only reads: %s", c)
+		}
+	}
+}
+
+func TestDryRunAndNoToken(t *testing.T) {
+	f := newFake()
+	code, out, _ := run(t, f, []string{"--dry-run"}, "tok")
+	if code != 0 || !strings.Contains(out, "swarm-routing/alpha: dry run: would create 0 [], update 2 [epic, priority:P1]\n") ||
+		!strings.Contains(out, "private repository 1: dry run: would create 3 [bug, epic, priority:P1], update 0 []\n") {
+		t.Errorf("dry run:\n%s", out)
+	}
+	code, out, _ = run(t, f, nil, "")
+	if code != 0 || !strings.HasPrefix(out, "labels: no GH_TOKEN: dry run\n") {
+		t.Errorf("no token: %d\n%s", code, out)
+	}
+	for _, c := range f.calls {
+		if !strings.HasPrefix(c, "GET ") {
+			t.Errorf("a dry run only reads: %s", c)
+		}
+	}
+}
+
+func TestFailureAndRepos(t *testing.T) {
+	f := newFake()
+	f.failRepo = "alpha"
+	code, out, errs := run(t, f, nil, "tok")
+	if code != 1 || !strings.Contains(out, "swarm-routing/alpha: error: epic: PATCH: HTTP 403 Resource not accessible by integration\n") ||
+		!strings.Contains(out, "private repository 1: created 3") || !strings.Contains(errs, "1 of 3 repositories failed") {
+		t.Errorf("a failed repository is reported, the others still run: %d\n%s\n%s", code, out, errs)
+	}
+	f = newFake()
+	code, out, _ = run(t, f, []string{"--repos", "beta, alpha"}, "tok")
+	if code != 0 || strings.Contains(out, "private") || !strings.HasPrefix(out, "swarm-routing/alpha:") {
+		t.Errorf("--repos: %d\n%s", code, out)
+	}
+	for _, args := range [][]string{{"--repos", "nope"}, {"--repos", "old"}, {"--labels", "../x"}, {"--labels", "/etc/x"}, {"--bogus"}} {
+		if code, _, _ := run(t, newFake(), args, "tok"); code != 2 {
+			t.Errorf("%v: exit %d", args, code)
+		}
+	}
+}
+
+// Many labels and repositories: pagination reaches all of them.
+func TestPages(t *testing.T) {
+	f := &fakeGitHub{labels: map[string][]Label{}}
+	for i := 0; i < 230; i++ {
+		n := fmt.Sprintf("r%03d", i)
+		f.repos = append(f.repos, map[string]any{"name": n})
+		f.labels[n] = nil
+	}
+	for i := 0; i < 150; i++ {
+		f.labels["r007"] = append(f.labels["r007"], Label{fmt.Sprintf("l%d", i), "ffffff", ""})
+	}
+	f.labels["r007"] = append(f.labels["r007"], Label{"bug", "d73a4a", "Type: defect"}, Label{"epic", "3e4b9e", "Umbrella"}, Label{"priority:P1", "b60205", "Blocks"})
+	code, out, errs := run(t, f, []string{"--dry-run"}, "tok")
+	if code != 0 || strings.Count(out, "\n") != 230 || !strings.Contains(out, "swarm-routing/r229:") ||
+		!strings.Contains(out, "swarm-routing/r007: up to date") {
+		t.Errorf("pages: %d %s\n%s", code, errs, out[:200])
+	}
+}
+
+func TestLoad(t *testing.T) {
+	for _, c := range []struct{ name, text, want string }{
+		{"empty", `{"labels": []}`, "1 to 200"},
+		{"json", `{`, "unexpected end"},
+		{"name", `{"labels": [{"name": " x", "color": "ffffff"}]}`, "empty, too long or padded"},
+		{"color", `{"labels": [{"name": "x", "color": "#ffffff"}]}`, "not six hex digits"},
+		{"desc", `{"labels": [{"name": "x", "color": "ffffff", "description": "` + strings.Repeat("d", 101) + `"}]}`, "longer than 100"},
+		{"twice", `{"labels": [{"name": "Bug", "color": "ffffff"}, {"name": "bug", "color": "ffffff"}]}`, "listed twice"},
+	} {
+		if _, err := Load([]byte(c.text)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+}
+
+// The repository's own labels.json loads.
+func TestRepositoryTaxonomy(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "labels.json"))
+	if os.IsNotExist(err) {
+		t.Skip("not in a checkout (the image's build stage copies only the Go code)")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ls, err := Load(data); err != nil || len(ls) < 10 {
+		t.Fatalf("%v %d", err, len(ls))
+	}
+}

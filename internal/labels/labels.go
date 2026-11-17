@@ -1,0 +1,420 @@
+// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+// SPDX-License-Identifier: MIT OR GPL-2.0-only
+
+// Package labels applies labels.json, the org's label taxonomy, to every
+// repository of the org, private ones included (swarm-routing/.github#570):
+// a label missing from a repository is created, one whose colour, description
+// or name's case differs is updated, and no label is ever deleted (golden rule
+// 11), so a repository's own labels stay. It is what sync-labels.yml does for
+// one repository, done for all of them from this repository with the org
+// App's token, so a labels.json change reaches a private repository, which
+// runs no pipelines, as soon as it merges.
+//
+// A private repository's name never reaches the output (a public log): it is
+// printed as "private repository N", N its place in the sorted list.
+package labels
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// Org is the organisation whose repositories get the labels.
+const Org = "swarm-routing"
+
+// Bounds (golden rule 7): labels.json holds a few dozen labels, the org a few
+// dozen repositories.
+const (
+	MaxLabels   = 200
+	MaxRepos    = 500
+	maxPages    = 20
+	perPage     = 100
+	maxDescLen  = 100
+	maxNameLen  = 50
+	maxBodySize = 4 << 20
+)
+
+// Label is one entry of labels.json.
+type Label struct {
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+var (
+	colorRe = regexp.MustCompile(`^[0-9a-fA-F]{6}$`)
+	repoRe  = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
+)
+
+// Load reads and checks labels.json.
+func Load(data []byte) ([]Label, error) {
+	var f struct {
+		Labels []Label `json:"labels"`
+	}
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil, err
+	}
+	if len(f.Labels) == 0 || len(f.Labels) > MaxLabels {
+		return nil, fmt.Errorf("labels.json has %d labels (1 to %d)", len(f.Labels), MaxLabels)
+	}
+	seen := map[string]bool{}
+	for i, l := range f.Labels {
+		where := fmt.Sprintf("label %d", i+1)
+		if l.Name == "" || len(l.Name) > maxNameLen || strings.TrimSpace(l.Name) != l.Name {
+			return nil, fmt.Errorf("%s: name %q is empty, too long or padded", where, l.Name)
+		}
+		if !colorRe.MatchString(l.Color) {
+			return nil, fmt.Errorf("%s (%s): color %q is not six hex digits", where, l.Name, l.Color)
+		}
+		if len([]rune(l.Description)) > maxDescLen {
+			return nil, fmt.Errorf("%s (%s): description longer than %d characters", where, l.Name, maxDescLen)
+		}
+		k := strings.ToLower(l.Name)
+		if seen[k] {
+			return nil, fmt.Errorf("%s: %q listed twice (label names ignore case)", where, l.Name)
+		}
+		seen[k] = true
+	}
+	return f.Labels, nil
+}
+
+// GitHub is the REST client: base URL, token, HTTP client.
+type GitHub struct {
+	API    string
+	Token  string
+	Client *http.Client
+}
+
+func (g GitHub) do(method, path string, body any) ([]byte, error) {
+	var rd io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, g.API+"/"+path, rd)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "swarm-routing-labels")
+	if g.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+g.Token)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := g.Client.Do(req)
+	if err != nil {
+		msg := err.Error()
+		if g.Token != "" {
+			msg = strings.ReplaceAll(msg, g.Token, "[redacted]")
+		}
+		return nil, fmt.Errorf("%s: %s", method, msg)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		// the message only: the path may name a private repository
+		var m struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(data, &m)
+		if len(m.Message) > 120 {
+			m.Message = m.Message[:120]
+		}
+		return nil, fmt.Errorf("%s: HTTP %d %s", method, resp.StatusCode, m.Message)
+	}
+	return data, nil
+}
+
+// pages GETs path page by page (per_page=100) into decode until a short page.
+func (g GitHub) pages(path string, decode func([]byte) (int, error)) error {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	for page := 1; page <= maxPages; page++ {
+		data, err := g.do("GET", fmt.Sprintf("%s%sper_page=%d&page=%d", path, sep, perPage, page), nil)
+		if err != nil {
+			return err
+		}
+		n, err := decode(data)
+		if err != nil {
+			return err
+		}
+		if n < perPage {
+			return nil
+		}
+	}
+	return fmt.Errorf("more than %d pages", maxPages)
+}
+
+// Repo is an org repository the labels go to.
+type Repo struct {
+	Name    string
+	Private bool
+}
+
+// Repos lists the org's repositories that are neither archived nor disabled,
+// sorted by name (a private one only when the token can see it).
+func (g GitHub) Repos() ([]Repo, error) {
+	var out []Repo
+	err := g.pages("orgs/"+Org+"/repos?type=all&sort=full_name", func(data []byte) (int, error) {
+		var rs []struct {
+			Name     string `json:"name"`
+			Private  bool   `json:"private"`
+			Archived bool   `json:"archived"`
+			Disabled bool   `json:"disabled"`
+		}
+		if err := json.Unmarshal(data, &rs); err != nil {
+			return 0, err
+		}
+		for _, r := range rs {
+			if r.Archived || r.Disabled || !repoRe.MatchString(r.Name) {
+				continue
+			}
+			out = append(out, Repo{r.Name, r.Private})
+		}
+		if len(out) > MaxRepos {
+			return 0, fmt.Errorf("more than %d repositories", MaxRepos)
+		}
+		return len(rs), nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing the org's repositories: %v", err)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (g GitHub) labels(repo string) ([]Label, error) {
+	var out []Label
+	err := g.pages("repos/"+Org+"/"+repo+"/labels", func(data []byte) (int, error) {
+		var ls []Label
+		if err := json.Unmarshal(data, &ls); err != nil {
+			return 0, err
+		}
+		out = append(out, ls...)
+		return len(ls), nil
+	})
+	return out, err
+}
+
+// Change is one write a repository needs.
+type Change struct {
+	Label Label
+	From  string // the current name, for an update; empty for a create
+}
+
+// Plan compares a repository's labels with the taxonomy: what to create and
+// what to update. Labels the taxonomy does not name are left alone.
+func Plan(want, have []Label) []Change {
+	cur := map[string]Label{}
+	for _, l := range have {
+		cur[strings.ToLower(l.Name)] = l
+	}
+	var out []Change
+	for _, w := range want {
+		h, ok := cur[strings.ToLower(w.Name)]
+		switch {
+		case !ok:
+			out = append(out, Change{Label: w})
+		case h.Name != w.Name || !strings.EqualFold(h.Color, w.Color) || h.Description != w.Description:
+			out = append(out, Change{Label: w, From: h.Name})
+		}
+	}
+	return out
+}
+
+func (g GitHub) apply(repo string, c Change) error {
+	if c.From == "" {
+		_, err := g.do("POST", "repos/"+Org+"/"+repo+"/labels", map[string]string{
+			"name": c.Label.Name, "color": strings.ToLower(c.Label.Color), "description": c.Label.Description,
+		})
+		return err
+	}
+	_, err := g.do("PATCH", "repos/"+Org+"/"+repo+"/labels/"+url.PathEscape(c.From), map[string]string{
+		"new_name": c.Label.Name, "color": strings.ToLower(c.Label.Color), "description": c.Label.Description,
+	})
+	return err
+}
+
+func names(cs []Change) string {
+	var n []string
+	for _, c := range cs {
+		n = append(n, c.Label.Name)
+	}
+	return strings.Join(n, ", ")
+}
+
+// Run applies want to every repository in repos, one line per repository. It
+// tries every repository and returns an error when any of them failed.
+func Run(g GitHub, want []Label, repos []Repo, dry bool, out io.Writer) error {
+	failed, private := 0, 0
+	for _, r := range repos {
+		name := Org + "/" + r.Name
+		if r.Private {
+			private++
+			name = fmt.Sprintf("private repository %d", private)
+		}
+		have, err := g.labels(r.Name)
+		if err != nil {
+			fmt.Fprintf(out, "%s: error: reading its labels: %v\n", name, err)
+			failed++
+			continue
+		}
+		plan := Plan(want, have)
+		var created, updated []Change
+		for _, c := range plan {
+			if c.From == "" {
+				created = append(created, c)
+			} else {
+				updated = append(updated, c)
+			}
+		}
+		if len(plan) == 0 {
+			fmt.Fprintf(out, "%s: up to date (%d labels)\n", name, len(want))
+			continue
+		}
+		if dry {
+			fmt.Fprintf(out, "%s: dry run: would create %d [%s], update %d [%s]\n",
+				name, len(created), names(created), len(updated), names(updated))
+			continue
+		}
+		bad := 0
+		for _, c := range plan {
+			if err := g.apply(r.Name, c); err != nil {
+				fmt.Fprintf(out, "%s: error: %s: %v\n", name, c.Label.Name, err)
+				bad++
+			}
+		}
+		if bad > 0 {
+			failed++
+		}
+		fmt.Fprintf(out, "%s: created %d [%s], updated %d [%s], %d failed\n",
+			name, len(created), names(created), len(updated), names(updated), bad)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d repositories failed", failed, len(repos))
+	}
+	return nil
+}
+
+// Main is the command: labels [--labels FILE] [--repos a,b] [--dry-run].
+// GH_TOKEN: Issues write on every repository (the org App's installation
+// token); without one it is a dry run over the repositories it can read.
+func Main(args []string, getenv func(string) string, client *http.Client, api string, stdout, stderr io.Writer) int {
+	file, only, dry := "labels.json", "", false
+	usage := "usage: labels [--labels FILE] [--repos a,b] [--dry-run]"
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--dry-run":
+			dry = true
+		case (a == "--labels" || a == "--repos") && i+1 < len(args):
+			if a == "--labels" {
+				file = args[i+1]
+			} else {
+				only = args[i+1]
+			}
+			i++
+		default:
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+	}
+	path, err := inside(file)
+	if err != nil {
+		fmt.Fprintln(stderr, "labels:", err)
+		return 2
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(stderr, "labels:", err)
+		return 2
+	}
+	want, err := Load(data)
+	if err != nil {
+		fmt.Fprintf(stderr, "labels: %s: %v\n", file, err)
+		return 2
+	}
+	token := getenv("GH_TOKEN")
+	if token == "" && !dry {
+		fmt.Fprintln(stdout, "labels: no GH_TOKEN: dry run")
+		dry = true
+	}
+	g := GitHub{API: api, Token: token, Client: client}
+	repos, err := g.Repos()
+	if err != nil {
+		fmt.Fprintln(stderr, "labels:", err)
+		return 1
+	}
+	if only != "" {
+		repos, err = pick(repos, only)
+		if err != nil {
+			fmt.Fprintln(stderr, "labels:", err)
+			return 2
+		}
+	}
+	if len(repos) == 0 {
+		fmt.Fprintln(stderr, "labels: no repository to apply to")
+		return 1
+	}
+	if err := Run(g, want, repos, dry, stdout); err != nil {
+		fmt.Fprintln(stderr, "labels:", err)
+		return 1
+	}
+	return 0
+}
+
+// pick keeps the named repositories; a name the org listing lacks is an error.
+func pick(repos []Repo, only string) ([]Repo, error) {
+	by := map[string]Repo{}
+	for _, r := range repos {
+		by[r.Name] = r
+	}
+	var out []Repo
+	seen := map[string]bool{}
+	for _, n := range strings.Split(only, ",") {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		r, ok := by[n]
+		if !ok {
+			return nil, fmt.Errorf("--repos: %q is not a repository this token sees in %s", n, Org)
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// inside is a relative path within the working directory.
+func inside(p string) (string, error) {
+	if filepath.IsAbs(p) {
+		return "", errors.New("--labels is a path relative to the working directory")
+	}
+	c := filepath.Clean(p)
+	if c == ".." || strings.HasPrefix(c, "../") {
+		return "", errors.New("--labels is outside the working directory")
+	}
+	return c, nil
+}
