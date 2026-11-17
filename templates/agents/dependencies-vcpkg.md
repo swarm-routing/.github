@@ -24,7 +24,9 @@
   `tools/checks/check-swarm-core-pin.py`, vcpkg mode) verifies the lock against
   the release, that the override pins the lock's version, and that the
   registry baseline is a commit on the registry's `main` holding exactly that
-  version and port-version; it fails when a newer swarm-core release is out.
+  version and port-version; it reports a newer swarm-core release
+  (swarm-routing/.github#586: a warning on a PR or a merge group, red on
+  `main` only while org-bot's bump PR is open).
 - **Bumping**: never by hand. org-bot's `swarm-core-pin` task opens one PR
   (`org-bot/swarm-core-pin`) that writes the lock from the new release, moves
   the tag and its commit on every line above, the override, and the registry

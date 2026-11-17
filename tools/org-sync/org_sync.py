@@ -2021,6 +2021,18 @@ def cmd_check(a):
             "run `org_sync.py apply` (or `make org-sync-check` to see this again)",
             file=sys.stderr,
         )
+        pin = read_lock(a.repo)
+        head = subprocess.run(
+            ["git", "-C", ORG, "rev-parse", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
+        if pin and head and head != pin:
+            print(
+                f"org-sync: these templates are at {head[:12]}, but this repository pins "
+                f"{pin[:12]} ({LOCK}), which CI checks against: compare with "
+                f"`make org-sync-check ORG_REF={pin}`. Drift against newer templates is "
+                "org-bot's refresh PR's to bring in, never a commit on an unrelated PR (#586)",
+                file=sys.stderr,
+            )
         return 1
     print(
         f"org-sync: no drift of this change's own; {warned} item(s) already drifting at the base"
