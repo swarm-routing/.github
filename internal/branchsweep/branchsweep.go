@@ -14,7 +14,9 @@
 //
 // It never deletes the default branch, main, bot/release, gh-readonly-queue/*,
 // release/* or releases/* branches, a protected branch, or a branch an open PR
-// uses; it never touches a tag. Every other branch is kept.
+// uses; it never touches a tag. Every other branch is kept. A private
+// repository is never named in its output, nor are its branches: a public
+// workflow log holds it.
 package branchsweep
 
 import (
@@ -153,6 +155,7 @@ type Repo struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
 	Archived      bool   `json:"archived"`
+	Private       bool   `json:"private"`
 }
 
 type branch struct {
@@ -311,7 +314,7 @@ type Result struct {
 
 // sweepRepo decides every branch of one repository and deletes what is stale; it
 // writes one line per deletion (or would-be deletion) and one summary line.
-func (g GitHub) sweepRepo(r Repo, now time.Time, dry, verbose bool, budget *int, res *Result, out io.Writer) error {
+func (g GitHub) sweepRepo(r Repo, label string, now time.Time, dry, verbose bool, budget *int, res *Result, out io.Writer) error {
 	branches, err := list[branch](g, fmt.Sprintf("repos/%s/branches?protected=false", r.FullName))
 	if err != nil {
 		return err
@@ -330,29 +333,37 @@ func (g GitHub) sweepRepo(r Repo, now time.Time, dry, verbose bool, budget *int,
 	}
 	sort.Slice(branches, func(i, j int) bool { return branches[i].Name < branches[j].Name })
 	deleted, kept, failed := 0, 0, 0
-	for _, b := range branches {
+	for i, b := range branches {
+		name, show := b.Name, func(e error) error { return e }
+		if r.Private { // a private repository's branch names and paths never reach a public log
+			name = fmt.Sprintf("branch %d", i+1)
+			show = func(e error) error {
+				return errors.New(strings.NewReplacer(r.FullName, "<private>", url.QueryEscape(b.Name), "<branch>",
+					refPath(b.Name), "<branch>", b.Name, "<branch>").Replace(e.Error()))
+			}
+		}
 		d, err := g.decide(r, b, open, now)
 		if err != nil {
-			fmt.Fprintf(out, "%s %s: error: %v\n", r.Name, b.Name, err)
+			fmt.Fprintf(out, "%s %s: error: %v\n", label, name, show(err))
 			failed++
 			continue
 		}
 		if !d.Delete {
 			kept++
 			if verbose {
-				fmt.Fprintf(out, "%s %s: %s\n", r.Name, b.Name, d.Why)
+				fmt.Fprintf(out, "%s %s: %s\n", label, name, d.Why)
 			}
 			continue
 		}
 		if *budget <= 0 {
 			res.Deferred++
 			kept++
-			fmt.Fprintf(out, "%s %s: %s; deferred (%d deletions a run)\n", r.Name, b.Name, d.Why, MaxDeletes)
+			fmt.Fprintf(out, "%s %s: %s; deferred (%d deletions a run)\n", label, name, d.Why, MaxDeletes)
 			continue
 		}
 		*budget--
 		if dry {
-			fmt.Fprintf(out, "%s %s: %s; dry run: would delete\n", r.Name, b.Name, d.Why)
+			fmt.Fprintf(out, "%s %s: %s; dry run: would delete\n", label, name, d.Why)
 			deleted++
 			continue
 		}
@@ -360,15 +371,15 @@ func (g GitHub) sweepRepo(r Repo, now time.Time, dry, verbose bool, budget *int,
 		var ae *apiError
 		switch {
 		case err == nil:
-			fmt.Fprintf(out, "%s %s: %s; deleted\n", r.Name, b.Name, d.Why)
+			fmt.Fprintf(out, "%s %s: %s; deleted\n", label, name, d.Why)
 			deleted++
 		case errors.As(err, &ae) && ae.status == http.StatusUnprocessableEntity:
-			fmt.Fprintf(out, "%s %s: %s; already gone\n", r.Name, b.Name, d.Why)
+			fmt.Fprintf(out, "%s %s: %s; already gone\n", label, name, d.Why)
 		case errors.As(err, &ae) && ae.status == http.StatusForbidden:
-			fmt.Fprintf(out, "%s %s: delete refused (the token needs Contents: write): %v\n", r.Name, b.Name, err)
+			fmt.Fprintf(out, "%s %s: delete refused (the token needs Contents: write): %v\n", label, name, show(err))
 			failed++
 		default:
-			fmt.Fprintf(out, "%s %s: delete failed: %v\n", r.Name, b.Name, err)
+			fmt.Fprintf(out, "%s %s: delete failed: %v\n", label, name, show(err))
 			failed++
 		}
 	}
@@ -376,7 +387,7 @@ func (g GitHub) sweepRepo(r Repo, now time.Time, dry, verbose bool, budget *int,
 	if dry {
 		verb = "would delete"
 	}
-	fmt.Fprintf(out, "%s: %d branches, %s %d, kept %d", r.Name, len(branches), verb, deleted, kept)
+	fmt.Fprintf(out, "%s: %d branches, %s %d, kept %d", label, len(branches), verb, deleted, kept)
 	if failed > 0 {
 		fmt.Fprintf(out, ", %d failed", failed)
 	}
@@ -398,18 +409,27 @@ func Run(g GitHub, names []string, now time.Time, dry, verbose bool, out io.Writ
 	if err != nil {
 		return res, err
 	}
-	budget, failed := MaxDeletes, 0
+	budget, failed, private := MaxDeletes, 0, 0
 	for _, r := range repos {
+		label := r.Name
+		if r.Private { // never named in the output, which a public workflow log holds
+			private++
+			label = fmt.Sprintf("private repository %d", private)
+		}
 		if r.Archived {
-			fmt.Fprintf(out, "%s: archived, skipped\n", r.Name)
+			fmt.Fprintf(out, "%s: archived, skipped\n", label)
 			continue
 		}
 		if r.FullName != Org+"/"+r.Name || !repoName.MatchString(r.Name) {
-			fmt.Fprintf(out, "%s: not an %s repository, skipped\n", r.Name, Org)
+			fmt.Fprintf(out, "%s: not an %s repository, skipped\n", label, Org)
 			continue
 		}
-		if err := g.sweepRepo(r, now, dry, verbose, &budget, &res, out); err != nil {
-			fmt.Fprintf(out, "%s: error: %v\n", r.Name, err)
+		if err := g.sweepRepo(r, label, now, dry, verbose, &budget, &res, out); err != nil {
+			msg := err.Error()
+			if r.Private {
+				msg = strings.ReplaceAll(msg, r.FullName, "<private>")
+			}
+			fmt.Fprintf(out, "%s: error: %s\n", label, msg)
 			failed++
 		}
 	}

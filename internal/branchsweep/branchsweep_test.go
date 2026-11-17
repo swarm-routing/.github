@@ -42,6 +42,7 @@ type fPull struct {
 type fRepo struct {
 	name, def string
 	archived  bool
+	private   bool
 	branches  []fBranch
 	pulls     []fPull
 }
@@ -98,7 +99,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var out []map[string]any
 		for _, x := range f.repos {
 			out = append(out, map[string]any{"name": x.name, "full_name": "swarm-routing/" + x.name,
-				"default_branch": x.def, "archived": x.archived})
+				"default_branch": x.def, "archived": x.archived, "private": x.private})
 		}
 		page(w, q, out)
 		return
@@ -113,7 +114,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case len(parts) == 1:
 		_ = json.NewEncoder(w).Encode(map[string]any{"name": rp.name, "full_name": full,
-			"default_branch": rp.def, "archived": rp.archived})
+			"default_branch": rp.def, "archived": rp.archived, "private": rp.private})
 	case len(parts) == 2 && parts[1] == "branches":
 		var out []map[string]any
 		for _, b := range rp.branches {
@@ -398,5 +399,38 @@ func TestCommand(t *testing.T) {
 	}
 	if rc := Main([]string{"--repos", "../x"}, env, srv.Client(), srv.URL, &out, &errb); rc != 1 {
 		t.Errorf("a bad repository name: rc %d", rc)
+	}
+}
+
+// A private repository's name and branch names never reach the output, which a
+// public workflow log holds; its deletions still happen.
+func TestPrivateNeverNamed(t *testing.T) {
+	f := &fakeGitHub{repos: []*fRepo{
+		{name: "secretlib", def: "main", private: true, branches: []fBranch{
+			{name: "claude/hidden-topic", commit: ago(9 * day)},
+			{name: "claude/hidden-fail", commit: ago(9 * day)},
+			{name: "feature/hidden-kept", commit: ago(9 * day)},
+		}},
+		{name: "ARA", def: "main", branches: []fBranch{{name: "claude/v", commit: ago(9 * day)}}},
+	}}
+	f.refuse = "claude/hidden-fail"
+	out, _ := sweep(t, f, false)
+	for _, x := range []string{"secretlib", "hidden"} {
+		if strings.Contains(out, x) {
+			t.Fatalf("%q printed:\n%s", x, out)
+		}
+	}
+	for _, line := range []string{
+		"private repository 1 branch 2: no PR, last commit 216h0m0s ago; deleted",
+		"private repository 1 branch 1: delete refused (the token needs Contents: write): DELETE repos/<private>/git/refs/heads/<branch>: HTTP 403",
+		"private repository 1: 3 branches, deleted 1, kept 1, 1 failed",
+		"ARA claude/v: no PR, last commit 216h0m0s ago; deleted",
+	} {
+		if !strings.Contains(out, line) {
+			t.Errorf("missing %q in\n%s", line, out)
+		}
+	}
+	if len(f.deletes) != 2 {
+		t.Errorf("deletes: %v", f.deletes)
 	}
 }
