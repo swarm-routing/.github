@@ -7,7 +7,19 @@ name: repo-settings
 # features, `main` and `release-tags` rulesets, security features, Actions
 # policy and `release` environment, declared in the [settings] table of its
 # .github/org-sync.toml and the profiles in templates/rulesets/.
-# - push to main changing a profile or the tool: apply;
+# - push to main changing a profile, the tool or this repository's own
+#   .github/org-sync.toml: apply (every repository);
+# - repository_dispatch `repo-settings` (#569): apply to the one repository it
+#   names. Every repository's org-managed settings-apply.yml sends it, with the
+#   bot token, when a push to its main changes its .github/org-sync.toml, so a
+#   merged [settings] change applies within minutes, with no dispatch by hand.
+#   The payload carries only `repository` (swarm-routing/<name>): the run
+#   checks its shape here and `--org-only` checks it against the org's
+#   repository list, and anything else is refused. The event always runs this
+#   repository's main, never the sender's code; sending it needs Contents
+#   write here, which only the org App (and the maintainer) holds. Each
+#   repository has its own concurrency group, so two nudges never replace
+#   each other's pending run;
 # - daily: check, and open, update or close one `[settings]` drift issue here,
 #   and one `[settings] <repo>: …` issue per repository whose checks ran on
 #   main without being required or optional (#177);
@@ -29,9 +41,12 @@ name: repo-settings
 on:
   schedule:
     - cron: '41 5 * * *'
+  repository_dispatch:
+    types: [repo-settings]
   push:
     branches: [main]
     paths:
+      - '.github/org-sync.toml'
       - 'templates/rulesets/**'
       - 'tools/repo-settings/**'
       - '.github/workflows/repo-settings.yml'
@@ -51,7 +66,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: repo-settings
+  # a nudge queues per repository (#569), never in place of another run
+  group: ${{ github.event_name == 'repository_dispatch' && format('repo-settings-{0}', github.event.client_payload.repository) || 'repo-settings' }}
   cancel-in-progress: false
 
 jobs:
@@ -63,8 +79,10 @@ jobs:
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
-      MODE: ${{ github.event_name == 'schedule' && 'check' || github.event_name == 'push' && 'apply' || inputs.mode }}
+      MODE: ${{ github.event_name == 'schedule' && 'check' || (github.event_name == 'push' || github.event_name == 'repository_dispatch') && 'apply' || inputs.mode }}
       REPOS: ${{ inputs.repos }}
+      # repository_dispatch (#569): checked in the Run step before use, never interpolated
+      DISPATCHED: ${{ github.event.client_payload.repository }}
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -89,9 +107,20 @@ jobs:
           ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
         run: |
           [ -z "$ORG_BOT_TOKEN" ] && echo "::warning::no bot token (neither the App secrets nor ORG_BOT_TOKEN): only this repository is readable"
+          args=()
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
+            # only swarm-routing/<name>; the tool then checks <name> is an org repository
+            if ! [[ "$DISPATCHED" =~ ^swarm-routing/[A-Za-z0-9_.-]+$ ]]; then
+              echo "::error::repo-settings: repository '${DISPATCHED:0:80}' is not swarm-routing/<name>"
+              exit 1
+            fi
+            REPOS="${DISPATCHED#swarm-routing/}"
+            args=(--org-only)
+            echo "repository_dispatch from ${DISPATCHED}: apply ${REPOS}"
+          fi
           rc=0
           # shellcheck disable=SC2086  # REPOS is a space-separated list
-          python3 -I tools/repo-settings/repo_settings.py "$MODE" $REPOS > "$RUNNER_TEMP/settings.txt" || rc=$?
+          python3 -I tools/repo-settings/repo_settings.py "$MODE" "${args[@]}" $REPOS > "$RUNNER_TEMP/settings.txt" || rc=$?
           cat "$RUNNER_TEMP/settings.txt"
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           if [ "$MODE" = apply ] && [ "$rc" = 2 ]; then

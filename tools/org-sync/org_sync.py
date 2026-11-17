@@ -1325,6 +1325,8 @@ def items(cfg):
             "workflows/bestpractices-evidence.yml",
             None,
         ),
+        # a push that changes [settings] asks repo-settings to apply it (#569)
+        ("file", ".github/workflows/settings-apply.yml", "workflows/settings-apply.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),

@@ -6,7 +6,7 @@
 Usage:
   repo_settings.py plan  [REPO...] [--local DIR]
   repo_settings.py check [REPO...] [--local DIR]
-  repo_settings.py apply [REPO...] [--local DIR] [--dry-run]
+  repo_settings.py apply [REPO...] [--local DIR] [--dry-run] [--org-only]
   repo_settings.py --self-test
 
 Each repository declares its settings in the `[settings]` table of its own
@@ -39,6 +39,13 @@ DIR/<repo>/.github/):
 
 A repository with no org-sync templates carries a settings-only file (no
 `kind`); org-sync and org-bot skip it.
+
+`--org-only` (any command) refuses, before reading anything else, a named
+repository that is not one of the org's (archived repositories and forks
+excluded; matched without case, then used with the org's spelling). The
+`repo-settings` workflow passes it for the name a repository_dispatch carries
+(the org-managed settings-apply.yml sends it when a push to main changes
+`.github/org-sync.toml`, #569), so the event can only name an org repository.
 
 A profile (`templates/rulesets/<profile>.json`) holds the merge settings
 (squash only, PR title and body as the squash commit, delete the branch on
@@ -1190,8 +1197,20 @@ def org_repos(gh):
         page += 1
 
 
-def run(cmd, repos, local=None, dry_run=False, gh=None):
+def run(cmd, repos, local=None, dry_run=False, gh=None, org_only=False):
     gh = gh or GitHub()
+    if repos and org_only:
+        try:
+            known = {n.lower(): n for n in org_repos(gh)}
+        except GhError as e:
+            print(f"repo-settings: cannot list the org ({e}); nothing done")
+            return 1
+        bad = [r for r in repos if r.lower() not in known]
+        for r in bad:
+            print(f"{r[:80]}: refused: not a {ORG} repository (archived ones and forks excluded)")
+        if bad:
+            return 1
+        repos = [known[r.lower()] for r in repos]
     if not repos:
         try:
             repos = org_repos(gh)
@@ -1242,6 +1261,11 @@ def main(argv=None):
         s = sub.add_parser(name)
         s.add_argument("repos", nargs="*", help="repository names (default: every org repository)")
         s.add_argument("--local", help="read DIR/<repo>/.github/ instead of the API")
+        s.add_argument(
+            "--org-only",
+            action="store_true",
+            help="refuse a named repository that is not one of the org's (#569)",
+        )
         if name == "apply":
             s.add_argument("--dry-run", action="store_true")
     a = p.parse_args(argv)
@@ -1249,7 +1273,7 @@ def main(argv=None):
         return self_test()
     if not a.cmd:
         p.error("a command is required")
-    return run(a.cmd, a.repos, a.local, getattr(a, "dry_run", False))
+    return run(a.cmd, a.repos, a.local, getattr(a, "dry_run", False), org_only=a.org_only)
 
 
 # --- self-test: a fake GitHub holding repositories, contents and rulesets -----
@@ -1533,6 +1557,10 @@ def self_test():
             self.calls.append((method, path, body))
             if path == "users/danieljoppi":
                 return {"login": "danieljoppi", "id": 42}
+            if path.startswith(f"orgs/{ORG}/repos?"):
+                listed = [{"name": r} for r in self.repos]
+                listed += [{"name": "old", "archived": True}, {"name": "copy", "fork": True}]
+                return listed if path.endswith("&page=1") else []
             m = re.match(rf"repos/{ORG}/([^/?]+)(.*)$", path)
             repo, rest = m.group(1), m.group(2)
             if method != "GET" and self.deny:
@@ -1705,14 +1733,39 @@ def self_test():
                 return copy.deepcopy(rs)
             raise AssertionError(f"unexpected call {method} {path}")
 
-    def go(cmd, repos, gh, dry=False):
+    def go(cmd, repos, gh, dry=False, org_only=False):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            rc = run(cmd, repos, dry_run=dry, gh=gh)
+            rc = run(cmd, repos, dry_run=dry, gh=gh, org_only=org_only)
         return rc, out.getvalue()
 
     def writes(gh):
         return [c for c in gh.calls if c[0] != "GET"]
+
+    # --org-only (#569): the name a repository_dispatch carries must be an org repository;
+    # anything else is refused before a single read of it, and nothing is written
+    for name in ("evil", "old", "copy", "../ARA", "ARA/x"):
+        gh = FakeGitHub()
+        rc, out = go("apply", [name], gh, org_only=True)
+        check(
+            f"--org-only refuses {name}",
+            rc == 1
+            and "refused: not a swarm-routing repository" in out
+            and all(c[1].startswith(f"orgs/{ORG}/repos?") for c in gh.calls),
+        )
+    gh = FakeGitHub()
+    rc, out = go("apply", ["ara"], gh, org_only=True)
+    check(
+        "--org-only applies the org's spelling of a listed repository, and only it",
+        rc == 0
+        and "ARA: applied" in out
+        and writes(gh)
+        and all(f"repos/{ORG}/ARA" in c[1] for c in writes(gh))
+        and not any(f"repos/{ORG}/ara" in c[1] for c in gh.calls),
+    )
+    gh = FakeGitHub()
+    rc, out = go("check", [], gh, org_only=True)
+    check("--org-only without names: every org repository, as before", "AntHocNet" in out)
 
     # AntHocNet: the protocol profile with CI gate + code scanning, every shared part in place;
     # its own codeql.yml keeps CodeQL default setup off
