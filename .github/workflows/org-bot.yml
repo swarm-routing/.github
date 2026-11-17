@@ -34,6 +34,12 @@ name: org-bot
 #   DOI read from Zenodo, in one auto-merge PR per repository; then what
 #   release_check.py after still finds, as one comment on the site's
 #   [release-sync] issue (#465); release-lock runs in the same hourly group.
+# - release-sync (hourly, with `hourly` and `release-aftercare`; #571): the Go
+#   tool `release-sync-watch` (cmd/release-sync-watch, from the ci-tools image
+#   by digest) dispatches the site's release-sync.yml with repository and tag
+#   for a release published more than an hour ago that has no
+#   `[release-sync] <repo> <tag>` issue or no green run named for it, so no
+#   one dispatches it by hand.
 # - bestpractices (daily, with `all`): `.bestpractices.json` regenerated in every
 #   public repository by the Go tool `bestpractices answers --write`
 #   (cmd/bestpractices; its binary copied out of the ci-tools image by digest,
@@ -103,7 +109,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep, release-sync]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -169,7 +175,7 @@ jobs:
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Refresh
-        if: env.TASK != 'branch-sweep'
+        if: env.TASK != 'branch-sweep' && env.TASK != 'release-sync'
         env:
           ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
           ORG_BOT_GIT_NAME: ${{ steps.bot.outputs.git-name }}
@@ -237,6 +243,28 @@ jobs:
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           docker run --rm -e GH_TOKEN "$IMG" branch-sweep "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: The site's release sync (release-sync-watch, hourly)
+        # cmd/release-sync-watch from the ci-tools image by digest (#571): for the
+        # newest release of every public org repository published 1 hour to 14
+        # days ago, when the site has no `[release-sync] <repo> <tag>` issue or
+        # no green release-sync.yml run named for it, dispatch release-sync.yml
+        # with repository and tag; at most once per release per 3 hours, at most
+        # 2 site runs active. The hourly run and a dispatch of `hourly`,
+        # `release-aftercare` or `release-sync`; it runs even when Refresh
+        # failed. Dispatching needs Actions: write on the site.
+        if: >-
+          ${{ !cancelled() && steps.bot.outcome == 'success'
+              && (env.TASK == 'hourly' || env.TASK == 'release-aftercare' || env.TASK == 'release-sync') }}
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:f582685909de9e341cb7b98d33aff4caf2724948a7ca414ff80481e0ebd42dcb  # promoted from d15cb43 (#602)
+        run: |
+          set -o pipefail
+          args=()
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          docker run --rm -e GH_TOKEN "$IMG" release-sync-watch "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
         if: ${{ always() }}
         run: |

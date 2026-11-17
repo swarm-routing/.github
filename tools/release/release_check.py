@@ -470,8 +470,9 @@ def after(repo, tag, org, gh, consumers=None, roadmap=ROADMAP):
     else:
         r.add(
             "WARN",
-            f"site: no '{want}' issue yet; an hour after the release, dispatch the "
-            f"site's release-sync.yml with repository={repo} tag={tag} and check that run",
+            f"site: no '{want}' issue yet; an hour after the release, org-bot's hourly "
+            f"release-sync-watch dispatches the site's release-sync.yml with "
+            f"repository={repo} tag={tag} (swarm-routing/.github#571)",
         )
     # consumers: every org repository whose root *.lock names this one
     if consumers is not None:
