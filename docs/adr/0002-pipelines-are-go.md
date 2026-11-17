@@ -3,6 +3,10 @@
 - **Status:** accepted
 - **Date:** 2026-11-16
 - **Issue:** #531 (the migration epic)
+- **Amended:** 2026-11-17 (maintainer decision): every workflow runs a tool
+  with `docker run` by digest, read-only tools included; the image carries no
+  git and no `gh` (see "How a workflow runs a tool" and "Amendment
+  2026-11-17")
 
 ## Context
 
@@ -102,27 +106,40 @@ repository's `cmd/`:
 - **ENTRYPOINT is a small dispatcher**, `ci-tools <tool> [args…]`, which
   executes `/usr/local/bin/<tool>`; each tool is also its own binary at that
   path. Distroless has no shell, so nothing else runs there.
-- **How a workflow runs a tool: by digest, in one of two forms**, never
-  with a toolchain in the job and never with a shell in the image. The image
-  runs as `nonroot` (uid 65532). GitHub runs a `uses: docker://` step with
-  the image's own user and mounts the checkout and the file-command files
-  (`GITHUB_OUTPUT`, `GITHUB_STEP_SUMMARY`, …), which the runner's user owns:
-  a non-root container can read the checkout (its files are world-readable)
-  but cannot write to it or to those files. GitHub's Dockerfile support page
-  says Docker actions are expected to run as root for exactly this reason;
-  the image does not give up `nonroot` to meet it. Instead:
-  - a tool that **only reads** the workspace and reports through its log
-    and exit status (a check, a gate) runs as
-    `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:<digest>` with
-    `with: args: <tool> …`;
-  - a tool that **writes** (files in the checkout, step outputs, the job
-    summary) runs in a `run:` step as
-    `docker run --rm --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace ghcr.io/swarm-routing/ci-tools@sha256:<digest> <tool> …`,
-    as the runner's own user; what it hands back to the workflow it prints,
-    and the step redirects it (`>> "$GITHUB_OUTPUT"`), so the image never
-    needs the runner's file-command paths.
-  `ci-tools-image.yml` tests the first form's mount (read-only, as
-  `nonroot`); the first writing tool's PR adds a test of the second.
+- **How a workflow runs a tool: by digest, with `docker run`** in a `run:`
+  step, never with a toolchain in the job and never with a shell in the
+  image (amended 2026-11-17; the first version also allowed
+  `uses: docker://` for read-only tools, see "Amendment 2026-11-17"):
+
+  ```
+  docker run --rm --user "$(id -u):$(id -g)" \
+    -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace \
+    ghcr.io/swarm-routing/ci-tools@sha256:<digest> <tool> …
+  ```
+
+  - **every mount is read-only (`:ro`)** unless the tool writes there; inputs
+    from outside the workspace (the `core-deps` trees under `$RUNNER_TEMP`)
+    are further read-only mounts;
+  - **`--user "$(id -u):$(id -g)"`** runs the tool as the runner's own user,
+    so a tool that writes (a file in the checkout, through a read-write mount
+    of that one path) writes as that user. A read-only tool may keep the
+    image's `nonroot` (uid 65532): the checkout's files are world-readable;
+  - **what it hands back to the workflow it prints**, and the step redirects
+    it (`>> "$GITHUB_OUTPUT"`, `>> "$GITHUB_STEP_SUMMARY"`), so the image
+    never needs the runner's file-command paths;
+  - **secrets go in by name** (`-e GH_TOKEN`), never by value on the command
+    line.
+
+  The workflows that run this way: `backstop.yml`, `bestpractices.yml`,
+  `org-bot.yml` and `reusable-licence-check.yml`. `ci-tools-image.yml`
+  tests both the read-only and the `--user` writing run on the candidate
+  digest.
+- **The image carries no git and no `gh`.** A tool that needs what git
+  knows reads git's files directly, as `cmd/check-headers` reads the index
+  (`internal/checkheaders/gitindex.go`); a tool that needs the GitHub API
+  calls it over HTTP with the token it is given. Adding git or `gh` to the
+  image is a later decision of its own, with its size and attack surface
+  stated, not a side effect of a port.
 - **What is tested is what is tagged** (swarm-routing/ns3-containers golden
   rule 17): a change to the Go code or the image builds the image once,
   pushes it as a candidate to `ghcr.io/swarm-routing/ci-tools-dev`, checks
@@ -136,6 +153,33 @@ repository's `cmd/`:
 - Static binaries with checksums may also be attached to a release, for a
   job where an image pull is slower than a download; that is an option, not
   part of the rule.
+
+## Amendment 2026-11-17
+
+The first version of this ADR had read-only tools run as
+`uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:<digest>` with
+`with: args: <tool> …`. That form ended in `startup_failure` on a caller,
+swarm-routing/ARA, before any job ran (#577; the lessons comment on #531).
+**The likely cause is the org's selected-actions policy** (Actions
+allowlist, `templates/rulesets/`), which a `docker://` step may have to pass
+like any other action; this is an inference, not confirmed: the API path that
+shows the policy is closed to agents. `backstop.yml`, `bestpractices.yml` and
+`org-bot.yml` already ran the image with `docker run`, and #577 moved
+`reusable-licence-check.yml` to it.
+
+The maintainer decided (2026-11-17) that `docker run` from the image by
+digest, with `--user` and read-only mounts, is the standard way a workflow
+runs an org Go tool, read-only tools included. Besides starting where
+`uses: docker://` did not, it takes mounts from outside the workspace and an
+expression in the image reference (a `uses:` cannot), and it is the same
+command a developer runs locally.
+
+The second lesson of the port: the image has no git and no `gh`. The Python
+`check-headers` called `git ls-files`; the Go port reads the git index itself
+(versions 2 to 4, SHA-256 repositories, `GIT_INDEX_FILE`, worktree `.git`
+files, `core.quotePath`). A port lists its tool's git and `gh` calls first;
+each is a small reimplementation, a reason to keep the tool on the runner, or
+the case for a later decision to put git or `gh` in the image.
 
 ## Alternatives considered
 
@@ -159,6 +203,11 @@ repository's `cmd/`:
   Slower start, the cache harder to share, and nothing gained over a
   pinned setup-go for building and testing. Rejected; containers are for
   running the shipped tools.
+- **`uses: docker://` for read-only tools** (this ADR's first version).
+  Shorter YAML, but it did not start on a caller (`startup_failure`,
+  probably the selected-actions policy), takes no expression in the image
+  reference and no mount from outside the workspace. Replaced by `docker run`
+  on 2026-11-17.
 - **Alpine runtime image.** Smaller than a Debian base, but carries a shell
   and a package manager; with static Go binaries distroless static is
   smaller still and has neither. Rejected.

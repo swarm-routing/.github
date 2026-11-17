@@ -1664,8 +1664,13 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
   dispatcher as entrypoint). It is built once per change, pushed as a
   candidate to `ci-tools-dev`, tested on that digest, and on `main` the same
   digest is copied to `ci-tools` (no rebuild), signed and attested; a
-  workflow runs a tool with `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:<digest>`
-  and `with: args: <tool> …`, never a tag. Dependabot keeps both bases
+  workflow runs a tool in a `run:` step with
+  `docker run --rm --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace ghcr.io/swarm-routing/ci-tools@sha256:<digest> <tool> …`
+  (read-only mounts, the runner's user, output printed and redirected by the
+  step), never a tag and never `uses: docker://`, which ended in
+  `startup_failure` on a caller (ADR-0002, amended 2026-11-17). The image has
+  no git and no `gh`: a tool that needs either reads git's files itself, as
+  `cmd/check-headers` does. Dependabot keeps both bases
   current (`.github/dependabot.yml`).
 
 ## Quality gates

@@ -376,7 +376,7 @@ changing what the row names.
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
 | Choose a language, or write a Go pipeline tool and its CI | `docs/adr/0002-pipelines-are-go.md`, CONTRIBUTING § Languages, `reusable-go-ci.yml`; migration epic #531 |
-| Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:…` |
+| Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `docker run --user … -v …:ro ghcr.io/swarm-routing/ci-tools@sha256:… <tool>` in a `run:` step, never `uses: docker://` (ADR-0002) |
 | Change the licence rules or their gate | `cmd/check-headers` (Go; `tools/checks/check-headers.py` deprecated), `reusable-licence-check.yml`, CONTRIBUTING rule 1 |
 | Change how outside contributions are accepted (DCO, contributor copyright lines) | CONTRIBUTING "Outside contributions", `tools/checks/check-dco.py`, `reusable-dco.yml` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
