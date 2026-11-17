@@ -10,7 +10,7 @@ Usage: org_sync.py {init,plan,apply,conflicts,check,seeds,settings} [REPO_DIR] [
 
 `profile` (swarm-routing/.github only) renders the org's badge table into
 profile/README.md, between `<!-- org-sync:begin badges -->` and its end
-marker: the groups of a repository's table, filled from PROFILE_BADGES, each
+marker: the profile's groups and badges from PROFILE_BADGES, each
 badge live or a fixed fact, never a typed number; `--check` exits 1 when the
 section is not today's render.
 
@@ -307,44 +307,78 @@ def shield(label, message, color):
 
 
 PROFILE = "profile/README.md"
-PROFILE_BADGES = {  # the org profile's table (`profile`), by group: (alt, image, link)
-    "build": [
+PROFILE_BADGES = {
+    "Main": [
         (
-            "CI: org tooling",
-            "https://github.com/swarm-routing/.github/actions/workflows/ci.yml/badge.svg",
-            "https://github.com/swarm-routing/.github/actions/workflows/ci.yml",
+            "Website",
+            "https://img.shields.io/badge/Website-swarm--routing.github.io-blue",
+            "https://swarm-routing.github.io",
         ),
+        (
+            "AI First",
+            "https://img.shields.io/badge/Maintained_with-AI_Agents-8A2BE2",
+            "#the-ai-first-engineering-model",
+        ),
+    ],
+    "Platforms": [
+        (
+            "ns-3",
+            "https://img.shields.io/badge/ns--3-Network_Simulator-1081c2",
+            "https://www.nsnam.org/",
+        )
+    ],
+    "Containers": [
         (
             "GHCR: ns3-dev",
-            shield("ghcr.io", "swarm-routing/ns3-dev", "blue") + "?logo=docker",
+            "https://img.shields.io/badge/ghcr.io-swarm--routing%2Fns3--dev-blue?logo=docker",
             "https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev",
+        )
+    ],
+    "Protocols": [
+        (
+            "Protocol: AntHocNet",
+            "https://img.shields.io/badge/Protocol-AntHocNet-orange",
+            "https://github.com/swarm-routing/AntHocNet",
+        ),
+        (
+            "Protocol: ARA",
+            "https://img.shields.io/badge/Protocol-ARA-orange",
+            "https://github.com/swarm-routing/ARA",
+        ),
+        (
+            "Protocol: BeeAdHoc",
+            "https://img.shields.io/badge/Protocol-BeeAdHoc-orange",
+            "https://github.com/swarm-routing/BeeAdHoc",
+        ),
+        (
+            "Protocol: HOPNET",
+            "https://img.shields.io/badge/Protocol-HOPNET-orange",
+            "https://github.com/swarm-routing/HOPNET",
+        ),
+        (
+            "Protocol: Termite",
+            "https://img.shields.io/badge/Protocol-Termite-orange",
+            "https://github.com/swarm-routing/Termite",
         ),
     ],
-    "release": [
+    "Quality": [
         (
-            "AntHocNet release",
-            "https://img.shields.io/github/v/release/swarm-routing/AntHocNet?sort=semver&label=AntHocNet&cacheSeconds=1800",
-            "https://github.com/swarm-routing/AntHocNet/releases",
+            "SonarQube Cloud",
+            "https://img.shields.io/badge/SonarQube-Cloud-F3A000?logo=sonarqube",
+            "https://sonarcloud.io/",
         ),
         (
-            "AntHocNet DOI",
-            "https://zenodo.org/badge/DOI/10.5281/zenodo.20981979.svg",
-            "https://doi.org/10.5281/zenodo.20981979",
+            "Codecov",
+            "https://img.shields.io/badge/Codecov-Enabled-F01F7A?logo=codecov",
+            "https://codecov.io/",
         ),
         (
-            "Archived releases: Zenodo",
-            shield("archived releases", "Zenodo", "blue"),
-            "https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#archived-releases",
-        ),
-        (
-            "Licence: core/ and tooling MIT OR GPL-2.0-only, the rest GPL-2.0-only",
-            shield(
-                "licence", "core/ and tooling MIT OR GPL-2.0-only, the rest GPL-2.0-only", "blue"
-            ),
-            "https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md",
+            "OpenSSF Scorecard",
+            "https://img.shields.io/badge/OpenSSF-Scorecard-a00000?logo=linuxfoundation",
+            "https://securityscorecards.dev/",
         ),
     ],
-    "trust": [
+    "Trust": [
         (
             "OpenSSF Scorecard: AntHocNet",
             "https://api.securityscorecards.dev/projects/github.com/swarm-routing/AntHocNet/badge",
@@ -361,7 +395,7 @@ PROFILE_BADGES = {  # the org profile's table (`profile`), by group: (alt, image
             "https://github.com/swarm-routing/ns3-containers/blob/main/SECURITY.md",
         ),
     ],
-    "stack": [
+    "Stack": [
         (
             "Runs on ns-3",
             shield("runs on", "ns-3", "informational"),
@@ -378,7 +412,7 @@ PROFILE_BADGES = {  # the org profile's table (`profile`), by group: (alt, image
             "https://swarm-routing.github.io/pipeline/",
         ),
     ],
-    "community": [
+    "Community & docs": [
         (
             "Colony Arena",
             "https://img.shields.io/website?url=https%3A%2F%2Fswarm-routing.github.io&label=Colony%20Arena",
@@ -973,11 +1007,11 @@ def badge_lines(cfg, repo_dir):
 
 
 def profile_badge_lines():
-    """The org profile's badge table: BADGE_GROUPS' titles and order, PROFILE_BADGES' badges."""
+    """The org profile's badge table, in PROFILE_BADGES order."""
     rows = [
-        f"| {title} | {' '.join(f'[![{a}]({i})]({u})' for a, i, u in PROFILE_BADGES[g])} |\n"
-        for g, (title, _) in BADGE_GROUPS.items()
-        if PROFILE_BADGES.get(g)
+        f"| {title} | {' '.join(f'[![{a}]({i})]({u})' for a, i, u in badges)} |\n"
+        for title, badges in PROFILE_BADGES.items()
+        if badges
     ]
     return BADGE_TABLE_HEAD + "".join(rows)
 
