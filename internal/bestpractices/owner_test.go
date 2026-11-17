@@ -37,10 +37,12 @@ func clean() *fakeAlerts {
 	}, errs: map[string]error{}}
 }
 
-// attestation is the repository's own OwnerFile.
+// attestation is a copy of the repository's OwnerFile in testdata, so the
+// tests also run where only cmd/ and internal/ are present (the ci-tools image
+// build). TestOwnerTestdataMatches keeps the copy equal to the real file.
 func attestation(t *testing.T) *Attestation {
 	t.Helper()
-	text, err := os.ReadFile("../../" + OwnerFile)
+	text, err := os.ReadFile("testdata/owner.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,4 +190,23 @@ func (f *fakeIssues) API(method, path string, body map[string]any, paginate bool
 	}
 	f.posted = append(f.posted, pyStr(body["body"]))
 	return map[string]any{"number": 100 + len(f.posted)}, nil
+}
+
+// The testdata copy must equal the real attestation. The real file is absent
+// in the image build's context, where this test has nothing to compare.
+func TestOwnerTestdataMatches(t *testing.T) {
+	real, err := os.ReadFile("../../" + OwnerFile)
+	if os.IsNotExist(err) {
+		t.Skip("no checkout around the module (image build): compared in the go job")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := os.ReadFile("testdata/owner.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(real) != string(cp) {
+		t.Fatalf("testdata/owner.toml differs from %s: copy it again", OwnerFile)
+	}
 }
