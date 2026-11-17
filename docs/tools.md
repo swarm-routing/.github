@@ -40,6 +40,7 @@ tools/release/fixture-notes/   release_notes.py's fixture, a docs-only release (
 tools/release/fixture/         the release self-test's caller: the minimal Commitizen config (.cz.toml), a `make dist`, a CITATION.cff (the Zenodo push test) and downstream.txt (the downstream check's wiring: one consumer, skipped, #482)
 tools/downstream/downstream.sh   build and test org ns-3 modules (a consumer list: name | repo@ref | ns-3 | modules | suites | stage | run) on one ns3-dev image, each in a fresh container under a budget; DOWNSTREAM_LOCAL=name=dir makes a line's checkout a copy of dir (the candidate); one code path for ns3-containers' image canary and reusable-release.yml's `downstream-consumers` dry-run check (#482); `--check LIST`, `--self-test`
 tools/release/fixture-major/   the release self-test's second caller (#211): a Commitizen config at 0.4.0 with major_version_zero = false, dry-run with `increment: MAJOR` (built with fixture/'s Makefile)
+tools/release/fixture-config/  the release self-test's third caller (#636): a Commitizen config at 0.32.2 with no tag, dry-run with `first-release-from-config: true` (built with fixture/'s Makefile)
 tools/lit-search/lit_search.py  references and new papers from free sources only: confirm a DOI (Crossref vs Semantic Scholar and OpenAlex) or a title, the works citing or cited by a paper (OpenCitations + Semantic Scholar), search, related
 tools/repo-settings/repo_settings.py   each repo's description, homepage, topics, merge settings and features, `main` and `release-tags` rulesets, security features, Actions policy (incl. fork-PR approval), `release` environment and any other environment (`[settings.environments.<name>]`: reviewers, deployment branches) as code: `plan`/`check` (read-only diff), `apply` (only the differences); `--org-only`: a named repository must be one of the org's (the name a `repo-settings` repository_dispatch carries, #569)
 templates/rulesets/             the ruleset profiles repo_settings.py applies (protocol, tooling, data, site, merge-only): merge settings + the ruleset in the API shape; defaults.json: the parts every profile shares (features, security, Actions policy and its allowed actions, the tag ruleset, the release environment)
@@ -223,14 +224,14 @@ checksums, SBOM, real attestations and their verification, nothing pushed),
 then a check of every file it would have published (notes not empty, #524), its `notes` job (`release_notes.py --self-test`, the docs-only fixture), then `zenodo.py
 publish-release` on those files against the fake Zenodo (`fake-zenodo`; also
 on a change to `tools/zenodo/`), and a second dry run with `increment: MAJOR`
-on `tools/release/fixture-major/` (0.4.0, no tag: must be 1.0.0, #211); its bump PR (`propose`) and its
+on `tools/release/fixture-major/` (0.4.0, no tag: must be 1.0.0, #211), and a third with `first-release-from-config: true` on `tools/release/fixture-config/` (0.32.2, no tag: must be 0.33.0, #636); its bump PR (`propose`) and its
 tag-and-publish job are proven by the first caller's release (ns3-tools#26), the
 publish job's last step, the `org-release` `repository_dispatch` to the org site
-(`notify-site`, default true; both self-test calls pass `false`, so no test sends
+(`notify-site`, default true; every self-test call passes `false`, so no test sends
 one), by the first caller's release after it lands (#388), its `notify-org`
 job (the same event to swarm-routing/.github, on which org-bot.yml runs
-`release` for the repository and `release-lock` everywhere; default true, both
-self-test calls pass `false`, #479) by the next caller's release,
+`release` for the repository and `release-lock` everywhere; default true, every
+self-test call passes `false`, #479) by the next caller's release,
 its opt-in `zenodo` job by a `zenodo-sandbox: true` run and the first
 caller's release with `zenodo: true` (#232), its opt-in `downstream` job (`downstream-consumers`, dry run only, report-only, #482) by the self-test's first call (a fixture consumer skipped after the image, the script at the PR's commit and the override ran) and by a dry run of ns3-tools and ns3-swarm-core, its opt-in `vcpkg` job (the port
 PR in swarm-routing/vcpkg-registry, opened with auto-merge on so the
