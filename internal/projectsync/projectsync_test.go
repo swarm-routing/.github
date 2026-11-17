@@ -69,6 +69,7 @@ type fake struct {
 	seq       int
 	writes    []string // operation names of every write
 	refuse    string   // a GraphQL error for every query
+	noPublic  bool     // the token may not change the visibility
 	auth      []string
 }
 
@@ -336,7 +337,16 @@ func (f *fake) graphql(op, q string, v map[string]any) (any, error) {
 		f.views = append(f.views, fView{"View 1", "TABLE_LAYOUT"})
 		return map[string]any{"createProjectV2": map[string]any{"projectV2": map[string]any{"id": "PVT_1", "number": 7}}}, nil
 	case "UpdateProject":
-		f.title, f.public, f.desc, f.readme = v["title"].(string), v["public"].(bool), v["desc"].(string), v["readme"].(string)
+		if _, ok := v["public"]; ok {
+			return nil, fmt.Errorf("UpdateProject sets the visibility on its own")
+		}
+		f.title, f.desc, f.readme = v["title"].(string), v["desc"].(string), v["readme"].(string)
+		return map[string]any{}, nil
+	case "SetPublic":
+		if f.noPublic {
+			return nil, fmt.Errorf("Viewer not authorized to change project visibility")
+		}
+		f.public = v["public"].(bool)
 		return map[string]any{}, nil
 	case "CreateField":
 		var opts []map[string]any
@@ -851,5 +861,25 @@ func TestMain_(t *testing.T) {
 	// sync itself is covered by Run above, and here a dry run with a token
 	if code, o, _ := call(map[string]string{"GH_TOKEN": "t"}, "--dry-run", "--definition", path); code != 0 || !strings.Contains(o, "would create (public)") {
 		t.Fatalf("dry run: %d\n%s", code, o)
+	}
+}
+
+// A token refused the visibility (GitHub: "Viewer not authorized to change
+// project visibility", the pilot's first run on 2026-11-17): a warning that
+// names the maintainer step, and the rest still syncs; the next run tries again.
+func TestVisibilityRefused(t *testing.T) {
+	f := newFake()
+	f.noPublic = true
+	res, out := run(t, f, defn(t), false)
+	if !res.VisibilityRefused || f.public || f.desc != "generated" || len(f.items) != 6 || len(f.viewPosts) != 2 {
+		t.Fatalf("%+v public=%v desc=%q items=%d\n%s", res, f.public, f.desc, len(f.items), out)
+	}
+	if !strings.Contains(out, "::warning::project \"Swarm routing plan\": this token may not change its visibility: the maintainer makes it public once") {
+		t.Fatalf("no warning:\n%s", out)
+	}
+	// made public by hand: the next run writes nothing
+	f.public, f.noPublic, f.writes = true, false, nil
+	if res, out = run(t, f, defn(t), false); res.VisibilityRefused || len(f.writes) != 0 {
+		t.Fatalf("%+v %v\n%s", res, f.writes, out)
 	}
 }

@@ -31,8 +31,13 @@ const (
 
 	mCreateProject = `mutation CreateProject($owner:ID!,$title:String!){createProjectV2(input:{ownerId:$owner,title:$title}){projectV2{id number}}}`
 
-	mUpdateProject = `mutation UpdateProject($p:ID!,$title:String!,$public:Boolean!,$desc:String!,$readme:String!){` +
-		`updateProjectV2(input:{projectId:$p,title:$title,public:$public,shortDescription:$desc,readme:$readme}){projectV2{id}}}`
+	mUpdateProject = `mutation UpdateProject($p:ID!,$title:String!,$desc:String!,$readme:String!){` +
+		`updateProjectV2(input:{projectId:$p,title:$title,shortDescription:$desc,readme:$readme}){projectV2{id}}}`
+
+	// the visibility on its own: an App's installation token may be refused
+	// it (the org's policy on who changes a project's visibility), and the
+	// rest of the sync must not wait on it
+	mSetPublic = `mutation SetPublic($p:ID!,$public:Boolean!){updateProjectV2(input:{projectId:$p,public:$public}){projectV2{id}}}`
 
 	mCreateField = `mutation CreateField($p:ID!,$name:String!,$type:ProjectV2CustomFieldType!,$options:[ProjectV2SingleSelectFieldOptionInput!]){` +
 		`createProjectV2Field(input:{projectId:$p,name:$name,dataType:$type,singleSelectOptions:$options}){projectV2Field{... on ProjectV2FieldCommon{id}}}}`
