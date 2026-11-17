@@ -8,9 +8,16 @@ package bestpractices
 // swarm-routing/.github's OwnerFile, proposed by the weekly check so the
 // maintainer only presses Save. Three of them are facts the check verifies
 // at run time from the repository's security alerts (code scanning,
-// Dependabot, secret scanning), read with the bot's token: an open alert
-// that contradicts one, or an alert listing the token cannot read, leaves
-// it `?`. Nothing is assumed Met.
+// Dependabot, secret scanning), read with the bot's token.
+//
+// The two vulnerability criteria are Met by default (maintainer decision
+// 2026-11-17, swarm-routing/.github#629): every alert starts the automated
+// fix pipeline (security-autofix.yml), and the answer is withdrawn only when
+// a medium-or-higher alert stays open past EscalateDays (an escalation
+// margin before the criterion's 60) or a critical one past CriticalDays. An
+// alert listing the token cannot read is reported, never withdraws them.
+// no_leaked_credentials is withdrawn by any open secret alert, or an
+// unreadable secret listing: nothing is assumed there.
 
 import (
 	"fmt"
@@ -36,6 +43,15 @@ var attestedOrder = []string{
 
 // now is the clock the alert ages are measured with (tests set it).
 var now = time.Now
+
+// The age guard (#629): vulnerabilities_fixed_60_days is withdrawn by a
+// medium-or-higher alert open more than EscalateDays, and
+// vulnerabilities_critical_fixed by a critical one open more than
+// CriticalDays.
+const (
+	EscalateDays = 45
+	CriticalDays = 14
+)
 
 // Attestation is OwnerFile: per criterion its status and justification.
 type Attestation struct {
@@ -227,17 +243,15 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 			rep.Alerts = append(rep.Alerts, a)
 		}
 	}
+	// default Met: an unreadable listing is reported (rep.Unread), and only
+	// an alert past its age withdraws the answer
 	for _, k := range []string{"code scanning", "Dependabot"} {
-		if reads[k].err != "" {
-			block("vulnerabilities_fixed_60_days", "cannot read the "+k+" alerts: "+reads[k].err)
-			block("vulnerabilities_critical_fixed", "cannot read the "+k+" alerts: "+reads[k].err)
-		}
 		for _, a := range reads[k].alerts {
 			r := severityRank[strings.ToLower(a.severity)]
-			if r >= 2 && a.olderThan(60) {
+			if r >= 2 && a.olderThan(EscalateDays) {
 				blockBy("vulnerabilities_fixed_60_days", a)
 			}
-			if r >= 4 {
+			if r >= 4 && a.olderThan(CriticalDays) {
 				blockBy("vulnerabilities_critical_fixed", a)
 			}
 		}
@@ -249,11 +263,20 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 			blockBy("no_leaked_credentials", a)
 		}
 	}
-	for _, c := range []string{"vulnerabilities_fixed_60_days", "vulnerabilities_critical_fixed", "no_leaked_credentials"} {
+	guard := map[string]string{
+		"vulnerabilities_fixed_60_days":  fmt.Sprintf("a medium-or-higher alert stays open more than %d days", EscalateDays),
+		"vulnerabilities_critical_fixed": fmt.Sprintf("a critical alert stays open more than %d days", CriticalDays),
+	}
+	for _, c := range []string{"vulnerabilities_fixed_60_days", "vulnerabilities_critical_fixed"} {
 		if a, ok := rep.Answers[c]; ok {
-			rep.Answers[c] = [2]string{a[0], a[1] + " The weekly check reads this repository's open " +
-				"code-scanning, Dependabot and secret-scanning alerts and finds none against it: " + security + "."}
+			rep.Answers[c] = [2]string{a[0], a[1] + " Every code-scanning alert starts an automated fix " +
+				"(security-autofix.yml) and Dependabot opens security updates; the weekly check withdraws " +
+				"this answer when " + guard[c] + ": " + security + "."}
 		}
+	}
+	if a, ok := rep.Answers["no_leaked_credentials"]; ok {
+		rep.Answers["no_leaked_credentials"] = [2]string{a[0], a[1] + " The weekly check reads this " +
+			"repository's open secret-scanning alerts and finds none: " + security + "."}
 	}
 	// the attestation is cited once, by URL, in the first attested answer
 	// (form order); the others name that answer, so the links do not repeat
