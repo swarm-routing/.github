@@ -389,7 +389,10 @@ defaults in `templates/agents/agent-defaults.md`).
   22 refresh PRs and 9 docs PRs filled them for an hour and a release's
   publish job waited 19 minutes for a runner. So: (1) a docs-only change
   (every changed file matches `reusable-ns3-ci.yml`'s `docs-only-paths`:
-  prose, `docs/`, issue forms, repository metadata) runs no ns-3 build on a
+  prose, `docs/`, issue forms, repository metadata, and `.github/org-sync.lock`,
+  the template commit a repository was rendered from: maintainer decision
+  2026-11-17, recorded on #581, so org-bot's refresh PRs, which move the lock
+  with `AGENTS.md`, skip the heavy jobs too) runs no ns-3 build on a
   pull request or in the merge queue: each `ns-<ver> <profile>` leg still
   reports, green, on the bare runner with its steps skipped (a skip by
   `if:` on a matrix job would leave the required check pending), and a

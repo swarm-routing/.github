@@ -190,7 +190,7 @@ on:
       docs-only-paths:
         description: "Extended regex of changed paths that need no ns-3 build: a pull_request or merge_group whose every changed file matches it skips the build legs' steps (each leg still reports, green; #505). Pushes and dispatches always build. Empty: never skip"
         type: string
-        default: '\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$'
+        default: '\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/(CODEOWNERS|FUNDING\.yml|pull_request_template\.md)$|^LICENSE[^/]*$|^CITATION\.cff$|^\.coderabbit\.yaml$|^\.bestpractices\.json$|^\.github/org-sync\.lock$'
     secrets:
       SONAR_TOKEN:
         description: "SonarQube Cloud token for the `sonar` input; absent (fork PRs): the analysis is skipped"
