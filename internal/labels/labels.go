@@ -168,9 +168,13 @@ func (g GitHub) once(method, path string, payload []byte) ([]byte, time.Duration
 		return nil, 0, fmt.Errorf("%s: %s", method, msg)
 	}
 	defer resp.Body.Close()
+	var wait time.Duration
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		wait = cooldown(resp) // from the headers, even when the body cannot be read
+	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
 	if err != nil {
-		return nil, 0, fmt.Errorf("%s: reading the answer failed", method)
+		return nil, wait, fmt.Errorf("%s: HTTP %d: reading the answer failed", method, resp.StatusCode)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 		return data, 0, nil
@@ -183,7 +187,7 @@ func (g GitHub) once(method, path string, payload []byte) ([]byte, time.Duration
 	if len(m.Message) > 120 {
 		m.Message = m.Message[:120]
 	}
-	return nil, cooldown(resp), fmt.Errorf("%s: HTTP %d %s", method, resp.StatusCode, m.Message)
+	return nil, wait, fmt.Errorf("%s: HTTP %d %s", method, resp.StatusCode, m.Message)
 }
 
 // cooldown is the wait a rate-limit answer asks for (at least a second;

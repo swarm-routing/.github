@@ -392,3 +392,37 @@ func TestRateLimitCooldown(t *testing.T) {
 		}
 	}
 }
+
+type brokenBody struct{}
+
+func (brokenBody) Read([]byte) (int, error) { return 0, fmt.Errorf("connection reset") }
+func (brokenBody) Close() error             { return nil }
+
+type limitedTransport struct{ calls *[]string }
+
+func (t limitedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	*t.calls = append(*t.calls, r.URL.Path)
+	if r.URL.Path == "/orgs/swarm-routing/repos" {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{},
+			Body: io.NopCloser(strings.NewReader(`[{"name": "alpha"}, {"name": "beta"}]`)), Request: r}, nil
+	}
+	return &http.Response{StatusCode: http.StatusTooManyRequests,
+		Header: http.Header{"Retry-After": {"3600"}}, Body: brokenBody{}, Request: r}, nil
+}
+
+// A rate-limit answer whose body cannot be read still stops the run.
+func TestRateLimitUnreadableBody(t *testing.T) {
+	var calls []string
+	g := GitHub{API: "http://api.invalid", Client: &http.Client{Transport: limitedTransport{&calls}},
+		Sleep: func(time.Duration) { t.Error("no wait past the bound") }}
+	repos, err := g.Repos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := Load([]byte(taxonomy))
+	var out bytes.Buffer
+	err = Run(g, want, repos, false, &out)
+	if !errors.Is(err, ErrRateLimited) || len(calls) != 2 || !strings.Contains(out.String(), "reading the answer failed") {
+		t.Errorf("stops at the first repository: %v %v\n%s", err, calls, out.String())
+	}
+}
