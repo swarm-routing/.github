@@ -1809,9 +1809,12 @@ is **Save**, once per project, only when something changed. By hand, from a
   logged in. If it is, it prints the project id, the
   `bestpractices_project = "<id>"` line for `.github/org-sync.toml`, and the
   site's proposal links for that project
-  (`/en/projects/<id>/passing/edit?<criterion>_status=…`, each under 6000
-  characters, the owner-only criteria left out; `--answers FILE` proposes a
-  reviewed `.bestpractices.json`). Nothing is saved by opening a link.
+  (`/en/projects/<id>/passing/edit?<criterion>_status=…`, each at most 1800
+  characters, since the site keeps the link in its session cookie while it
+  sends the maintainer to log in and a longer one fails there (#626); no
+  justification is ever cut, and the owner-only criteria are left out;
+  `--answers FILE` proposes a reviewed `.bestpractices.json`). Nothing is
+  saved by opening a link.
 - **Licence of the answers.** bestpractices.dev publishes what a project
   submits under [CDLA-Permissive-2.0](https://cdla.dev/permissive-2-0/), so
   write nothing in a justification that cannot be released under it.
@@ -1841,7 +1844,8 @@ is **Save**, once per project, only when something changed. By hand, from a
   Security tab). They are always `?` in the file. Five of them the
   maintainer attested once for every project (decision 2026-11-17,
   swarm-routing/AntHocNet#790) in `.github/bestpractices-owner.toml`, and
-  the weekly check puts them in the proposal links, citing that file:
+  the weekly check puts them in the proposal links, citing that file once
+  (by URL in the first of them; the others name that one):
   `know_secure_design` (its core clause only where there is a `core/`),
   `know_common_errors` (naming only the CI checks the repository's
   `.bestpractices.json` justifies), and, only when the check reads the
@@ -1865,7 +1869,9 @@ is **Save**, once per project, only when something changed. By hand, from a
   answer whose saved justification cites a workflow the file no longer
   cites; or, for a repository in scope that is not registered, the
   registration steps. A registered project's issue carries the **proposal
-  link(s) for exactly what differs**, under "Open, review, Save", and lists
+  link(s) for exactly what differs**, numbered "Link i of N" in the form's
+  order under "Open, review, Save" (with a fallback: log in first, then open
+  the link), and lists
   the owner-only criteria still `?` on the site, which are never findings: they
   neither open nor update an issue (swarm-routing/AntHocNet#790). The issue
   updates in place when its findings or links change and closes itself when

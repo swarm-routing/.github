@@ -306,9 +306,12 @@ func Body(repo, project string, items, links, ownerOpen []string, owner OwnerRep
 				"\"Save (and continue)\". The owner-only criteria the maintainer attested "+
 				"(`"+OwnerFile+"` in swarm-routing/.github) are included when the check finds "+
 				"nothing against them; the other owner-only criteria are left out.",
+			"",
+			fmt.Sprintf("If a link ends on the site's error page, log in at %s/en/login first, "+
+				"then open the link again (swarm-routing/.github#626).", Site),
 			"")
 		for i, l := range links {
-			lines = append(lines, fmt.Sprintf("%d. %s", i+1, l))
+			lines = append(lines, fmt.Sprintf("%d. Link %d of %d: %s", i+1, i+1, len(links), l))
 		}
 	} else {
 		lines = append(lines, fmt.Sprintf("Nothing to propose from `%s`: answer on the site, "+
@@ -397,6 +400,10 @@ const notRegistered = "not registered on bestpractices.dev"
 
 var proposalLine = Site + "/en/projects/"
 
+// proposalItem is a numbered proposal line: "N. Link N of M: <url>", or
+// "N. <url>" in an issue written before #626.
+var proposalItem = regexp.MustCompile(`^\d+\. (Link \d+ of \d+: )?` + regexp.QuoteMeta(proposalLine))
+
 // sameIssue: the open issue already lists these findings and these links,
 // and the same owner-only section.
 func sameIssue(body string, items, links []string, owner []string) bool {
@@ -409,7 +416,7 @@ func sameIssue(body string, items, links []string, owner []string) bool {
 		if strings.HasPrefix(x, "- [ ] ") || strings.HasPrefix(x, "- [x] ") {
 			got = append(got, x[6:])
 		}
-		if _, l, ok := strings.Cut(x, ". "+proposalLine); ok {
+		if _, l, ok := strings.Cut(x, " "+proposalLine); ok && proposalItem.MatchString(x) {
 			gotLinks = append(gotLinks, proposalLine+l)
 		}
 	}

@@ -171,7 +171,6 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 		}
 		return rep
 	}
-	cite := " (maintainer attestation, " + att.Decided + ": " + att.URL + ")"
 	security := fmt.Sprintf("https://github.com/%s/%s/security", Org, repo)
 	for _, c := range attestedOrder {
 		a, ok := att.Answers[c]
@@ -193,7 +192,7 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 			}
 			why += " In this repository: " + ev
 		}
-		rep.Answers[c] = [2]string{a[0], why + cite}
+		rep.Answers[c] = [2]string{a[0], why}
 	}
 
 	// the three facts: read the alerts, never assume
@@ -255,6 +254,23 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 			rep.Answers[c] = [2]string{a[0], a[1] + " The weekly check reads this repository's open " +
 				"code-scanning, Dependabot and secret-scanning alerts and finds none against it: " + security + "."}
 		}
+	}
+	// the attestation is cited once, by URL, in the first attested answer
+	// (form order); the others name that answer, so the links do not repeat
+	// the URL five times (#626)
+	first := ""
+	for _, c := range attestedOrder {
+		a, ok := rep.Answers[c]
+		if !ok {
+			continue
+		}
+		if first == "" {
+			first = c
+			a[1] += " (maintainer attestation, " + att.Decided + ": " + att.URL + ")"
+		} else {
+			a[1] += " (maintainer attestation, " + att.Decided + ", cited in " + first + ")"
+		}
+		rep.Answers[c] = a
 	}
 	sort.Slice(rep.Alerts, func(i, j int) bool { return rep.Alerts[i].url < rep.Alerts[j].url })
 	return rep
