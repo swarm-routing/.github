@@ -24,7 +24,7 @@
 Texts: [`LICENSE`](LICENSE) (GPL-2.0) and [`LICENSE-MIT`](LICENSE-MIT) (the
 MIT option). Each source file states its licence in its
 `SPDX-License-Identifier` line; CI checks it
-(`swarm-routing/.github` `tools/checks/check-headers.py`).
+(`swarm-routing/.github` `cmd/check-headers`; locally `tools/checks/check-headers.sh`).
 
 ## What this means in practice
 

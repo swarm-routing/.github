@@ -1246,7 +1246,7 @@ def render_citation(cfg, repo_dir):
 
 
 def header_args(cfg):
-    """check-headers.py flags from the repo's dual roots (the same list
+    """check-headers flags from the repo's dual roots (the same list
     LICENSING.md is rendered from); a dual `core/` also gets the include check."""
     roots = [dual_root(d) for d in cfg["dual"]]
     args = [f"--dual {d}" if d else "--dual ''" for d in roots]
@@ -1256,7 +1256,7 @@ def header_args(cfg):
 
 
 def dual_root(d):
-    """A Git-relative directory prefix, as check-headers.py compares it:
+    """A Git-relative directory prefix, as check-headers compares it:
     `./tools`, `tools` and `tools/` all become `tools/`; '' stays the whole repo."""
     d = d.strip().replace("\\", "/")
     while d.startswith("./"):
@@ -1268,7 +1268,7 @@ def dual_root(d):
     if not d:
         return ""
     # a single dual-licensed file (`test/run.sh`) stays a file path: a trailing
-    # slash would make check-headers.py's prefix test never match it
+    # slash would make check-headers' prefix test never match it
     return f"{d}/" if is_dir else d
 
 

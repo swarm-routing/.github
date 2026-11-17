@@ -184,7 +184,7 @@ COPYRIGHT_LINE = re.compile(r"^\s*(?://|#)\s*Copyright \(c\)", re.IGNORECASE)
 
 def head(repo, f, n=6, cap=64):
     """The first n lines, where copyright lines after the first do not count
-    (a contributor's line never pushes the SPDX line out, as check-headers.py's
+    (a contributor's line never pushes the SPDX line out, as check-headers'
     window); at most cap lines in all."""
     out, counted, holders = [], 0, 0
     try:
@@ -334,7 +334,7 @@ def check(repo, base="origin/main", pr_body=None):
     added = {f: [t for _, t in lines] for f, lines in numbered.items()}
     r = Report()
     # .claude/ ships nothing (rule 9), so the licence gate skips it, as
-    # check-headers.py does with the repo's exclusions
+    # check-headers does with the repo's exclusions
     src = [f for f in changed if f.endswith(SOURCE) and not f.startswith(".claude/")]
 
     # rule 1: every original source file states its licence, matching its directory

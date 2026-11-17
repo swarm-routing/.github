@@ -33,7 +33,8 @@ is the long form.
    `core-deps` input of every workflow that runs the licence check: one calling
    `reusable-licence-check.yml`, or one calling `reusable-ns3-ci.yml`, which
    forwards it; file names differ per repo, and each names the same pin). CI
-   (`reusable-licence-check.yml`, `tools/checks/check-headers.py`) enforces all
+   (`reusable-licence-check.yml`, `cmd/check-headers`; locally `make headers`,
+   through `tools/checks/check-headers.sh`) enforces all
    of it. Where a protocol's `core/` pins swarm-core, the `swarm-core / pin`
    check (`reusable-swarm-core-pin.yml`, `tools/checks/check-swarm-core-pin.py`)
    fails unless `core/CMakeLists.txt`'s `SWARM_CORE_REF`, the `Makefile` and
@@ -845,7 +846,7 @@ are; to be named, add your own line beneath the org line:
 // SPDX-License-Identifier: MIT OR GPL-2.0-only
 ```
 
-`tools/checks/check-headers.py` accepts any number of such lines as long as
+`cmd/check-headers` accepts any number of such lines as long as
 the org line comes first and the SPDX expression is exactly the directory's.
 
 ## Automation

@@ -45,7 +45,7 @@ pip install actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1   # once, as ci.yml
 actionlint .github/workflows/*.yml            # also shellchecks run: blocks
 python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE_TEMPLATE/*.yml')]"
 python3 -m json.tool labels.json >/dev/null
-python3 -I tools/checks/check-headers.py --self-test && python3 -I tools/checks/check-headers.py --dual '' .
+tools/checks/check-headers.sh --self-test && tools/checks/check-headers.sh --dual '' .   # the Go gate: docker, or go
 # and the --self-test of every tool you changed: the exact commands are in docs/tools.md
 pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
 ```
@@ -86,7 +86,7 @@ Org-wide (1–9), then this repo's own.
    forwards it; workflow file names differ per repo), each with the same pin,
    with `core-roots` naming the repo's own `core/`
    (without it the check skips core includes; a protocol's `core/` on
-   swarm-core's; CI checks it, `check-headers.py --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
+   swarm-core's; CI checks it, `check-headers --core-dep`), and a dual script imports no GPL-only code. Code coming from AntHocNet keeps its
    licence: its `core/`/`tools/` (dual) may land in dual or GPL paths here; its
    `ns3/` modules and `web/` (GPL-2.0-only) only in GPL paths. Third-party code
    (AntHocNet's vendored `aomdv`/`gpsr`, IITP RAS) lands only in GPL paths with
@@ -391,7 +391,7 @@ changing what the row names.
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
 | Choose a language, or write a Go pipeline tool and its CI | `docs/adr/0002-pipelines-are-go.md`, CONTRIBUTING § Languages, `reusable-go-ci.yml`; migration epic #531 |
 | Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `docker run --user … -v …:ro ghcr.io/swarm-routing/ci-tools@sha256:… <tool>` in a `run:` step, never `uses: docker://` (ADR-0002) |
-| Change the licence rules or their gate | `cmd/check-headers` (Go; `tools/checks/check-headers.py` deprecated), `reusable-licence-check.yml`, CONTRIBUTING rule 1 |
+| Change the licence rules or their gate | `cmd/check-headers` (Go; run locally by `tools/checks/check-headers.sh`; `tools/checks/check-headers.py` deprecated), `reusable-licence-check.yml`, CONTRIBUTING rule 1 |
 | Change how outside contributions are accepted (DCO, contributor copyright lines) | CONTRIBUTING "Outside contributions", `tools/checks/check-dco.py`, `reusable-dco.yml` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
 | List an org skill in every repo's AGENTS.md | `templates/agents/skills.md` |
