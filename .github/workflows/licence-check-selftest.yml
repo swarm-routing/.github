@@ -1,0 +1,28 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: licence check self-test
+
+# Proves reusable-licence-check.yml from this checkout, as a caller runs it:
+# this repository's own tooling roots (everything here is dual), a core-deps
+# entry (mounted into the ci-tools container at /core-deps) and an exclude
+# pattern with a backslash, parentheses and a bar. The findings themselves are proven by internal/checkheaders'
+# tests; a caller's PR (#531) proves a failing tree fails.
+on:
+  pull_request:
+    paths: ['.github/workflows/reusable-licence-check.yml', '.github/workflows/licence-check-selftest.yml']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reusable-licence-check.yml', '.github/workflows/licence-check-selftest.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  licence:
+    uses: ./.github/workflows/reusable-licence-check.yml
+    with:
+      dual-roots: 'cmd/ internal/ tools/'
+      core-roots: ''
+      exclude: '^(\.claude|\.devcontainer)/'
+      core-deps: swarm-routing/ns3-swarm-core@ff097aeb1f6237fb9796ff4713e91524fb5b4d3f:core

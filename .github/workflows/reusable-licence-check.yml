@@ -10,9 +10,12 @@ name: Reusable licence check
 # `core-deps` names other repositories' dual-licensed cores a core builds on
 # (a protocol's core/ on swarm-core's), as `owner/repo@ref:subdir`: each is
 # fetched at that ref, and a core may include its files when they carry
-# `MIT OR GPL-2.0-only` themselves (check-headers.py --core-dep). The fetched
+# `MIT OR GPL-2.0-only` themselves (check-headers --core-dep). The fetched
 # trees and their list live under $RUNNER_TEMP, never in the checkout.
-# The checker is tools/checks/check-headers.py in swarm-routing/.github.
+# The checker is cmd/check-headers in swarm-routing/.github (the Go port of
+# tools/checks/check-headers.py, #531), run from the ci-tools image by digest
+# with `docker run`: the checkout and the fetched cores mounted read-only, as
+# the image's nonroot user; it reads the git index itself (no git in the image).
 on:
   workflow_call:
     inputs:
@@ -49,12 +52,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swarm-routing/.github
-          path: .org
-          sparse-checkout: tools/checks
-          persist-credentials: false
       - name: Licence texts present
         run: |
           for f in LICENSE LICENSE-MIT LICENSING.md; do
@@ -83,20 +80,27 @@ jobs:
             echo "$dir/$sub" >> "$base.list"
           done
       - name: SPDX headers and the one-way include rule
+        timeout-minutes: 4  # the image pull (about 15 MB) and two runs of a few seconds
         env:
           DUAL: ${{ inputs.dual-roots }}
           CORE: ${{ inputs.core-roots }}
           CORE_DEPS: ${{ inputs.core-deps }}
           GPL_ONLY: ${{ inputs.gpl-only }}
           EXCLUDE: ${{ inputs.exclude }}
+          # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md); sha-328d5d4
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:602462891c03d1a5557901037a7169394538523fe9e9dac7b4884cd1d651a0b0
         run: |
           args=()
           for d in $DUAL; do args+=(--dual "$d"); done
           for c in $CORE; do args+=(--core "$c"); done
           for g in $GPL_ONLY; do args+=(--gpl-only "$g"); done
-          # Only the list the fetch step just wrote, and only when deps are declared.
+          run=(docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace)
+          # Only the list the fetch step just wrote, and only when deps are declared;
+          # the fetched trees are mounted read-only at /core-deps.
           if [ -n "$CORE_DEPS" ]; then
-            while read -r dep; do args+=(--core-dep "$dep"); done < "$RUNNER_TEMP/core-deps.list"
+            run+=(-v "$RUNNER_TEMP/core-deps:/core-deps:ro")
+            while read -r dep; do args+=(--core-dep "/core-deps/${dep#"$RUNNER_TEMP/core-deps/"}"); done < "$RUNNER_TEMP/core-deps.list"
           fi
-          python3 -I .org/tools/checks/check-headers.py --self-test
-          python3 -I .org/tools/checks/check-headers.py "${args[@]}" --exclude "$EXCLUDE" .
+          docker pull --quiet "$IMG"
+          "${run[@]}" "$IMG" check-headers --self-test
+          "${run[@]}" "$IMG" check-headers "${args[@]}" --exclude "$EXCLUDE" .

@@ -16,7 +16,7 @@ pull_request_template.md   default PR template
 labels.json                the label taxonomy (source of truth)
 .clang-format              LLVM-based C++20 style
 ruff.toml                  the Python lint baseline (explicit rules), used where a repo has none
-tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags; contributor copyright lines beneath the org line); deprecated: cmd/check-headers is the same tool in Go, kept only until every documented local command (`make headers`, AGENTS.md) runs the Go binary (#531)
+tools/checks/check-headers.py   the licence-header gate (AntHocNet's rules, per-repo roots as flags; contributor copyright lines beneath the org line); deprecated: cmd/check-headers is the same tool in Go, kept only until every documented local command (`make headers`, AGENTS.md) runs the Go binary (#531); reusable-licence-check.yml runs the Go tool
 tools/checks/check-dco.py       the DCO gate of reusable-dco.yml: every PR commit's Signed-off-by matches its author email (members, bot commits on a bot's or member's PR, and agent commits on a member's PR exempt, #212, #368)
 tools/checks/check-swarm-core-pin.py   a protocol's swarm-core pin: one commit everywhere, and swarm-core main's core/ (reusable-swarm-core-pin.yml); with swarm-core.lock, one release tag everywhere and no newer release (swarm-routing/ns3-swarm-core#134); vcpkg mode (a root vcpkg.json on swarm-core, #489): core/ finds the package, vcpkg.json's override pins the lock's version and vcpkg-configuration.json's baseline is a registry main commit holding that version and port-version; `--bump` also moves the override and the baseline, once the registry's main has the release (`--registry`)
 tools/checks/release_lock.py   a release lock (KEY=VALUE, AntHocNet's ns3-tools.lock shape): parse, verify against the release (tag -> commit by git ls-remote, each *_SHA256 in its SHA256SUMS), the newest published release, render a lock from a release (every value read), bump a lock to the newest release (each `*_SHA256` follows its asset, renamed assets refused; org-bot's `release-lock`, #478); used by check-swarm-core-pin.py
@@ -66,7 +66,8 @@ SUPPORT.md                      the org default support policy: issues for bugs,
                            benchmark-cell-selftest.yml, setup-vcpkg-selftest.yml, python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480, and every one of two `source` items, #530;
                            its fixtures: tools/checks/fixtures/python-ci/, python-ci-lib/),
                            reusable-go-ci.yml (a Go module's build, gofmt, vet, staticcheck, govulncheck, race tests and coverage; docs/adr/0002-pipelines-are-go.md)
-                           and go-ci-selftest.yml (its fixtures: tools/checks/fixtures/go-ci/good, which passes, and bad, which fails gofmt, vet, staticcheck and test)
+                           and go-ci-selftest.yml (its fixtures: tools/checks/fixtures/go-ci/good, which passes, and bad, which fails gofmt, vet, staticcheck and test),
+                           licence-check-selftest.yml (reusable-licence-check.yml on this repository: core-deps mounted into the container, an exclude with \ ( | ), check-headers from the ci-tools image by digest)
 go.mod                     the root Go module github.com/swarm-routing/.github (go and toolchain lines; ADR-0002)
 cmd/ci-tools/              the ci-tools image's entrypoint: `ci-tools <tool> [args...]` runs /usr/local/bin/<tool>, `ci-tools list` (internal/dispatch: names, listing, exec; go test)
 cmd/bestpractices/         OpenSSF Best Practices (internal/bestpractices; the Go port of tools/bestpractices/bestpractices.py, #531, proven byte for byte in #545): `answers`, `register`, `check`; `check` also finds every public repository that is not registered (out of scope only with `bestpractices = false` under [settings] in .github/org-sync.toml) and gives each project's issue the proposal link(s) for what the site lacks ("open, review, Save") and the owner-only criteria still `?`; the site is read one request a second, never POSTed to; GitHub through its REST API (GH_TOKEN, the issue token BESTPRACTICES_TOKEN); config through github.com/BurntSushi/toml
@@ -169,6 +170,10 @@ their `on:`. A change to
 `reusable-python-ci.yml` runs `python-ci-selftest.yml` on its PR (a fixture
 tool run only as a child process must read 100 % covered, #480, and a module in
 the second of two `source` directories too, #530). A change to
+`reusable-licence-check.yml` runs `licence-check-selftest.yml` on its PR (the
+gate passes on this repository through the ci-tools image; a failing tree is
+proven by `go test ./internal/checkheaders/` and, for the switch to Go, by a
+caller's PR, #531). A change to
 `reusable-go-ci.yml` runs `go-ci-selftest.yml` on its PR: the `good` fixture
 module must pass every check with 100 % coverage in both the Go profile and
 the Cobertura `coverage.xml`, and the `bad` one, called with
