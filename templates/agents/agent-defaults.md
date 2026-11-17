@@ -132,14 +132,14 @@ because the issue threads were thorough. Caveman the chat, not the record.
   release train until it lands) are met; never approve a gated publish. A
   failed publish is recovered with "Re-run all jobs", never "Re-run failed
   jobs" (CONTRIBUTING "Cutting a release"). Never type a release's DOI: read
-  it from Zenodo. After a public repository's release publishes, confirm the
-  site saw it: a `[release-sync] <repo> <tag>` issue opens in
-  `swarm-routing/swarm-routing.github.io` and a `release-sync.yml` run for
-  that release ends green. If, an hour after the release, no issue has
-  opened or no run for it has ended green, dispatch the site's
-  `release-sync.yml` with `repository` (`owner/repo`) and `tag` and check
-  that run (CONTRIBUTING "Cutting a release"); its weekly Monday run is only
-  the backstop.
+  it from Zenodo. A public repository's release reaches the site by itself:
+  a `[release-sync] <repo> <tag>` issue opens in
+  `swarm-routing/swarm-routing.github.io` and a `release-sync.yml` run named
+  `Release sync swarm-routing/<repo> <tag>` ends green. If, an hour after
+  the release, either is missing, org-bot's hourly `release-sync-watch`
+  dispatches that run again within the next hour (swarm-routing/.github#571;
+  CONTRIBUTING "Cutting a release"); never dispatch it by hand, and the
+  site's weekly Monday run is only the backstop.
 - Cite a paper in a public issue, PR or doc by its `https://doi.org/<DOI>`
   link, read from its record (`lit-search` confirms it), or, for a work with
   no DOI, by its publisher's or institution's page; never point into or name
