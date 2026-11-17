@@ -1,0 +1,1429 @@
+{
+ "cases": [
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--dual",
+    "tools/",
+    "--core",
+    "core/",
+    "."
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--dual",
+    "tools/",
+    "--core",
+    "core/"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "",
+    "."
+   ],
+   "rc": 1,
+   "stdout": "FAIL: ns3/model/m.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nchecked 8 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "."
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/src/r.cpp:3: \"p/q.h\" does not resolve to a file under core or to a dual-licensed file of a --core-dep — core includes nothing from outside it\nchecked 8 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    ""
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "",
+    "--core",
+    "core/"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core",
+    "core/src/"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--exclude",
+    "^core/src/"
+   ],
+   "rc": 0,
+   "stdout": "checked 7 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--exclude",
+    "(a|r)\\.(cc|cpp)$"
+   ],
+   "rc": 0,
+   "stdout": "checked 6 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "tools/",
+    "--gpl-only",
+    "tools/run.py"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "ns3/",
+    "--gpl-only",
+    "ns3/model/m.cc"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": "core",
+   "args": [
+    "--dual",
+    "",
+    "--core",
+    ""
+   ],
+   "rc": 0,
+   "stdout": "checked 4 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": "core",
+   "args": [
+    "--dual",
+    "",
+    "--core",
+    "",
+    "."
+   ],
+   "rc": 0,
+   "stdout": "checked 4 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "",
+    "--core",
+    "",
+    "core"
+   ],
+   "rc": 0,
+   "stdout": "checked 4 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "",
+    "--core",
+    "",
+    "core/src"
+   ],
+   "rc": 0,
+   "stdout": "checked 1 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "",
+    "--core",
+    "",
+    "./core/../core"
+   ],
+   "rc": 0,
+   "stdout": "checked 4 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--exclude",
+    "[unclosed"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--exclude",
+    "x",
+    "--exclude",
+    "",
+    "."
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "broken",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--dual",
+    "tools/",
+    "--core",
+    "core/",
+    "."
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/bad.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/bad.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/core-module.h>\nFAIL: core/bad.cc:5: \"missing.\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:7: \"\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:8: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:9: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:10: \"/abs/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:11: \"../../escape.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/cr.cc:2: core/ may include only the C++ standard library with <...>, not <bad>\nFAIL: core/crlf.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/x.h>\nFAIL: core/latin1.h:2: core/ may include only the C++ standard library with <...>, not <�������G.h>\nFAIL: core/latin1.h:3: \"���x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/nohdr.h:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: core/vendor/v.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: ns3/contrib.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first\nFAIL: ns3/inexact.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: GPL-2.0-only'\nFAIL: tools/gpl.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: tools/low.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: tools/mit.sh:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: x.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 18 tracked source file(s); 20 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "broken",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--dual",
+    "tools/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "{dep}"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/bad.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/bad.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/core-module.h>\nFAIL: core/bad.cc:5: \"missing.\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:7: \"\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:8: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:9: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:10: \"/abs/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:11: \"../../escape.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/cr.cc:2: core/ may include only the C++ standard library with <...>, not <bad>\nFAIL: core/crlf.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/x.h>\nFAIL: core/latin1.h:2: core/ may include only the C++ standard library with <...>, not <�������G.h>\nFAIL: core/latin1.h:3: \"���x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/nohdr.h:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: core/vendor/v.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: ns3/contrib.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first\nFAIL: ns3/inexact.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: GPL-2.0-only'\nFAIL: tools/gpl.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: tools/low.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: tools/mit.sh:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: x.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 18 tracked source file(s); 20 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "broken",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--exclude",
+    "^core/vendor/",
+    "--gpl-only",
+    "core/bad.cc"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/bad.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/core-module.h>\nFAIL: core/bad.cc:5: \"missing.\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:7: \"\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:8: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:9: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:10: \"/abs/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:11: \"../../escape.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/cr.cc:2: core/ may include only the C++ standard library with <...>, not <bad>\nFAIL: core/crlf.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/x.h>\nFAIL: core/latin1.h:2: core/ may include only the C++ standard library with <...>, not <�������G.h>\nFAIL: core/latin1.h:3: \"���x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/nohdr.h:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: ns3/contrib.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first\nFAIL: ns3/inexact.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: GPL-2.0-only'\nFAIL: tools/low.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: x.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 17 tracked source file(s); 16 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "broken",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "",
+    "."
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/bad.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/nohdr.h:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: core/vendor/v.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: ns3/contrib.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: ns3/contrib.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first\nFAIL: ns3/contrib.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only'\nFAIL: ns3/inexact.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: ns3/inexact.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only'\nFAIL: ns3/many.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: ns3/many.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only'\nFAIL: ns3/noorgspace.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: ns3/noorgspace.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only'\nFAIL: ns3/range.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: ns3/range.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only'\nFAIL: ns3/unicode.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: ns3/unicode.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only'\nFAIL: tools/gpl.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: tools/low.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: tools/mit.sh:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: x.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 18 tracked source file(s); 20 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "broken",
+   "cwd": ".",
+   "args": [
+    "--core",
+    "core/",
+    "--core",
+    "ns3/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/bad.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/core-module.h>\nFAIL: core/bad.cc:5: \"missing.\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:7: \"\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:8: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:9: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:10: \"/abs/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/bad.cc:11: \"../../escape.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/cr.cc:2: core/ may include only the C++ standard library with <...>, not <bad>\nFAIL: core/crlf.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/x.h>\nFAIL: core/latin1.h:2: core/ may include only the C++ standard library with <...>, not <�������G.h>\nFAIL: core/latin1.h:3: \"���x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/nohdr.h:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: core/vendor/v.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: ns3/contrib.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first\nFAIL: ns3/inexact.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: GPL-2.0-only'\nFAIL: tools/low.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: x.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 18 tracked source file(s); 17 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "broken",
+   "cwd": ".",
+   "args": [],
+   "rc": 1,
+   "stdout": "FAIL: core/nohdr.h:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: core/vendor/v.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: ns3/contrib.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first\nFAIL: ns3/inexact.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: GPL-2.0-only'\nFAIL: tools/low.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nFAIL: x.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 18 tracked source file(s); 6 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "dangling",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "spaced",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "tools/"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "quoted",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "tools/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: tools/ok.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 1 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "unmerged",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "tools/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: tools/f.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: tools/f.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: tools/f.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nchecked 3 tracked source file(s); 3 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "index4",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/very/long/common/prefix/dir/file00.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/dir/file03.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/dir/file06.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/dir/file09.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/other00.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other01.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other02.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other03.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other04.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other05.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other06.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other07.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other08.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other09.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other10.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other11.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 24 tracked source file(s); 16 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "index4",
+   "cwd": "core/very",
+   "args": [
+    "--dual",
+    "",
+    "--core",
+    "long/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: long/common/prefix/dir/file00.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: long/common/prefix/dir/file03.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: long/common/prefix/dir/file06.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: long/common/prefix/dir/file09.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: long/common/prefix/other00.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other01.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other02.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other03.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other04.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other05.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other06.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other07.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other08.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other09.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other10.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nFAIL: long/common/prefix/other11.cc:4: \"ns3/x.h\" does not resolve to a file under long/ or to a dual-licensed file of a --core-dep — long/ includes nothing from outside it\nchecked 24 tracked source file(s); 16 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "index3",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/very/long/common/prefix/dir/file00.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/dir/file03.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/dir/file06.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/dir/file09.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nFAIL: core/very/long/common/prefix/other00.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other01.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other02.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other03.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other04.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other05.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other06.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other07.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other08.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other09.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other10.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/very/long/common/prefix/other11.cc:4: \"ns3/x.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 24 tracked source file(s); 16 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "ita",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "tools/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: tools/new.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: MIT OR GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 2 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "sha256",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.h:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nchecked 2 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "skiphash",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/x.h>\nchecked 1 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "worktree",
+   "cwd": "wt",
+   "args": [
+    "--dual",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: tools/b.py:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)\nchecked 2 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "worktree",
+   "cwd": "wt/core",
+   "args": [
+    "--dual",
+    ""
+   ],
+   "rc": 0,
+   "stdout": "checked 1 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "empty",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/"
+   ],
+   "rc": 0,
+   "stdout": "checked 0 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "notgit",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "nonexistent-dir"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:3: \"dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:5: \"sub/deep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:7: \"linked.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:8: \"nope/../dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 8 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "{dep}"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 4 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "{dep}/"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 4 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "{depdir}"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:3: \"dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:5: \"sub/deep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:7: \"linked.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:8: \"nope/../dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 8 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "{dep}/sub",
+    "--core-dep",
+    "{dep}"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 4 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "{dep}/missing"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:3: \"dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:5: \"sub/deep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:7: \"linked.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:8: \"nope/../dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 8 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "{dep}/up"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:3: \"dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:5: \"sub/deep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:7: \"linked.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:8: \"nope/../dual.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 8 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "usesdep",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--core",
+    "core/",
+    "--core-dep",
+    "../dep/core"
+   ],
+   "rc": 1,
+   "stdout": "FAIL: core/a.cc:4: \"gpl.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:6: \"up/above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:9: \"../above.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nFAIL: core/a.cc:10: \"dep.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it\nchecked 1 tracked source file(s); 4 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-h"
+   ],
+   "rc": 0,
+   "stdout": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\n\nLicence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).\n\nEvery swarm-routing repo is licensed per directory, as AntHocNet is:\n\n- the simulator-free algorithm core (``core/``) and the standalone tooling\n  (``tools/``, the Python CLI, CI and image scripts) are\n  ``MIT OR GPL-2.0-only``, recipient's choice;\n- everything else (ns-3 modules, the browser adapter, docs, data) is\n  ``GPL-2.0-only``.\n\nThe MIT option is only real while three things hold, so this gate checks them:\n\n1. every covered file (C++, Go, Python, shell) carries\n   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and\n   Go, ``#`` for Python and shell; a Go file's header is followed by a blank\n   line, so it is not the package's doc comment);\n2. every covered file under a dual root carries exactly\n   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on\n   purpose, with the reason in the caller);\n3. a file whose header names more than one copyright holder (an outside\n   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath\n   the org line, CONTRIBUTING \"Outside contributions\") keeps the org line\n   first and the exact SPDX expression of its directory; those extra lines\n   do not count against the five-line window;\n4. a C++ file under a core root includes nothing from outside it: angle\n   includes are C++ standard-library headers, quote includes resolve to a\n   file under the same core root. A ``core/`` file that pulled in an ns-3\n   header would bind the whole core to GPL. A core built on another\n   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)\n   names that checkout with ``--core-dep DIR``: a quote include may then also\n   resolve to a file inside DIR, and only when that file itself carries\n   ``MIT OR GPL-2.0-only``.\n\nUsage (repo root as cwd):\n    check-headers.py --dual core/ --dual tools/ --core core/ [.]\n    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]\n    check-headers.py --self-test\n\npositional arguments:\n  root\n\noptions:\n  -h, --help           show this help message and exit\n  --dual DUAL          dual-licensed root (repeatable)\n  --core CORE          simulator-free core root (repeatable)\n  --gpl-only GPL_ONLY  file under a dual root that stays GPL\n  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may\n                       include from (repeatable)\n  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)\n  --self-test\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--help"
+   ],
+   "rc": 0,
+   "stdout": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\n\nLicence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).\n\nEvery swarm-routing repo is licensed per directory, as AntHocNet is:\n\n- the simulator-free algorithm core (``core/``) and the standalone tooling\n  (``tools/``, the Python CLI, CI and image scripts) are\n  ``MIT OR GPL-2.0-only``, recipient's choice;\n- everything else (ns-3 modules, the browser adapter, docs, data) is\n  ``GPL-2.0-only``.\n\nThe MIT option is only real while three things hold, so this gate checks them:\n\n1. every covered file (C++, Go, Python, shell) carries\n   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and\n   Go, ``#`` for Python and shell; a Go file's header is followed by a blank\n   line, so it is not the package's doc comment);\n2. every covered file under a dual root carries exactly\n   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on\n   purpose, with the reason in the caller);\n3. a file whose header names more than one copyright holder (an outside\n   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath\n   the org line, CONTRIBUTING \"Outside contributions\") keeps the org line\n   first and the exact SPDX expression of its directory; those extra lines\n   do not count against the five-line window;\n4. a C++ file under a core root includes nothing from outside it: angle\n   includes are C++ standard-library headers, quote includes resolve to a\n   file under the same core root. A ``core/`` file that pulled in an ns-3\n   header would bind the whole core to GPL. A core built on another\n   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)\n   names that checkout with ``--core-dep DIR``: a quote include may then also\n   resolve to a file inside DIR, and only when that file itself carries\n   ``MIT OR GPL-2.0-only``.\n\nUsage (repo root as cwd):\n    check-headers.py --dual core/ --dual tools/ --core core/ [.]\n    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]\n    check-headers.py --self-test\n\npositional arguments:\n  root\n\noptions:\n  -h, --help           show this help message and exit\n  --dual DUAL          dual-licensed root (repeatable)\n  --core CORE          simulator-free core root (repeatable)\n  --gpl-only GPL_ONLY  file under a dual root that stays GPL\n  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may\n                       include from (repeatable)\n  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)\n  --self-test\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--he"
+   ],
+   "rc": 0,
+   "stdout": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\n\nLicence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).\n\nEvery swarm-routing repo is licensed per directory, as AntHocNet is:\n\n- the simulator-free algorithm core (``core/``) and the standalone tooling\n  (``tools/``, the Python CLI, CI and image scripts) are\n  ``MIT OR GPL-2.0-only``, recipient's choice;\n- everything else (ns-3 modules, the browser adapter, docs, data) is\n  ``GPL-2.0-only``.\n\nThe MIT option is only real while three things hold, so this gate checks them:\n\n1. every covered file (C++, Go, Python, shell) carries\n   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and\n   Go, ``#`` for Python and shell; a Go file's header is followed by a blank\n   line, so it is not the package's doc comment);\n2. every covered file under a dual root carries exactly\n   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on\n   purpose, with the reason in the caller);\n3. a file whose header names more than one copyright holder (an outside\n   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath\n   the org line, CONTRIBUTING \"Outside contributions\") keeps the org line\n   first and the exact SPDX expression of its directory; those extra lines\n   do not count against the five-line window;\n4. a C++ file under a core root includes nothing from outside it: angle\n   includes are C++ standard-library headers, quote includes resolve to a\n   file under the same core root. A ``core/`` file that pulled in an ns-3\n   header would bind the whole core to GPL. A core built on another\n   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)\n   names that checkout with ``--core-dep DIR``: a quote include may then also\n   resolve to a file inside DIR, and only when that file itself carries\n   ``MIT OR GPL-2.0-only``.\n\nUsage (repo root as cwd):\n    check-headers.py --dual core/ --dual tools/ --core core/ [.]\n    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]\n    check-headers.py --self-test\n\npositional arguments:\n  root\n\noptions:\n  -h, --help           show this help message and exit\n  --dual DUAL          dual-licensed root (repeatable)\n  --core CORE          simulator-free core root (repeatable)\n  --gpl-only GPL_ONLY  file under a dual root that stays GPL\n  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may\n                       include from (repeatable)\n  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)\n  --self-test\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "-h",
+    "--bogus"
+   ],
+   "rc": 0,
+   "stdout": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\n\nLicence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).\n\nEvery swarm-routing repo is licensed per directory, as AntHocNet is:\n\n- the simulator-free algorithm core (``core/``) and the standalone tooling\n  (``tools/``, the Python CLI, CI and image scripts) are\n  ``MIT OR GPL-2.0-only``, recipient's choice;\n- everything else (ns-3 modules, the browser adapter, docs, data) is\n  ``GPL-2.0-only``.\n\nThe MIT option is only real while three things hold, so this gate checks them:\n\n1. every covered file (C++, Go, Python, shell) carries\n   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and\n   Go, ``#`` for Python and shell; a Go file's header is followed by a blank\n   line, so it is not the package's doc comment);\n2. every covered file under a dual root carries exactly\n   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on\n   purpose, with the reason in the caller);\n3. a file whose header names more than one copyright holder (an outside\n   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath\n   the org line, CONTRIBUTING \"Outside contributions\") keeps the org line\n   first and the exact SPDX expression of its directory; those extra lines\n   do not count against the five-line window;\n4. a C++ file under a core root includes nothing from outside it: angle\n   includes are C++ standard-library headers, quote includes resolve to a\n   file under the same core root. A ``core/`` file that pulled in an ns-3\n   header would bind the whole core to GPL. A core built on another\n   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)\n   names that checkout with ``--core-dep DIR``: a quote include may then also\n   resolve to a file inside DIR, and only when that file itself carries\n   ``MIT OR GPL-2.0-only``.\n\nUsage (repo root as cwd):\n    check-headers.py --dual core/ --dual tools/ --core core/ [.]\n    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]\n    check-headers.py --self-test\n\npositional arguments:\n  root\n\noptions:\n  -h, --help           show this help message and exit\n  --dual DUAL          dual-licensed root (repeatable)\n  --core CORE          simulator-free core root (repeatable)\n  --gpl-only GPL_ONLY  file under a dual root that stays GPL\n  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may\n                       include from (repeatable)\n  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)\n  --self-test\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--bogus",
+    "-h"
+   ],
+   "rc": 0,
+   "stdout": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\n\nLicence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).\n\nEvery swarm-routing repo is licensed per directory, as AntHocNet is:\n\n- the simulator-free algorithm core (``core/``) and the standalone tooling\n  (``tools/``, the Python CLI, CI and image scripts) are\n  ``MIT OR GPL-2.0-only``, recipient's choice;\n- everything else (ns-3 modules, the browser adapter, docs, data) is\n  ``GPL-2.0-only``.\n\nThe MIT option is only real while three things hold, so this gate checks them:\n\n1. every covered file (C++, Go, Python, shell) carries\n   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and\n   Go, ``#`` for Python and shell; a Go file's header is followed by a blank\n   line, so it is not the package's doc comment);\n2. every covered file under a dual root carries exactly\n   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on\n   purpose, with the reason in the caller);\n3. a file whose header names more than one copyright holder (an outside\n   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath\n   the org line, CONTRIBUTING \"Outside contributions\") keeps the org line\n   first and the exact SPDX expression of its directory; those extra lines\n   do not count against the five-line window;\n4. a C++ file under a core root includes nothing from outside it: angle\n   includes are C++ standard-library headers, quote includes resolve to a\n   file under the same core root. A ``core/`` file that pulled in an ns-3\n   header would bind the whole core to GPL. A core built on another\n   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)\n   names that checkout with ``--core-dep DIR``: a quote include may then also\n   resolve to a file inside DIR, and only when that file itself carries\n   ``MIT OR GPL-2.0-only``.\n\nUsage (repo root as cwd):\n    check-headers.py --dual core/ --dual tools/ --core core/ [.]\n    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]\n    check-headers.py --self-test\n\npositional arguments:\n  root\n\noptions:\n  -h, --help           show this help message and exit\n  --dual DUAL          dual-licensed root (repeatable)\n  --core CORE          simulator-free core root (repeatable)\n  --gpl-only GPL_ONLY  file under a dual root that stays GPL\n  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may\n                       include from (repeatable)\n  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)\n  --self-test\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-hx"
+   ],
+   "rc": 0,
+   "stdout": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\n\nLicence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).\n\nEvery swarm-routing repo is licensed per directory, as AntHocNet is:\n\n- the simulator-free algorithm core (``core/``) and the standalone tooling\n  (``tools/``, the Python CLI, CI and image scripts) are\n  ``MIT OR GPL-2.0-only``, recipient's choice;\n- everything else (ns-3 modules, the browser adapter, docs, data) is\n  ``GPL-2.0-only``.\n\nThe MIT option is only real while three things hold, so this gate checks them:\n\n1. every covered file (C++, Go, Python, shell) carries\n   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and\n   Go, ``#`` for Python and shell; a Go file's header is followed by a blank\n   line, so it is not the package's doc comment);\n2. every covered file under a dual root carries exactly\n   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on\n   purpose, with the reason in the caller);\n3. a file whose header names more than one copyright holder (an outside\n   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath\n   the org line, CONTRIBUTING \"Outside contributions\") keeps the org line\n   first and the exact SPDX expression of its directory; those extra lines\n   do not count against the five-line window;\n4. a C++ file under a core root includes nothing from outside it: angle\n   includes are C++ standard-library headers, quote includes resolve to a\n   file under the same core root. A ``core/`` file that pulled in an ns-3\n   header would bind the whole core to GPL. A core built on another\n   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)\n   names that checkout with ``--core-dep DIR``: a quote include may then also\n   resolve to a file inside DIR, and only when that file itself carries\n   ``MIT OR GPL-2.0-only``.\n\nUsage (repo root as cwd):\n    check-headers.py --dual core/ --dual tools/ --core core/ [.]\n    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]\n    check-headers.py --self-test\n\npositional arguments:\n  root\n\noptions:\n  -h, --help           show this help message and exit\n  --dual DUAL          dual-licensed root (repeatable)\n  --core CORE          simulator-free core root (repeatable)\n  --gpl-only GPL_ONLY  file under a dual root that stays GPL\n  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may\n                       include from (repeatable)\n  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)\n  --self-test\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-h=x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument -h/--help: ignored explicit argument 'x'\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-h="
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument -h/--help: ignored explicit argument ''\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--help=x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument -h/--help: ignored explicit argument 'x'\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--self-test"
+   ],
+   "rc": 0,
+   "stdout": "self-test: PASS\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--self"
+   ],
+   "rc": 0,
+   "stdout": "self-test: PASS\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--s"
+   ],
+   "rc": 0,
+   "stdout": "self-test: PASS\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--self-test=x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --self-test: ignored explicit argument 'x'\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--self-test=",
+    "."
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --self-test: ignored explicit argument ''\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--self-test",
+    "--dual"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --dual: expected one argument\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--du",
+    "core/"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--du=core/",
+    "--co=x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: ambiguous option: --co=x could match --core, --core-dep\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--c",
+    "core/"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: ambiguous option: --c could match --core, --core-dep\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--cor",
+    "core/"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: ambiguous option: --cor could match --core, --core-dep\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--core-",
+    "core/",
+    "--dual=core/"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--core=",
+    "--dual=",
+    "."
+   ],
+   "rc": 1,
+   "stdout": "FAIL: ns3/model/m.cc:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)\nchecked 8 tracked source file(s); 1 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--g",
+    "x",
+    "--e",
+    "y",
+    "--dual",
+    "core/"
+   ],
+   "rc": 0,
+   "stdout": "checked 7 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --dual: expected one argument\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "--core",
+    "x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --dual: expected one argument\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "-x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --dual: expected one argument\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "-1",
+    "."
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "- x"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "-"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "--",
+    "x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --dual: expected one argument\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    ".",
+    "--dual",
+    "core/"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    ".",
+    "--dual",
+    "core/",
+    "core"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: unrecognized arguments: core\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    ".",
+    "core"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: unrecognized arguments: core\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--",
+    "."
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--",
+    "--dual"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--",
+    "--",
+    "x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: unrecognized arguments: x\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--"
+   ],
+   "rc": 0,
+   "stdout": "checked 8 tracked source file(s); 0 problem(s)\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--",
+    ".",
+    "x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: unrecognized arguments: x\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-x"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: unrecognized arguments: -x\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-1"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-1",
+    "-2"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: unrecognized arguments: -2\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-x y"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--x y"
+   ],
+   "rc": 1,
+   "stdout": "",
+   "stderr": "",
+   "crash": true
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--nope=1",
+    "x",
+    "-d"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: unrecognized arguments: --nope=1 -d\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual='q'",
+    "--self-test=a'b",
+    "."
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --self-test: ignored explicit argument \"a'b\"\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--self-test=a\"b'c\\\td"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --self-test: ignored explicit argument 'a\"b\\'c\\\\\\td'\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--self-test=é​"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --self-test: ignored explicit argument 'é\\u200b\\x7f'\n",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "-h",
+    "--dual"
+   ],
+   "rc": 0,
+   "stdout": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\n\nLicence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).\n\nEvery swarm-routing repo is licensed per directory, as AntHocNet is:\n\n- the simulator-free algorithm core (``core/``) and the standalone tooling\n  (``tools/``, the Python CLI, CI and image scripts) are\n  ``MIT OR GPL-2.0-only``, recipient's choice;\n- everything else (ns-3 modules, the browser adapter, docs, data) is\n  ``GPL-2.0-only``.\n\nThe MIT option is only real while three things hold, so this gate checks them:\n\n1. every covered file (C++, Go, Python, shell) carries\n   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and\n   Go, ``#`` for Python and shell; a Go file's header is followed by a blank\n   line, so it is not the package's doc comment);\n2. every covered file under a dual root carries exactly\n   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on\n   purpose, with the reason in the caller);\n3. a file whose header names more than one copyright holder (an outside\n   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath\n   the org line, CONTRIBUTING \"Outside contributions\") keeps the org line\n   first and the exact SPDX expression of its directory; those extra lines\n   do not count against the five-line window;\n4. a C++ file under a core root includes nothing from outside it: angle\n   includes are C++ standard-library headers, quote includes resolve to a\n   file under the same core root. A ``core/`` file that pulled in an ns-3\n   header would bind the whole core to GPL. A core built on another\n   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)\n   names that checkout with ``--core-dep DIR``: a quote include may then also\n   resolve to a file inside DIR, and only when that file itself carries\n   ``MIT OR GPL-2.0-only``.\n\nUsage (repo root as cwd):\n    check-headers.py --dual core/ --dual tools/ --core core/ [.]\n    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]\n    check-headers.py --self-test\n\npositional arguments:\n  root\n\noptions:\n  -h, --help           show this help message and exit\n  --dual DUAL          dual-licensed root (repeatable)\n  --core CORE          simulator-free core root (repeatable)\n  --gpl-only GPL_ONLY  file under a dual root that stays GPL\n  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may\n                       include from (repeatable)\n  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)\n  --self-test\n",
+   "stderr": "",
+   "crash": false
+  },
+  {
+   "fixture": "plain",
+   "cwd": ".",
+   "args": [
+    "--dual",
+    "core/",
+    "--exclude"
+   ],
+   "rc": 2,
+   "stdout": "",
+   "stderr": "usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]\n                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]\n                     [root]\ncheck-headers: error: argument --exclude: expected one argument\n",
+   "crash": false
+  }
+ ],
+ "selftest": [
+  {
+   "label": "no header",
+   "fire": true,
+   "findings": [
+    "ns3/model/a.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)"
+   ]
+  },
+  {
+   "label": "header too low",
+   "fire": true,
+   "findings": [
+    "ns3/model/a.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)"
+   ]
+  },
+  {
+   "label": "GPL module",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "GPL in dual root",
+   "fire": true,
+   "findings": [
+    "tools/x.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)"
+   ]
+  },
+  {
+   "label": "MIT-only in dual root",
+   "fire": true,
+   "findings": [
+    "tools/x.py:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)"
+   ]
+  },
+  {
+   "label": "dual tool",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "dual Go tool",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "GPL Go file in dual root",
+   "fire": true,
+   "findings": [
+    "tools/cmd/x/main.go:1: this root is dual-licensed — the header must say exactly 'SPDX-License-Identifier: MIT OR GPL-2.0-only' (or list the file with --gpl-only)"
+   ]
+  },
+  {
+   "label": "Go file without a header",
+   "fire": true,
+   "findings": [
+    "cmd/x/main.go:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)"
+   ]
+  },
+  {
+   "label": "Go header after a build constraint",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "listed gpl-only",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "clean core",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "ns-3 angle include",
+   "fire": true,
+   "findings": [
+    "core/src/b.cc:3: core/ may include only the C++ standard library with <...>, not <ns3/node.h>"
+   ]
+  },
+  {
+   "label": "ns-3 quote include",
+   "fire": true,
+   "findings": [
+    "core/src/b.cc:3: \"ns3/node.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it"
+   ]
+  },
+  {
+   "label": "escape by ..",
+   "fire": true,
+   "findings": [
+    "core/src/b.cc:3: \"../../ns3/model/a.h\" does not resolve to a file under core/ or to a dual-licensed file of a --core-dep — core/ includes nothing from outside it"
+   ]
+  },
+  {
+   "label": "contributors beneath the org line",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "contributor in a script",
+   "fire": false,
+   "findings": []
+  },
+  {
+   "label": "contributors without the org line",
+   "fire": true,
+   "findings": [
+    "ns3/model/a.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first"
+   ]
+  },
+  {
+   "label": "contributor above the org line",
+   "fire": true,
+   "findings": [
+    "ns3/model/a.cc:1: a contributor's copyright line goes beneath the org line 'Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)', which must come first"
+   ]
+  },
+  {
+   "label": "contributor with an inexact SPDX",
+   "fire": true,
+   "findings": [
+    "ns3/model/a.cc:1: with more than one copyright line the header must say exactly 'SPDX-License-Identifier: GPL-2.0-only'"
+   ]
+  },
+  {
+   "label": "one copyright line keeps the five-line window",
+   "fire": true,
+   "findings": [
+    "ns3/model/a.cc:1: no SPDX-License-Identifier in the first 5 lines — add\n    // Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n    // SPDX-License-Identifier: GPL-2.0-only\n  ('#' comments for Python/shell, after any shebang)"
+   ]
+  }
+ ]
+}
