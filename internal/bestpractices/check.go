@@ -787,6 +787,24 @@ func ownerDrift(data map[string]any, owner OwnerReport) []string {
 	return out
 }
 
+// namesURL reports whether text names url followed by its end or a
+// non-digit, so an alert's URL never matches a longer alert number
+// (`…/code-scanning/1` in `…/code-scanning/10`, #621).
+func namesURL(text, url string) bool {
+	for i := strings.Index(text, url); i >= 0; {
+		end := i + len(url)
+		if end == len(text) || text[end] < '0' || text[end] > '9' {
+			return true
+		}
+		next := strings.Index(text[i+1:], url)
+		if next < 0 {
+			return false
+		}
+		i += 1 + next
+	}
+	return false
+}
+
 // alertBugs opens one bug per open alert that blocks an attested answer,
 // unless an open issue already names the alert's URL.
 func alertBugs(gh GitHub, repo string, owner OwnerReport, dryRun bool) ([]string, error) {
@@ -803,7 +821,7 @@ func alertBugs(gh GitHub, repo string, owner OwnerReport, dryRun bool) ([]string
 		found := ""
 		for _, x := range list {
 			i, _ := x.(map[string]any)
-			if b, _ := i["body"].(string); strings.Contains(b, a.url) {
+			if b, _ := i["body"].(string); namesURL(b, a.url) {
 				found = pyStr(i["number"])
 				break
 			}

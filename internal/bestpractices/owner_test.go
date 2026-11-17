@@ -151,6 +151,33 @@ func TestOwnerOpenAlertBlocks(t *testing.T) {
 	}
 }
 
+// Alert 1's URL is a prefix of alert 10's: each must match only its own
+// issue (#621; AntHocNet's alerts 1 and 10 both matched one issue).
+func TestAlertBugsURLBoundary(t *testing.T) {
+	base := "https://github.com/swarm-routing/X/security/code-scanning/"
+	o := OwnerReport{Alerts: []alert{
+		{kind: "code scanning", number: "1", url: base + "1"},
+		{kind: "code scanning", number: "10", url: base + "10"},
+	}}
+	gh := &fakeIssues{open: []any{
+		map[string]any{"number": 20, "body": "- code scanning alert #10: " + base + "10\n"},
+		map[string]any{"number": 21, "body": "- code scanning alert #1: " + base + "1."},
+	}}
+	bugs, err := alertBugs(gh, "X", o, false)
+	if err != nil || len(gh.posted) != 0 || len(bugs) != 2 ||
+		bugs[0] != "#21 (open) "+base+"1" || bugs[1] != "#20 (open) "+base+"10" {
+		t.Errorf("alerts 1 and 10 map to their own issues: %q %v %v", bugs, gh.posted, err)
+	}
+	if !namesURL("see "+base+"10, then "+base+"1)", base+"1") || namesURL(base+"12 "+base+"10", base+"1") {
+		t.Error("namesURL: a later bounded match counts, digit-continued ones never")
+	}
+	gh.open = gh.open[:1] // only alert 10's issue is open
+	bugs, _ = alertBugs(gh, "X", o, false)
+	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0], base+"1\n") || bugs[1] != "#20 (open) "+base+"10" {
+		t.Errorf("alert 1 gets its own bug, not alert 10's issue: %q %v", bugs, gh.posted)
+	}
+}
+
 func TestOwnerUnreadableBlocks(t *testing.T) {
 	f := clean()
 	f.errs["dependabot/alerts"] = failure("gh api GET repos/swarm-routing/X/dependabot/alerts: Resource not accessible by integration (HTTP 403)")
