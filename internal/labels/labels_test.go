@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const taxonomy = `{"_comment": "x", "labels": [
@@ -278,5 +279,98 @@ func TestRepositoryTaxonomy(t *testing.T) {
 	}
 	if ls, err := Load(data); err != nil || len(ls) < 10 {
 		t.Fatalf("%v %d", err, len(ls))
+	}
+}
+
+type failTransport struct {
+	next http.RoundTripper
+	on   string
+}
+
+func (t failTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if strings.Contains(r.URL.Path, t.on) {
+		return nil, fmt.Errorf("connection reset by peer")
+	}
+	return t.next.RoundTrip(r)
+}
+
+// A transport error (a *url.Error, which names the URL) never prints a
+// private repository's name or the request's URL.
+func TestTransportErrorHidesPrivateName(t *testing.T) {
+	f := newFake()
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	client := &http.Client{Transport: failTransport{srv.Client().Transport, "secret-lib"}}
+	g := GitHub{API: srv.URL, Token: "tok", Client: client}
+	repos, err := g.Repos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := Load([]byte(taxonomy))
+	var out bytes.Buffer
+	err = Run(g, want, repos, false, &out)
+	all := out.String()
+	if err != nil {
+		all += err.Error()
+	}
+	if err == nil || !strings.Contains(out.String(), "private repository 1: error: reading its labels: GET: connection reset by peer\n") {
+		t.Errorf("the failure is reported: %v\n%s", err, out.String())
+	}
+	if strings.Contains(all, "secret-lib") || strings.Contains(all, srv.URL) {
+		t.Errorf("the private name or the URL reached the output:\n%s", all)
+	}
+}
+
+// A rate-limit answer is waited out (Retry-After, bounded) and retried once.
+func TestRateLimitCooldown(t *testing.T) {
+	limited := 0
+	var waits []time.Duration
+	f := newFake()
+	inner := http.Handler(f)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PATCH" && limited < 1 {
+			limited++
+			w.Header().Set("Retry-After", "30")
+			http.Error(w, `{"message": "You have exceeded a secondary rate limit"}`, http.StatusForbidden)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	g := GitHub{API: srv.URL, Token: "tok", Client: srv.Client(), Sleep: func(d time.Duration) { waits = append(waits, d) }}
+	repos, _ := g.Repos()
+	want, _ := Load([]byte(taxonomy))
+	var out bytes.Buffer
+	if err := Run(g, want, repos, false, &out); err != nil || len(waits) != 1 || waits[0] != 30*time.Second ||
+		!strings.Contains(out.String(), "swarm-routing/alpha: created 0 [], updated 2 [epic, priority:P1], 0 failed\n") {
+		t.Errorf("one cooldown of 30s, then the write lands: %v %v\n%s", err, waits, out.String())
+	}
+	// still limited after the retry: reported, the wait bounded, no third try
+	for _, c := range []struct {
+		h    http.Header
+		code int
+		want time.Duration
+	}{
+		{http.Header{"Retry-After": {"3600"}}, http.StatusTooManyRequests, MaxCooldown},
+		{http.Header{}, http.StatusTooManyRequests, MaxCooldown},
+		{http.Header{"X-Ratelimit-Remaining": {"0"}, "X-Ratelimit-Reset": {"0"}}, http.StatusForbidden, time.Second},
+		{http.Header{}, http.StatusForbidden, 0},
+	} {
+		if got := cooldown(&http.Response{StatusCode: c.code, Header: c.h}); got != c.want {
+			t.Errorf("%d %v: cooldown %v, want %v", c.code, c.h, got, c.want)
+		}
+	}
+	calls := 0
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, `{"message": "slow down"}`, http.StatusTooManyRequests)
+	}))
+	defer srv2.Close()
+	waits = nil
+	g2 := GitHub{API: srv2.URL, Client: srv2.Client(), Sleep: func(d time.Duration) { waits = append(waits, d) }}
+	if _, err := g2.do("GET", "x", nil); err == nil || calls != 2 || len(waits) != 1 || !strings.Contains(err.Error(), "HTTP 429 slow down") {
+		t.Errorf("one retry only: %v calls=%d waits=%v", err, calls, waits)
 	}
 }

@@ -26,7 +26,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Org is the organisation whose repositories get the labels.
@@ -88,25 +90,51 @@ func Load(data []byte) ([]Label, error) {
 	return f.Labels, nil
 }
 
-// GitHub is the REST client: base URL, token, HTTP client.
+// GitHub is the REST client: base URL, token, HTTP client, and the wait a
+// rate-limit answer asks for (nil: time.Sleep; tests inject their own).
 type GitHub struct {
 	API    string
 	Token  string
 	Client *http.Client
+	Sleep  func(time.Duration)
 }
 
+// MaxCooldown bounds the wait after a rate-limit answer; the request is then
+// retried once.
+const MaxCooldown = 60 * time.Second
+
 func (g GitHub) do(method, path string, body any) ([]byte, error) {
-	var rd io.Reader
+	var payload []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return nil, err
 		}
-		rd = bytes.NewReader(b)
+		payload = b
+	}
+	for attempt := 1; ; attempt++ {
+		data, wait, err := g.once(method, path, payload)
+		if wait == 0 || attempt == 2 {
+			return data, err
+		}
+		if g.Sleep != nil {
+			g.Sleep(wait)
+		} else {
+			time.Sleep(wait)
+		}
+	}
+}
+
+// once sends one request. A rate-limit answer (429, or 403 with Retry-After
+// or no requests left) returns the cooldown to wait before a retry.
+func (g GitHub) once(method, path string, payload []byte) ([]byte, time.Duration, error) {
+	var rd io.Reader
+	if payload != nil {
+		rd = bytes.NewReader(payload)
 	}
 	req, err := http.NewRequest(method, g.API+"/"+path, rd)
 	if err != nil {
-		return nil, err
+		return nil, 0, fmt.Errorf("%s: building the request failed", method)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -114,34 +142,64 @@ func (g GitHub) do(method, path string, body any) ([]byte, error) {
 	if g.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.Token)
 	}
-	if body != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := g.Client.Do(req)
 	if err != nil {
+		// a *url.Error names the URL, which may name a private repository:
+		// keep only the cause
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		msg := err.Error()
 		if g.Token != "" {
 			msg = strings.ReplaceAll(msg, g.Token, "[redacted]")
 		}
-		return nil, fmt.Errorf("%s: %s", method, msg)
+		return nil, 0, fmt.Errorf("%s: %s", method, msg)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
 	if err != nil {
-		return nil, err
+		return nil, 0, fmt.Errorf("%s: reading the answer failed", method)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// the message only: the path may name a private repository
-		var m struct {
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(data, &m)
-		if len(m.Message) > 120 {
-			m.Message = m.Message[:120]
-		}
-		return nil, fmt.Errorf("%s: HTTP %d %s", method, resp.StatusCode, m.Message)
+	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
+		return data, 0, nil
 	}
-	return data, nil
+	// the message only: the path may name a private repository
+	var m struct {
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(data, &m)
+	if len(m.Message) > 120 {
+		m.Message = m.Message[:120]
+	}
+	return nil, cooldown(resp), fmt.Errorf("%s: HTTP %d %s", method, resp.StatusCode, m.Message)
+}
+
+// cooldown is the wait a rate-limit answer asks for (bounded), else 0.
+func cooldown(resp *http.Response) time.Duration {
+	ra := resp.Header.Get("Retry-After")
+	left := resp.Header.Get("X-RateLimit-Remaining")
+	limited := resp.StatusCode == http.StatusTooManyRequests ||
+		(resp.StatusCode == http.StatusForbidden && (ra != "" || left == "0"))
+	if !limited {
+		return 0
+	}
+	d := MaxCooldown
+	if n, err := strconv.Atoi(ra); err == nil && n >= 0 {
+		d = time.Duration(n) * time.Second
+	} else if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+		d = time.Until(time.Unix(reset, 0))
+	}
+	if d < time.Second {
+		d = time.Second
+	}
+	if d > MaxCooldown {
+		d = MaxCooldown
+	}
+	return d
 }
 
 // pages GETs path page by page (per_page=100) into decode until a short page.
