@@ -145,7 +145,7 @@ jobs:
         if: env.TASK == 'all' || env.TASK == 'bestpractices'
         timeout-minutes: 3
         env:
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:81ae5bd1a281d224463d07ec7e697dddda8f2e3069f3cd1209712af687c678c3
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:c4a8db27766add567ae654771fa86210047edc1589c43071e3a15a21a2e0f1ff
         run: |
           set -euo pipefail
           docker pull --quiet "$IMG" > /dev/null
