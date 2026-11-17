@@ -40,17 +40,18 @@ name: ci-tools image
 # candidate) and pull-requests: read (branch-sweep's dry run), the promote job
 # packages: write, id-token: write (keyless signing, attestations) and
 # attestations: write.
+#
+# The required check is `ci-tools image gate` (#610): a required check runs on
+# every pull request and merge group, with no `paths:` filter (CONTRIBUTING
+# "Settings are code"), so the `changes` job decides. A pull request or merge
+# group that changes none of the paths in BUILD_PATHS skips go, dockerfile
+# and image, and the gate reports green within seconds; one that does runs
+# them all, and the gate is red unless every one passed. A red image build
+# (#567: tests that pass from the checkout but not in the image's build
+# context) can no longer merge.
 on:
   pull_request:
-    paths:
-      - go.mod
-      - go.sum
-      - 'cmd/**'
-      - 'internal/**'
-      - 'docker/ci-tools/**'
-      - .hadolint.yaml
-      - .github/workflows/ci-tools-image.yml
-      - .github/workflows/reusable-go-ci.yml
+  merge_group:  # the merge queue runs the required checks on each group (#130)
   push:
     branches: [main]
     paths:
@@ -77,10 +78,52 @@ env:
   TRIVY: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
 
 jobs:
+  # Whether this change can affect the image: always on a push or dispatch;
+  # for a pull request or merge group, whether any changed file matches
+  # BUILD_PATHS (the push trigger's `paths:` list, as a regex). Any doubt (an
+  # API error, 300 or more files, an empty diff) builds.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.diff.outputs.build }}
+    steps:
+      - name: Changed paths
+        id: diff
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          BUILD_PATHS: '^(go\.mod|go\.sum|cmd/|internal/|docker/ci-tools/|\.hadolint\.yaml$|\.github/workflows/(ci-tools-image|reusable-go-ci)\.yml$)'
+        run: |
+          build=true
+          if { [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; } && [ -n "$BASE" ] && [ -n "$HEAD" ]; then
+            # three-dot compare: the change against its merge base; a rename lists both paths
+            if files=$(timeout 60 gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files | if length < 300 then .[] | .filename, (.previous_filename // empty) else error("300 or more files") end'); then
+              printf 'changed:\n%s\n' "$files"
+              if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qE -- "$BUILD_PATHS"; then
+                build=false
+              fi
+            else
+              echo "::warning::could not list the changed files; building"
+            fi
+          fi
+          echo "build=$build"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          if [ "$build" = false ]; then
+            echo "No Go, Docker or ci-tools workflow path changed: go, dockerfile and image skip (#610)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   go:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     uses: ./.github/workflows/reusable-go-ci.yml
 
   dockerfile:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -165,7 +208,9 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          if [ -n "$PR" ]; then tag="pr-$PR-${GITHUB_SHA::7}"; else tag="main-${GITHUB_SHA::7}"; fi
+          if [ -n "$PR" ]; then tag="pr-$PR-${GITHUB_SHA::7}"
+          elif [ "$GITHUB_EVENT_NAME" = merge_group ]; then tag="queue-${GITHUB_SHA::7}"
+          else tag="main-${GITHUB_SHA::7}"; fi
           docker tag ci-tools:candidate "$CANDIDATES:$tag"
           docker push --quiet "$CANDIDATES:$tag"
           digest=$(docker buildx imagetools inspect "$CANDIDATES:$tag" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
@@ -363,3 +408,35 @@ jobs:
     uses: ./.github/workflows/reusable-dev-image-cleanup.yml
     with:
       packages: ci-tools-dev
+
+  # The required check (#610): green when the change touches no build path
+  # (go, dockerfile and image skipped) or when all three passed; red when
+  # the path test or any of them failed or was cancelled.
+  gate:
+    name: ci-tools image gate
+    needs: [changes, go, dockerfile, image]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Verdict
+        env:
+          BUILD: ${{ needs.changes.outputs.build }}
+          CHANGES: ${{ needs.changes.result }}
+          GO: ${{ needs.go.result }}
+          DOCKERFILE: ${{ needs.dockerfile.result }}
+          IMAGE: ${{ needs.image.result }}
+        run: |
+          echo "changes=$CHANGES build=$BUILD go=$GO dockerfile=$DOCKERFILE image=$IMAGE"
+          if [ "$CHANGES" != success ]; then
+            echo "::error::the changed-path test did not run to the end ($CHANGES)"; exit 1
+          fi
+          if [ "$BUILD" != true ]; then
+            echo "no build path changed: nothing to build"; exit 0
+          fi
+          for r in "$GO" "$DOCKERFILE" "$IMAGE"; do
+            if [ "$r" != success ]; then
+              echo "::error::the ci-tools image build is red (go=$GO dockerfile=$DOCKERFILE image=$IMAGE)"; exit 1
+            fi
+          done
+          echo "go, dockerfile and image passed"
