@@ -181,6 +181,40 @@ files, `core.quotePath`). A port lists its tool's git and `gh` calls first;
 each is a small reimplementation, a reason to keep the tool on the runner, or
 the case for a later decision to put git or `gh` in the image.
 
+## GraphQL in project-sync (2026-11-17)
+
+The org's tools and agent sessions use GitHub's REST API. The maintainer
+allowed one exception (#541, 2026-11-17): org-bot's `project-sync` pipeline
+(`cmd/project-sync`, `internal/projectsync`), which generates the public org
+Project from `templates/projects/plan.json`, may call GraphQL with the org
+App's installation token. The API surface, checked on 2026-11-17 against
+GitHub's REST reference (Projects: projects, fields, items, views):
+
+- **REST has:** list and read org projects (`GET /orgs/{org}/projectsV2`),
+  list and add fields (`POST …/fields`, no update), list, add, update and
+  delete items (`…/items`, field values by option id), and create a view
+  (`POST …/views`: table, board or roadmap, with filter, `group_by`,
+  `vertical_group_by`, `sort_by`; no update, delete or listing of views).
+- **GraphQL alone has:** creating a project (`createProjectV2`), setting it
+  public with its description and readme (`updateProjectV2`), replacing a
+  single-select field's options (`updateProjectV2Field`), and listing views
+  (`projectV2.views`).
+
+So `project-sync` reads and writes the project through GraphQL throughout
+(one client, one fake in the tests) and creates a view through REST, the one
+write GraphQL lacks. The exception is narrow:
+
+- it covers `project-sync` under org-bot only; agent sessions keep the
+  REST-or-MCP rule, and no other tool calls GraphQL;
+- its queries and mutations are constants in `internal/projectsync`,
+  covered by `go test` against a fake API that serves both, and
+  `--dry-run` prints the diff without a write;
+- its writes are bounded (400 a run) and paced (0.7 s apart, one request per
+  item), under GitHub's secondary rate limits on content-creating requests;
+- a view cannot be updated or deleted by any API: a view whose layout drifts
+  is reported, and the maintainer deletes it in the project for the next run
+  to recreate it.
+
 ## Alternatives considered
 
 - **Stay in Python, add types (mypy) and packaging.** Removes some late

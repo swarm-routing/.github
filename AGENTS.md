@@ -413,6 +413,7 @@ changing what the row names.
 | Change a repository's settings, rulesets, required checks, merge queue or Actions policy | its `.github/org-sync.toml` `[settings]`, `templates/rulesets/`, `tools/repo-settings/repo_settings.py` |
 | Write or check a protocol's paper-fidelity sheet | `tools/fidelity/fidelity.py` |
 | List, or refresh, the epics (README sections, ROADMAP, profile) | `tools/epics/epics.py`, `epics.yml` |
+| See or change the org Project (a generated, read-only view; the files and labels are the record) | `templates/projects/plan.json`, `cmd/project-sync`; CONTRIBUTING "Where the plan lives" (#541) |
 | Know where the org is going beyond ns-3, and which decisions wait on the maintainer | `ROADMAP.md` "Direction beyond ns-3"; epics #250, #251, #252, #272 |
 | Make the agent files shorter, or the org's state readable by a new session | #277, #278, #281 under epic #141 |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
