@@ -309,10 +309,10 @@ def self_test():
             self.calls.append((method, path, body))
 
             def meta(n):
-                return {"name": n, "private": n == "papers", "archived": False, "fork": False}
+                return {"name": n, "private": n == "secret-lib", "archived": False, "fork": False}
 
             if path.startswith(f"orgs/{ORG}/repos"):
-                return [meta(n) for n in ("stale", "clean", "fixed", "papers")]
+                return [meta(n) for n in ("stale", "clean", "fixed", "secret-lib")]
             if method == "GET" and path.count("/") == 2:
                 return meta(path.split("/")[2])
             if method == "GET" and "/issues?" in path:
@@ -350,7 +350,7 @@ def self_test():
     check("no token: dry run", "AI_FILES_TOKEN is not set" in out and not writes(gh))
     check("dry run: would open", "stale: 2 finding(s); would open" in out)
     check("dry run: would close", "fixed: 0 finding(s); would close #3" in out)
-    check("a private repository is never reviewed", "papers" not in out)
+    check("a private repository is never reviewed", "secret-lib" not in out)
 
     # with a token: open, close, leave a clean one alone
     gh = FakeGitHub({"fixed": [old_issue]})
@@ -370,7 +370,7 @@ def self_test():
     closes = [c for c in writes(gh) if c[0] == "PATCH" and c[1].endswith("/fixed/issues/3")]
     check("clean and an issue: closed as completed", closes and closes[0][2]["state"] == "closed")
     check("a clean repo with no issue: no write", not [c for c in writes(gh) if "/clean/" in c[1]])
-    check("no write to a private repository", not [c for c in gh.calls if "/papers/" in c[1]])
+    check("no write to a private repository", not [c for c in gh.calls if "/secret-lib/" in c[1]])
 
     # an issue with the same findings is left alone; changed findings update it in place
     items = [
@@ -394,7 +394,7 @@ def self_test():
     )
     check("--repos limits the run", out.count("finding(s);") == 1)
     try:
-        go(FakeGitHub({}), repos="papers")
+        go(FakeGitHub({}), repos="secret-lib")
         check("a private repository cannot be named", False)
     except Failure:
         pass

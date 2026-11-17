@@ -127,8 +127,9 @@ rulesets managed are those named in a profile (`main`, `release-tags`), and
 none is ever deleted; neither is an environment (only a deployment branch
 policy an environment's table no longer names is). Without REPO the org listing
 is used (all repositories, not archived, not forks). The values of a private
-repository are never printed, only which fields differ, since the output may
-land in a public log or issue. A write the token is not allowed (HTTP 403 or
+repository are never printed, only which fields differ, and neither is its
+name: it is `private repository N` (N in the order of the run), since the
+output lands in a public log or issue (#622). A write the token is not allowed (HTTP 403 or
 404: the token needs Administration: write; 409: an organization policy
 overrides it) is reported as `refused` and `apply` exits 2; any other failure
 exits 1.
@@ -1136,7 +1137,7 @@ def drifted(res):
 
 
 def lines(res, verb="differs"):
-    name = res["repo"] + (" (private)" if res["private"] else "")
+    name = shown(res)
     if res["skip"]:
         return [f"{name}: skipped ({res['skip']})"]
     out = [f"{name}: invalid [settings]: {e}" for e in res["errors"]]
@@ -1168,7 +1169,7 @@ def lines(res, verb="differs"):
 def apply_repo(gh, res):
     """Write the differences; return (lines, refused)."""
     full = f"{ORG}/{res['repo']}"
-    name = res["repo"] + (" (private)" if res["private"] else "")
+    name = shown(res)
     out, refused = [], False
     changed = {k: want for k, _, want in res["changes"]}
     steps = []  # (what, [(method, path, body)], unsupported status codes)
@@ -1213,21 +1214,50 @@ def apply_repo(gh, res):
 # --- commands ------------------------------------------------------------------
 
 
+def shown(res):
+    """How the output names a repository: its name, or, for a private one, the
+    label run gave it (`private repository N`); never the private name (#622)."""
+    if res["private"]:
+        return res.get("label") or "private repository"
+    return res["repo"]
+
+
+class Masker:
+    """Labels private repositories `private repository N`, N in the order they
+    are first named, and scrubs their names out of other text (#622)."""
+
+    def __init__(self):
+        self.labels = {}
+
+    def label(self, repo):
+        return self.labels.setdefault(repo, f"private repository {len(self.labels) + 1}")
+
+    def scrub(self, text):
+        for repo in sorted(self.labels, key=len, reverse=True):
+            text = text.replace(f"{ORG}/{repo}", "<private>").replace(repo, "<private>")
+        return text
+
+
 def org_repos(gh):
-    names, page = [], 1
+    """The org's repositories, not archived, not forks: {name: private}, sorted by name."""
+    found, page = {}, 1
     while True:
         batch = gh.api("GET", f"orgs/{ORG}/repos?type=all&per_page=100&page={page}")
-        names += [r["name"] for r in batch if not r.get("archived") and not r.get("fork")]
+        for r in batch:
+            if not r.get("archived") and not r.get("fork"):
+                found[r["name"]] = bool(r.get("private"))
         if len(batch) < 100:
-            return sorted(names, key=str.lower)
+            return {n: found[n] for n in sorted(found, key=str.lower)}
         page += 1
 
 
 def run(cmd, repos, local=None, dry_run=False, gh=None, org_only=False):
     gh = gh or GitHub()
+    private, mask = {}, Masker()
     if repos and org_only:
         try:
-            known = {n.lower(): n for n in org_repos(gh)}
+            private = org_repos(gh)
+            known = {n.lower(): n for n in private}
         except GhError as e:
             print(f"repo-settings: cannot list the org ({e}); nothing done")
             return 1
@@ -1239,26 +1269,29 @@ def run(cmd, repos, local=None, dry_run=False, gh=None, org_only=False):
         repos = [known[r.lower()] for r in repos]
     if not repos:
         try:
-            repos = org_repos(gh)
+            private = org_repos(gh)
+            repos = list(private)
         except GhError as e:
             print(f"repo-settings: cannot list the org ({e}); name the repositories")
             return 1
     rc = 0
     for repo in repos:
+        name = mask.label(repo) if private.get(repo) else repo
         try:
             res = plan_repo(gh, repo, local)
         except (GhError, ValueError, tomllib.TOMLDecodeError) as e:
-            print(f"{repo}: FAILED: {e}")
+            print(f"{name}: FAILED: {mask.scrub(str(e))}")
             rc = 1
             continue
+        if res["private"]:
+            res["label"] = name = mask.label(repo)
         if cmd == "apply" and not dry_run and drifted(res) and not res["errors"]:
             try:
                 out, refused = apply_repo(gh, res)
             except GhError as e:
-                print(f"{repo}: FAILED: {e}")
+                print(f"{name}: FAILED: {mask.scrub(str(e))}")
                 rc = 1
                 continue
-            name = res["repo"] + (" (private)" if res["private"] else "")
             out += [f"{name} {u}: unreadable, not written" for u in res["unreadable"]]
             print("\n".join(out + [f"{name}: note: {n}" for n in res["notes"]]))
             if refused and rc == 0:
@@ -1453,7 +1486,7 @@ def self_test():
         'optional_checks = ["codecov/*", "Analyze (*)"]\n'
         "features = { has_discussions = true }\nrelease_environment = true\n",
         "plain": 'kind = "protocol"\n',
-        "papers": '[settings]\ndescription = "Secret workspace."\ntopics = ["papers"]\nruleset = "merge-only"\n',
+        "secret-lib": '[settings]\ndescription = "Secret workspace."\ntopics = ["secret-lib"]\nruleset = "merge-only"\n',
         "bad": '[settings]\ndescription = "x"\ntopics = ["Bad_Topic"]\n',
         "secret": '[settings]\ndescription = "x"\ntopics = ["Hidden_Name"]\n',
         "bad2": '[settings]\nruleset = "tooling"\nsecurity = { nope = true, secret_scanning = 1 }\n',
@@ -1515,7 +1548,7 @@ def self_test():
                 ),
                 "plain": dict(private=False, topics=[]),
                 "nocfg": dict(private=False, topics=[]),
-                "papers": dict(
+                "secret-lib": dict(
                     fresh,
                     private=True,
                     description=None,
@@ -1536,7 +1569,9 @@ def self_test():
             self.pvr = {r: r in ("AntHocNet", "lean", "empty") for r in self.repos}
             self.codeql = {r: "not-configured" for r in self.repos}
             good = {"enabled": True, "allowed_actions": "selected"}
-            self.perms = {r: dict(good) for r in ("AntHocNet", "lean", "empty", "papers", "rogue")}
+            self.perms = {
+                r: dict(good) for r in ("AntHocNet", "lean", "empty", "secret-lib", "rogue")
+            }
             self.perms["ARA"] = {"enabled": True, "allowed_actions": "all"}
             self.selected = {r: copy.deepcopy(sel) for r in self.perms if r != "ARA"}
             self.wfperms = {r: dict(shared["actions"]["workflow"]) for r in self.perms}
@@ -1584,7 +1619,7 @@ def self_test():
             if path == "users/danieljoppi":
                 return {"login": "danieljoppi", "id": 42}
             if path.startswith(f"orgs/{ORG}/repos?"):
-                listed = [{"name": r} for r in self.repos]
+                listed = [{"name": r, "private": m.get("private")} for r, m in self.repos.items()]
                 listed += [{"name": "old", "archived": True}, {"name": "copy", "fork": True}]
                 return listed if path.endswith("&page=1") else []
             m = re.match(rf"repos/{ORG}/([^/?]+)(.*)$", path)
@@ -1792,6 +1827,24 @@ def self_test():
     gh = FakeGitHub()
     rc, out = go("check", [], gh, org_only=True)
     check("--org-only without names: every org repository, as before", "AntHocNet" in out)
+    # the whole org: a private repository is never named, even in a failure (#622)
+    gh = FakeGitHub()
+    real_api = gh.api
+
+    def failing_api(method, path, body=None):
+        if path == f"repos/{ORG}/secret-lib/contents/{CONFIG}":
+            raise GhError(method, path, "Server Error (HTTP 500)")
+        return real_api(method, path, body)
+
+    gh.api = failing_api
+    rc, out = go("check", [], gh)
+    check(
+        "the org listing never names a private repository",
+        "secret-lib" not in out
+        and not re.search(r"^secret\b", out, re.M)
+        and "private repository 1: invalid [settings]" in out
+        and f"private repository 2: FAILED: gh api GET repos/<private>/contents/{CONFIG}" in out,
+    )
 
     # AntHocNet: the protocol profile with CI gate + code scanning, every shared part in place;
     # its own codeql.yml keeps CodeQL default setup off
@@ -1947,14 +2000,15 @@ def self_test():
     # a private repository: which fields differ, never their values; what the free plan does not
     # offer a private repository is a note, not drift; rulesets unavailable is a note
     gh = FakeGitHub()
-    rc, out = go("check", ["papers"], gh)
+    rc, out = go("check", ["secret-lib"], gh)
     check(
         "private masked",
         rc == 1
-        and "papers (private) description: differs" in out
-        and "papers (private) allow_merge_commit: differs" in out
-        and "papers (private) security vulnerability_alerts: differs\n" in out
-        and "papers (private) security automated_security_fixes: differs\n" in out
+        and "private repository 1 description: differs" in out
+        and "private repository 1 allow_merge_commit: differs" in out
+        and "private repository 1 security vulnerability_alerts: differs\n" in out
+        and "private repository 1 security automated_security_fixes: differs\n" in out
+        and "secret-lib" not in out
         and "Secret" not in out
         and "ruleset" not in out,
     )
@@ -1971,9 +2025,12 @@ def self_test():
         "unsupported here: actions fork_pr_contributor_approval (private repository)" in out
         and not any("fork-pr-contributor-approval" in c[1] for c in gh.calls),
     )
-    rc, out = go("apply", ["papers"], gh)
-    check("private apply masked", "Secret" not in out and "papers (private): applied" in out)
-    check("private in sync after apply", go("check", ["papers"], gh)[0] == 0)
+    rc, out = go("apply", ["secret-lib"], gh)
+    check(
+        "private apply masked",
+        "Secret" not in out and "secret-lib" not in out and "private repository 1: applied" in out,
+    )
+    check("private in sync after apply", go("check", ["secret-lib"], gh)[0] == 0)
 
     # invalid settings are reported and never applied
     gh = FakeGitHub()
@@ -1989,7 +2046,11 @@ def self_test():
     rc, out = go("check", ["secret"], gh)
     check(
         "invalid private topic masked",
-        rc == 1 and "a topic is not lowercase-hyphenated" in out and "Hidden" not in out,
+        rc == 1
+        and "a topic is not lowercase-hyphenated" in out
+        and "Hidden" not in out
+        and "secret:" not in out
+        and "private repository 1: invalid" in out,
     )
     # a workflow using an action outside the allowed list: refused before anything is written
     gh = FakeGitHub()
@@ -2019,7 +2080,8 @@ def self_test():
     priv.update(items=[], unreadable=[], notes=[], errors=[], unrequired=["Secret job"])
     check(
         "private unrequired checks counted, not named",
-        lines(priv) == ["p (private): in sync", "p (private): 1 unrequired check(s)"],
+        lines(dict(priv, label="private repository 2"))
+        == ["private repository 2: in sync", "private repository 2: 1 unrequired check(s)"],
     )
     check(
         "optional_checks must be a list of names",

@@ -80,7 +80,8 @@ jobs:
             echo "::error::epics: repository '${SENDER:0:80}' is not swarm-routing/<name>"
             exit 1
           fi
-          echo "epics changed in ${SENDER}; waiting 5 minutes (a newer event cancels this wait)"
+          # the sender is not printed: it may be a private repository (#622)
+          echo "epics changed in an org repository; waiting 5 minutes (a newer event cancels this wait)"
           sleep 300
 
   refresh:

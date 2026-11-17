@@ -188,7 +188,8 @@ jobs:
               echo "::error::bestpractices: repository '${RELEASED:0:80}' is not swarm-routing/<name>"
               exit 1
             fi
-            echo "bestpractices: ${RELEASED}" | tee "$RUNNER_TEMP/org-bot.txt"
+            # the repository is not printed here (it may be private, #622): org_bot.py names it when public
+            echo "bestpractices: one repository" | tee "$RUNNER_TEMP/org-bot.txt"
             python3 -I tools/org-bot/org_bot.py run --task bestpractices --repos "${RELEASED#swarm-routing/}" | tee -a "$RUNNER_TEMP/org-bot.txt"
             exit 0
           fi
@@ -199,7 +200,8 @@ jobs:
               exit 1
             fi
             REPOS="${RELEASED#swarm-routing/}"
-            echo "org-release: ${RELEASED} ${RELEASED_TAG}" | tee "$RUNNER_TEMP/org-bot.txt"
+            # the repository is not printed here (it may be private, #622): org_bot.py names it when public
+            echo "org-release: ${RELEASED_TAG}" | tee "$RUNNER_TEMP/org-bot.txt"
           fi
           args=(run --task "$TASK")
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")

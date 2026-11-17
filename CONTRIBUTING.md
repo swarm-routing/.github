@@ -854,6 +854,14 @@ the org line comes first and the SPDX expression is exactly the directory's.
 
 ## Automation
 
+A tool that prints repository names masks the private ones, since its log,
+step summary or issue is public: a private repository is printed as
+`private repository N` (N in the order of the run), its name is scrubbed from
+any error (`<private>`), and a `run:` line never echoes a repository name that
+a dispatch carries. A Go tool goes through `internal/repomask`; a Python tool
+masks the same way; each has a test that a fake private repository's name
+never reaches its output (#622).
+
 Two scheduled workflows in this repository keep the org current. Both are dry
 runs until their secret is set, and the secrets belong to the maintainer:
 

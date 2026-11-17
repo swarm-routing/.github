@@ -25,6 +25,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/swarm-routing/.github/internal/repomask"
 )
 
 const (
@@ -329,8 +331,13 @@ func Run(g GitHub, names []string, now time.Time, dry bool, out io.Writer) error
 	}
 	var due []Release
 	failed := 0
+	var mask repomask.Masker
 	for _, r := range repos {
-		if r.Private || r.Archived || r.Fork || r.FullName != Org+"/"+r.Name {
+		if r.Private { // named with --repos: never printed by name, the log is public
+			fmt.Fprintf(out, "%s: private, skipped\n", mask.Repo(r.Name, true, r.FullName, r.Name))
+			continue
+		}
+		if r.Archived || r.Fork || r.FullName != Org+"/"+r.Name {
 			continue // the site syncs only the org's own public repositories
 		}
 		rel, err := g.newest(r.Name)

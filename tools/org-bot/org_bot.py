@@ -1210,7 +1210,11 @@ def run(args, gh=None, clone_url=None):
         wanted = [n.strip() for n in args.repos.split(",") if n.strip()]
         unknown = sorted(set(wanted) - set(repos))
         if unknown:
-            raise Failure(f"org-bot: not a public org repository: {', '.join(unknown)}")
+            # not named: a private repository's name never reaches the public log (#622)
+            raise Failure(
+                f"org-bot: {len(unknown)} named repositories are not public org repositories "
+                "(a typo, or a private, archived or forked one)"
+            )
         repos = [r for r in repos if r in wanted]
     env = git_env(None if dry_run else token)
     results, failed = [], []
@@ -1696,15 +1700,15 @@ def self_test():
     try:
         res, out = go(FakeGitHub(), repos="beta", data=wide)
         unknown = False
-        try:
-            go(FakeGitHub(), repos="gamma", data=wide)
+        try:  # a private repository is not in the data: refused, never named (#622)
+            go(FakeGitHub(), repos="secret-lib", data=wide)
         except Failure as e:
-            unknown = "gamma" in str(e)
+            unknown = "secret-lib" not in str(e) and "1 named repositories" in str(e)
     finally:
         globals()["generate"] = real_generate
     check("--repos picks the repositories", [r for r, _ in seen] == ["beta"])
     check("--repos keeps every repository's data", seen and seen[0][1] == ["alpha", "beta"])
-    check("--repos rejects an unknown name", unknown)
+    check("--repos rejects an unknown name without naming it", unknown)
 
     # and the API path itself: with no --data, the epics fetch gets no --repos
     # filter (the bug), while an org-sync-only run fetches only its repositories
