@@ -1,0 +1,436 @@
+{
+ "altindex": {
+  "files": {
+   "tools/bad.py": "# no header\n",
+   "tools/good.py": "# SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "tools/good.py"
+   ],
+   [
+    "sh",
+    "-c",
+    "GIT_INDEX_FILE=.git/alt git add tools/bad.py"
+   ]
+  ]
+ },
+ "broken": {
+  "files": {
+   "core/a.h": "// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/bad.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n#include <ns3/core-module.h>\n  #  include   \"ns3/node.h\"   \n#include \"missing.h\n#include <map\n#include \"\n#include \"dep.h\"\n#include \"gpl.h\"\n#include \"/abs/x.h\"\n#include \"../../escape.h\"\n#include \"sub/../a.h\"\n",
+   "core/nohdr.h": "#pragma once\n",
+   "core/vendor/v.cc": "no header at all\n",
+   "deep/a b.txt": "spaces in a non-source name\n",
+   "ns3/contrib.cc": "// Copyright (c) 2027 Ada Lovelace\n// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "ns3/inexact.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// Copyright (c) 2027 Ada Lovelace\n// SPDX-License-Identifier:   GPL-2.0-or-later  \n",
+   "ns3/many.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// Copyright (c) 2027 A\n// Copyright (c) 2027 B\n// Copyright (c) 2027 C\n// Copyright (c) 2027 D\n// Copyright (c) 2027 E\n// x\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "ns3/noorgspace.cc": "//Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n//Copyright (c) 2026 Q\n//SPDX-License-Identifier:GPL-2.0-only\n",
+   "ns3/range.cc": "# Copyright (c) 2025-2026 Daniel Joppi (https://github.com/swarm-routing)  \n# Copyright (c) 2027 Z\n# SPDX-License-Identifier: GPL-2.0-only\n",
+   "ns3/unicode.cc": "// Copyright (c) ٢٠٢٦ Daniel Joppi (https://github.com/swarm-routing) \n// Copyright (c) 2027 Émile\n　// SPDX-License-Identifier: GPL-2.0-only \n",
+   "tools/gpl.py": "# SPDX-License-Identifier: GPL-2.0-only\n",
+   "tools/low.py": "\n\n\n\n\n# SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "tools/mit.sh": "# SPDX-License-Identifier: MIT\n",
+   "x.py": "print('no header')\n"
+  },
+  "raw": {
+   "core/cr.cc": "Ly8gU1BEWC1MaWNlbnNlLUlkZW50aWZpZXI6IE1JVCBPUiBHUEwtMi4wLW9ubHkNI2luY2x1ZGUgPGJhZD4NI2luY2x1ZGUgPHZlY3Rvcj4N",
+   "core/crlf.cc": "Ly8gQ29weXJpZ2h0IChjKSAyMDI2IERhbmllbCBKb3BwaSAoaHR0cHM6Ly9naXRodWIuY29tL3N3YXJtLXJvdXRpbmcpDQovLyBTUERYLUxpY2Vuc2UtSWRlbnRpZmllcjogTUlUIE9SIEdQTC0yLjAtb25seQ0KI2luY2x1ZGUgPG5zMy94Lmg+DQojaW5jbHVkZSA8dmVjdG9yPg0KI2luY2x1ZGUgImEuaCINCg==",
+   "core/latin1.h": "Ly8gU1BEWC1MaWNlbnNlLUlkZW50aWZpZXI6IE1JVCBPUiBHUEwtMi4wLW9ubHkKI2luY2x1ZGUgPOn/4oL0kICARy5oPgojaW5jbHVkZSAi7aCAeC5oIgo="
+  },
+  "symlinks": {
+   "core/link.h": "a.h"
+  }
+ },
+ "dangling": {
+  "files": {
+   "core/a.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  },
+  "symlinks": {
+   "core/dangling.h": "nowhere.h"
+  }
+ },
+ "dep": {
+  "files": {
+   "above.h": "// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/dual.h": "// x\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/gpl.h": "// x\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/sub/deep.h": "// SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  },
+  "steps": [],
+  "symlinks": {
+   "core/linked.h": "dual.h",
+   "core/up": ".."
+  }
+ },
+ "empty": {
+  "files": {
+   "x.txt": "x\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ]
+  ]
+ },
+ "index3": {
+  "files": {
+   "core/very/long/common/prefix/dir/file00.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file01.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file02.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file03.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file04.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file05.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file06.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file07.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file08.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file09.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file10.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file11.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/other00.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file00.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other01.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file01.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other02.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file02.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other03.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file03.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other04.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file04.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other05.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file05.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other06.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file06.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other07.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file07.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other08.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file08.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other09.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file09.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other10.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file10.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other11.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file11.h\"\n#include \"ns3/x.h\"\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ],
+   [
+    "git",
+    "update-index",
+    "--skip-worktree",
+    "core/very/long/common/prefix/other01.cc"
+   ]
+  ]
+ },
+ "index4": {
+  "files": {
+   "core/very/long/common/prefix/dir/file00.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file01.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file02.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file03.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file04.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file05.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file06.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file07.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file08.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file09.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file10.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/dir/file11.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/very/long/common/prefix/other00.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file00.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other01.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file01.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other02.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file02.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other03.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file03.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other04.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file04.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other05.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file05.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other06.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file06.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other07.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file07.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other08.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file08.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other09.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file09.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other10.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file10.h\"\n#include \"ns3/x.h\"\n",
+   "core/very/long/common/prefix/other11.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dir/file11.h\"\n#include \"ns3/x.h\"\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ],
+   [
+    "git",
+    "update-index",
+    "--index-version",
+    "4"
+   ]
+  ]
+ },
+ "ita": {
+  "files": {
+   "tools/new.py": "# no spdx\n",
+   "tools/old.py": "# SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "tools/old.py"
+   ],
+   [
+    "git",
+    "add",
+    "-N",
+    "tools/new.py"
+   ]
+  ]
+ },
+ "notgit": {
+  "files": {
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  },
+  "steps": []
+ },
+ "plain": {
+  "files": {
+   "LICENSE": "x\n",
+   "cmd/x/main.go": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n\npackage main\n",
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"a.h\"\n#include <vector>\n",
+   "core/a.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#pragma once\n",
+   "core/include/p/q.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "core/src/r.cpp": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"p/q.h\"\n#include \"../a.h\"\n",
+   "docs/readme.md": "# not covered\n",
+   "ns3/model/m.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n#include \"ns3/node.h\"\n",
+   "tools/run.py": "#!/usr/bin/env python3\n# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n# SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "tools/run.sh": "#!/bin/sh\n# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n# SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  }
+ },
+ "quoted": {
+  "files": {
+   "tools/back\\slash.py": "bad\n",
+   "tools/ok.py": "# nothing\n",
+   "tools/q\"t.sh": "bad\n",
+   "tools/tab\tname.py": "bad\n",
+   "tools/é.py": "bad\n"
+  }
+ },
+ "sha256": {
+  "files": {
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"a.h\"\n",
+   "core/a.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "--object-format=sha256",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ]
+  ]
+ },
+ "sha256quoted": {
+  "files": {
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"a.h\"\n#include <ns3/x.h>\n",
+   "core/a.h": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: GPL-2.0-only\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "--object-format=sha256",
+    "."
+   ],
+   [
+    "sh",
+    "-c",
+    "sed -i 's/objectformat = sha256/objectFormat = \"sha256\" ; quoted, with a comment/' .git/config"
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ]
+  ]
+ },
+ "skiphash": {
+  "files": {
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include <ns3/x.h>\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "config",
+    "index.skipHash",
+    "true"
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ]
+  ]
+ },
+ "spaced": {
+  "files": {
+   "tools/a b.py": "# x\n",
+   "tools/ok.py": "# SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  }
+ },
+ "unmerged": {
+  "files": {
+   "tools/f.py": "# SPDX-License-Identifier: MIT OR GPL-2.0-only\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ],
+   [
+    "git",
+    "commit",
+    "-q",
+    "-m",
+    "a"
+   ],
+   [
+    "git",
+    "checkout",
+    "-q",
+    "-b",
+    "x"
+   ],
+   [
+    "sh",
+    "-c",
+    "printf '# SPDX-License-Identifier: GPL-2.0-only\\n' > tools/f.py"
+   ],
+   [
+    "git",
+    "commit",
+    "-q",
+    "-am",
+    "b"
+   ],
+   [
+    "git",
+    "checkout",
+    "-q",
+    "main"
+   ],
+   [
+    "sh",
+    "-c",
+    "printf '# none\\n' > tools/f.py"
+   ],
+   [
+    "git",
+    "commit",
+    "-q",
+    "-am",
+    "c"
+   ],
+   [
+    "!git",
+    "merge",
+    "-q",
+    "x"
+   ]
+  ]
+ },
+ "usesdep": {
+  "files": {
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n#include \"dual.h\"\n#include \"gpl.h\"\n#include \"sub/deep.h\"\n#include \"up/above.h\"\n#include \"linked.h\"\n#include \"nope/../dual.h\"\n#include \"../above.h\"\n#include \"dep.h\"\n"
+  }
+ },
+ "worktree": {
+  "files": {
+   "core/a.cc": "// Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)\n// SPDX-License-Identifier: MIT OR GPL-2.0-only\n",
+   "tools/b.py": "# x\n"
+  },
+  "steps": [
+   [
+    "git",
+    "init",
+    "-q",
+    "-b",
+    "main",
+    "."
+   ],
+   [
+    "git",
+    "add",
+    "-A"
+   ],
+   [
+    "git",
+    "commit",
+    "-q",
+    "-m",
+    "a"
+   ],
+   [
+    "git",
+    "worktree",
+    "add",
+    "-q",
+    "wt"
+   ]
+  ]
+ }
+}

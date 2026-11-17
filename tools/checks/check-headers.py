@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
+# Deprecated: cmd/check-headers (Go, internal/checkheaders) is this tool, byte for
+# byte (#531). This script stays only until every documented local command
+# (`make headers`, the AGENTS.md lines org-sync renders) runs the Go binary;
+# change the rules there, not here.
 """Licence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).
 
 Every swarm-routing repo is licensed per directory, as AntHocNet is:

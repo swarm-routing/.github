@@ -1,0 +1,54 @@
+usage: check-headers [-h] [--dual DUAL] [--core CORE] [--gpl-only GPL_ONLY]
+                     [--core-dep CORE_DEP] [--exclude EXCLUDE] [--self-test]
+                     [root]
+
+Licence-header gate for swarm-routing repos (AntHocNet's rules, ADR-0028).
+
+Every swarm-routing repo is licensed per directory, as AntHocNet is:
+
+- the simulator-free algorithm core (``core/``) and the standalone tooling
+  (``tools/``, the Python CLI, CI and image scripts) are
+  ``MIT OR GPL-2.0-only``, recipient's choice;
+- everything else (ns-3 modules, the browser adapter, docs, data) is
+  ``GPL-2.0-only``.
+
+The MIT option is only real while three things hold, so this gate checks them:
+
+1. every covered file (C++, Go, Python, shell) carries
+   ``SPDX-License-Identifier`` in its first lines (``//`` comments for C++ and
+   Go, ``#`` for Python and shell; a Go file's header is followed by a blank
+   line, so it is not the package's doc comment);
+2. every covered file under a dual root carries exactly
+   ``MIT OR GPL-2.0-only`` (``--gpl-only`` lists files that stay GPL on
+   purpose, with the reason in the caller);
+3. a file whose header names more than one copyright holder (an outside
+   contributor adds their own ``Copyright (c) <year> <Name>`` line beneath
+   the org line, CONTRIBUTING "Outside contributions") keeps the org line
+   first and the exact SPDX expression of its directory; those extra lines
+   do not count against the five-line window;
+4. a C++ file under a core root includes nothing from outside it: angle
+   includes are C++ standard-library headers, quote includes resolve to a
+   file under the same core root. A ``core/`` file that pulled in an ns-3
+   header would bind the whole core to GPL. A core built on another
+   repository's dual-licensed core (a protocol's ``core/`` on swarm-core's)
+   names that checkout with ``--core-dep DIR``: a quote include may then also
+   resolve to a file inside DIR, and only when that file itself carries
+   ``MIT OR GPL-2.0-only``.
+
+Usage (repo root as cwd):
+    check-headers.py --dual core/ --dual tools/ --core core/ [.]
+    check-headers.py --dual core/ --core core/ --core-dep .core-deps/ns3-swarm-core/core [.]
+    check-headers.py --self-test
+
+positional arguments:
+  root
+
+options:
+  -h, --help           show this help message and exit
+  --dual DUAL          dual-licensed root (repeatable)
+  --core CORE          simulator-free core root (repeatable)
+  --gpl-only GPL_ONLY  file under a dual root that stays GPL
+  --core-dep CORE_DEP  a dependency's dual-licensed core directory a core may
+                       include from (repeatable)
+  --exclude EXCLUDE    regex of tracked paths to skip (vendored code)
+  --self-test

@@ -199,6 +199,7 @@ jobs:
           grep -qx fixture list.txt
           grep -qx bestpractices list.txt
           grep -qx backstop list.txt
+          grep -qx check-headers list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
           # a tool on the workspace, mounted as `uses: docker://` mounts it
@@ -225,6 +226,16 @@ jobs:
           docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" backstop --dry-run | tee backstop.txt
           [ "$(grep -c ': dry run: would dispatch\|: nothing to do$' backstop.txt)" = "$(grep -c '^\[\[entry\]\]' .github/backstop.toml)" ] \
             || { echo "::error::backstop: not one line per entry of .github/backstop.toml"; exit 1; }
+          # check-headers (#531): read-only as `uses: docker://` runs it, with no
+          # git in the image (it reads the index); its self-test, then this
+          # checkout byte for byte against the Python tool (stdout, exit code)
+          [ "$(docker run --rm "$img" check-headers --self-test)" = "self-test: PASS" ] \
+            || { echo "::error::check-headers --self-test"; exit 1; }
+          rc_go=0; docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' . > "$RUNNER_TEMP/ch-go.txt" || rc_go=$?
+          rc_py=0; python3 -I tools/checks/check-headers.py --dual '' . > "$RUNNER_TEMP/ch-py.txt" || rc_py=$?
+          cat "$RUNNER_TEMP/ch-go.txt"
+          { cmp "$RUNNER_TEMP/ch-py.txt" "$RUNNER_TEMP/ch-go.txt" && [ "$rc_go" = "$rc_py" ]; } \
+            || { echo "::error::check-headers: the Go tool (exit $rc_go) differs from the Python one (exit $rc_py)"; diff "$RUNNER_TEMP/ch-py.txt" "$RUNNER_TEMP/ch-go.txt"; exit 1; }
           # nonroot, and no shell to fall back to
           user=$(docker image inspect -f '{{.Config.User}}' "$img")
           [ "$user" = nonroot:nonroot ] || { echo "::error::image user is '$user'"; exit 1; }
