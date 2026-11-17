@@ -172,6 +172,9 @@ type issue struct {
 
 type comment struct {
 	Body string `json:"body"`
+	User struct {
+		Type string `json:"type"`
+	} `json:"user"`
 }
 
 // Comment markers: the pipeline's own comments on a ticket.
@@ -198,7 +201,8 @@ func tickets(issues []issue, repo string) []Ticket {
 			continue
 		}
 		m := ticketRe.FindStringSubmatch(i.Body)
-		if m == nil || !strings.HasPrefix(m[1], "https://github.com/"+repo+"/") {
+		// owner and name compare without case, as GitHub does; the slash keeps the boundary
+		if m == nil || !strings.HasPrefix(strings.ToLower(m[1]), strings.ToLower("https://github.com/"+repo+"/")) {
 			continue
 		}
 		n, _ := strconv.Atoi(m[2])
@@ -283,8 +287,10 @@ func (g GitHub) comments(repo string, n int) ([]comment, error) {
 }
 
 func hasMarker(cs []comment, marker string) bool {
+	// a record is a comment the pipeline posted (a bot) that starts with the
+	// marker: a person quoting the marker records nothing
 	for _, c := range cs {
-		if strings.Contains(c.Body, marker) {
+		if c.User.Type == "Bot" && strings.HasPrefix(strings.TrimSpace(c.Body), marker) {
 			return true
 		}
 	}

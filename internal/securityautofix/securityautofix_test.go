@@ -34,7 +34,10 @@ func (f *fakeGH) handler(t *testing.T) http.Handler {
 		if r.Header.Get("Authorization") != "Bearer tok" && !f.anon {
 			t.Errorf("no token on %s", r.URL)
 		}
-		p := strings.TrimPrefix(r.URL.Path, "/repos/swarm-routing/X/")
+		p := r.URL.Path // GitHub reads owner and name without case
+		if pre := "/repos/swarm-routing/x/"; strings.HasPrefix(strings.ToLower(p), pre) {
+			p = p[len(pre):]
+		}
 		send := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 		switch {
 		case r.Method == "GET" && p == "issues":
@@ -48,7 +51,7 @@ func (f *fakeGH) handler(t *testing.T) http.Handler {
 				var b map[string]any
 				_ = json.NewDecoder(r.Body).Decode(&b)
 				f.posted = append(f.posted, n+" "+b["body"].(string))
-				f.comments[n] = append(f.comments[n], map[string]any{"body": b["body"]})
+				f.comments[n] = append(f.comments[n], map[string]any{"body": b["body"], "user": map[string]any{"type": "Bot"}})
 				send(map[string]any{})
 				return
 			}
@@ -107,7 +110,12 @@ func newFake() *fakeGH {
 			{"number": 50, "body": "<!-- security-alert: https://github.com/other/repo/security/code-scanning/4 -->"},
 			{"number": 51, "body": ticket(0, 6, "code-scanning")["body"], "pull_request": map[string]any{}},
 		},
-		comments: map[string][]map[string]any{"41": {{"body": FailedMarker + " earlier"}}},
+		comments: map[string][]map[string]any{
+			"41": {{"body": FailedMarker + " earlier", "user": map[string]any{"type": "Bot"}}},
+			// a person quoting the markers records nothing
+			"42": {{"body": "see " + FailedMarker + " " + ProposalMarker, "user": map[string]any{"type": "User"}},
+				{"body": FailedMarker, "user": map[string]any{"type": "User"}}},
+		},
 		branches: map[string]bool{"claude/security-fix-code-scanning-5": true},
 	}
 }
@@ -115,7 +123,7 @@ func newFake() *fakeGH {
 func TestPick(t *testing.T) {
 	f := newFake()
 	g := serve(t, f)
-	fix, acts, err := Pick(g, "swarm-routing/X", 1, false)
+	fix, acts, err := Pick(g, "swarm-routing/x", 1, false) // owner and name without case
 	if err != nil {
 		t.Fatal(err)
 	}
