@@ -21,7 +21,8 @@
     {"name": "ns3", "color": "006b75", "description": "Area: ns-3 build, versions, contrib module"},
     {"name": "benchmark", "color": "b60205", "description": "Area: arenas, harness, ns3-tool, datasets"},
     {"name": "observability", "color": "bfdadc", "description": "Area: ##RUN##/##BENCH##/##DIAG## lines, probes, traces"},
-    {"name": "packaging", "color": "ededed", "description": "Area: images, reusable workflows, install, release"},
+    {"name": "packaging", "color": "ededed", "description": "Area: images, install, release"},
+    {"name": "ci", "color": "bfd4f2", "description": "Area: CI workflows, reusable workflows, runners and checks"},
     {"name": "learn-site", "color": "f9d0c4", "description": "Area: the Colony Arena site and games"},
     {"name": "literature", "color": "c2e0c6", "description": "Area: papers, fidelity notes, equation Rosetta Stones"},
 

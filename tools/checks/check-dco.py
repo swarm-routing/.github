@@ -9,7 +9,19 @@ email (``git commit -s``), which certifies the DCO 1.1 (the ``DCO`` file in
 swarm-routing/.github) and records the per-directory licence grant
 (CONTRIBUTING "Outside contributions", AntHocNet ADR-0028).
 
-Exempt, since their commits are made by the maintainer's own account or a bot:
+A PR opened by an org member or one of the org's bots is not checked at all
+(#586): the check passes with a one-line summary (also written to the job
+summary) when the PR's author is one of the org's bots
+(``swarm-routing-bot[bot]``, ``dependabot[bot]``, ``github-actions[bot]``), when
+its ``author_association`` is OWNER, MEMBER or COLLABORATOR, or when the
+author has write, maintain or admin permission on the repository (a private
+org member shows as CONTRIBUTOR in the event payload). The person who opened
+the PR certifies its contents by opening it, as for agent commits (#212); a
+sign-off is enforced on outside contributors' PRs only, and such a PR still
+merges only after ``dco`` passed on its head commit (#288).
+
+On an outside contributor's PR, these commits are exempt, since they are made
+by the maintainer's own account or a bot:
 
 - commits whose GitHub author is the PR's author when the PR's
   ``author_association`` is OWNER, MEMBER or COLLABORATOR;
@@ -194,6 +206,18 @@ def bot_author(login: str, email: str) -> bool:
     """Whether the commit's author is a GitHub bot account, by its login or by
     its noreply email (spoofable: see verdicts)."""
     return login.endswith("[bot]") or bool(BOT_EMAIL.match(email.strip()))
+
+
+def member_pr(pr_author: str, association: str, has_write) -> str:
+    """Why the PR needs no sign-off at all (#586): empty for an outside
+    contributor's PR, else who opened it."""
+    if pr_author in TRUSTED_BOTS:
+        return f"{pr_author} is one of the org's bots"
+    if association in EXEMPT_ASSOCIATIONS:
+        return f"{pr_author} is {association}"
+    if pr_author and has_write(pr_author):
+        return f"{pr_author} has write access"
+    return ""
 
 
 def verdicts(commits, logins, pr_author, association, has_write) -> list[tuple[str, dict, str]]:
@@ -425,6 +449,27 @@ def self_test() -> int:
         if any(got[k] != v for k, v in want_bot.items()):
             fails += 1
             print(f"SELF-TEST FAIL (bot commits, PR by {author} {assoc}): {got}")
+    # a member's, a writer's or a bot's PR is not checked at all (#586); an
+    # outside contributor's PR, or a bot name on one, still is
+    member_cases = [
+        (("maint", "OWNER"), True),
+        (("maint", "MEMBER"), True),
+        (("maint", "COLLABORATOR"), True),
+        (("writer", "CONTRIBUTOR"), True),  # a private org member
+        (("swarm-routing-bot[bot]", "NONE"), True),
+        (("dependabot[bot]", "NONE"), True),
+        (("github-actions[bot]", "NONE"), True),
+        (("ada", "NONE"), False),
+        (("ada", "CONTRIBUTOR"), False),
+        (("ada", "FIRST_TIME_CONTRIBUTOR"), False),
+        (("mallory", "NONE"), False),
+        (("evil[bot]", "NONE"), False),
+        (("", "NONE"), False),
+    ]
+    for (author, assoc), want_member in member_cases:
+        if bool(member_pr(author, assoc, has_write)) != want_member:
+            fails += 1
+            print(f"SELF-TEST FAIL (member PR, {author!r} {assoc})")
     # pagination and a commit without a GitHub author
     pages = {
         1: [{"sha": f"s{i}", "author": {"login": "ada"}} for i in range(100)],
@@ -530,9 +575,22 @@ def main() -> int:
     base, head = os.environ.get("PR_BASE_SHA", ""), os.environ.get("PR_HEAD_SHA", "")
     if not (a.repo and a.pr and base and head):
         ap.error("--repo, --pr and the PR_BASE_SHA and PR_HEAD_SHA variables are required")
+    has_write = permission_lookup(a.repo)
+    why = member_pr(a.pr_author, a.association, has_write)
+    if why:
+        line = (
+            f"dco: not required, {why}; a sign-off is enforced on outside "
+            'contributors\' PRs only (CONTRIBUTING "Outside contributions", #586)'
+        )
+        print(line)
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        return 0
     commits = git_commits(base, head)
     logins = pr_logins(a.repo, a.pr)
-    rows = verdicts(commits, logins, a.pr_author, a.association, permission_lookup(a.repo))
+    rows = verdicts(commits, logins, a.pr_author, a.association, has_write)
     return report(rows)
 
 

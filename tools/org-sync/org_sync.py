@@ -86,6 +86,22 @@ newer template left on BASE, is a `::warning::` line and exit 0, so a template
 merge in swarm-routing/.github does not block every PR until the org-bot
 refresh lands; plain `check` (pushes to main) still fails on it.
 
+The template pin (#586): `apply` records in `.github/org-sync.lock` the
+swarm-routing/.github commit it rendered from (`commit = "<40 hex>"`), and
+reusable-org-sync-check.yml checks the repository against the templates and
+tools at that commit, so a template merge here never turns another
+repository's check red: only org-bot's refresh PR, which moves the pin and
+the rendered text together, brings the new templates in (the swarm-core.lock
+model). `apply` writes the lock only when it changed a file or the lock is
+missing (the first refresh after #586 writes it everywhere), so a commit here
+that renders nothing new opens no PR. It records the commit only from a clean
+checkout (`templates/`, `tools/org-sync/`, `tools/fidelity/` unchanged) on
+`main` or a detached HEAD (CI); from a feature branch or a dirty tree it
+leaves the lock as it is and says so. The lock is separate from
+`.github/org-sync.toml`: that file is the repository's own configuration (and
+a push changing it re-applies the repository's settings), the lock is
+machine-written state, never edited by hand.
+
 Output is a summary, never file contents, so an agent reads a few lines per
 run (AntHocNet ADR-0014). Only `conflicts` and `reseed` print text: the hunks
 that need a person's judgement, and the change a reseed makes. Stdlib only; Python 3.11+ (tomllib).
@@ -112,6 +128,8 @@ sys.path.insert(0, os.path.join(ORG, "tools", "fidelity"))
 import bib  # noqa: E402  (tools/fidelity/bib.py: the docs/references.bib reader, #308)
 
 CONFIG = ".github/org-sync.toml"
+LOCK = ".github/org-sync.lock"  # the swarm-routing/.github commit last rendered from (#586)
+LOCK_LINE = re.compile(r'^commit = "([0-9a-f]{40})"[ \t]*$', re.M)
 KINDS = ("protocol", "c-cpp", "python", "container", "data", "site", "skills")
 CXX_KINDS = ("protocol", "c-cpp")
 MAKE_TARGETS = ("help", "build", "test", "lint", "format", "check", "clean", "shell", "ci")
@@ -1327,6 +1345,8 @@ def items(cfg):
         ),
         # a push that changes [settings] asks repo-settings to apply it (#569)
         ("file", ".github/workflows/settings-apply.yml", "workflows/settings-apply.yml", None),
+        # an issue change that can move an epic list asks epics-refresh to run (#572)
+        ("file", ".github/workflows/epics-changed.yml", "workflows/epics-changed.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),
@@ -1687,6 +1707,56 @@ def apply_once(cfg, repo_dir, force):
     return changed, conflicts
 
 
+def org_commit():
+    """(sha, why): the swarm-routing/.github commit these templates are, or
+    (None, why) when it cannot be named: not a git checkout, a feature branch,
+    or uncommitted changes to what renders (#586)."""
+
+    def g(*args):
+        return subprocess.run(["git", "-C", ORG, *args], capture_output=True, text=True)
+
+    r = g("rev-parse", "HEAD")
+    if r.returncode:
+        return None, "the templates are not a git checkout"
+    sha = r.stdout.strip()
+    branch = g("symbolic-ref", "-q", "--short", "HEAD").stdout.strip()
+    if branch and branch != "main":
+        return None, f"the templates are on branch {branch}, not main"
+    dirty = g("status", "--porcelain", "--", "templates", "tools/org-sync", "tools/fidelity")
+    if dirty.returncode or dirty.stdout.strip():
+        return None, "the templates have uncommitted changes"
+    return sha, ""
+
+
+def read_lock(repo_dir):
+    """The pinned commit in .github/org-sync.lock, or None."""
+    m = LOCK_LINE.search(read(os.path.join(repo_dir, LOCK)) or "")
+    return m.group(1) if m else None
+
+
+def write_lock(repo_dir, changed):
+    """Record the template commit after an apply that changed a file, or when
+    the lock is missing; a line for apply's output, or None."""
+    old = read_lock(repo_dir)
+    if not changed and old:
+        return None
+    sha, why = org_commit()
+    if not sha:
+        return f"{'kept':9} {LOCK}: {why}" if changed else None
+    if sha == old:
+        return None
+    write(
+        repo_dir,
+        LOCK,
+        "# The swarm-routing/.github commit this repository's org-managed files were\n"
+        "# rendered from (swarm-routing/.github#586): `check / org-sync` checks them\n"
+        "# against the templates at this commit. Written by tools/org-sync/org_sync.py\n"
+        "# apply (org-bot's refresh PR), never by hand.\n"
+        f'commit = "{sha}"\n',
+    )
+    return f"{'update' if old else 'create':9} {LOCK}"
+
+
 # --- commands ----------------------------------------------------------------
 
 
@@ -1761,6 +1831,9 @@ def cmd_apply(a):
         set(getattr(a, "force", None) or ()),
         prune=getattr(a, "prune_orphans", False),
     )
+    pinned = write_lock(a.repo, changed)
+    if pinned:
+        changed.append(pinned)
     for line in changed + conflicts:
         print(line)
     if not changed and not conflicts:

@@ -43,6 +43,12 @@ name: org-bot
 #   bestpractices-evidence.yml sends when a push to main touches the evidence
 #   files; those runs have their own concurrency group per repository, so a
 #   pending org-release run is never replaced by one.
+# - fan-out in bounded batches (#505): epics, org-sync and bestpractices open
+#   at most 4 new PRs at a time, then wait (2 min, then while the org holds
+#   more than 10 queued runs, 30 min in all) before the next 4; what the run
+#   cannot open in that time is deferred, and the hourly run (org-sync) or
+#   the next daily one proposes it. A release's jobs never queue behind a
+#   whole-org refresh again (on 2026-11-16 a publish waited 19 min).
 # Daily, on every push to main that changes the templates or the generators,
 # on demand, and on each release (#479): reusable-release.yml (and
 # AntHocNet's release.yml) send repository_dispatch `org-release` with
@@ -72,7 +78,7 @@ on:
   schedule:
     - cron: '17 4 * * *'
     - cron: '41 */3 * * *'  # swarm-core-pin alone (#208)
-    - cron: '23 * * * *'    # release-rebuild and release-aftercare (#430, #465)
+    - cron: '23 * * * *'    # hourly: release-rebuild, release-aftercare, release-lock, org-sync (#430, #465, #505)
   repository_dispatch:
     types: [org-release, bestpractices]
   push:
@@ -90,7 +96,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, release-rebuild, release-aftercare, bestpractices]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -113,10 +119,12 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # longest green run: 5.5 min; the fan-out throttle may wait up to 30 more
+    # (ORG_BOT_BATCH_WAIT, #505) before it defers the rest to the next run
+    timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
-      TASK: ${{ inputs.task || (github.event.action == 'bestpractices' && 'bestpractices') || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'release') || 'all' }}
+      TASK: ${{ inputs.task || (github.event.action == 'bestpractices' && 'bestpractices') || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'hourly') || 'all' }}
       REPOS: ${{ inputs.repos }}
       # org-release (#479): the released repository, checked below before use
       RELEASED: ${{ github.event.client_payload.repository }}
@@ -137,7 +145,7 @@ jobs:
         if: env.TASK == 'all' || env.TASK == 'bestpractices'
         timeout-minutes: 3
         env:
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:81ae5bd1a281d224463d07ec7e697dddda8f2e3069f3cd1209712af687c678c3
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:c4a8db27766add567ae654771fa86210047edc1589c43071e3a15a21a2e0f1ff
         run: |
           set -euo pipefail
           docker pull --quiet "$IMG" > /dev/null

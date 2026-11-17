@@ -4,7 +4,7 @@
 """Open the refresh PRs that keep every org repository in step with this one.
 
 Usage:
-  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-lock|release-rebuild|release-aftercare|bestpractices|release|all]
+  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-lock|release-rebuild|release-aftercare|bestpractices|release|hourly|all]
                  [--repos A,B] [--dry-run]
   org_bot.py --self-test
 
@@ -95,7 +95,8 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             run of that workflow is queued or running; never with a guessed
             increment (a PR whose body records none is left to a person).
   `release` runs both release tasks and release-lock (org-bot.yml, hourly,
-  and for one repository on its `org-release` repository_dispatch, #479); `all`
+  and for one repository on its `org-release` repository_dispatch, #479); `hourly`
+  runs those and org-sync (the hourly schedule, so a deferred refresh lands, #505); `all`
   runs epics, org-sync, zenodo, swarm-core-pin, release-lock and bestpractices.
 
   org-sync and swarm-core-pin never leave two PRs that each fail the other's
@@ -111,6 +112,20 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
   a lock is behind, so the lock PR blocks nothing, and a lock bump red in the
   consumer's CI must never hold the template refresh back. Whichever lands
   first, the other's copy of those files is then no change.
+
+Fan-out in bounded batches (#505): the refresh tasks that touch every
+repository at once (epics, org-sync, bestpractices) open at most
+ORG_BOT_BATCH new PRs (default 4) before a pause of ORG_BOT_BATCH_PAUSE
+seconds (default 120, so the batch's runs reach the queue), then wait while
+the org holds more than ORG_BOT_QUEUE_LIMIT queued workflow runs (default 10,
+read from every public repository's `actions/runs?status=queued`). The run
+waits ORG_BOT_BATCH_WAIT seconds at most (default 1800) in all; past that,
+the PRs it has not opened are deferred, each named on its own line, and the
+next run (hourly for org-sync, daily for the rest) proposes them. On
+2026-11-16 22 refresh PRs opened at once held a release's publish job queued
+for 19 minutes behind them. Updates in place and the release-driven tasks
+(swarm-core-pin, release-lock, release-aftercare) are never held back.
+ORG_BOT_BATCH=0 turns the throttle off.
 
 When a run changes files, the bot opens one PR per repository and task:
 - the branch is `org-bot/<task>-<hash of the change>`;
@@ -154,6 +169,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import re
 import urllib.parse
 
@@ -192,6 +208,7 @@ FIXED_BRANCH = {"swarm-core-pin", "release-lock"}
 PAIRED = {"org-sync": "swarm-core-pin", "swarm-core-pin": "org-sync"}
 # a task that carries its partner's change too, leaving the partner's PR open (#478)
 CARRY = {"release-lock": "org-sync"}
+FANOUT = {"epics", "org-sync", "bestpractices"}  # throttled in batches (#505)
 FAILED_RUN = {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
 ORG = "swarm-routing"
 BOT = ("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
@@ -278,6 +295,68 @@ class Failure(SystemExit):
     pass
 
 
+class Throttle:
+    """Bounded batches for the fan-out tasks (#505): `admit()` before each new
+    fan-out PR; after every `batch` of them, pause, then wait while the org's
+    queue holds more than `limit` queued runs, `budget` seconds in all."""
+
+    def __init__(self, gh, repos, sleep=time.sleep, clock=time.monotonic):
+        env = os.environ.get
+        self.gh, self.repos, self.sleep, self.clock = gh, list(repos), sleep, clock
+        self.batch = int(env("ORG_BOT_BATCH") or 4)
+        self.pause = float(env("ORG_BOT_BATCH_PAUSE") or 120)
+        self.limit = int(env("ORG_BOT_QUEUE_LIMIT") or 10)
+        self.budget = float(env("ORG_BOT_BATCH_WAIT") or 1800)
+        self.opened = self.waited = 0
+        self.spent = 0.0
+        self.closed = ""  # why later fan-out PRs are deferred, once the budget is spent
+
+    def queued(self):
+        n = 0
+        for repo in self.repos:
+            try:
+                got = self.gh.api(
+                    "GET", f"repos/{ORG}/{repo}/actions/runs?status=queued&per_page=1"
+                )
+            except Failure:
+                continue  # one unreadable repository never stops the fan-out
+            n += int(got.get("total_count") or 0) if isinstance(got, dict) else 0
+        return n
+
+    def _sleep(self, seconds):
+        start = self.clock()
+        self.sleep(seconds)
+        self.spent += self.clock() - start
+
+    def admit(self):
+        """None to go ahead, else why this PR is deferred."""
+        if self.batch <= 0:
+            return None
+        if self.closed:
+            return self.closed
+        if self.opened and self.opened % self.batch == 0 and self.waited != self.opened:
+            self.waited = self.opened
+            self._sleep(min(self.pause, max(0.0, self.budget - self.spent)))
+            while True:
+                q = self.queued()
+                if q <= self.limit:
+                    print(
+                        f"org-bot: batch of {self.batch} opened; {q} runs queued in the org, next batch"
+                    )
+                    break
+                if self.spent >= self.budget:
+                    self.closed = (
+                        f"deferred: {q} runs queued in the org after {self.spent / 60:.0f} min of "
+                        f"waiting (limit {self.limit}, #505); the next run proposes it"
+                    )
+                    return self.closed
+                self._sleep(min(60.0, self.budget - self.spent))
+        return None
+
+    def done(self):
+        self.opened += 1
+
+
 def sh(cmd, cwd=None, env=None, check=True):
     r = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
     if check and r.returncode != 0:
@@ -344,9 +423,17 @@ def git_env(token):
     return env
 
 
+# org_sync.py apply's template pin (#586): which swarm-routing/.github commit
+# rendered a change is not part of the change, so a new commit here that
+# renders the same text keeps the open refresh PR instead of replacing it
+ORG_SYNC_LOCK = ".github/org-sync.lock"
+LOCK_COMMIT = re.compile(r'^([+-]?commit = ")[0-9a-f]{40}"', re.M)
+
+
 def branch_for(task, diff):
     if task in FIXED_BRANCH:
         return f"org-bot/{task}"
+    diff = LOCK_COMMIT.sub(r'\1<pin>"', diff)
     return f"org-bot/{task}-{hashlib.sha256(diff.encode()).hexdigest()[:8]}"
 
 
@@ -364,6 +451,8 @@ def branch_has(clone, branch, env):
     ).stdout.split()
     for path in changed:
         theirs = sh(["git", "-C", clone, "show", f"FETCH_HEAD:{path}"], env=env, check=False)
+        if path == ORG_SYNC_LOCK and not theirs.returncode:
+            continue  # an older template pin with the same render (#586)
         with open(os.path.join(clone, path), encoding="utf-8", errors="replace") as fh:
             if theirs.returncode or theirs.stdout != fh.read():
                 return False
@@ -707,9 +796,10 @@ def branch_only(clone, branch, env):
     return theirs <= ours
 
 
-def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
+def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=(), throttle=None):
     """One PR for the change in `clone`, unless the same change is already open.
-    `also`: other tasks whose open bot PRs this one carries, closed as superseded (#429)."""
+    `also`: other tasks whose open bot PRs this one carries, closed as superseded (#429).
+    `throttle`: a new fan-out PR waits for its batch, or is deferred (#505)."""
     diff = sh(["git", "-C", clone, "diff"]).stdout
     status = sh(["git", "-C", clone, "status", "--porcelain"]).stdout
     if not status.strip():
@@ -790,6 +880,11 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
         note = queue(gh, full, base, same[0])
         print(f"{repo} {task}: already proposed in #{same[0]['number']}; {note}")
         return {"number": same[0]["number"], "branch": branch, "queue": note}
+    if throttle is not None and task in FANOUT:
+        why = throttle.admit()
+        if why:
+            print(f"{repo} {task}: {why}")
+            return {"branch": branch, "deferred": True}
     sh(["git", "-C", clone, "checkout", "-q", "-b", branch], env=env)
     sh(["git", "-C", clone, "add", "-A"], env=env)
     msg = f"{TASKS[task]['title']}\n\nGenerated by swarm-routing/.github tools/org-bot ({run_url or 'local run'})."
@@ -807,6 +902,8 @@ def propose(gh, repo, task, clone, notes, env, dry_run, run_url, also=()):
             "body": pr_body(task, notes, run_url),
         },
     )
+    if throttle is not None and task in FANOUT:
+        throttle.done()
     supersede(gh, full, mine + carried, pr["number"])
     closed = closed_note(mine + carried)
     note = queue(gh, full, base, {**pr, "head": {"ref": branch}})
@@ -1066,6 +1163,9 @@ def run(args, gh=None, clone_url=None):
     groups = {
         "all": ["epics", "org-sync", "zenodo", "swarm-core-pin", "release-lock", "bestpractices"],
         "release": ["release-rebuild", "release-aftercare", "release-lock"],
+        # the hourly run: the release tasks, and org-sync, so a refresh the
+        # throttle deferred lands within the hour (#505)
+        "hourly": ["release-rebuild", "release-aftercare", "release-lock", "org-sync"],
     }
     tasks = groups.get(args.task, [args.task])
     days = float(os.environ.get("ORG_BOT_AFTERCARE_DAYS") or 14)
@@ -1094,6 +1194,7 @@ def run(args, gh=None, clone_url=None):
         if source:
             print(f"org-bot: {source}")
     repos = [r["name"] for r in json.load(open(data))["repos"]]  # public, not archived, not forks
+    throttle = None if dry_run else Throttle(gh, repos)  # the whole org's queue (#505)
     if args.repos:
         wanted = [n.strip() for n in args.repos.split(",") if n.strip()]
         unknown = sorted(set(wanted) - set(repos))
@@ -1150,7 +1251,7 @@ def run(args, gh=None, clone_url=None):
                 if notes is None:
                     continue
                 as_task, notes, also = pair(task, repo, clone, data, notes)
-                pr = propose(gh, repo, as_task, clone, notes, env, dry_run, run_url, also)
+                pr = propose(gh, repo, as_task, clone, notes, env, dry_run, run_url, also, throttle)
                 results.append((repo, task, pr))
                 if task == "release-aftercare" and released.get(repo):
                     results.append(
@@ -1186,6 +1287,7 @@ def main(argv=None):
             "release-aftercare",
             "bestpractices",
             "release",
+            "hourly",
             "all",
         ],
         default="all",
@@ -1214,6 +1316,16 @@ def self_test():
     def check(name, cond):
         if not cond:
             failures.append(name)
+
+    # the template pin (#586): a refresh rendered from a newer commit with the
+    # same text is the same branch; a different text is not
+    lock_diff = (
+        '--- a/.github/org-sync.lock\n+++ b/.github/org-sync.lock\n-commit = "{}"\n+commit = "{}"\n'
+    )
+    same_a = branch_for("org-sync", lock_diff.format("a" * 40, "b" * 40) + "+text\n")
+    same_b = branch_for("org-sync", lock_diff.format("a" * 40, "c" * 40) + "+text\n")
+    other = branch_for("org-sync", lock_diff.format("a" * 40, "c" * 40) + "+other\n")
+    check("the template pin is not part of the branch name", same_a == same_b != other)
 
     work = tempfile.mkdtemp(prefix="org-bot-test-")
     env = git_env(None)
@@ -2641,6 +2753,101 @@ def self_test():
         and apply_failed(1, "Traceback ...")
         and apply_failed(2, ""),
     )
+
+    # the fan-out throttle (#505): batches, a pause, a wait on the org's queue, a budget
+    class QueueGitHub:
+        def __init__(self, counts):
+            self.counts, self.calls = list(counts), []
+
+        def api(self, method, path, body=None):
+            self.calls.append(path)
+            return {"total_count": self.counts.pop(0) if self.counts else 0}
+
+    now = [0.0]
+    naps = []
+
+    def nap(s):
+        naps.append(s)
+        now[0] += s
+
+    saved = {
+        k: os.environ.pop(k, None)
+        for k in (
+            "ORG_BOT_BATCH",
+            "ORG_BOT_BATCH_PAUSE",
+            "ORG_BOT_QUEUE_LIMIT",
+            "ORG_BOT_BATCH_WAIT",
+        )
+    }
+    try:
+        os.environ.update(
+            ORG_BOT_BATCH="2",
+            ORG_BOT_BATCH_PAUSE="100",
+            ORG_BOT_QUEUE_LIMIT="5",
+            ORG_BOT_BATCH_WAIT="300",
+        )
+        # one repository: the queue reads 9, then 3 -> one extra minute, then the next batch
+        qgh = QueueGitHub([9, 3])
+        th = Throttle(qgh, ["alpha"], sleep=nap, clock=lambda: now[0])
+        got = []
+        with contextlib.redirect_stdout(io.StringIO()):
+            for _ in range(4):
+                why = th.admit()
+                got.append(why)
+                if not why:
+                    th.done()
+        check(
+            "throttle: two at once, then pause and wait for the queue",
+            got == [None, None, None, None]
+            and naps == [100, 60]
+            and qgh.calls == [f"repos/{ORG}/alpha/actions/runs?status=queued&per_page=1"] * 2,
+        )
+        # a queue that never drains: deferred once the budget is spent, and every later one too
+        naps.clear()
+        now[0] = 0.0
+        th = Throttle(QueueGitHub([50] * 20), ["alpha"], sleep=nap, clock=lambda: now[0])
+        got = []
+        for _ in range(4):
+            why = th.admit()
+            got.append(why)
+            if not why:
+                th.done()
+        check(
+            "throttle: deferred past the budget",
+            got[:2] == [None, None]
+            and got[2]
+            and "deferred: 50 runs queued" in got[2]
+            and got[3] == got[2]
+            and sum(naps) == 300,
+        )
+        # ORG_BOT_BATCH=0: off, no API call
+        os.environ["ORG_BOT_BATCH"] = "0"
+        qgh = QueueGitHub([])
+        th = Throttle(qgh, ["alpha"], sleep=nap, clock=lambda: now[0])
+        check("throttle off", all(th.admit() is None for _ in range(9)) and qgh.calls == [])
+        # propose: a deferred fan-out PR pushes nothing and opens nothing; a pin update is never held
+        os.environ["ORG_BOT_BATCH"] = "1"
+        th = Throttle(QueueGitHub([99] * 9), ["alpha"], sleep=nap, clock=lambda: now[0])
+        th.opened, th.closed = 1, "deferred: test (#505)"
+        gh = FakeGitHub()
+        tclone = os.path.join(work, "throttle-clone")
+        sh(["git", "clone", "-q", clone_url.format(org=ORG, repo="alpha"), tclone], env=env)
+        with open(os.path.join(tclone, "README.md"), "a") as fh:
+            fh.write("drift\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            got = propose(gh, "alpha", "org-sync", tclone, [], env, False, "", (), th)
+        check(
+            "propose: deferred, nothing written",
+            got.get("deferred")
+            and "deferred: test" in out.getvalue()
+            and not [c for c in gh.calls if c[0] != "GET"],
+        )
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
     # the token never reaches an argument list
     e = git_env("s3cret")
     check(

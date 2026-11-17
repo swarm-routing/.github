@@ -15,6 +15,13 @@ name: Reusable swarm-core pin
 # against the release, and red only when a newer swarm-core release is out.
 # With a root vcpkg.json on swarm-core (vcpkg mode, #489), also: the override
 # pins the lock's version and the swarm-routing/vcpkg-registry baseline holds it.
+# A stale but consistent pin (a newer release; in commit mode, swarm-core main
+# moved) is not the change's own finding (#586): on pull_request and
+# merge_group it is a warning and the check passes, so a swarm-core release
+# never turns an unrelated PR red; on a push to main (or any other event) it is
+# red only while org-bot's bump PR is open (its branch org-bot/swarm-core-pin
+# exists), and a warning before org-bot proposes it. A pin the files disagree
+# on, or a lock that does not verify, fails on every event.
 # The checker is tools/checks/check-swarm-core-pin.py in swarm-routing/.github
 # (with tools/checks/release_lock.py).
 # Caller:
@@ -48,6 +55,9 @@ jobs:
           sparse-checkout: tools/checks
           persist-credentials: false
       - name: The pin is one commit, and swarm-core main's core/ is the pinned core/
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STALE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'warn' || 'bump-pr' }}
         run: |
           python3 -I .org/tools/checks/check-swarm-core-pin.py --self-test
-          python3 -I .org/tools/checks/check-swarm-core-pin.py
+          python3 -I .org/tools/checks/check-swarm-core-pin.py --stale "$STALE"

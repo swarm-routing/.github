@@ -130,7 +130,7 @@ Org-wide (1–9), then this repo's own.
   [AntHocNet ADR-0013](https://github.com/swarm-routing/AntHocNet/blob/main/docs/adr/0013-track-bugs-and-findings-as-issues.md)): one type label
   (`bug`/`enhancement`/`chore`/`documentation`/`verification`, plus `epic` for
   umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
-  `observability`/`packaging`/`learn-site`/`literature`), one `model:*`
+  `observability`/`packaging`/`ci`/`learn-site`/`literature`), one `model:*`
   suggestion (a model on the Claude Pro plan), one `priority:P1|P2|P3` on
   non-epic issues (none on an epic), a
   `release:vX.Y.Z` label only when a release in the repository's ladder
@@ -159,18 +159,13 @@ Org-wide (1–9), then this repo's own.
   `tools/epics/epics.py`. An open epic is Planned (no sub-issue closed) or In
   progress (some closed); it becomes Done or Dropped only when you close the
   epic itself (as completed or as not planned), even if every sub-issue is
-  closed. Whenever you change an epic (open, close, rename or re-scope it, add
-  or remove its `epic` label) or one of its sub-issues (close, reopen, add,
-  unlink), refresh the lists in that PR or the next one. You need
-  `swarm-routing/.github` checked out next to this repository and `gh` logged
-  in (or `GH_TOKEN` set). Run `python3 ../.github/tools/epics/epics.py readme .`
-  in the repository that owns the epic (for a sub-issue of another
-  repository's epic, that repository, not this one), then
-  `python3 tools/epics/epics.py roadmap ROADMAP.md` and
-  `python3 tools/epics/epics.py profile profile/README.md` in `.github`. Never
-  edit a generated section by hand; the weekly `epics` workflow in `.github`
-  only reports drift. Private repositories are never listed
-  and keep no generated section.
+  closed. The lists follow the issues with no hand step: an issue change
+  that can move them (an `epic` label, an epic opened, edited, closed or
+  reopened, a sub-issue closed or reopened) makes the org-managed
+  `epics-changed.yml` ask `.github`'s `epics-refresh` to run org-bot's
+  `epics` task, which opens the refresh PRs (debounced, plus hourly for a
+  sub-issue added or removed). Never edit a generated section by hand.
+  Private repositories are never listed and keep no generated section.
 - Make minimal, reviewable changes; update the relevant doc/ADR when you change
   a documented decision.
 
@@ -376,12 +371,12 @@ changing what the row names.
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
 | Choose a language, or write a Go pipeline tool and its CI | `docs/adr/0002-pipelines-are-go.md`, CONTRIBUTING § Languages, `reusable-go-ci.yml`; migration epic #531 |
-| Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `uses: docker://ghcr.io/swarm-routing/ci-tools@sha256:…` |
+| Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `docker run --user … -v …:ro ghcr.io/swarm-routing/ci-tools@sha256:… <tool>` in a `run:` step, never `uses: docker://` (ADR-0002) |
 | Change the licence rules or their gate | `cmd/check-headers` (Go; `tools/checks/check-headers.py` deprecated), `reusable-licence-check.yml`, CONTRIBUTING rule 1 |
 | Change how outside contributions are accepted (DCO, contributor copyright lines) | CONTRIBUTING "Outside contributions", `tools/checks/check-dco.py`, `reusable-dco.yml` |
 | Add or rename a label | `labels.json` + `CONTRIBUTING.md` + `ISSUE_TEMPLATE/` |
 | List an org skill in every repo's AGENTS.md | `templates/agents/skills.md` |
-| Change what every repo shares (org sections, badges, SECURITY, ADR template, Makefile) | `templates/` + `tools/org-sync/org_sync.py`; a template change turns every adopting repo's `org-sync` check red until its refresh PR lands |
+| Change what every repo shares (org sections, badges, SECURITY, ADR template, Makefile) | `templates/` + `tools/org-sync/org_sync.py`; each repo is checked at the commit its `.github/org-sync.lock` pins, so a template change turns nothing red: org-bot's refresh PR moves the pin and the text together (#586) |
 | Bring a repo onto the templates | `tools/org-sync/org_sync.py init` (new repo) or `plan` → `apply` → `check` |
 | Change the org security policy | `SECURITY.md`, `templates/SECURITY.md.in`; write no claim a repo cannot back |
 | Record an ns-3 bug, or look one up (RCAPA) | swarm-routing/ns3-tools `docs/ns3-bugs.md`, `docs/ns3-rcapa/`; form `ISSUE_TEMPLATE/rcapa.yml` |

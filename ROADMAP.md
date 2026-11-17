@@ -14,9 +14,10 @@ PR that closes its epic. Changing a phase's scope or exit criteria is a PR to
 this file, like any other decision. [Epics](#epics) below lists every epic of
 every public repository with its status, generated from the issues by
 `tools/epics/epics.py` (the same list is in each repository's README).
-Whoever opens, closes or re-scopes an epic, or changes one of its sub-issues,
-refreshes it in that PR or the next one (CONTRIBUTING, "Epics are the public
-plan"); the weekly `epics` workflow only reports drift.
+An issue change that moves it (an epic opened, closed or re-scoped, a
+sub-issue closed or reopened) refreshes it through org-bot's PR within the
+hour, with no hand step (`epics-refresh.yml`, #572; CONTRIBUTING, "Epics are
+the public plan").
 
 ## Direction beyond ns-3 (proposed 2026-11-12)
 
@@ -529,7 +530,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#323](https://github.com/swarm-routing/.github/issues/323) Linux daemon host: every core over real sockets, packaged for amd64 and arm64 | Planned | 0 / 5 |
 | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
-| [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | Planned | 0 / 1 |
+| [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | Planned | 0 / 2 |
 
 <details><summary>Closed: 2 epics</summary>
 

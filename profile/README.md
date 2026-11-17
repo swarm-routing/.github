@@ -105,7 +105,7 @@ lists them in the order that matters.
 | [.github](https://github.com/swarm-routing/.github) | [#323](https://github.com/swarm-routing/.github/issues/323) Linux daemon host: every core over real sockets, packaged for amd64 and arm64 | Planned | 0 / 5 |
 | [.github](https://github.com/swarm-routing/.github) | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [.github](https://github.com/swarm-routing/.github) | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
-| [.github](https://github.com/swarm-routing/.github) | [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | Planned | 0 / 1 |
+| [.github](https://github.com/swarm-routing/.github) | [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | Planned | 0 / 2 |
 | [AntHocNet](https://github.com/swarm-routing/AntHocNet) | [#64](https://github.com/swarm-routing/AntHocNet/issues/64) Abstract discrete-event testbench in core/tests — trend regression without a simulator | In progress | 1 / 2 |
 | [AntHocNet](https://github.com/swarm-routing/AntHocNet) | [#109](https://github.com/swarm-routing/AntHocNet/issues/109) Publish the AntHocNet implementation (reproducibility + cross-simulator paper) | In progress | 1 / 4 |
 | [AntHocNet](https://github.com/swarm-routing/AntHocNet) | [#328](https://github.com/swarm-routing/AntHocNet/issues/328) 5-star open-source packaging — visibility, supply-chain trust, onboarding, docs site | In progress | 19 / 25 |

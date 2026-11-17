@@ -1,0 +1,40 @@
+# The maintainer's answers to five owner-only OpenSSF Best Practices
+# criteria, for every swarm-routing project (maintainer decision 2026-11-17,
+# swarm-routing/AntHocNet#790, swarm-routing/.github#559). The weekly
+# `bestpractices check` (internal/bestpractices/owner.go) proposes them on
+# each repository's `[bestpractices]` issue, citing this file:
+#
+# - know_secure_design gains "The core is kept free of simulator and I/O
+#   dependencies." only in a repository with a core/;
+# - know_common_errors gains the CI checks that repository's
+#   .bestpractices.json already justifies (its sanitizers, fuzzing, CodeQL,
+#   SonarQube Cloud, linters), and nothing else; with none it stays `?`;
+# - vulnerabilities_fixed_60_days, vulnerabilities_critical_fixed and
+#   no_leaked_credentials are proposed only when the check, with the bot's
+#   token, reads the repository's open code-scanning, Dependabot and
+#   secret-scanning alerts and none stands against them. An alert listing it
+#   cannot read, or an open alert, leaves the answer `?`.
+#
+# A change here is the maintainer's: a PR, reviewed like any other.
+
+decided = "2026-11-17"
+
+[know_secure_design]
+status = "Met"
+justification = "The maintainer applies least privilege (scoped bot App tokens, separate environments for reading and writing), pins every action by SHA, and gates all changes behind review and CI."
+
+[know_common_errors]
+status = "Met"
+justification = "The maintainer knows the common errors of the project's languages and environment (memory safety, parsing untrusted bytes, workflow injection) and checks for them in CI."
+
+[vulnerabilities_fixed_60_days]
+status = "Met"
+justification = "No known vulnerabilities of medium severity or higher are open; SECURITY.md defines how reports are handled."
+
+[vulnerabilities_critical_fixed]
+status = "Met"
+justification = "SECURITY.md commits to a private reporting channel and fast fixes for critical issues; none have been reported so far."
+
+[no_leaked_credentials]
+status = "Met"
+justification = "Secrets live only in GitHub encrypted secrets and environments; secret scanning is on with no open alerts."
