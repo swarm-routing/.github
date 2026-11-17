@@ -1804,13 +1804,23 @@ rc, out = run("profile", dp, "--check")
 check(rc == 1 and "drifted" in out, "profile --check: an empty badges section is drift")
 rc, _ = run("profile", dp)
 pr = read(pf)
-titles = [t for t, _ in org_sync.BADGE_GROUPS.values()]
+titles = [
+    "Main",
+    "Platforms",
+    "Containers",
+    "Protocols",
+    "Quality",
+    "Trust",
+    "Stack",
+    "Community & docs",
+]
 rows = re.findall(r"^\| ([^|]+) \| ", pr, re.M)[2:]
 check(
     rc == 0
     and pr.startswith("# org\n\nIntro.\n\n<!-- org-sync:begin badges -->\n| Group | Badges |\n")
     and pr.endswith("<!-- org-sync:end badges -->\n\nRest.\n")
-    and rows == [t for t in titles if t in rows]
+    and rows == titles
+    and "](#the-ai-first-engineering-model)" in pr
     and "[![Colony Arena](" in pr,
     "profile renders the grouped table between the markers, groups in order, the rest kept",
 )

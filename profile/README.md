@@ -13,11 +13,11 @@ own citable repository.
 <!-- org-sync:begin badges -->
 | Group | Badges |
 | --- | --- |
-| Main | [![Website](https://img.shields.io/badge/Website-swarm--routing.github.io-blue)](https://swarm-routing.github.io) [![AI First](https://img.shields.io/badge/Maintained_with-AI_Agents-8A2BE2)](#-the-ai-first-engineering-model) | 
-| Platforms | [![ns-3](https://img.shields.io/badge/ns--3-Network_Simulator-1081c2)](https://www.nsnam.org/) | 
-| Conatiners | [![GHCR: ns3-dev](https://img.shields.io/badge/ghcr.io-swarm--routing%2Fns3--dev-blue?logo=docker)](https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev) |
+| Main | [![Website](https://img.shields.io/badge/Website-swarm--routing.github.io-blue)](https://swarm-routing.github.io) [![AI First](https://img.shields.io/badge/Maintained_with-AI_Agents-8A2BE2)](#the-ai-first-engineering-model) |
+| Platforms | [![ns-3](https://img.shields.io/badge/ns--3-Network_Simulator-1081c2)](https://www.nsnam.org/) |
+| Containers | [![GHCR: ns3-dev](https://img.shields.io/badge/ghcr.io-swarm--routing%2Fns3--dev-blue?logo=docker)](https://github.com/orgs/swarm-routing/packages/container/package/ns3-dev) |
 | Protocols | [![Protocol: AntHocNet](https://img.shields.io/badge/Protocol-AntHocNet-orange)](https://github.com/swarm-routing/AntHocNet) [![Protocol: ARA](https://img.shields.io/badge/Protocol-ARA-orange)](https://github.com/swarm-routing/ARA) [![Protocol: BeeAdHoc](https://img.shields.io/badge/Protocol-BeeAdHoc-orange)](https://github.com/swarm-routing/BeeAdHoc) [![Protocol: HOPNET](https://img.shields.io/badge/Protocol-HOPNET-orange)](https://github.com/swarm-routing/HOPNET) [![Protocol: Termite](https://img.shields.io/badge/Protocol-Termite-orange)](https://github.com/swarm-routing/Termite) |
-| Quality | [![SonarQube Cloud](https://img.shields.io/badge/SonarQube-Cloud-F3A000?logo=sonarqube)](https://sonarcloud.io/) [![Codecov](https://img.shields.io/badge/Codecov-Enabled-F01F7A?logo=codecov)](https://codecov.io/) [![OpenSSF Scorecard](https://img.shields.io/badge/OpenSSF-Scorecard-a00000?logo=linuxfoundation)](https://securityscorecards.dev/) | 
+| Quality | [![SonarQube Cloud](https://img.shields.io/badge/SonarQube-Cloud-F3A000?logo=sonarqube)](https://sonarcloud.io/) [![Codecov](https://img.shields.io/badge/Codecov-Enabled-F01F7A?logo=codecov)](https://codecov.io/) [![OpenSSF Scorecard](https://img.shields.io/badge/OpenSSF-Scorecard-a00000?logo=linuxfoundation)](https://securityscorecards.dev/) |
 | Trust | [![OpenSSF Scorecard: AntHocNet](https://api.securityscorecards.dev/projects/github.com/swarm-routing/AntHocNet/badge)](https://scorecard.dev/viewer/?uri=github.com/swarm-routing/AntHocNet) [![OpenSSF Best Practices: AntHocNet](https://www.bestpractices.dev/projects/16656/badge)](https://www.bestpractices.dev/projects/16656) [![Images signed: cosign](https://img.shields.io/badge/images%20signed-cosign-success)](https://github.com/swarm-routing/ns3-containers/blob/main/SECURITY.md) |
 | Stack | [![Runs on ns-3](https://img.shields.io/badge/runs%20on-ns--3-informational)](https://www.nsnam.org) [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue?logo=cplusplus)](https://github.com/swarm-routing/ns3-swarm-core) [![In the browser: WebAssembly](https://img.shields.io/badge/in%20the%20browser-WebAssembly-informational?logo=webassembly)](https://swarm-routing.github.io/pipeline/) |
 | Community & docs | [![Colony Arena](https://img.shields.io/website?url=https%3A%2F%2Fswarm-routing.github.io&label=Colony%20Arena)](https://swarm-routing.github.io) [![Claude Code plugin](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fswarm-routing%2Fskills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=Claude%20Code%20plugin&color=blueviolet)](https://github.com/swarm-routing/skills) [![Open handoffs](https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Ahandoff%20is%3Aopen&label=open%20handoffs)](https://github.com/search?q=org%3Aswarm-routing+label%3Ahandoff+state%3Aopen&type=issues) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow)](https://www.conventionalcommits.org) [![Sponsor](https://img.shields.io/github/sponsors/danieljoppi?label=sponsor&logo=githubsponsors&color=ea4aaa)](https://github.com/sponsors/danieljoppi) |
@@ -30,6 +30,14 @@ years of experience building high-scale software, delivery pipelines and the
 architecture of new systems. AntHocNet started as my college project: I began
 implementing the protocol in 2008 on NS-2 and put the code on GitHub in
 [January 2016](https://github.com/swarm-routing/AntHocNet/commit/b7ac7d0f24).
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:7140d072a32e72eededd6037433d031e2663a6cb0368af1e3540f9af2ebb4d75 -->
+
+## The AI First Engineering Model
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 I came back to it to put AI to a real test. Working with Claude Opus, I
 restructured the code so the algorithm no longer depends on one NS-2 version
@@ -84,10 +92,28 @@ no release yet, no SonarQube Cloud project, or no coverage upload.
 ## Getting Started
 
 **Contributors:** Pick an issue tagged with `good first issue` or `help wanted` in any protocol repository.
-**Researchers:** Visit [swarm-routing.github.io](https://swarm-routing.github.io) to view our paper-fidelity sheets and benchmark leaderboards.
-**Hardware Testers:** Check out our deployment guides for OpenWrt and Raspberry Pi testbeds.
+<!-- coderabbit-ai-generated:v1 -->
 
-*Standard Licensing: GPL-2.0-only for protocol code, MIT for tooling (see `LICENSING.md` in individual repos).*
+<!-- coderabbit-ai-generated-section:v1:34e710ca983fa962e69ad93ad299a2399c6dfbe3f233d0b1c8db99bc31f7e8c7 -->
+
+**Researchers:** Visit [swarm-routing.github.io](https://swarm-routing.github.io) for currently available paper-fidelity sheets. The benchmark leaderboard is planned and not yet available.
+
+<!-- /coderabbit-ai-generated:v1 -->
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:58123f5b1a513933b303d8e898bf13e724c53f2ae7811cb8b18829d77beb84b2 -->
+
+**Hardware Testers:** The Raspberry Pi testbed is planned; follow [#325](https://github.com/swarm-routing/.github/issues/325). This README does not yet link deployment guides for OpenWrt or Raspberry Pi.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:855b46949037dca475d435c193aaa312fc68097d77e3de76428a2d4dbb29518e -->
+
+*Standard Licensing: simulator-free protocol cores and standalone tooling are `MIT OR GPL-2.0-only`; ns-3 modules, sites, docs and data are `GPL-2.0-only` (see `LICENSING.md` in individual repos).*
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ### Open epics: pick something up
 
