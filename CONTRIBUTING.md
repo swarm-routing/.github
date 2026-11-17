@@ -1079,8 +1079,9 @@ Creating the App (an org owner, once):
    scanning alerts, Workflows. Read-only: Code scanning alerts
    (`security_events: read`), which `bestpractices` needs to read each
    repository's open code-scanning alerts (without it the listing is HTTP 403
-   "Resource not accessible by integration" and the owner-only vulnerability
-   answers stay `?`; granted 2026-11-17, #612). Metadata: Read-only (set
+   "Resource not accessible by integration", the check cannot apply the
+   vulnerability answers' age guard and `no_leaked_credentials` stays `?`;
+   granted 2026-11-17, #612). Metadata: Read-only (set
    automatically). No
    organization or account permissions. Contents: write on every repository is
    also what lets `reusable-release.yml` send the `repository_dispatch`
@@ -1868,10 +1869,21 @@ is **Save**, once per project, only when something changed. By hand, from a
   `bestpractices-evidence.yml` sends repository_dispatch `bestpractices`). The
   crypto criteria are N/A unless the code calls a crypto library (`ssl`,
   `hmac` and `secrets` count; `hashlib` for a checksum does not) or
-  `.github/org-sync.toml` sets `bestpractices_crypto = true`; `test_most`,
-  `tests_are_added` and `static_analysis_fixed` are left to the maintainer
-  too (coverage measured is not coverage of most code; a written test policy
-  is not proof it was followed).
+  `.github/org-sync.toml` sets `bestpractices_crypto = true`.
+  `static_analysis_fixed` is Met only where a static-analysis finding
+  blocks the merge: the ruleset's CodeQL gate (`code_scanning = true` under
+  `[settings]`), or an analyser whose finding fails its run (ruff,
+  staticcheck, shellcheck, actionlint, hadolint, clang-tidy with warnings as
+  errors) in a job a `required_checks` entry runs, itself or through
+  `needs:` (#634). `test_most` and `tests_are_added` stay `?` in the file
+  (org-bot's checkout is shallow and offline) and are read by the weekly
+  check from the history (`history.go`, #634): `tests_are_added` is
+  proposed Met when the repository has a written test policy and at least
+  half of its 10 most recent merged `feat`/`fix` pull requests that change
+  code also change a test (at least 3 such pull requests);
+  `test_most` when Codecov's public record of `main`, at most 90 days old,
+  covers more than 50%. Otherwise they stay `?`, and the check's output
+  says what it read.
 - **The maintainer answers the owner-only criteria** on the site:
   `know_secure_design`, `know_common_errors`, `vulnerabilities_fixed_60_days`,
   `vulnerabilities_critical_fixed`, `no_leaked_credentials`,
@@ -1884,16 +1896,21 @@ is **Save**, once per project, only when something changed. By hand, from a
   (by URL in the first of them; the others name that one):
   `know_secure_design` (its core clause only where there is a `core/`),
   `know_common_errors` (naming only the CI checks the repository's
-  `.bestpractices.json` justifies), and, only when the check reads the
-  repository's open code-scanning, Dependabot and secret-scanning alerts
-  with the bot's token and none stands against them,
-  `vulnerabilities_fixed_60_days` (no medium or higher alert older than 60
-  days), `vulnerabilities_critical_fixed` (no critical alert) and
-  `no_leaked_credentials` (no secret-scanning alert). An alert listing the
-  token cannot read leaves those `?` and is named on the issue (the org App
-  needs read access to code-scanning, Dependabot and secret-scanning
-  alerts); an open alert that blocks one is a finding and gets its own
-  `bug` issue. The other three are never in a proposal link.
+  `.bestpractices.json` justifies), `vulnerabilities_fixed_60_days` and
+  `vulnerabilities_critical_fixed`, Met by default (maintainer decision
+  2026-11-17, #629: every alert is to start an automated fix), and `no_leaked_credentials` only when the check reads
+  the repository's open secret-scanning alerts with the bot's token and
+  none is open. The check reads the open code-scanning and Dependabot
+  alerts too and withdraws a vulnerability answer only past its age guard:
+  `vulnerabilities_fixed_60_days` for a medium or higher alert open more
+  than 45 days (an escalation margin before the criterion's 60),
+  `vulnerabilities_critical_fixed` for a critical alert open more than 14
+  days. An alert listing the token cannot read is named on the issue and
+  turns the run red (the org App needs read access to code-scanning,
+  Dependabot and secret-scanning alerts); it leaves `no_leaked_credentials`
+  `?` but not the two defaults. An alert that withdraws an answer is a
+  finding and gets its own `bug` issue, `priority:P1`. The other three are
+  never in a proposal link.
 - **The weekly check.** `bestpractices.yml` runs `bestpractices check --issues`
   from the `ci-tools` image (by digest) with the bot's token. For each public
   repository it reads the project's public JSON (one request a second, never a

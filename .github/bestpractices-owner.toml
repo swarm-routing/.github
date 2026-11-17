@@ -9,11 +9,16 @@
 # - know_common_errors gains the CI checks that repository's
 #   .bestpractices.json already justifies (its sanitizers, fuzzing, CodeQL,
 #   SonarQube Cloud, linters), and nothing else; with none it stays `?`;
-# - vulnerabilities_fixed_60_days, vulnerabilities_critical_fixed and
-#   no_leaked_credentials are proposed only when the check, with the bot's
-#   token, reads the repository's open code-scanning, Dependabot and
-#   secret-scanning alerts and none stands against them. An alert listing it
-#   cannot read, or an open alert, leaves the answer `?`.
+# - vulnerabilities_fixed_60_days and vulnerabilities_critical_fixed are
+#   proposed by default (maintainer decision 2026-11-17,
+#   swarm-routing/.github#629): every alert starts the automated fix
+#   (security-autofix.yml), and the check, reading the repository's open
+#   code-scanning and Dependabot alerts with the bot's token, withdraws
+#   them only for a medium-or-higher alert open more than 45 days or a
+#   critical one open more than 14 days, and opens a P1 issue for it;
+# - no_leaked_credentials is proposed only when the check reads the
+#   secret-scanning alerts and none is open. An unreadable listing, or an
+#   open alert, leaves it `?`.
 #
 # A change here is the maintainer's: a PR, reviewed like any other.
 
@@ -29,11 +34,11 @@ justification = "The maintainer knows the common errors of the project's languag
 
 [vulnerabilities_fixed_60_days]
 status = "Met"
-justification = "No known vulnerabilities of medium severity or higher are open; SECURITY.md defines how reports are handled."
+justification = "Vulnerabilities of medium severity or higher are fixed within 60 days: every alert starts an automated fix, and SECURITY.md defines how reports are handled."
 
 [vulnerabilities_critical_fixed]
 status = "Met"
-justification = "SECURITY.md commits to a private reporting channel and fast fixes for critical issues; none have been reported so far."
+justification = "SECURITY.md commits to a private reporting channel and fast fixes for critical issues; a critical alert starts an automated fix at once."
 
 [no_leaked_credentials]
 status = "Met"

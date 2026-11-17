@@ -251,6 +251,7 @@ jobs:
           grep -qx check-headers list.txt
           grep -qx branch-sweep list.txt
           grep -qx release-sync-watch list.txt
+          grep -qx security-autofix list.txt
           grep -qx labels list.txt
           grep -qx project-sync list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
@@ -299,16 +300,21 @@ jobs:
           docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" project-sync --wanted | tee project-sync.txt
           grep -Eq '^project-sync: "Swarm routing plan": [0-9]+ items wanted; 0 private repositories refused$' project-sync.txt \
             || { echo "::error::project-sync: no summary line"; exit 1; }
+          # security-autofix (#629): the guard on two diffs in the mounted workspace,
+          # read-only as nonroot, as reusable-security-autofix.yml runs it
+          printf 'diff --git a/src/a.c b/src/a.c\n+fix\ndiff --git a/tests/test_a.c b/tests/test_a.c\n+test\n' > sa-good.diff
+          printf 'diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\n+x\n' > sa-bad.diff
+          docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" security-autofix guard sa-good.diff \
+            || { echo "::error::security-autofix guard refused a tested fix"; exit 1; }
+          rc=0; docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" security-autofix guard sa-bad.diff || rc=$?
+          [ "$rc" = 1 ] || { echo "::error::security-autofix guard: a workflow change must exit 1, got $rc"; exit 1; }
           # check-headers (#531): read-only as nonroot, as reusable-licence-check.yml runs it, with no
           # git in the image (it reads the index); its self-test, then this
-          # checkout byte for byte against the Python tool (stdout, exit code)
+          # checkout, which must pass (the Python twin it was compared with is gone, #578)
           [ "$(docker run --rm "$img" check-headers --self-test)" = "self-test: PASS" ] \
             || { echo "::error::check-headers --self-test"; exit 1; }
-          rc_go=0; docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' . > "$RUNNER_TEMP/ch-go.txt" || rc_go=$?
-          rc_py=0; python3 -I tools/checks/check-headers.py --dual '' . > "$RUNNER_TEMP/ch-py.txt" || rc_py=$?
-          cat "$RUNNER_TEMP/ch-go.txt"
-          { cmp "$RUNNER_TEMP/ch-py.txt" "$RUNNER_TEMP/ch-go.txt" && [ "$rc_go" = "$rc_py" ]; } \
-            || { echo "::error::check-headers: the Go tool (exit $rc_go) differs from the Python one (exit $rc_py)"; diff "$RUNNER_TEMP/ch-py.txt" "$RUNNER_TEMP/ch-go.txt"; exit 1; }
+          docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' . \
+            || { echo "::error::check-headers on this checkout"; exit 1; }
           # nonroot, and no shell to fall back to
           user=$(docker image inspect -f '{{.Config.User}}' "$img")
           [ "$user" = nonroot:nonroot ] || { echo "::error::image user is '$user'"; exit 1; }
