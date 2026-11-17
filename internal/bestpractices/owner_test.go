@@ -141,17 +141,6 @@ func TestOwnerOpenAlertBlocks(t *testing.T) {
 	if len(items) != 3 || !strings.HasPrefix(items[0], "no_leaked_credentials: the site says Met, but open secret scanning alert #1") {
 		t.Errorf("drift: %q", items)
 	}
-	gh := &fakeIssues{}
-	bugs, err := alertBugs(gh, "X", o, false)
-	if err != nil || len(bugs) != 2 || len(gh.posted) != 2 || !strings.Contains(gh.posted[0], "code-scanning/3") {
-		t.Errorf("a bug per blocking alert: %v %v %v", bugs, gh.posted, err)
-	}
-	gh.open = []any{map[string]any{"number": 9, "body": "see https://github.com/swarm-routing/X/security/code-scanning/3"}}
-	gh.posted = nil
-	bugs, _ = alertBugs(gh, "X", o, false)
-	if len(gh.posted) != 1 || !strings.HasPrefix(bugs[0], "#9 (open)") {
-		t.Errorf("an alert with an open issue gets no second bug: %v", bugs)
-	}
 }
 
 // The age guard (#629): a young alert keeps the default Met, a medium one
@@ -196,48 +185,17 @@ func TestOwnerAgeGuard(t *testing.T) {
 				critical, c.critical, o.Blocked)
 		}
 		if (fixed && critical) != (len(o.Alerts) == 0) {
-			t.Errorf("%s: an alert is listed (and gets its P1 bug) only when it withdraws an answer: %v", c.name, o.Alerts)
+			t.Errorf("%s: an alert is listed (its ticket is the security-alerts task's) only when it withdraws an answer: %v", c.name, o.Alerts)
 		}
 	}
-	gh := &fakeIssues{}
 	o := ownerAnswers(attestation(t), "X", evidence, nil, func() *fakeAlerts {
 		f := clean()
 		f.lists["code-scanning/alerts"] = []any{cs(5, "2026-11-01T00:00:00Z", "critical")}
 		return f
 	}())
-	if _, err := alertBugs(gh, "X", o, false); err != nil || len(gh.labels) != 1 || !strings.Contains(gh.labels[0], "priority:P1") {
-		t.Errorf("an escalated alert opens a P1 bug: %v %v", gh.labels, err)
-	}
 	if a := o.Answers["vulnerabilities_fixed_60_days"][1]; !strings.Contains(a, "more than 45 days") ||
 		!strings.Contains(a, "security-autofix.yml") {
 		t.Errorf("the answer names the guard: %s", a)
-	}
-}
-
-// Alert 1's URL is a prefix of alert 10's: each must match only its own
-// issue (#621; AntHocNet's alerts 1 and 10 both matched one issue).
-func TestAlertBugsURLBoundary(t *testing.T) {
-	base := "https://github.com/swarm-routing/X/security/code-scanning/"
-	o := OwnerReport{Alerts: []alert{
-		{kind: "code scanning", number: "1", url: base + "1"},
-		{kind: "code scanning", number: "10", url: base + "10"},
-	}}
-	gh := &fakeIssues{open: []any{
-		map[string]any{"number": 20, "body": "- code scanning alert #10: " + base + "10\n"},
-		map[string]any{"number": 21, "body": "- code scanning alert #1: " + base + "1."},
-	}}
-	bugs, err := alertBugs(gh, "X", o, false)
-	if err != nil || len(gh.posted) != 0 || len(bugs) != 2 ||
-		bugs[0] != "#21 (open) "+base+"1" || bugs[1] != "#20 (open) "+base+"10" {
-		t.Errorf("alerts 1 and 10 map to their own issues: %q %v %v", bugs, gh.posted, err)
-	}
-	if !namesURL("see "+base+"10, then "+base+"1)", base+"1") || namesURL(base+"12 "+base+"10", base+"1") {
-		t.Error("namesURL: a later bounded match counts, digit-continued ones never")
-	}
-	gh.open = gh.open[:1] // only alert 10's issue is open
-	bugs, _ = alertBugs(gh, "X", o, false)
-	if len(gh.posted) != 1 || !strings.Contains(gh.posted[0], base+"1\n") || bugs[1] != "#20 (open) "+base+"10" {
-		t.Errorf("alert 1 gets its own bug, not alert 10's issue: %q %v", bugs, gh.posted)
 	}
 }
 
@@ -330,21 +288,6 @@ func TestCheckIssuesExit(t *testing.T) {
 	if rc, out := run(denied, false); rc != 1 || strings.Contains(out, "FAILED") {
 		t.Errorf("read-only run, alerts unreadable: rc %d, want 1 (drift)\n%s", rc, out)
 	}
-}
-
-type fakeIssues struct {
-	open   []any
-	posted []string
-	labels []string
-}
-
-func (f *fakeIssues) API(method, path string, body map[string]any, paginate bool) (any, error) {
-	if method == "GET" {
-		return f.open, nil
-	}
-	f.posted = append(f.posted, pyStr(body["body"]))
-	f.labels = append(f.labels, fmt.Sprint(body["labels"]))
-	return map[string]any{"number": 100 + len(f.posted)}, nil
 }
 
 // The testdata copy must equal the real attestation. The real file is absent
