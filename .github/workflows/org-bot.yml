@@ -124,9 +124,19 @@ permissions:
   contents: read
 
 concurrency:
-  # a bestpractices nudge queues per repository, never in place of an
-  # org-release run (one pending run per group)
-  group: ${{ github.event.action == 'bestpractices' && format('org-bot-bestpractices-{0}', github.event.client_payload.repository) || 'org-bot' }}
+  # One pending run per group, and a newer pending run replaces it. So:
+  # - a bestpractices nudge queues per repository, never in place of an
+  #   org-release run;
+  # - a workflow_dispatch has its own group keyed on its inputs (#614), so a
+  #   targeted dispatch (one task, some repositories) is never replaced by a
+  #   scheduled or push run, nor by a dispatch with other inputs; only a later
+  #   dispatch with the same inputs, which does the same work, replaces it.
+  #   A dispatch may then run beside the scheduled run: every task is
+  #   idempotent (one PR per repository and task, updated in place).
+  group: >-
+    ${{ github.event.action == 'bestpractices' && format('org-bot-bestpractices-{0}', github.event.client_payload.repository)
+        || github.event_name == 'workflow_dispatch' && format('org-bot-dispatch-{0}-{1}-{2}', inputs.task, inputs.repos, inputs.dry-run)
+        || 'org-bot' }}
   cancel-in-progress: false
 
 jobs:
@@ -175,6 +185,7 @@ jobs:
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Refresh
+        id: refresh
         if: env.TASK != 'branch-sweep' && env.TASK != 'release-sync'
         env:
           ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
@@ -224,6 +235,7 @@ jobs:
           done
           exit "$failed"
       - name: Stale branches (branch-sweep, daily)
+        id: sweep
         # cmd/branch-sweep from the ci-tools image by digest (#595): in every
         # unarchived org repository, a branch whose PRs all closed more than 2
         # days ago (no commit since, no open PR on it) and a claude/* or org-bot/*
@@ -246,6 +258,7 @@ jobs:
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           docker run --rm -e GH_TOKEN "$IMG" branch-sweep "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: The site's release sync (release-sync-watch, hourly)
+        id: sync
         # cmd/release-sync-watch from the ci-tools image by digest (#571): for the
         # newest release of every public org repository published 1 hour to 14
         # days ago, when the site has no `[release-sync] <repo> <tag>` issue or
@@ -269,9 +282,27 @@ jobs:
           docker run --rm -e GH_TOKEN "$IMG" release-sync-watch "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
         if: ${{ always() }}
+        env:
+          EVENT: ${{ github.event_name }}
+          STEP_REFRESH: ${{ steps.refresh.outcome }}
+          STEP_SWEEP: ${{ steps.sweep.outcome }}
+          STEP_SYNC: ${{ steps.sync.outcome }}
         run: |
+          # which tasks ran, and how each ended (#614); the repositories are
+          # not listed (a dispatch may name a private one, #622)
+          ran=""
+          if [ "$STEP_REFRESH" != skipped ] && [ -n "$STEP_REFRESH" ]; then
+            ran="$TASK: $STEP_REFRESH"
+            if [ "$EVENT" = repository_dispatch ] && [ "$TASK" = release ]; then
+              ran="$ran (then release-lock, and swarm-core-pin after a swarm-core release)"
+            fi
+          fi
+          [ "$STEP_SWEEP" != skipped ] && [ -n "$STEP_SWEEP" ] && ran="${ran:+$ran; }branch-sweep: $STEP_SWEEP"
+          [ "$STEP_SYNC" != skipped ] && [ -n "$STEP_SYNC" ] && ran="${ran:+$ran; }release-sync: $STEP_SYNC"
           {
             echo "### org-bot ($TASK)"
+            echo
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; tasks run: ${ran:-none}"
             echo
             printf '%s\n' '```'
             cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
