@@ -459,8 +459,8 @@ defaults in `templates/agents/agent-defaults.md`).
   (GitHub then reports the merge state `unstable`, which is mergeable).
   `dco` is report-only too, but a red `dco` on an outside contributor's
   commit still holds the PR until that author signs off (Outside
-  contributions); only its failure on the maintainer's or an agent's
-  commits (#212) is ignored.
+  contributions); on a member's or the org bot's PR it passes without
+  checking (#586).
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
 
@@ -780,8 +780,12 @@ for the last commit, `git rebase --signoff HEAD~N` for the last N, then
 so it fixes only commits you authored; a commit someone else authored needs
 that author's own sign-off. The `dco` check (`reusable-dco.yml`, placed in every repository
 by org-sync as `.github/workflows/dco.yml`) lists any commit without a
-matching sign-off and prints these commands. Commits by the org's members and
-collaborators are exempt, and so is a commit by a GitHub bot account (a login
+matching sign-off and prints these commands. It checks outside contributors'
+PRs only: a PR opened by an org member or collaborator, by anyone with write
+access, or by one of the org's bots passes at once with a one-line summary,
+since the person who opened it certifies its contents (#586), so `dco` is
+never red on our own PRs. On an outside contributor's PR, commits by the
+org's members and collaborators are exempt, and so is a commit by a GitHub bot account (a login
 ending in `[bot]` or a `…[bot]@users.noreply.github.com` author email, such as
 the `github-actions[bot]` release bump commit of `reusable-release.yml`) on a
 PR opened by one of the org's bots (the org App `swarm-routing-bot[bot]`,

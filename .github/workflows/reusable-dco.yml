@@ -4,7 +4,11 @@ name: Reusable DCO check
 
 # Developer Certificate of Origin (CONTRIBUTING "Outside contributions", #179):
 # every commit of a PR carries `Signed-off-by: Name <email>` matching its
-# author email (`git commit -s`). Commits by the PR's author when the PR is an
+# author email (`git commit -s`), on an outside contributor's PR only (#586):
+# a PR opened by an OWNER, MEMBER or COLLABORATOR, by anyone with write access
+# or by one of the org's bots passes at once with a one-line summary, since
+# the person who opened it certifies it. On an outside contributor's PR,
+# commits by the PR's author when the PR is an
 # OWNER's, MEMBER's or COLLABORATOR's, by anyone with write access, by a GitHub
 # bot account (`[bot]` login or noreply email: the github-actions[bot] release
 # bump commit) on a PR opened by swarm-routing-bot[bot], Dependabot or
