@@ -1751,8 +1751,22 @@ is **Save**, once per project, only when something changed. By hand, from a
   `vulnerabilities_critical_fixed`, `no_leaked_credentials`,
   `report_responses`, `enhancement_responses`,
   `vulnerability_report_response` (self-assessments, or facts behind the
-  Security tab). They are always `?` in the file and never in a proposal
-  link.
+  Security tab). They are always `?` in the file. Five of them the
+  maintainer attested once for every project (decision 2026-11-17,
+  swarm-routing/AntHocNet#790) in `.github/bestpractices-owner.toml`, and
+  the weekly check puts them in the proposal links, citing that file:
+  `know_secure_design` (its core clause only where there is a `core/`),
+  `know_common_errors` (naming only the CI checks the repository's
+  `.bestpractices.json` justifies), and, only when the check reads the
+  repository's open code-scanning, Dependabot and secret-scanning alerts
+  with the bot's token and none stands against them,
+  `vulnerabilities_fixed_60_days` (no medium or higher alert older than 60
+  days), `vulnerabilities_critical_fixed` (no critical alert) and
+  `no_leaked_credentials` (no secret-scanning alert). An alert listing the
+  token cannot read leaves those `?` and is named on the issue (the org App
+  needs read access to code-scanning, Dependabot and secret-scanning
+  alerts); an open alert that blocks one is a finding and gets its own
+  `bug` issue. The other three are never in a proposal link.
 - **The weekly check.** `bestpractices.yml` runs `bestpractices check --issues`
   from the `ci-tools` image (by digest) with the bot's token. For each public
   repository it reads the project's public JSON (one request a second, never a
