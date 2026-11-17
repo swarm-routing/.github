@@ -500,7 +500,10 @@ func syncIssue(gh GitHub, repo string, items, links, owner []string, body string
 
 // Check compares every registered project with its repository, and finds
 // the repositories in scope that are not registered, and returns the exit
-// code: 0 clean, 1 drift, 2 a project could not be read. env gives
+// code: 0 clean, 1 drift, 2 a project could not be read. With --issues the
+// issues carry the drift, so drift alone is 0 (#611): the run is red only
+// when it failed, 2, which then also counts an alert listing the reader
+// could not read and an issue that could not be written. env gives
 // BESTPRACTICES_TOKEN (the issue token) and the GITHUB_* run variables;
 // newGitHub makes the API client the issues are written with, from that
 // token.
@@ -596,6 +599,13 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 			items = append(items, ownerDrift(data, owner)...)
 			if len(owner.Unread) > 0 {
 				info = append(info, fmt.Sprintf("%d alert listing(s) unreadable", len(owner.Unread)))
+				// the issue run reads with the bot's token, which must read them (#611)
+				if args.Issues && reader != nil {
+					broken++
+					for _, u := range owner.Unread {
+						fmt.Fprintf(stdout, "%s: FAILED: the alerts: %s\n", head, u)
+					}
+				}
 			}
 			if args.Issues {
 				bugs, err := alertBugs(gh, t.repo, owner, dryRun)
@@ -659,7 +669,7 @@ func Check(args CheckArgs, r Remote, newGitHub func(token string) GitHub, env fu
 	switch {
 	case broken > 0:
 		return 2
-	case drift > 0:
+	case drift > 0 && !args.Issues:
 		return 1
 	}
 	return 0
