@@ -16,7 +16,10 @@ name: bestpractices
 # not opted out with `bestpractices = false` under [settings]), the
 # registration steps. Updated in place, closed when the site matches. The site
 # has no write API: the maintainer's Save is the one step left (CONTRIBUTING
-# "OpenSSF Best Practices"). Report-only: never a required check.
+# "OpenSSF Best Practices"). Report-only: never a required check. Drift is
+# reported in the issues and the step summary, not in the run's status: with
+# --issues the tool exits 0 on drift and 2 only when the run failed (a read,
+# an alert listing or an issue write), so a red run is a real failure (#611).
 #
 # Token: the org bot's, from .github/actions/bot-token as ai-files-review.yml
 # uses it (the GitHub App's installation token, else ORG_BOT_TOKEN), for

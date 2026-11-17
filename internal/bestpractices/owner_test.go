@@ -7,6 +7,7 @@ package bestpractices
 // when every listing reads and no open alert stands against them.
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -176,6 +177,65 @@ func TestOwnerUnreadableBlocks(t *testing.T) {
 	}
 	if o := ownerAnswers(nil, "X", evidence, nil, clean()); len(o.Answers) != 0 || len(o.Blocked) != 5 {
 		t.Error("no attestation: nothing proposed")
+	}
+}
+
+// alertingFake is the golden fake with an alert API.
+type alertingFake struct {
+	*fake
+	*fakeAlerts
+}
+
+// With --issues the run is red only when it failed (#611): drift the issues
+// carry is exit 0, an alert listing the bot's token cannot read is 2.
+// Without --issues drift stays 1, and a read-only run's unreadable alerts
+// only leave the answers `?`.
+func TestCheckIssuesExit(t *testing.T) {
+	setNow(t, "2026-11-17T00:00:00Z")
+	g := loadGolden(t, "check.json")
+	i := -1
+	for j, c := range g.cases {
+		if c["name"] == "issues-open" {
+			i = j
+		}
+	}
+	if i < 0 {
+		t.Fatal("check.json has no issues-open case")
+	}
+	owner, err := os.ReadFile("testdata/owner.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(alerts *fakeAlerts, issues bool) (int, string) {
+		f := newFake(t, g.raw(t, i, "world"))
+		f.files[[2]string{".github", OwnerFile}] = string(owner)
+		env := func(k string) string {
+			if k == "BESTPRACTICES_TOKEN" {
+				return "t"
+			}
+			return ""
+		}
+		var out bytes.Buffer
+		rc := Check(CheckArgs{g.str(i, "repos"), issues, false}, alertingFake{f, alerts},
+			func(string) GitHub { return f }, env, &out)
+		return rc, out.String()
+	}
+	if rc, out := run(clean(), true); rc != 0 || !strings.Contains(out, "3 drifting, 0 unreadable") {
+		t.Errorf("drift reported to the issues: rc %d, want 0\n%s", rc, out)
+	}
+	if rc, out := run(clean(), false); rc != 1 {
+		t.Errorf("drift without --issues: rc %d, want 1\n%s", rc, out)
+	}
+	denied := clean()
+	denied.errs["code-scanning/alerts"] = failure("gh api GET code-scanning/alerts: Resource not accessible by integration (HTTP 403)")
+	rc, out := run(denied, true)
+	if rc != 2 || !strings.Contains(out, "FAILED: the alerts: code scanning: ") || !strings.Contains(out, "unreadable") {
+		t.Errorf("an unreadable alert listing with --issues: rc %d, want 2\n%s", rc, out)
+	}
+	denied = clean()
+	denied.errs["code-scanning/alerts"] = failure("HTTP 403")
+	if rc, out := run(denied, false); rc != 1 || strings.Contains(out, "FAILED") {
+		t.Errorf("read-only run, alerts unreadable: rc %d, want 1 (drift)\n%s", rc, out)
 	}
 }
 

@@ -1147,7 +1147,7 @@
   "env": {},
   "issues": true,
   "name": "issues-no-token",
-  "rc": 1,
+  "rc": 0,
   "repos": "",
   "searched": [
    "https://github.com/swarm-routing/Plain"
@@ -1257,7 +1257,7 @@
   "env": {},
   "issues": true,
   "name": "issues-dry-run",
-  "rc": 1,
+  "rc": 0,
   "repos": "",
   "searched": [
    "https://github.com/swarm-routing/Plain"
@@ -1397,7 +1397,7 @@
   "env": {},
   "issues": true,
   "name": "issues-open",
-  "rc": 1,
+  "rc": 0,
   "repos": "",
   "searched": [
    "https://github.com/swarm-routing/Plain"
@@ -1541,7 +1541,7 @@
   },
   "issues": true,
   "name": "issues-open-run",
-  "rc": 1,
+  "rc": 0,
   "repos": "",
   "searched": [
    "https://github.com/swarm-routing/Plain"
@@ -1648,7 +1648,7 @@
   "env": {},
   "issues": true,
   "name": "issues-unchanged",
-  "rc": 1,
+  "rc": 0,
   "repos": "Proto",
   "searched": [],
   "stdout": "Proto (project 42): level passing, passing 100%; 8 owner-only criteria unanswered; 1 proposal link(s); 4 finding(s); issue: update #3\n    1 answer(s) in .bestpractices.json not on the site yet: maintained\n    build: the site says Unmet, .bestpractices.json says Met\n    contribution: the justification points at GONE.md, not on main\n    level lost: passing since 2026-11-10\n    proposal 1: https://www.bestpractices.dev/en/projects/42/passing/edit?contribution_status=Met&contribution_justification=The%20contribution%20process%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FCONTRIBUTING.md.&maintained_status=Met&maintained_justification=Last%20commit%20to%20main%202026-11-01%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fcommits%2Fmain.&build_status=Met&build_justification=Built%20with%20make%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FMakefile.\nbestpractices: 1 project(s), 0 in scope and not registered, 1 drifting, 0 unreadable\n",
@@ -1754,7 +1754,7 @@
   "env": {},
   "issues": true,
   "name": "issues-update",
-  "rc": 1,
+  "rc": 0,
   "repos": "Proto",
   "searched": [],
   "stdout": "Proto (project 42): level passing, passing 100%; 8 owner-only criteria unanswered; 1 proposal link(s); 4 finding(s); issue: update #3\n    1 answer(s) in .bestpractices.json not on the site yet: maintained\n    build: the site says Unmet, .bestpractices.json says Met\n    contribution: the justification points at GONE.md, not on main\n    level lost: passing since 2026-11-10\n    proposal 1: https://www.bestpractices.dev/en/projects/42/passing/edit?contribution_status=Met&contribution_justification=The%20contribution%20process%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FCONTRIBUTING.md.&maintained_status=Met&maintained_justification=Last%20commit%20to%20main%202026-11-01%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fcommits%2Fmain.&build_status=Met&build_justification=Built%20with%20make%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FMakefile.\nbestpractices: 1 project(s), 0 in scope and not registered, 1 drifting, 0 unreadable\n",
@@ -2508,7 +2508,7 @@
   "env": {},
   "issues": true,
   "name": "register-issue-open",
-  "rc": 1,
+  "rc": 0,
   "repos": "Rel",
   "searched": [
    "https://github.com/swarm-routing/Rel"
@@ -2748,7 +2748,7 @@
   "env": {},
   "issues": true,
   "name": "unanswered",
-  "rc": 1,
+  "rc": 0,
   "repos": "Proto",
   "searched": [],
   "stdout": "Proto (project 42): level passing, passing 100%; 7 owner-only criteria unanswered; 1 proposal link(s); 2 finding(s); issue: open #9\n    5 answer(s) in .bestpractices.json not on the site yet: maintained, test, warnings, static_analysis, dynamic_analysis\n    contribution: the justification points at GONE.md, not on main\n    proposal 1: https://www.bestpractices.dev/en/projects/42/passing/edit?contribution_status=Met&contribution_justification=The%20contribution%20process%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FCONTRIBUTING.md.&maintained_status=Met&maintained_justification=Last%20commit%20to%20main%202026-11-01%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fcommits%2Fmain.&test_status=Met&test_justification=An%20automated%20test%20suite%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Ftree%2Fmain%2Fcore%2Ftest.&warnings_status=Met&warnings_justification=Compiler%20warnings%20on%20%28-Wall%20-Wextra%29%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FCMakeLists.txt.&static_analysis_status=Met&static_analysis_justification=Static%20analysis%20on%20every%20change%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2F.github%2Fworkflows%2Fcodeql.yml.&dynamic_analysis_status=Met&dynamic_analysis_justification=Dynamic%20analysis%20%28fuzzing%29%20in%20CI%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2F.github%2Fworkflows%2Ffuzz.yml.\nbestpractices: 1 project(s), 0 in scope and not registered, 1 drifting, 0 unreadable\n",
@@ -2848,7 +2848,7 @@
   "env": {},
   "issues": true,
   "name": "issues-unchanged-links",
-  "rc": 1,
+  "rc": 0,
   "repos": "Proto",
   "searched": [],
   "stdout": "Proto (project 42): level passing, passing 100%; 8 owner-only criteria unanswered; 1 proposal link(s); 4 finding(s); issue: update #3\n    1 answer(s) in .bestpractices.json not on the site yet: maintained\n    build: the site says Unmet, .bestpractices.json says Met\n    contribution: the justification points at GONE.md, not on main\n    level lost: passing since 2026-11-10\n    proposal 1: https://www.bestpractices.dev/en/projects/42/passing/edit?contribution_status=Met&contribution_justification=The%20contribution%20process%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FCONTRIBUTING.md.&maintained_status=Met&maintained_justification=Last%20commit%20to%20main%202026-11-01%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fcommits%2Fmain.&build_status=Met&build_justification=Built%20with%20make%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FMakefile.\nbestpractices: 1 project(s), 0 in scope and not registered, 1 drifting, 0 unreadable\n",
@@ -2954,7 +2954,7 @@
   "env": {},
   "issues": true,
   "name": "issues-links-changed",
-  "rc": 1,
+  "rc": 0,
   "repos": "Proto",
   "searched": [],
   "stdout": "Proto (project 42): level passing, passing 100%; 8 owner-only criteria unanswered; 1 proposal link(s); 4 finding(s); issue: update #3\n    1 answer(s) in .bestpractices.json not on the site yet: maintained\n    build: the site says Unmet, .bestpractices.json says Met\n    contribution: the justification points at GONE.md, not on main\n    level lost: passing since 2026-11-10\n    proposal 1: https://www.bestpractices.dev/en/projects/42/passing/edit?contribution_status=Met&contribution_justification=The%20contribution%20process%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FCONTRIBUTING.md.&maintained_status=Met&maintained_justification=Last%20commit%20to%20main%202026-11-01%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fcommits%2Fmain.&build_status=Met&build_justification=Built%20with%20make%3A%20https%3A%2F%2Fgithub.com%2Fswarm-routing%2FProto%2Fblob%2Fmain%2FMakefile.\nbestpractices: 1 project(s), 0 in scope and not registered, 1 drifting, 0 unreadable\n",
