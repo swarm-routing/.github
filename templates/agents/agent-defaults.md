@@ -120,6 +120,12 @@ because the issue threads were thorough. Caveman the chat, not the record.
 - Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
   DCO sign-off is a person's own certification (CONTRIBUTING "Outside
   contributions").
+- Leave a stale branch (a closed PR's head, a validation branch, a
+  superseded bot branch) to org-bot's daily `branch-sweep`, which deletes it
+  once its PR has been closed for 2 days, or after 7 days without a commit
+  for a `claude/*` or `org-bot/*` branch that never had a PR
+  (swarm-routing/.github#595). Agent sessions cannot delete branches; never
+  ask the maintainer to delete one.
 - Releases are cut on request only: dispatch the release `bump` when the
   maintainer asks, once the version's `release:vX.Y.Z` issues are done and
   its exit criteria in the ladder (`docs/roadmap.md`, or the org ROADMAP's
