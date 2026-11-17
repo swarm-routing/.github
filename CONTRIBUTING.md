@@ -515,8 +515,14 @@ A consumer names a **release** of its dependency, never a moving ref:
   `tools/checks/check-swarm-core-pin.py`): with a lock, it verifies the lock
   against the release (tag, commit, asset and SHA256), checks that the
   `Makefile` and the ns-3 CI name the tag, a benchmark cell's dependency the
-  commit and `core-deps` the commit or the tag, and fails when a newer
-  swarm-core release is out; between releases nothing moves. In vcpkg mode
+  commit and `core-deps` the commit or the tag, and reports a newer
+  swarm-core release (#586): on a PR or a merge group as a warning (the
+  check passes: a release never turns an unrelated PR red), on `main` as a
+  failure only while org-bot's bump PR is open (its branch
+  `org-bot/swarm-core-pin` exists), a warning before that. A pin the files
+  disagree on, or a lock that does not verify, fails on every event
+  (`--stale fail|warn|bump-pr`; a local run fails on all of it). Between
+  releases nothing moves. In vcpkg mode
   (a root `vcpkg.json` depending on `swarm-core`) it also checks that
   `core/CMakeLists.txt` finds the package instead of reading the lock, that
   the `overrides` entry pins the lock's version, and that the
@@ -548,8 +554,8 @@ gate compares (a `##CONFIG##` or `##PERF##` line) waits there for a person. A
 hand PR is needed only when the release renamed or dropped an asset the lock
 names (the task then fails that repository and says so), together with the
 consumer's code that names it; org-bot leaves a lock alone while an open hand
-PR changes it. When a newer swarm-core release is out, `swarm-core / pin` goes
-red and org-bot's `swarm-core-pin` task runs `check-swarm-core-pin.py --bump`:
+PR changes it. When a newer swarm-core release is out, `swarm-core / pin` warns
+(and turns `main` red once the bump PR is open) and org-bot's `swarm-core-pin` task runs `check-swarm-core-pin.py --bump`:
 it writes the lock from the new release and moves the old tag to the new tag
 and the old commit to the new commit on the pin lines only, then opens one PR
 on `org-bot/swarm-core-pin` (#208, #407). To check or reproduce it locally,
