@@ -388,9 +388,13 @@ defaults in `templates/agents/agent-defaults.md`).
   prose, `docs/`, issue forms, repository metadata) runs no ns-3 build on a
   pull request or in the merge queue: each `ns-<ver> <profile>` leg still
   reports, green, on the bare runner with its steps skipped (a skip by
-  `if:` on a matrix job would leave the required check pending; a
-  repository's own heavy workflows follow AntHocNet's `changes` job and one
-  gate check); (2) a newer push to a pull request cancels the older run
+  `if:` on a matrix job would leave the required check pending), and a
+  repository's own heavy jobs (core builds, sanitizers, benchmarks, image
+  builds, the site's build) do the same through the org's one docs-only test,
+  `.github/actions/changes` (#581): a `changes` job runs it, each heavy job
+  `needs:` it and skips its steps when `docs-only` is `'true'` (a container
+  job takes an empty `image:`), so every required check still reports, never
+  a `paths:` filter on a workflow that produces one; (2) a newer push to a pull request cancels the older run
   (`concurrency` keyed on the PR number with `cancel-in-progress` on
   `pull_request` only, in the reusable ns-3, Python and Go CI and in each
   repository's own PR workflows; a push to `main`, a merge group, a release
