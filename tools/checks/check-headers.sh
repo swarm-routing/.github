@@ -9,9 +9,10 @@
 # With docker: the ci-tools image at the digest reusable-licence-check.yml
 # pins, so the same image CI runs (ADR-0002; whatever moves that digest moves
 # this one). The tool runs as your user, with the current directory mounted
-# read-only at /w, each --core-dep directory read-only at /core-deps/<n>, and,
-# in a git worktree, the repository's git directory at its own path. The image
-# has no git: the tool reads the git index itself.
+# read-only at its own path, each --core-dep directory read-only at
+# /core-deps/<n>, and, in a worktree or a submodule (`.git` is a file), the git
+# directories at their own paths, so a relative `gitdir:` resolves as on the
+# host. The image has no git: the tool reads the git index itself.
 # Without docker (or with its daemon down): `go build` of cmd/check-headers
 # from this checkout, run here.
 #
@@ -26,8 +27,9 @@ if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
   wf="$org/.github/workflows/reusable-licence-check.yml"
   img=$(sed -nE 's/^[[:space:]]*IMG: (ghcr\.io\/swarm-routing\/ci-tools@sha256:[0-9a-f]{64})[[:space:]]*$/\1/p' "$wf")
   [ -n "$img" ] || { echo "check-headers.sh: no ci-tools digest (IMG:) in $wf" >&2; exit 2; }
-  run=(docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/w:ro" -w /w)
-  if [ -f .git ]; then  # a worktree: its index lives under the main repository's git directory
+  here=$(pwd -P)
+  run=(docker run --rm --user "$(id -u):$(id -g)" -v "$here:$here:ro" -w "$here")
+  if [ -f .git ]; then  # a worktree or a submodule: its index lives in a git directory elsewhere
     for d in "$(git rev-parse --path-format=absolute --git-common-dir)" "$(git rev-parse --path-format=absolute --git-dir)"; do
       run+=(-v "$d:$d:ro")
     done
