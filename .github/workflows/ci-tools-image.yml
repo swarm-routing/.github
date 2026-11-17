@@ -229,7 +229,7 @@ jobs:
         timeout-minutes: 10
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
-          GH_TOKEN: ${{ github.token }}  # backstop's, labels', branch-sweep's and release-sync-watch's dry runs read the API (no rate limit of an anonymous runner)
+          GH_TOKEN: ${{ github.token }}  # backstop's, labels', branch-sweep's, release-sync-watch's and project-sync's dry runs read the API (no rate limit of an anonymous runner)
         run: |
           set -euo pipefail
           if [ -n "$DIGEST" ]; then
@@ -254,11 +254,19 @@ jobs:
           grep -qx security-autofix list.txt
           grep -qx security-alerts list.txt
           grep -qx labels list.txt
+          grep -qx project-sync list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
           # labels (#570): this checkout's labels.json against the public repositories, read only
           docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" labels --dry-run | tee labels.txt
           grep -q '^swarm-routing/\.github: ' labels.txt
+          # project-sync (#541): the committed definition validates, and the
+          # items it wants are read from the public repositories (read-only, as
+          # nonroot; the project itself needs the org App's token, so org-bot runs it)
+          docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" project-sync --validate
+          docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" project-sync --wanted | tee project-sync.txt
+          grep -Eq '^project-sync: "Swarm routing plan": [0-9]+ items wanted; 0 private repositories refused$' project-sync.txt \
+            || { echo "::error::project-sync: no summary line"; exit 1; }
           # a tool on the workspace, mounted as a workflow's `docker run` mounts it
           printf 'a\nb\n' > fixture-input.txt
           got=$(docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" fixture go.mod fixture-input.txt)

@@ -226,6 +226,34 @@ its body starts with *Migrated from `danieljoppi/AntHocNet#N`*. It takes the
 `release:` label of the target repository's ladder, not AntHocNet's (ROADMAP
 "Releases"; decision 2026-11-11).
 
+### Where the plan lives
+
+The plan is written in files and labels; nothing else is authoritative:
+
+- the org's direction and release train: [`ROADMAP.md`](ROADMAP.md);
+- each repository's release ladder and exit criteria: its `docs/roadmap.md`;
+- a release's scope: its `release:vX.Y.Z` labels (a version is released when
+  its labelled issues are done);
+- epics: the issues labelled `epic`, listed by `tools/epics/epics.py`;
+  priorities: `priority:P*`; handoffs: `handoff`; bugs: `rcapa` and
+  `ns3-upstream`.
+
+The public org Project **Swarm routing plan**
+(https://github.com/orgs/swarm-routing/projects) is a **generated, read-only
+view** of that record (#541, option (b)): org-bot's `project-sync` task
+(`cmd/project-sync`) makes it match
+[`templates/projects/plan.json`](templates/projects/plan.json), the project
+as code: its add rules (which labels bring an issue in), its fields (Status,
+Release, Priority, Track, Sub-issues, each derived from labels, issue state
+and sub-issue progress) and its views. Every value is derived, an edit made
+in the Project is overwritten by the next sync, and an item no rule takes is
+removed. Only public repositories are listed: an issue of a private
+repository is never added. To change what the Project shows, change the
+issue or its labels, or `plan.json` by a pull request; never edit the
+Project by hand, and never cite it as the record. The pilot (Releases and
+RCAPA views on ARA, ns3-swarm-core and ns3-tools) widens to every public
+repository by a `plan.json` change.
+
 ### RCAPA
 
 An **RCAPA** (root cause analysis with corrective and preventive actions) is
@@ -715,6 +743,14 @@ Which language a piece of code is written in follows what it is
   one at a time, each port proving byte-identical output with the Python
   version on the same fixtures (epic #531); none moves in bulk.
 - **Skill scripts stay Python** by default; a skill may call a Go tool.
+- **REST first; GraphQL only in `project-sync`.** Agent sessions and the
+  org's tools call GitHub's REST API (or the MCP server). The one exception
+  (maintainer decision on #541, 2026-11-17) is org-bot's `project-sync`
+  pipeline, which may call GraphQL with the org App's token, because the
+  Projects v2 project, its field options and its views are not fully in
+  REST; its queries and mutations live in `internal/projectsync`, covered by
+  its tests against a fake API, with a dry run that prints the diff
+  ([ADR-0002](docs/adr/0002-pipelines-are-go.md) "GraphQL in project-sync").
 - **swarm-routing/ns3-tools stays Python + C++**; protocol cores and ns-3
   modules stay C++.
 

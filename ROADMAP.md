@@ -8,8 +8,11 @@ keeps governing AntHocNet itself.
 
 **How it is kept.** This file is the plan; issues are the work. Each phase has
 one epic in the repository that owns it, its tasks are sub-issues (across
-repositories where needed), and live status is the org's GitHub Project board
-(views by phase, repository and priority). A phase moves to *done* here in the
+repositories where needed). The public org Project
+[Swarm routing plan](https://github.com/orgs/swarm-routing/projects) shows
+releases and RCAPA tickets across repositories; it is generated from the
+issues and labels by org-bot's `project-sync` (`templates/projects/plan.json`,
+#541), read-only, never the record (CONTRIBUTING "Where the plan lives"). A phase moves to *done* here in the
 PR that closes its epic. Changing a phase's scope or exit criteria is a PR to
 this file, like any other decision. [Epics](#epics) below lists every epic of
 every public repository with its status, generated from the issues by
