@@ -1380,7 +1380,10 @@ dispatches it on its own initiative. SemVer meaning: a minor for new features
 breaking change (an API, wire-format, manifest or marker schema change). The
 first release of every repository is `v0.1.0`, unless the maintainer decides
 it is `v1.0.0` (ns3-containers, 2026-11-13: dispatched with `increment:
-MAJOR`, below). Commitizen bumps a patch only
+MAJOR`, below), or a repository already published versions before its first
+tag: then its caller passes `first-release-from-config: true` and the first
+tag continues that numbering (swarm-routing/skills, whose `plugin.json` was
+at 0.32.x; maintainer decision 2026-11-17, #636). Commitizen bumps a patch only
 from `fix:`, `refactor:` or `perf:` commits, so docs-only changes ride along with the
 next release rather than making one of their own. While a repository is at 0.x,
 Commitizen turns a breaking change into a minor (`major_version_zero`); a
@@ -1399,7 +1402,9 @@ actor), so the bump goes through a PR and the tag follows the merge
    `fix` → patch; a breaking change → minor while 0.x), rewrites the version
    files and writes `CHANGELOG.md`. A repository with no `v*` tag yet gets
    **v0.1.0** (ROADMAP "Releases"), or, dispatched with `increment: MAJOR`,
-   the next major of its configured version (**v1.0.0** from any 0.x).
+   the next major of its configured version (**v1.0.0** from any 0.x), or,
+   where the caller passes `first-release-from-config: true`, its configured
+   version bumped by the commits like any later release (#636).
    The input `increment` (`PATCH`, `MINOR`, `MAJOR`) forces the bump's size
    (`cz bump --increment`) instead of the one read from the commits (#211).
    Pass it when the version the ladder fixes differs from the one Commitizen
