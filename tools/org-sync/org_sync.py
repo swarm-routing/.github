@@ -422,36 +422,66 @@ PROFILE_BADGES = {
             "https://github.com/swarm-routing/ns3-swarm-core",
         ),
     ],
-    "Tickets": [
+    "Open Tickets": [
         (
             "Open RCAPA",
             "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Arcapa"
-            "%20is%3Aopen%20is%3Aissue&label=open%20rcapa&color=darkred",
+            "%20is%3Aopen%20is%3Aissue&label=rcapa&color=darkred",
             "https://github.com/search?q=org%3Aswarm-routing+label%3Arcapa+state%3Aopen+is%3Aissue&type=issues",
         ),
         (
             "Open handoffs",
             "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Ahandoff"
-            "%20is%3Aopen%20is%3Aissue&label=open%20handoffs&color=green",
+            "%20is%3Aopen%20is%3Aissue&label=handoffs&color=green",
             "https://github.com/search?q=org%3Aswarm-routing+label%3Ahandoff+state%3Aopen+is%3Aissue&type=issues",
         ),
         (
             "Open epics",
             "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Aepic"
-            "%20is%3Aopen%20is%3Aissue&label=open%20epics&color=purple",
+            "%20is%3Aopen%20is%3Aissue&label=epics&color=purple",
             "https://github.com/search?q=org%3Aswarm-routing+label%3Aepic+state%3Aopen+is%3Aissue&type=issues",
         ),
         (
             "Open enhancements",
             "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Aenhancement"
-            "%20is%3Aopen%20is%3Aissue&label=open%20enhancements&color=royalblue",
+            "%20is%3Aopen%20is%3Aissue&label=enhancements&color=royalblue",
             "https://github.com/search?q=org%3Aswarm-routing+label%3Aenhancement+state%3Aopen+is%3Aissue&type=issues",
         ),
         (
             "Open bugs",
             "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Abug"
-            "%20is%3Aopen%20is%3Aissue&label=open%20bugs&color=red",
+            "%20is%3Aopen%20is%3Aissue&label=bugs&color=red",
             "https://github.com/search?q=org%3Aswarm-routing+label%3Abug+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open chore",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Achore"
+            "%20is%3Aopen%20is%3Aissue&label=chores&color=yellow",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Achore+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open documentation",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Adocumentation"
+            "%20is%3Aopen%20is%3Aissue&label=documentations&color=green",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Adocumentation+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open question",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Aquestion"
+            "%20is%3Aopen%20is%3Aissue&label=questions&color=magenta",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Aquestion+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open verification",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Averification"
+            "%20is%3Aopen%20is%3Aissue&label=verifications&color=coral",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Averification+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open hold",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Ahold"
+            "%20is%3Aopen%20is%3Aissue&label=hold&color=olive",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Ahold+state%3Aopen+is%3Aissue&type=issues",
         ),
     ],
     "Community & docs": [
