@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from urllib.parse import parse_qs, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -1812,6 +1813,7 @@ titles = [
     "Quality",
     "Trust",
     "Stack",
+    "Tickets",
     "Community & docs",
 ]
 rows = re.findall(r"^\| ([^|]+) \| ", pr, re.M)[2:]
@@ -1824,6 +1826,39 @@ check(
     and "[![Colony Arena](" in pr,
     "profile renders the grouped table between the markers, groups in order, the rest kept",
 )
+platforms = next(row for row in pr.splitlines() if row.startswith("| Platforms |"))
+check(
+    "[![ns-3](https://img.shields.io/badge/ns--3-Network_Simulator-1081c2)](https://www.nsnam.org/)"
+    in platforms
+    and "[![Browser: WebAssembly](https://img.shields.io/badge/Browser-WebAssembly-informational?logo=webassembly)]"
+    "(https://swarm-routing.github.io/pipeline/)"
+    in platforms,
+    "profile retains the current platform badges and links",
+)
+tickets = next(row for row in pr.splitlines() if row.startswith("| Tickets |"))
+ticket_badges = re.findall(r"\[!\[([^]]+)\]\(([^)]+)\)\]\(([^)]+)\)", tickets)
+expected_tickets = [
+    ("Open RCAPA", "rcapa", "open rcapa", "darkred"),
+    ("Open handoffs", "handoff", "open handoffs", "green"),
+    ("Open epics", "epic", "open epics", "purple"),
+    ("Open enhancements", "enhancement", "open enhancements", "royalblue"),
+    ("Open bugs", "bug", "open bugs", "red"),
+]
+check(len(ticket_badges) == len(expected_tickets), "profile renders all ticket badges")
+for (alt, image, link), (name, label, badge_label, color) in zip(ticket_badges, expected_tickets):
+    image_query = parse_qs(urlparse(image).query)
+    link_query = parse_qs(urlparse(link).query)
+    check(
+        alt == name
+        and set(image_query.get("query", [""])[0].split())
+        == {"org:swarm-routing", f"label:{label}", "is:open", "is:issue"}
+        and image_query.get("label") == [badge_label]
+        and image_query.get("color") == [color]
+        and set(link_query.get("q", [""])[0].split())
+        == {"org:swarm-routing", f"label:{label}", "state:open", "is:issue"}
+        and link_query.get("type") == ["issues"],
+        f"profile {name} count and link select the same open issues",
+    )
 check(run("profile", dp, "--check")[0] == 0, "profile --check: today's render is current")
 write(pf, "# org\n")
 check(run("profile", dp)[0] == 1, "profile: no badges markers is an error")

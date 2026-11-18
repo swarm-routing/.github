@@ -325,7 +325,12 @@ PROFILE_BADGES = {
             "ns-3",
             "https://img.shields.io/badge/ns--3-Network_Simulator-1081c2",
             "https://www.nsnam.org/",
-        )
+        ),
+        (
+            "Browser: WebAssembly",
+            "https://img.shields.io/badge/Browser-WebAssembly-informational?logo=webassembly",
+            "https://swarm-routing.github.io/pipeline/",
+        ),
     ],
     "Containers": [
         (
@@ -337,7 +342,7 @@ PROFILE_BADGES = {
     "Protocols": [
         (
             "Protocol: AntHocNet",
-            "https://img.shields.io/badge/Protocol-AntHocNet-orange",
+            "https://img.shields.io/badge/Protocol-AntHocNet-green",
             "https://github.com/swarm-routing/AntHocNet",
         ),
         (
@@ -407,9 +412,46 @@ PROFILE_BADGES = {
             "https://github.com/swarm-routing/ns3-swarm-core",
         ),
         (
-            "In the browser: WebAssembly",
-            shield("in the browser", "WebAssembly", "informational") + "?logo=webassembly",
-            "https://swarm-routing.github.io/pipeline/",
+            "Python 3.10+",
+            "https://img.shields.io/badge/python-3.10%2B-blue?logo=python",
+            "https://github.com/swarm-routing/ns3-swarm-core",
+        ),
+        (
+            "Go 1.27",
+            "https://img.shields.io/badge/go-1.27-blue?logo=go",
+            "https://github.com/swarm-routing/ns3-swarm-core",
+        ),
+    ],
+    "Tickets": [
+        (
+            "Open RCAPA",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Arcapa"
+            "%20is%3Aopen%20is%3Aissue&label=open%20rcapa&color=darkred",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Arcapa+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open handoffs",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Ahandoff"
+            "%20is%3Aopen%20is%3Aissue&label=open%20handoffs&color=green",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Ahandoff+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open epics",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Aepic"
+            "%20is%3Aopen%20is%3Aissue&label=open%20epics&color=purple",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Aepic+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open enhancements",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Aenhancement"
+            "%20is%3Aopen%20is%3Aissue&label=open%20enhancements&color=royalblue",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Aenhancement+state%3Aopen+is%3Aissue&type=issues",
+        ),
+        (
+            "Open bugs",
+            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Abug"
+            "%20is%3Aopen%20is%3Aissue&label=open%20bugs&color=red",
+            "https://github.com/search?q=org%3Aswarm-routing+label%3Abug+state%3Aopen+is%3Aissue&type=issues",
         ),
     ],
     "Community & docs": [
@@ -424,12 +466,6 @@ PROFILE_BADGES = {
             "%2Fswarm-routing%2Fskills%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version"
             "&label=Claude%20Code%20plugin&color=blueviolet",
             "https://github.com/swarm-routing/skills",
-        ),
-        (
-            "Open handoffs",
-            "https://img.shields.io/github/issues-search?query=org%3Aswarm-routing%20label%3Ahandoff"
-            "%20is%3Aopen&label=open%20handoffs",
-            "https://github.com/search?q=org%3Aswarm-routing+label%3Ahandoff+state%3Aopen&type=issues",
         ),
         (
             "Conventional Commits",
