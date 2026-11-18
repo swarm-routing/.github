@@ -1813,7 +1813,7 @@ titles = [
     "Quality",
     "Trust",
     "Stack",
-    "Tickets",
+    "Open Tickets",
     "Community & docs",
 ]
 rows = re.findall(r"^\| ([^|]+) \| ", pr, re.M)[2:]
@@ -1835,14 +1835,19 @@ check(
     in platforms,
     "profile retains the current platform badges and links",
 )
-tickets = next(row for row in pr.splitlines() if row.startswith("| Tickets |"))
+tickets = next(row for row in pr.splitlines() if row.startswith("| Open Tickets |"))
 ticket_badges = re.findall(r"\[!\[([^]]+)\]\(([^)]+)\)\]\(([^)]+)\)", tickets)
 expected_tickets = [
-    ("Open RCAPA", "rcapa", "open rcapa", "darkred"),
-    ("Open handoffs", "handoff", "open handoffs", "green"),
-    ("Open epics", "epic", "open epics", "purple"),
-    ("Open enhancements", "enhancement", "open enhancements", "royalblue"),
-    ("Open bugs", "bug", "open bugs", "red"),
+    ("Open RCAPA", "rcapa", "rcapa", "darkred"),
+    ("Open handoffs", "handoff", "handoffs", "green"),
+    ("Open epics", "epic", "epics", "purple"),
+    ("Open enhancements", "enhancement", "enhancements", "royalblue"),
+    ("Open bugs", "bug", "bugs", "red"),
+    ("Open chore", "chore", "chores", "yellow"),
+    ("Open documentation", "documentation", "documentations", "green"),
+    ("Open question", "question", "questions", "magenta"),
+    ("Open verification", "verification", "verifications", "coral"),
+    ("Open hold", "hold", "hold", "olive"),
 ]
 check(len(ticket_badges) == len(expected_tickets), "profile renders all ticket badges")
 for (alt, image, link), (name, label, badge_label, color) in zip(ticket_badges, expected_tickets):
