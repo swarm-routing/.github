@@ -5,7 +5,7 @@ constellations, implemented cleanly on **ns-3** and benchmarked against each
 other on identical seeds.
 
 The org grew out of [**AntHocNet**](https://github.com/swarm-routing/AntHocNet)
-(Di Caro, Ducatelle & Gambardella, 2005), the source repository, which now
+([Di Caro, Ducatelle & Gambardella, 2005](https://doi.org/10.1002/ett.1062)), the source repository, which now
 lives here too: its shared infrastructure, comparator arms and benchmark
 tooling are moving into their own repositories so each protocol can be its
 own citable repository.
