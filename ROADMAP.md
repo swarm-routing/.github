@@ -611,6 +611,10 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) BeeAdHoc as a standalone hexagonal protocol (Phase 4) | In progress | 5 / 7 |
 | [#150](https://github.com/swarm-routing/BeeAdHoc/issues/150) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 
+### [BeeSensor](https://github.com/swarm-routing/BeeSensor)
+
+No open epic: the work here is tracked as single issues.
+
 ### [benchmarks](https://github.com/swarm-routing/benchmarks)
 
 No open epic: the work here is tracked as single issues.
@@ -630,40 +634,6 @@ No open epic: the work here is tracked as single issues.
 | [#3](https://github.com/swarm-routing/HOPNET/issues/3) HOPNET as a standalone hexagonal protocol (scheduled after Termite) | In progress | 2 / 3 |
 | [#149](https://github.com/swarm-routing/HOPNET/issues/149) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 
-### [ns3-containers](https://github.com/swarm-routing/ns3-containers)
-
-| Epic | Status | Sub-issues closed |
-|------|--------|-------------------|
-| [#19](https://github.com/swarm-routing/ns3-containers/issues/19) OS and compiler coverage — the platforms ns-3 supports and researchers use | In progress | 2 / 6 |
-| [#36](https://github.com/swarm-routing/ns3-containers/issues/36) image test pipeline — every image built is tested by digest (security, structure, unit, profile, integration, regression, downstream) before any tag moves | In progress | 5 / 9 |
-| [#172](https://github.com/swarm-routing/ns3-containers/issues/172) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 1 |
-| [#11](https://github.com/swarm-routing/ns3-containers/issues/11) multi-platform ns3-dev images (linux/amd64 + linux/arm64) with docker buildx | Planned | 0 / 1 |
-| [#12](https://github.com/swarm-routing/ns3-containers/issues/12) developer documentation for the ns3-dev images (usage, per-image pages, debugging, CI/CD) kept current by AI review | Planned | 0 / 7 |
-| [#27](https://github.com/swarm-routing/ns3-containers/issues/27) security refresh — keep the supported ns-3 release's images patched (scheduled base refresh + scan-triggered rebuilds; older releases on demand) | Planned | 0 / 4 |
-
-<details><summary>Closed: 1 epic</summary>
-
-| Epic | Closed |
-|------|--------|
-| [#3](https://github.com/swarm-routing/ns3-containers/issues/3) ns3-dev image matrix — top 10 ns-3 versions, full profiles on the latest 3, Ubuntu/Debian/slim bases | Done 2026-11-02 |
-
-</details>
-
-### [ns3-swarm-core](https://github.com/swarm-routing/ns3-swarm-core)
-
-| Epic | Status | Sub-issues closed |
-|------|--------|-------------------|
-| [#177](https://github.com/swarm-routing/ns3-swarm-core/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
-| [#82](https://github.com/swarm-routing/ns3-swarm-core/issues/82) swarm-core 2.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
-
-<details><summary>Closed: 1 epic</summary>
-
-| Epic | Closed |
-|------|--------|
-| [#6](https://github.com/swarm-routing/ns3-swarm-core/issues/6) swarm-core: the shared contrib module every swarm protocol links (Phase 2) | Done 2026-11-11 |
-
-</details>
-
 ### [ns3-tools](https://github.com/swarm-routing/ns3-tools)
 
 | Epic | Status | Sub-issues closed |
@@ -682,6 +652,33 @@ No open epic: the work here is tracked as single issues.
 |------|--------|-------------------|
 | [#2](https://github.com/swarm-routing/ns3-upstream-report/issues/2) zero-manual upstream reporting: draft, verify, publish, track, reply, maintain, release | Planned | 0 / 1 |
 
+### [POSANT](https://github.com/swarm-routing/POSANT)
+
+No open epic: the work here is tracked as single issues.
+
+### [Q-Swarm](https://github.com/swarm-routing/Q-Swarm)
+
+No open epic: the work here is tracked as single issues.
+
+### [sim-containers](https://github.com/swarm-routing/sim-containers)
+
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#19](https://github.com/swarm-routing/sim-containers/issues/19) OS and compiler coverage — the platforms ns-3 supports and researchers use | In progress | 2 / 6 |
+| [#36](https://github.com/swarm-routing/sim-containers/issues/36) image test pipeline — every image built is tested by digest (security, structure, unit, profile, integration, regression, downstream) before any tag moves | In progress | 5 / 9 |
+| [#172](https://github.com/swarm-routing/sim-containers/issues/172) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 1 |
+| [#11](https://github.com/swarm-routing/sim-containers/issues/11) multi-platform ns3-dev images (linux/amd64 + linux/arm64) with docker buildx | Planned | 0 / 1 |
+| [#12](https://github.com/swarm-routing/sim-containers/issues/12) developer documentation for the ns3-dev images (usage, per-image pages, debugging, CI/CD) kept current by AI review | Planned | 0 / 7 |
+| [#27](https://github.com/swarm-routing/sim-containers/issues/27) security refresh — keep the supported ns-3 release's images patched (scheduled base refresh + scan-triggered rebuilds; older releases on demand) | Planned | 0 / 4 |
+
+<details><summary>Closed: 1 epic</summary>
+
+| Epic | Closed |
+|------|--------|
+| [#3](https://github.com/swarm-routing/sim-containers/issues/3) ns3-dev image matrix — top 10 ns-3 versions, full profiles on the latest 3, Ubuntu/Debian/slim bases | Done 2026-11-02 |
+
+</details>
+
 ### [skills](https://github.com/swarm-routing/skills)
 
 | Epic | Status | Sub-issues closed |
@@ -696,6 +693,25 @@ No open epic: the work here is tracked as single issues.
 
 </details>
 
+### [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3)
+
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#177](https://github.com/swarm-routing/swarm-adapter-ns3/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
+| [#82](https://github.com/swarm-routing/swarm-adapter-ns3/issues/82) swarm-core 2.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
+
+<details><summary>Closed: 1 epic</summary>
+
+| Epic | Closed |
+|------|--------|
+| [#6](https://github.com/swarm-routing/swarm-adapter-ns3/issues/6) swarm-core: the shared contrib module every swarm protocol links (Phase 2) | Done 2026-11-11 |
+
+</details>
+
+### [swarm-core](https://github.com/swarm-routing/swarm-core)
+
+No open epic: the work here is tracked as single issues.
+
 ### [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io)
 
 | Epic | Status | Sub-issues closed |
@@ -706,6 +722,10 @@ No open epic: the work here is tracked as single issues.
 | [#165](https://github.com/swarm-routing/swarm-routing.github.io/issues/165) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [#21](https://github.com/swarm-routing/swarm-routing.github.io/issues/21) Campaign mode: one chapter per network type, with a game UI | Planned | 0 / 2 |
 | [#27](https://github.com/swarm-routing/swarm-routing.github.io/issues/27) Colony Arena polish: navigation, SEO, usability, search | Planned | 0 / 10 |
+
+### [swarm-routingd](https://github.com/swarm-routing/swarm-routingd)
+
+No open epic: the work here is tracked as single issues.
 
 ### [Termite](https://github.com/swarm-routing/Termite)
 
