@@ -654,7 +654,9 @@ No open epic: the work here is tracked as single issues.
 
 ### [POSANT](https://github.com/swarm-routing/POSANT)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#3](https://github.com/swarm-routing/POSANT/issues/3) Bootstrap POSANT protocol on swarm-core (DirectionalZoning 2D/3D, fidelity, 3D UAV benchmarks) | Planned | no sub-issues yet |
 
 ### [Q-Swarm](https://github.com/swarm-routing/Q-Swarm)
 
@@ -670,6 +672,7 @@ No open epic: the work here is tracked as single issues.
 | [#11](https://github.com/swarm-routing/sim-containers/issues/11) multi-platform ns3-dev images (linux/amd64 + linux/arm64) with docker buildx | Planned | 0 / 1 |
 | [#12](https://github.com/swarm-routing/sim-containers/issues/12) developer documentation for the ns3-dev images (usage, per-image pages, debugging, CI/CD) kept current by AI review | Planned | 0 / 7 |
 | [#27](https://github.com/swarm-routing/sim-containers/issues/27) security refresh — keep the supported ns-3 release's images patched (scheduled base refresh + scan-triggered rebuilds; older releases on demand) | Planned | 0 / 4 |
+| [#210](https://github.com/swarm-routing/sim-containers/issues/210) Post-rename stabilization, path-filtered layout (ns3/ + emane/), and canary trim | Planned | no sub-issues yet |
 
 <details><summary>Closed: 1 epic</summary>
 
@@ -699,6 +702,7 @@ No open epic: the work here is tracked as single issues.
 |------|--------|-------------------|
 | [#177](https://github.com/swarm-routing/swarm-adapter-ns3/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [#82](https://github.com/swarm-routing/swarm-adapter-ns3/issues/82) swarm-core 2.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
+| [#228](https://github.com/swarm-routing/swarm-adapter-ns3/issues/228) Post-rename stabilization & v2.0.0 migration to swarm-core PUBLIC dependency | Planned | no sub-issues yet |
 
 <details><summary>Closed: 1 epic</summary>
 
@@ -710,7 +714,9 @@ No open epic: the work here is tracked as single issues.
 
 ### [swarm-core](https://github.com/swarm-routing/swarm-core)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, 4-byte wire framing, ProtocolContractTest) & release v1.0.0 | Planned | no sub-issues yet |
 
 ### [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io)
 
@@ -725,7 +731,9 @@ No open epic: the work here is tracked as single issues.
 
 ### [swarm-routingd](https://github.com/swarm-routing/swarm-routingd)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#3](https://github.com/swarm-routing/swarm-routingd/issues/3) Bootstrap swarm-routingd Linux daemon (epoll reactor, RtNetlinkSync, TUN, swarm-core ports) | Planned | no sub-issues yet |
 
 ### [Termite](https://github.com/swarm-routing/Termite)
 
