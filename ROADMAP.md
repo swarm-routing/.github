@@ -613,11 +613,15 @@ Every epic of every public repository, open first. A status is derived from the 
 
 ### [BeeSensor](https://github.com/swarm-routing/BeeSensor)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#3](https://github.com/swarm-routing/BeeSensor/issues/3) Bootstrap BeeSensor protocol on swarm-core (ConvergecastScorer, fidelity, WSN battery-drain benchmarks) | Planned | no sub-issues yet |
 
 ### [benchmarks](https://github.com/swarm-routing/benchmarks)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#145](https://github.com/swarm-routing/benchmarks/issues/145) Unified telemetry schema, cross-runtime parity runs, and UAV/WSN scenario profiles | Planned | no sub-issues yet |
 
 <details><summary>Closed: 1 epic</summary>
 
@@ -645,6 +649,7 @@ No open epic: the work here is tracked as single issues.
 | [#34](https://github.com/swarm-routing/ns3-tools/issues/34) promote AntHocNet's vendored comparator modules into ns3/arms/: aomdv, gpsr, qrouting, oracle | Planned | 0 / 2 |
 | [#43](https://github.com/swarm-routing/ns3-tools/issues/43) Network substrates: the ns-3 pieces new network types need, for every arm | Planned | 0 / 10 |
 | [#227](https://github.com/swarm-routing/ns3-tools/issues/227) per-protocol resource metrics: state footprint, energy, overhead and simulator cost, without disturbing results | Planned | 0 / 9 |
+| [#277](https://github.com/swarm-routing/ns3-tools/issues/277) Agnostic orchestration split (sim-tools) & Scenario IR / probes.v1.jsonl adapter alignment | Planned | no sub-issues yet |
 
 ### [ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report)
 
@@ -660,7 +665,9 @@ No open epic: the work here is tracked as single issues.
 
 ### [Q-Swarm](https://github.com/swarm-routing/Q-Swarm)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#3](https://github.com/swarm-routing/Q-Swarm/issues/3) Bootstrap Q-Swarm protocol on swarm-core (QEnergyUpdater, fidelity, contract tests) | Planned | no sub-issues yet |
 
 ### [sim-containers](https://github.com/swarm-routing/sim-containers)
 
