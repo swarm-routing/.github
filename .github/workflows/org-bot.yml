@@ -186,7 +186,7 @@ jobs:
         if: env.TASK == 'all' || env.TASK == 'bestpractices'
         timeout-minutes: 3
         env:
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:47de777a458c52a808a970ba1c2cd1a557c991c26deebde249f5ee9c95a75547
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:93a5c6a786694356323bd63fbd8683ed78080e619e1c2c0f6fc75fdd5296fd9a  # promoted from f414692 (#697)
         run: |
           set -euo pipefail
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG"  # with retries (#645)
@@ -270,7 +270,7 @@ jobs:
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:47de777a458c52a808a970ba1c2cd1a557c991c26deebde249f5ee9c95a75547  # promoted from bd03540 (#650)
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:93a5c6a786694356323bd63fbd8683ed78080e619e1c2c0f6fc75fdd5296fd9a  # promoted from f414692: on internal/github (#706)
         run: |
           set -o pipefail
           args=()
@@ -320,7 +320,7 @@ jobs:
         timeout-minutes: 30
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:4c57d100f9e6a745c6c7e669c92b0fc5a7441f966f2f936b1de0ffc37abb9b3d  # promoted from fcef343: has the visibility fix (#655)
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:93a5c6a786694356323bd63fbd8683ed78080e619e1c2c0f6fc75fdd5296fd9a  # promoted from f414692: every org Project public (#709)
         run: |
           set -o pipefail
           args=()
