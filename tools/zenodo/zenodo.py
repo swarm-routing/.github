@@ -423,6 +423,15 @@ def cff_overlay(meta, cff_text):
     return meta, "metadata from CITATION.cff (title, abstract, authors, keywords)"
 
 
+def is_github_url(url):
+    """True when the URL's host is exactly github.com (a substring match would
+    also take github.com.evil.example or a path naming github.com)."""
+    try:
+        return urllib.parse.urlsplit(str(url)).hostname == "github.com"
+    except ValueError:
+        return False
+
+
 def release_metadata(old, repo, tag, date):
     meta = {k: v for k, v in old.items() if k not in ("doi", "prereserve_doi")}
     meta["version"] = tag
@@ -430,7 +439,7 @@ def release_metadata(old, repo, tag, date):
     rel = [
         r
         for r in meta.get("related_identifiers", [])
-        if not (r.get("relation") == "isSupplementTo" and "github.com/" in r.get("identifier", ""))
+        if not (r.get("relation") == "isSupplementTo" and is_github_url(r.get("identifier", "")))
     ]
     rel.insert(
         0,
@@ -1771,8 +1780,30 @@ def self_test():
     check(
         "github link moved",
         rel_ids[0] == "https://github.com/org/R/tree/v1.2.0"
-        and not any("github.com/old" in i for i in rel_ids)
+        and not any(i.startswith("https://github.com/old/") for i in rel_ids)
         and "10.1/paper" in rel_ids,
+    )
+    # only a link whose host is github.com is the release's own: a host or path
+    # that merely contains "github.com/" is someone else's link, kept (alert #1, #747)
+    hostile = [
+        "https://github.com.evil.example/org/R/tree/v1",
+        "https://evil.example/github.com/org/R",
+        "https://GitHub.com/org/R/tree/v0.9.0",
+    ]
+    m = release_metadata(
+        {
+            "related_identifiers": [
+                {"identifier": u, "relation": "isSupplementTo", "scheme": "url"} for u in hostile
+            ]
+        },
+        "org/R",
+        "v1.0.0",
+        "2026-11-22",
+    )
+    ids = [r["identifier"] for r in m["related_identifiers"]]
+    check(
+        "only a github.com host is replaced",
+        ids == ["https://github.com/org/R/tree/v1.0.0", hostile[0], hostile[1]],
     )
     check(
         "inherited file removed",
