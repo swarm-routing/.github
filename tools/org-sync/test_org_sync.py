@@ -2193,7 +2193,9 @@ for path in (
     "go.mod",
     "docker/ci-tools/Dockerfile",
     "requirements/ruff.txt",
-    "requirements/requirements-dev.txt",
+    "tools/requirements/ci.txt",
+    "docs/requirements-docs.txt",
+    "docs/notes.txt",
     "python/pyproject.toml",
     "web/package.json",
     "test/fixtures/x/package.json",
@@ -2206,8 +2208,10 @@ check(
     org_sync.dependabot_entries(d)
     == [
         ("github-actions", "/"),
+        ("pip", "/docs"),
         ("pip", "/python"),
         ("pip", "/requirements"),
+        ("pip", "/tools/requirements"),
         ("gomod", "/"),
         ("docker", "/docker/ci-tools"),
         ("npm", "/web"),

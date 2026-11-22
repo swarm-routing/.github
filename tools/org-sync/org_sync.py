@@ -1382,8 +1382,12 @@ def dependabot_entries(repo_dir):
             continue
         name = parts[-1]
         for eco, manifests in DEPENDABOT_MANIFESTS.items():
-            # requirements-dev.txt, Dockerfile.ns3, ci.Dockerfile count too
-            extra = (eco == "pip" and re.fullmatch(r"requirements[\w.-]*\.txt", name)) or (
+            # requirements-dev.txt, any .txt lock in a requirements/ directory
+            # (AntHocNet's, tools/requirements/), Dockerfile.ns3, ci.Dockerfile count too
+            pip_lock = re.fullmatch(r"requirements[\w.-]*\.txt", name) or (
+                len(parts) > 1 and parts[-2] == "requirements" and name.endswith(".txt")
+            )
+            extra = (eco == "pip" and pip_lock) or (
                 eco == "docker" and re.fullmatch(r"Dockerfile\.[\w.-]+|[\w.-]+\.Dockerfile", name)
             )
             if name in manifests or extra:
