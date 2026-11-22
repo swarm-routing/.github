@@ -223,7 +223,7 @@ jobs:
           egress-policy: audit
       # the org's one docs-only test (#581), with this workflow's pattern
       - id: diff
-        uses: swarm-routing/.github/.github/actions/changes@29c9ad419e5c90de4c13051720f1b33e8f6bbb14 # main@2026-11-22
+        uses: swarm-routing/.github/.github/actions/changes@786502bd1a15a9b179678a09393e3b7592242b88 # main@2026-11-22
         timeout-minutes: 2
         with:
           paths: ${{ inputs.docs-only-paths }}
@@ -620,7 +620,7 @@ jobs:
           clang-format-18 --dry-run -Werror $files
 
   headers:
-    uses: swarm-routing/.github/.github/workflows/reusable-licence-check.yml@29c9ad419e5c90de4c13051720f1b33e8f6bbb14 # main@2026-11-22
+    uses: swarm-routing/.github/.github/workflows/reusable-licence-check.yml@786502bd1a15a9b179678a09393e3b7592242b88 # main@2026-11-22
     with:
       dual-roots: ${{ inputs.dual-roots }}
       core-roots: ${{ inputs.core-roots }}
