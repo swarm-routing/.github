@@ -9,9 +9,12 @@ name: labels
 # deletes a label (golden rule 11), so a repository's own labels stay. A
 # private repository is printed as "private repository N", never by name.
 #
-# Runs on a push to main that changes labels.json or this workflow, weekly
-# (a label edited by hand in a repository goes back to the taxonomy) and on
-# demand. A pull request that changes either runs a read-only dry run with
+# Runs on a push to main that changes labels.json or this workflow, daily
+# (a repository created since the last run gets the taxonomy within a day,
+# swarm-routing/swarm-mcp had GitHub's 10 defaults; a label edited by hand
+# in a repository goes back to it) and on demand; GitHub fires few of this
+# repository's schedules, so .github/backstop.toml dispatches a missed day
+# (#748). A second run only reads. A pull request that changes either runs a read-only dry run with
 # the workflow's own token (the public repositories only). Each repository's
 # sync-labels.yml caller keeps its monthly run as a second path.
 #
@@ -24,7 +27,7 @@ on:
       - labels.json
       - .github/workflows/labels.yml
   schedule:
-    - cron: '29 5 * * 1'
+    - cron: '29 5 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
