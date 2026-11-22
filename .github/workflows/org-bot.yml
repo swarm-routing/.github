@@ -309,7 +309,11 @@ jobs:
         if: >-
           ${{ !cancelled() && steps.bot.outcome == 'success'
               && (env.TASK == 'all' || env.TASK == 'hourly' || env.TASK == 'project-sync') }}
-        timeout-minutes: 15
+        # a full write budget (400 writes, about 200 new items) took over 14
+        # minutes on the first sync (run 44968941723: 189 items in 14 min,
+        # GitHub's mutations ~2 s each plus the pacing); a run with nothing
+        # new reads only, in under a minute
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
           IMG: ghcr.io/swarm-routing/ci-tools@sha256:4c57d100f9e6a745c6c7e669c92b0fc5a7441f966f2f936b1de0ffc37abb9b3d  # promoted from fcef343: has the visibility fix (#655)
