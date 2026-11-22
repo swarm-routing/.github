@@ -47,7 +47,7 @@ python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('ISSUE
 python3 -m json.tool labels.json >/dev/null
 tools/checks/check-headers.sh --self-test && tools/checks/check-headers.sh --dual '' .   # the Go gate: docker, or go
 # and the --self-test of every tool you changed: the exact commands are in docs/tools.md
-pip install ruff==0.17.1 && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml
+pip install "ruff==$(sed -n 's/^RUFF_VERSION=//p' tools/versions.env)" && ruff check tools && ruff format --check tools   # as reusable-python-ci.yml; tools/doctor/doctor.sh . compares every tool with CI
 ```
 
 Every tool has a `--self-test` against fixtures or a fake GitHub, and most a

@@ -21,11 +21,29 @@ contract); how issues and pull requests work is
 | Linux or macOS, `git`, `bash` | any recent | everything |
 | Python | 3.11 or newer (`tomllib`) | every tool (standard library only) |
 | PyYAML | any recent | parsing the issue forms (the "Forms, labels, style parse" check) |
-| ruff | 0.17.1 | Python lint and format |
-| Go | go.mod's `toolchain` version (1.27.4) | the Go tools (`cmd/`, `internal/`) and the go-ci fixtures |
+| ruff | `RUFF_VERSION` in [`tools/versions.env`](../tools/versions.env) (0.17.1) | Python lint and format |
+| Go | go.mod's `toolchain` version (1.27.4), as `GOTOOLCHAIN=local` in CI | the Go tools (`cmd/`, `internal/`) and the go-ci fixtures |
+| staticcheck, govulncheck | `STATICCHECK_VERSION`, `GOVULNCHECK_VERSION` in `tools/versions.env` | the Go checks of reusable-go-ci.yml |
 | Docker | any recent | only to build the `ci-tools` image locally |
 | actionlint, shellcheck | `pip install actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1` | workflow lint (actionlint also shellchecks `run:` blocks) |
 | GitHub CLI `gh`, logged in | any recent | only the read-only runs against the real org, and `epics.py` |
+
+`tools/versions.env` is the one place the CI tool versions live (#647):
+reusable-python-ci.yml and reusable-go-ci.yml read it. Compare a machine with
+it before a push:
+
+```bash
+tools/doctor/doctor.sh .   # in another repository: make doctor
+```
+
+One line per tool the repository uses (`ok`, `MISMATCH` with the local and
+CI versions, `MISSING`, each with the install command), exit 1 on any
+mismatch; then the hosts the network steps need. Offline, these are skipped
+or fail and only CI runs them: the org checkout (`make org-tools`, so
+`headers` and `org-sync-check`, github.com), the ci-tools image (`make
+headers` with docker; without docker it builds with go), ns-3 images
+(`make shell`, a protocol's `make test`, ghcr.io), the read-only runs (`gh`)
+and sim-containers' test stage (gitlab.com).
 
 ## Get the code
 

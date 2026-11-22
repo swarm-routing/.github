@@ -20,7 +20,7 @@ export TITLE
 TITLE_RE  := ^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^A-Z ](.*[^ ])?$$
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools pre-push
+.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools pre-push doctor
 
 help: ## list the targets
 	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z0-9_-]+:.*## /{printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -53,6 +53,10 @@ headers: org-tools ## licence headers (org rule 1): the Go gate CI runs, in dock
 
 org-sync-check: org-tools ## org-managed files match the org templates
 	python3 -I "$(ORG_DIR)/tools/org-sync/org_sync.py" check .
+
+doctor: ## this machine's tools against the versions CI runs (ruff, Go, staticcheck: the org's tools/versions.env), and the hosts the network steps need
+	@$(MAKE) -s org-tools || echo "doctor: could not refresh $(ORG_DIR) (offline?): using it as it is" >&2
+	@"$(ORG_DIR)/tools/doctor/doctor.sh" .
 
 check: lint test headers org-sync-check ## everything CI gates on
 

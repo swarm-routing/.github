@@ -77,10 +77,26 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ inputs.python-version }}
+      - name: Tool versions (swarm-routing/.github tools/versions.env, #647)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          # this repository's own file, so a pull request here tests the versions it
+          # sets; every caller reads main's, as `make doctor` does
+          src="$GITHUB_WORKSPACE/tools/versions.env"
+          if [ "$GITHUB_REPOSITORY" != swarm-routing/.github ] || [ ! -f "$src" ]; then
+            src="$RUNNER_TEMP/versions.env"
+            curl --proto =https --tlsv1.2 -fsSL --retry 3 -o "$src" https://raw.githubusercontent.com/swarm-routing/.github/main/tools/versions.env
+          fi
+          # only KEY=VALUE lines reach the environment; anything else fails the job
+          if grep -vE '^(#.*|[A-Z][A-Z0-9_]*=[A-Za-z0-9._-]+)?$' "$src"; then
+            echo "::error::tools/versions.env has a line that is not KEY=VALUE"; exit 1
+          fi
+          grep -E '^[A-Z][A-Z0-9_]*=' "$src" | tee -a "$GITHUB_ENV"
       - name: Install ruff and coverage (pinned)
         timeout-minutes: 5
         run: |
-          python3 -m pip install --quiet --only-binary :all: ruff==0.17.1 coverage==7.16.2
+          python3 -m pip install --quiet --only-binary :all: "ruff==$RUFF_VERSION" "coverage==$COVERAGE_VERSION"
       - name: Org ruff.toml unless the repo has its own ruff config
         run: |
           if [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -qs '^\[tool\.ruff' pyproject.toml; then
