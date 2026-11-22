@@ -19,6 +19,9 @@ name: zenodo
 # and `tag` archives that tag as the first version of a new concept (refused
 # when a concept already exists; a dry run when `dry-run` is set or without
 # the token).
+# A repository whose .github/org-sync.toml sets `zenodo = false` (#811:
+# skills, swarm-mcp, the site and .github) is never archived: every step
+# skips it and names it in the summary, and it is never an orphan.
 # It also checks CONTRIBUTING.md's archived-releases table against Zenodo
 # (`zenodo.py table --check`, #428): drift is a warning in the summary.
 # Without the ZENODO_TOKEN secret (a Zenodo personal access token with

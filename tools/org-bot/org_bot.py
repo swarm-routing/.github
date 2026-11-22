@@ -31,7 +31,9 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             release made it), it writes them, then `org_sync.py apply`
             renders the README DOI badge and the citing section, so no DOI
             is typed by hand (#232). A concept named two ways fails that
-            repository, for the maintainer. Zenodo is only read.
+            repository, for the maintainer. Zenodo is only read. A
+            repository with `zenodo = false` (#811) is left alone: record
+            writes nothing there.
 
   swarm-core-pin  tools/checks/check-swarm-core-pin.py --bump, in each
             repository whose core/CMakeLists.txt pins swarm-core: when
@@ -73,7 +75,9 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             it only once Zenodo has archived it; CONTRIBUTING.md's version-DOI
             rows where it keeps them), and in .github `zenodo.py table
             CONTRIBUTING.md --write` (the archived-releases table). Every DOI
-            is read from Zenodo, never typed. The PR gets auto-merge as any
+            is read from Zenodo, never typed. A repository with `zenodo =
+            false` (#811) gets the shipped block from its GitHub releases, no
+            DOI, and no row in the table. The PR gets auto-merge as any
             bot PR. Then tools/release/release_check.py after runs for that
             release, and what it still finds (WARN and FAIL lines) is posted
             as one comment, updated in place, on the site's

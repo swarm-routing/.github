@@ -2,6 +2,9 @@
 # org-sync and org-bot manage no templates here; tools/repo-settings reads [settings].
 # bestpractices.dev project (OpenSSF Best Practices; id read from the site's public JSON, #531)
 bestpractices_project = "16820"
+# No Zenodo archive and no DOI: releases stay GitHub releases (maintainer decision
+# 2026-11-22, #811); tools/zenodo and org-sync read it.
+zenodo = false
 
 [settings]
 # GitHub settings as code: swarm-routing/.github tools/repo-settings (#117).

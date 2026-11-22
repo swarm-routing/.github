@@ -480,6 +480,37 @@ check(
     "reseed CITATION.cff writes the concept DOI once zenodo_concept is set, as zenodo.py reads it",
 )
 check(run("check", dr)[0] == 0, "check is clean with release, doi and cite")
+# `zenodo = false` (#811): releases, but no Zenodo archive, so no DOI anywhere
+edit(dr, ".github/org-sync.toml", 'kind = "protocol"\n', 'kind = "protocol"\nzenodo = false\n')
+run("apply", dr)
+rc, out = run("reseed", "CITATION.cff", dr)
+rr, cff = read(os.path.join(dr, "README.md")), read(os.path.join(dr, "CITATION.cff"))
+check(
+    rc == 0
+    and "zenodo.org/badge" not in rr
+    and "10.5281/zenodo" not in rr
+    and "\ndoi:" not in cff
+    and "identifiers:" not in cff
+    and "It has no DOI yet" not in rr
+    and "archived on [Zenodo]" not in rr
+    and "Its releases are not archived on Zenodo, so it has no DOI" in rr
+    and "built by the org's release workflow." in rr,
+    "zenodo = false: no DOI badge, no doi line, no pending DOI, even with a zenodo_concept",
+)
+check(run("check", dr)[0] == 0, "check is clean with zenodo = false")
+edit(dr, ".github/org-sync.toml", "zenodo = false\n", 'zenodo = "no"\n')
+try:
+    rc = run("plan", dr)[0]
+except SystemExit as e:
+    rc = e.code
+check("zenodo must be true or false" in str(rc), "zenodo must be a bool")
+edit(dr, ".github/org-sync.toml", 'zenodo = "no"\n', "")
+run("apply", dr)
+run("reseed", "CITATION.cff", dr)
+check(
+    'doi: "10.5281/zenodo.1234567"' in read(os.path.join(dr, "CITATION.cff")),
+    "without the opt-out the concept DOI is back",
+)
 with open(os.path.join(dr, ".github/org-sync.toml"), "a") as f:
     f.write(f'\n[settings]\ndescription = "{GH_DESC}"\n')
 run("reseed", "CITATION.cff", dr)

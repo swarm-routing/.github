@@ -86,7 +86,10 @@ name: Reusable release
 #               zenodo job leaves the GitHub release as it is: re-run it, or
 #               the daily zenodo.yml `sync` archives the release after its
 #               grace period (a first release, with no concept yet: re-run
-#               it, or zenodo.yml mode `create`).
+#               it, or zenodo.yml mode `create`). A repository whose
+#               .github/org-sync.toml sets `zenodo = false` (#811: skills,
+#               swarm-mcp, the site, .github) is never archived: leave
+#               `zenodo` false there (publish-release refuses it).
 #    The last step of `publish` tells the org site (`notify-site`, default
 #    true, #388): once the release is published it sends `repository_dispatch`
 #    event `org-release` to swarm-routing/swarm-routing.github.io with
@@ -285,7 +288,7 @@ on:
         type: boolean
         default: false
       zenodo:
-        description: "After a release is published, archive it on Zenodo with its own assets (needs the ZENODO_TOKEN secret; turn Zenodo's GitHub integration off for the repository)"
+        description: "After a release is published, archive it on Zenodo with its own assets (needs the ZENODO_TOKEN secret; turn Zenodo's GitHub integration off for the repository); refused for a repository whose .github/org-sync.toml sets zenodo = false"
         type: boolean
         default: false
       zenodo-sandbox:
@@ -1007,6 +1010,8 @@ jobs:
             echo
             if [ "$ZENODO_PUSH" = true ]; then
               echo "The \`zenodo\` job archives this release from the workflow, with ZENODO_TOKEN; Zenodo reads nothing from GitHub."
+            elif python3 -I -c 'import sys, tomllib; sys.exit(tomllib.load(open(".github/org-sync.toml", "rb")).get("zenodo", True) is not False)' 2>/dev/null; then
+              echo "No Zenodo archive: \`zenodo = false\` in .github/org-sync.toml (swarm-routing/.github#811); this release stays a GitHub release."
             else
               echo "Zenodo fetches the release with the maintainer's own quota, not these (CONTRIBUTING \"When Zenodo fails a release\")."
             fi
