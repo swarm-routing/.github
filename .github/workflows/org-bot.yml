@@ -351,8 +351,11 @@ jobs:
           IMG: ghcr.io/swarm-routing/ci-tools@sha256:93914e51decee96ea027b26083a9e8502ed28c7e6c6a804393b882af0ddf40c2  # promoted from d26b5c3 (#679)
         run: |
           set -o pipefail
-          args=()
-          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          # held as a dry run (#629): the first live listing found 469 open alerts
+          # (most of them Scorecard's, one per check and repository), and opening
+          # 468 tickets in one run would trip GitHub's content limits; the task
+          # writes again once it opens a bounded number of new tickets a run
+          args=(--dry-run)
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           if [ "$TASK" = security-report ] || { [ "$TASK" = all ] && [ "$(date -u +%u)" = 1 ]; }; then
             args+=(--report)
