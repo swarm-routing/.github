@@ -263,6 +263,9 @@ chat, not the record.
   (swarm-routing/.github#587).
 - Clean up only your own directory, never a shared one
   (swarm-routing/.github#644).
+- Search an output the harness saved to a file (`grep`, `head`, `sed -n`),
+  never read it whole; wait on a PR with `pr_status.py wait` or `wait
+  --merged`, not by subscribing to its activity (swarm-routing/.github#794).
 - A PR body's `Closes #N` closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
 - Before saying a tool or check is missing, look at `main` (`git fetch`,
