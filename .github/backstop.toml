@@ -40,6 +40,14 @@ title = "org-bot all (schedule)"
 period = "24h"
 inputs = { task = "all", scheduled = "true" }
 
+# labels.yml: labels.json on every repository, daily, so a repository created
+# since the last run gets the taxonomy within a day (swarm-routing/swarm-mcp
+# had GitHub's 10 defaults). Any run on main counts: each one applies it.
+[[entry]]
+repo = "swarm-routing/.github"
+workflow = "labels.yml"    # cron '29 5 * * *'
+period = "24h"
+
 [[entry]]
 repo = "swarm-routing/ns3-upstream-report"
 workflow = "send.yml"      # cron '23 * * * *'
