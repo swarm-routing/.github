@@ -72,6 +72,14 @@ name: org-bot
 #   open security alert in every org repository, kept current and closed when
 #   the alert closes; on Mondays (and a dispatch of `security-report`) also the
 #   summary issue `[security] open alerts across the org` here.
+# - ticket-audit (weekly: the daily run on Mondays, and a dispatch of
+#   `ticket-audit`; #730): the Go tool `ticket-audit` (cmd/ticket-audit)
+#   closes an open, non-epic issue whose acceptance boxes are all ticked, or
+#   that a merged PR says it closes while GitHub left it open, and a handoff
+#   a newer handoff supersedes; never one with an unticked box or labelled
+#   hold, epic, security, rcapa or an uncut release; at most 20 a run. The
+#   summary issue `[tickets] audit` here lists the nearly done (>= 80%
+#   ticked) and those with no checkbox.
 # - fan-out in bounded batches (#505): epics, org-sync and bestpractices open
 #   at most 4 new PRs at a time, then wait (2 min, then while the org holds
 #   more than 10 queued runs, 30 min in all) before the next 4; what the run
@@ -125,7 +133,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep, release-sync, project-sync, security-alerts, security-report]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep, release-sync, project-sync, security-alerts, security-report, ticket-audit]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -204,7 +212,7 @@ jobs:
           fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Refresh
         id: refresh
-        if: env.TASK != 'branch-sweep' && env.TASK != 'release-sync' && env.TASK != 'project-sync' && env.TASK != 'security-alerts' && env.TASK != 'security-report'
+        if: env.TASK != 'branch-sweep' && env.TASK != 'release-sync' && env.TASK != 'project-sync' && env.TASK != 'security-alerts' && env.TASK != 'security-report' && env.TASK != 'ticket-audit'
         env:
           ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
           ORG_BOT_GIT_NAME: ${{ steps.bot.outputs.git-name }}
@@ -361,6 +369,37 @@ jobs:
           fi
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" security-alerts "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: Finished tickets (ticket-audit, weekly)
+        id: tickets
+        # cmd/ticket-audit from the ci-tools image by digest (#730): every open,
+        # non-epic issue of every unarchived org repository (the list comes from
+        # the org); closes, with a comment, one whose acceptance boxes are all
+        # ticked, or that a merged PR says it closes and GitHub left open, and a
+        # handoff a newer open handoff supersedes; never one with an unticked
+        # box (outside <details> and code fences) or labelled hold, epic,
+        # security, rcapa or release:vX.Y.Z before that release; at most 20 a
+        # run; keeps `[tickets] audit` here. The daily run on Mondays and a
+        # dispatch of `ticket-audit`; it runs even when Refresh failed. Needs
+        # the App's Issues write, Pull requests and Contents read.
+        if: >-
+          ${{ !cancelled() && steps.bot.outcome == 'success'
+              && ((github.event_name == 'schedule' && env.TASK == 'all')
+                  || (github.event_name == 'workflow_dispatch' && env.TASK == 'ticket-audit')) }}
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:96290b386c6434a81534abdc0e8419bad19125da8857d53a730721fc8436fb37  # promoted from fb5549b: carries ticket-audit (#732)
+        run: |
+          set -o pipefail
+          if [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$(date -u +%u)" != 1 ]; then
+            echo "ticket-audit: weekly, on Mondays" | tee -a "$RUNNER_TEMP/org-bot.txt"
+            exit 0
+          fi
+          args=()
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
+          docker run --rm -e GH_TOKEN "$IMG" ticket-audit "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
         if: ${{ always() }}
         env:
@@ -370,6 +409,7 @@ jobs:
           STEP_SYNC: ${{ steps.sync.outcome }}
           STEP_SECURITY: ${{ steps.security.outcome }}
           STEP_PROJECT: ${{ steps.project.outcome }}
+          STEP_TICKETS: ${{ steps.tickets.outcome }}
         run: |
           # which tasks ran, and how each ended (#614); the repositories are
           # not listed (a dispatch may name a private one, #622)
@@ -384,6 +424,7 @@ jobs:
           [ "$STEP_SYNC" != skipped ] && [ -n "$STEP_SYNC" ] && ran="${ran:+$ran; }release-sync: $STEP_SYNC"
           [ "$STEP_PROJECT" != skipped ] && [ -n "$STEP_PROJECT" ] && ran="${ran:+$ran; }project-sync: $STEP_PROJECT"
           [ "$STEP_SECURITY" != skipped ] && [ -n "$STEP_SECURITY" ] && ran="${ran:+$ran; }security-alerts: $STEP_SECURITY"
+          [ "$STEP_TICKETS" != skipped ] && [ -n "$STEP_TICKETS" ] && ran="${ran:+$ran; }ticket-audit: $STEP_TICKETS"
           {
             echo "### org-bot ($TASK)"
             echo
