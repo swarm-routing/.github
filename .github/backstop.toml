@@ -8,6 +8,38 @@
 # the repository was created (swarm-routing/ns3-upstream-report#33); `mode =
 # "scheduled"` makes a dispatched run real (a manual dispatch is dry by default).
 
+#
+# swarm-routing/.github org-bot.yml (#748): GitHub fires few of this
+# repository's schedules (7 of org-bot's 33 slots on 2026-11-21), and a pending
+# scheduled refresh may be replaced by a push's. A row per scheduled task,
+# found by its run-name (`org-bot <task> (schedule)`, cancelled runs not
+# counted); `scheduled = "true"` makes the dispatch run as the schedule would.
+# The hourly row's alarm keeps `[backstop] scheduled runs stalled` open while
+# no scheduled hourly run completed for 3 hours. org-bot.yml runs the backstop
+# on each of its runs too, so its own frequent runs are the clock.
+
+[[entry]]
+repo = "swarm-routing/.github"
+workflow = "org-bot.yml"   # cron '23 * * * *'
+title = "org-bot hourly (schedule)"
+period = "1h"
+alarm = "3h"
+inputs = { task = "hourly", scheduled = "true" }
+
+[[entry]]
+repo = "swarm-routing/.github"
+workflow = "org-bot.yml"   # cron '41 */3 * * *'
+title = "org-bot swarm-core-pin (schedule)"
+period = "3h"
+inputs = { task = "swarm-core-pin", scheduled = "true" }
+
+[[entry]]
+repo = "swarm-routing/.github"
+workflow = "org-bot.yml"   # cron '17 4 * * *'
+title = "org-bot all (schedule)"
+period = "24h"
+inputs = { task = "all", scheduled = "true" }
+
 [[entry]]
 repo = "swarm-routing/ns3-upstream-report"
 workflow = "send.yml"      # cron '23 * * * *'
