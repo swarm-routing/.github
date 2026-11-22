@@ -1447,6 +1447,9 @@ def items(cfg):
         ("file", ".github/workflows/settings-apply.yml", "workflows/settings-apply.yml", None),
         # an issue change that can move an epic list asks epics-refresh to run (#572)
         ("file", ".github/workflows/epics-changed.yml", "workflows/epics-changed.yml", None),
+        # every open security alert starts an automated fix; the maintainer keeps
+        # dismissals and secret rotation (#629)
+        ("file", ".github/workflows/security-autofix.yml", "workflows/security-autofix.yml", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),

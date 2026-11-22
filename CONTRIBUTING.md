@@ -1138,7 +1138,7 @@ alert's repository it keeps one issue per alert:
   `bestpractices` check withdraws its two vulnerability answers on the same
   thresholds ("OpenSSF Best Practices" below).
 - **Who acts,** as the ticket says:
-  - a code finding is fixed by an agent's test-first PR (#629, stage 3);
+  - a code finding is fixed by an agent's test-first PR (below);
   - a policy finding (Scorecard) gets a proposal: a `[settings]` change, or
     a dismissal with its reason;
   - a Dependabot alert gets Dependabot's own security-update PR, on in every
@@ -1153,6 +1153,67 @@ alert's repository it keeps one issue per alert:
   past the SLA, the fix PRs merged that week, and those waiting for the
   maintainer. Private repositories are named only as `private repository N`
   (#622).
+
+```mermaid
+flowchart LR
+  A[open alert<br/>code scanning, Dependabot, secret] -->|hourly security-alerts| T[security ticket<br/>one per alert, P1-P3]
+  T -->|code finding| F[security-autofix.yml<br/>agent: test first, minimal fix]
+  F -->|guard accepts| P[fix PR<br/>CI, CodeRabbit, merge queue]
+  F -->|guard refuses| N[no-fix comment<br/>maintainer]
+  T -->|policy finding| S[proposal comment<br/>settings PR or dismissal]
+  T -->|Dependabot| D[Dependabot security update]
+  T -->|secret| R[maintainer rotates]
+  P --> C[alert closes]
+  D --> C
+  S -->|maintainer| C
+  R -->|maintainer| C
+  C -->|next hour| X[ticket closed]
+  T -->|past SLA 14/45 days| E[P1, Best Practices answer withdrawn]
+```
+
+The fix (`.github/workflows/security-autofix.yml`, org-managed in every
+repository, runs `reusable-security-autofix.yml` from this repository's
+`main`, on the default branch only, every 6 hours and on demand):
+
+- **pick** (no AI, the workflow token): `security-autofix pick` reads the
+  open tickets of the repository's code-scanning alerts.
+  - A policy finding gets one proposal comment: the settings-as-code change
+    that fixes it where one does (branch protection and code review through
+    the ruleset profiles in `templates/rulesets/`, SAST through CodeQL
+    default setup, ...), else a dismissal with its reason. Making that
+    change, or dismissing the alert, is the maintainer's call.
+  - The lowest-numbered code finding with no `claude/security-fix-*` branch
+    and no no-fix comment goes to the agent, one a run.
+- **fix** (the agent): `anthropics/claude-code-action`, pinned by commit (in
+  `defaults.json` `selected_actions` by that commit, as is the
+  `oven-sh/setup-bun` it runs inside), with the rules in
+  `templates/security-autofix/prompt.md`: a reproducing test first, then a
+  minimal fix. The agent never dismisses an alert, weakens a check, adds a
+  suppression, or touches a workflow, its permissions or a check's
+  configuration. It runs with `contents: read` and `security-events: read`,
+  a checkout without credentials, and no secret but the model key, so it
+  cannot push. `security-autofix guard` then refuses its staged diff unless
+  all of these hold:
+  - it changes a test and code beside it;
+  - it touches at most 20 files;
+  - it touches nothing under `.github/` or `.claude/`, no `CODEOWNERS`,
+    licence or check configuration;
+  - it deletes no test and adds no suppression.
+- **pr** (no AI, the bot's token, so that CI runs): applies the accepted diff
+  to `main`, runs the guard again, pushes
+  `claude/security-fix-code-scanning-<n>` (a new branch, never a force push),
+  opens `fix(security): fix code scanning alert #<n>` naming the ticket, and
+  enables auto-merge. Required CI, the review gate and the merge queue
+  decide.
+- **failed** (no AI): an alert the agent did not fix (the guard refused, no
+  change, an error) gets a no-fix comment on its ticket, and `pick` then
+  leaves it to the maintainer. Deleting that comment lets the pipeline try
+  again.
+
+The model key is the org Actions secret **`ANTHROPIC_API_KEY`**, an Anthropic
+API key, which the maintainer adds once. Until it is set, the fix job logs a
+notice and the run stays green; the tickets, the proposals and the SLA work
+without it.
 
 ## Releases and DOIs
 
