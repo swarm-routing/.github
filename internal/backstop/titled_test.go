@@ -181,6 +181,20 @@ func TestTitledRowIgnoresOtherAndCancelledRuns(t *testing.T) {
 	}
 }
 
+// The alarm reads the latest end, not the newest run's: an older run that
+// waited behind its group may end after a newer, quicker one.
+func TestAlarmReadsLatestEnd(t *testing.T) {
+	f := &titledGitHub{runs: []fakeRun{
+		{title: "org-bot hourly (schedule)", event: "schedule", status: "completed", conclusion: "success",
+			created: now.Add(-200 * time.Minute), ended: now.Add(-190 * time.Minute)},
+		{title: "org-bot hourly (schedule)", event: "schedule", status: "completed", conclusion: "success",
+			created: now.Add(-230 * time.Minute), ended: now.Add(-30 * time.Minute)},
+	}}
+	if stalled, out := titledRun(t, f, now, true); len(stalled) != 0 {
+		t.Errorf("the run that ended 30 min ago clears the alarm:\n%s", out)
+	}
+}
+
 func TestStalledIssue(t *testing.T) {
 	f := &titledGitHub{}
 	srv := httptest.NewServer(f)
