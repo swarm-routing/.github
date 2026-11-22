@@ -22,6 +22,13 @@ Zenodo's GitHub integration archives each published release and mints its DOI.
 This is the check behind it, and the repair when a release was missed (as
 AntHocNet's v2.6.1 was):
 
+- A repository whose .github/org-sync.toml sets the top-level `zenodo = false`
+  is never archived (maintainer decision 2026-11-22, swarm-routing/.github#811:
+  skills, swarm-mcp, the site and .github): its releases stay GitHub releases.
+  `repos`, `status`, `sync`, `orphans` and `table` skip it and say so (stdout,
+  or stderr for `table`, and the job summary); `record` writes nothing;
+  `shipped` writes the roadmap's shipped block from its GitHub releases, with
+  no DOI and no DOI rows; `create`, `publish-release` and `bibtex` refuse it.
 - The concept comes from the repository's CITATION.cff (`doi:` or an
   `identifiers:` DOI of the form 10.5281/zenodo.N) unless --concept is given.
 - `status` lists every published, non-prerelease GitHub release against every
@@ -164,6 +171,7 @@ import re
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -588,7 +596,19 @@ def report(repo, concept, rows, summary_path=None):
             fh.write("\n")
 
 
+def skipped(repo):
+    """Print (and add to the job summary) that the repository opted out of Zenodo."""
+    print(f"{repo}: skipped: {OPT_OUT}")
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        with open(path, "a") as fh:
+            fh.write(f"### {repo}: no Zenodo archive\n\nSkipped: {OPT_OUT}.\n\n")
+    return []
+
+
 def cmd_status(args, gh, zen, now):
+    if opted_out(gh, args.repo):
+        return skipped(args.repo)
     concept = resolve_concept(gh, args.repo, args.concept)
     versions, _ = zen.versions(concept)
     rows = classify(gh.releases(args.repo), versions, now, args.grace_hours)
@@ -597,6 +617,8 @@ def cmd_status(args, gh, zen, now):
 
 
 def cmd_sync(args, gh, zen, now):
+    if opted_out(gh, args.repo):
+        return skipped(args.repo)
     concept = resolve_concept(gh, args.repo, args.concept)
     versions, latest_id = zen.versions(concept)
     rows = classify(gh.releases(args.repo), versions, now, args.grace_hours)
@@ -642,6 +664,27 @@ def cmd_sync(args, gh, zen, now):
     return rows
 
 
+OPT_OUT = (
+    "zenodo = false in .github/org-sync.toml: its releases stay GitHub releases, "
+    "with no Zenodo archive and no DOI (swarm-routing/.github#811)"
+)
+
+
+def opted_out(gh, repo):
+    """Whether the repository's .github/org-sync.toml sets the top-level `zenodo = false`
+    (maintainer decision 2026-11-22, #811). Any other value of `zenodo` is refused."""
+    toml = gh.file(repo, ".github/org-sync.toml")
+    if not toml:
+        return False
+    try:
+        value = tomllib.loads(toml).get("zenodo", True)
+    except tomllib.TOMLDecodeError as e:
+        raise Failure(f"{repo}: .github/org-sync.toml does not parse ({e})") from None
+    if not isinstance(value, bool):
+        raise Failure(f"{repo}: .github/org-sync.toml: zenodo = {value!r} is not true or false")
+    return not value
+
+
 def recorded_concept(gh, repo):
     """The concept the repository names: CITATION.cff, else org-sync's `zenodo_concept`."""
     c = concept_from(gh.file(repo, "CITATION.cff"))
@@ -669,6 +712,8 @@ def zenodo_concept_for(zen, repo, tags):
 
 def cmd_create(args, gh, zen, now):
     repo, tag = args.repo, args.tag
+    if opted_out(gh, repo):
+        raise Failure(f"{repo}: {OPT_OUT}; not created")
     rels = gh.releases(repo)
     rel = next((r for r in rels if r["tag"] == tag), None)
     if not rel:
@@ -777,6 +822,8 @@ def summarize(repo, tag, state, got):
 def cmd_publish_release(args, gh, zen, now):
     """Archive one published release with its own assets (the release job's push, #232)."""
     repo, tag = args.repo, args.tag
+    if opted_out(gh, repo):  # the release commit's config, with --checkout
+        raise Failure(f"{repo}: {OPT_OUT}; {tag} is not archived (drop `zenodo: true`)")
     files = release_files(args.files)
     write = bool(args.publish and zen.token)
     if args.publish and not zen.token:
@@ -932,6 +979,9 @@ def cmd_record(args, gh, zen, now):
     README's DOI badge must all name it (#232 item 5).
     """
     repo, root = args.repo, args.checkout
+    if opted_out(gh, repo):
+        print(f"{repo}: {OPT_OUT}; nothing to record")
+        return "opted out", None
     cff = gh.file(repo, "CITATION.cff")
     if cff is None:
         print(f"{repo}: no CITATION.cff; nothing to record")
@@ -996,13 +1046,17 @@ def cmd_record(args, gh, zen, now):
 def cmd_orphans(args, gh, zen, now):
     """Each repository with a published release and no concept: (repo, state, detail)."""
     names = args.repos.split(",") if args.repos else gh.org_repos(args.org)
-    rows = []
+    rows, out = [], []
     for n in names:
         repo = n if "/" in n else f"{args.org}/{n}"
         if recorded_concept(gh, repo)[0]:
             continue
         rels = gh.releases(repo)
         if not rels:
+            continue
+        if opted_out(gh, repo):  # released, never archived: not an orphan (#811)
+            out.append(repo)
+            print(f"{repo}: skipped: {OPT_OUT}")
             continue
         tags = [r["tag"] for r in rels]
         concept, why = zenodo_concept_for(zen, repo, tags)
@@ -1028,6 +1082,13 @@ def cmd_orphans(args, gh, zen, now):
             fh.write("| repository | state | detail |\n|---|---|---|\n")
             fh.writelines(f"| {r} | {s} | {d} |\n" for r, s, d in rows)
             fh.write("\n")
+    if path and out:
+        with open(path, "a") as fh:
+            fh.write(
+                "### Released repositories with no Zenodo archive (`zenodo = false`)\n\n"
+                + "".join(f"- {r}\n" for r in out)
+                + "\n"
+            )
     return rows
 
 
@@ -1036,7 +1097,9 @@ def cmd_repos(args, gh):
     found = []
     for n in names:
         c = concept_from(gh.file(f"{args.org}/{n}", "CITATION.cff"))
-        if c:
+        if c and opted_out(gh, f"{args.org}/{n}"):
+            print(f"{args.org}/{n}: skipped: {OPT_OUT}")
+        elif c:
             found.append(n)
             print(f"{args.org}/{n}: concept {c}")
     return found
@@ -1077,6 +1140,8 @@ def cmd_bibtex(args, gh, zen, now):
             )
     if not BIB_KEY.match(args.key):
         raise Failure(f"bibtex: key {args.key!r} is not a BibTeX key (letters, digits, _:.+-)")
+    if opted_out(gh, repo):
+        raise Failure(f"bibtex: {repo}: {OPT_OUT}; cite it by its CITATION.cff, not a DOI")
     concept, why = recorded_concept(gh, repo)
     if not concept:
         tags = [r["tag"] for r in reversed(gh.releases(repo))]  # newest first
@@ -1134,6 +1199,9 @@ def archived_rows(gh, zen, org, names):
     rows = []
     for n in names:
         repo = n if "/" in n else f"{org}/{n}"
+        if opted_out(gh, repo):  # no row (#811); stderr, so stdout stays the table
+            print(f"{repo}: skipped: {OPT_OUT}", file=sys.stderr)
+            continue
         concept, why = recorded_concept(gh, repo)
         if not concept:
             tags = [r["tag"] for r in reversed(gh.releases(repo))]  # newest first
@@ -1220,8 +1288,16 @@ def semver(v):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
-def shipped_block(repo, releases, versions):
-    """The roadmap's shipped block: each release, newest first, with its version DOI."""
+def shipped_block(repo, releases, versions, archive=True):
+    """The roadmap's shipped block: each release, newest first, with its version DOI
+    (with archive=False, a `zenodo = false` repository's: every release, no DOI)."""
+    if not archive:
+        lines = [
+            f"- **{r['tag']}** shipped {r['published'][:10]} "
+            f"([release](https://github.com/{repo}/releases/tag/{r['tag']}))"
+            for r in sorted(releases, key=lambda r: r["published"], reverse=True)
+        ]
+        return "\n".join([SHIPPED_BEGIN, *lines, SHIPPED_END])
     archived = {norm(v["version"]): v["doi"] for v in versions if v.get("doi")}
     known = [semver(v) for v in archived if semver(v)]
     first = min(known) if known else None
@@ -1238,13 +1314,17 @@ def shipped_block(repo, releases, versions):
     return "\n".join([SHIPPED_BEGIN, *lines, SHIPPED_END])
 
 
-def with_shipped(text, block):
+def with_shipped(text, block, archive=True):
     if SHIPPED_BLOCK.search(text):
         return SHIPPED_BLOCK.sub(lambda _: block, text, count=1)
+    what = (
+        "Every published release with its Zenodo version DOI, read from Zenodo"
+        if archive
+        else "Every published release (no Zenodo archive: `zenodo = false`), read from GitHub"
+    )
     return (
-        text.rstrip("\n")
-        + "\n\n## Shipped releases\n\nEvery published release with its Zenodo version DOI, "
-        "read from Zenodo by swarm-routing/.github `tools/zenodo/zenodo.py shipped` "
+        text.rstrip("\n") + f"\n\n## Shipped releases\n\n{what} by swarm-routing/.github "
+        "`tools/zenodo/zenodo.py shipped` "
         "(org-bot's `release-aftercare` task); never edit the block by hand.\n\n" + block + "\n"
     )
 
@@ -1282,20 +1362,30 @@ def with_doi_rows(text, versions):
 def cmd_shipped(args, gh, zen):
     """Write (or check) a checkout's roadmap shipped block and DOI rows; the exit code."""
     repo, root = args.repo, args.checkout
-    concept, _ = recorded_concept(gh, repo)
-    if not concept:
-        print(f"{repo}: no Zenodo concept recorded; nothing to write")
-        return 0
-    versions, _ = zen.versions(concept)
+    archive = not opted_out(gh, repo)
+    if archive:
+        concept, _ = recorded_concept(gh, repo)
+        if not concept:
+            print(f"{repo}: no Zenodo concept recorded; nothing to write")
+            return 0
+        versions, _ = zen.versions(concept)
+    else:  # the shipped block from GitHub alone, no DOI and no DOI rows (#811)
+        print(f"{repo}: {OPT_OUT}; the shipped block lists its releases without a DOI")
+        versions = []
     releases = gh.releases(repo)
     changed = []
-    for rel, make in (
+    makers = [
         (
             "docs/roadmap.md",
-            lambda t: (with_shipped(t, shipped_block(repo, releases, versions)), None),
-        ),
-        ("CONTRIBUTING.md", lambda t: with_doi_rows(t, versions)),
-    ):
+            lambda t: (
+                with_shipped(t, shipped_block(repo, releases, versions, archive), archive),
+                None,
+            ),
+        )
+    ]
+    if archive:
+        makers.append(("CONTRIBUTING.md", lambda t: with_doi_rows(t, versions)))
+    for rel, make in makers:
         path = os.path.join(root, rel)
         if not os.path.isfile(path):
             continue
@@ -1303,7 +1393,7 @@ def cmd_shipped(args, gh, zen):
             text = fh.read()
         new, rows = make(text)
         if new == text:
-            print(f"{repo} {rel}: matches Zenodo")
+            print(f"{repo} {rel}: matches {'Zenodo' if archive else 'the releases'}")
             continue
         what = (
             f"{len(rows)} version DOI row(s): " + ", ".join(r.split(" |")[0][2:] for r in rows)
@@ -2718,6 +2808,116 @@ def self_test():
         listing.org_repos("org") == ["R"]
         and listing.org_repos("org", archived=True) == ["R", "old"],
     )
+    # `zenodo = false` (#811): a repository that releases but is never archived
+    OUT = 'kind = "skills"\n# no Zenodo archive\nzenodo = false\n\n[settings]\nhomepage = ""\n'
+    check(
+        "opt-out: read from the top level only",
+        opted_out(FakeGitHub(rel, toml=OUT), "org/R")
+        and not opted_out(FakeGitHub(rel, toml='kind = "data"\n'), "org/R")
+        and not opted_out(FakeGitHub(rel, toml=None), "org/R")
+        and not opted_out(FakeGitHub(rel, toml="zenodo = true\n"), "org/R")
+        and not opted_out(
+            FakeGitHub(rel, toml='kind = "x"\n[settings]\nzenodo = false\n'), "org/R"
+        ),
+    )
+    try:
+        opted_out(FakeGitHub(rel, toml='zenodo = "false"\n'), "org/R")
+        bad = None
+    except Failure as e:
+        bad = str(e)
+    check("opt-out: a value that is not a boolean is refused", bad and "not true or false" in bad)
+
+    def quiet(fn, *a):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            try:
+                return fn(*a), None, out.getvalue()
+            except Failure as e:
+                return None, str(e), out.getvalue()
+
+    no_cff = "title: x\n"  # an opted-out repository's CITATION.cff names no DOI
+    for cmd in (cmd_status, cmd_sync):
+        st.reset()
+        ns = argparse.Namespace(
+            repo="org/R", concept="100", grace_hours=12.0, dry_run=False, sandbox=False
+        )
+        got, err, out = quiet(cmd, ns, FakeGitHub(rel, toml=OUT), Zenodo(base, "t0k"), now)
+        check(
+            f"opt-out: {cmd.__name__} skips, says so and asks Zenodo nothing",
+            err is None and got == [] and "skipped: zenodo = false" in out and not st.calls,
+        )
+    st.reset()
+    ns = argparse.Namespace(repos="R", org="org", grace_hours=12.0)
+    got, err, out = quiet(cmd_orphans, ns, FakeGitHub(rel, no_cff, toml=OUT), Zenodo(base), now)
+    check(
+        "opt-out: a released repository is no orphan",
+        err is None and got == [] and "org/R: skipped: zenodo = false" in out and not st.calls,
+    )
+    got, err, out = quiet(cmd_orphans, ns, FakeGitHub(rel, no_cff, toml=None), Zenodo(base), now)
+    check("opt-out: without it the same repository is one", got and got[0][1] == "no concept")
+    ns = argparse.Namespace(repos="R", org="org")
+    got, err, out = quiet(cmd_repos, ns, FakeGitHub(rel, toml=OUT))
+    check("opt-out: repos leaves it out", got == [] and "skipped" in out)
+    st.reset()
+    got, err, out = quiet(archived_rows, FakeGitHub(rel, toml=OUT), Zenodo(base), "org", ["R"])
+    check("opt-out: no archived-releases row", got == [] and "skipped" in out and not st.calls)
+    for cmd, kw in (
+        (cmd_create, {"tag": "v1.2.0", "publish": True}),
+        (cmd_publish_release, {"tag": "v1.2.0", "publish": True, "files": [], "concept": None}),
+    ):
+        st.reset()
+        ns = argparse.Namespace(repo="org/R", **kw)
+        got, err, out = quiet(cmd, ns, FakeGitHub(rel, no_cff, toml=OUT), Zenodo(base, "t0k"), now)
+        check(
+            f"opt-out: {cmd.__name__} refuses before any Zenodo call",
+            err and "zenodo = false" in err and not st.calls,
+        )
+    ns = argparse.Namespace(repo="org/R", key="r2026", role="tool", org="org")
+    got, err, out = quiet(cmd_bibtex, ns, FakeGitHub(rel, toml=OUT), Zenodo(base), now)
+    check("opt-out: bibtex refuses (no DOI to cite)", err and "zenodo = false" in err)
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, ".github"))
+        for name, text in (("CITATION.cff", no_cff), (".github/org-sync.toml", OUT)):
+            with open(os.path.join(d, name), "w") as fh:
+                fh.write(text)
+        st.reset()
+        ns = argparse.Namespace(repo="org/R", checkout=d, concept="100", write=True)
+        got, err, out = quiet(cmd_record, ns, Checkout(d), Zenodo(base), now)
+        check(
+            "opt-out: record writes nothing",
+            got == ("opted out", None)
+            and open(os.path.join(d, "CITATION.cff")).read() == no_cff
+            and open(os.path.join(d, ".github/org-sync.toml")).read() == OUT
+            and not st.calls,
+        )
+        os.makedirs(os.path.join(d, "docs"))
+        doi_rows = (
+            "| v1.0.0 | `10.5281/zenodo.101` | [record 101](https://zenodo.org/records/101) |\n"
+        )
+        for name, text in (("docs/roadmap.md", "# Roadmap\n"), ("CONTRIBUTING.md", doi_rows)):
+            with open(os.path.join(d, name), "w") as fh:
+                fh.write(text)
+        st.reset()
+        ns = argparse.Namespace(repo="org/R", checkout=d, check=False, write=True)
+        got, err, out = quiet(cmd_shipped, ns, FakeGitHub(rel, no_cff, toml=OUT), Zenodo(base))
+        road = open(os.path.join(d, "docs/roadmap.md")).read()
+        check(
+            "opt-out: shipped lists every release from GitHub, no DOI, no DOI rows",
+            got == 0
+            and err is None
+            and "- **v1.2.0** shipped 2026-10-29 ([release](https://github.com/org/R/releases/tag/v1.2.0))"
+            in road
+            and "- **v1.0.0** shipped 2026-10-01" in road
+            and road.index("v1.2.0") < road.index("v1.0.0")
+            and "zenodo = false" in road
+            and "DOI](" not in road
+            and "10.5281" not in road
+            and open(os.path.join(d, "CONTRIBUTING.md")).read() == doi_rows
+            and not st.calls,
+        )
+        ns = argparse.Namespace(repo="org/R", checkout=d, check=True, write=False)
+        got, err, out = quiet(cmd_shipped, ns, FakeGitHub(rel, no_cff, toml=OUT), Zenodo(base))
+        check("opt-out: shipped --check is then clean", got == 0 and "matches" in out)
     srv.shutdown()
     for f in failures:
         print(f"FAIL: {f}")

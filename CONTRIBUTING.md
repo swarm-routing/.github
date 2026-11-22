@@ -1353,6 +1353,22 @@ Its Zenodo token (`ZENODO_TOKEN`, scopes `deposit:write` and `deposit:actions`)
 belongs to the maintainer. Without it every run is a dry run. Never type a DOI:
 read it from Zenodo (`zenodo.py status --repo swarm-routing/<repo>`).
 
+**Repositories with no Zenodo archive** (maintainer decision 2026-11-22, #811:
+"We don't need zenodo for skills, MCP, site and .github"). swarm-routing/skills,
+swarm-routing/swarm-mcp, swarm-routing/swarm-routing.github.io and this
+repository release as versioned GitHub releases only: no Zenodo record, no DOI.
+Each sets the top-level `zenodo = false` in its `.github/org-sync.toml`
+(default true), and every tool honours it: `zenodo.py` skips the repository in
+`repos`, `status`, `sync`, `orphans` and `table` and says so in the summary,
+`record` writes nothing, `shipped` lists its releases without a DOI, and
+`create`, `publish-release` and `bibtex` refuse it; org-sync renders no DOI
+badge, no `doi:` line and no "no DOI yet" sentence (the citing section says
+its releases are not archived), even if a `zenodo_concept` is set; the
+release job's summary says there is no archive, and `release_check.py after`
+lists no Zenodo step. A `CITATION.cff` (`citation = true`) still makes the
+repository citable by its release tag. Keep Zenodo's GitHub integration off
+for these repositories (#568 b7), so it never archives a release by itself.
+
 **The push path** (#232). Zenodo's GitHub integration *pulls*: it fetches
 each release from GitHub as the maintainer's account, and fails when that
 account's quota is spent (below). A repository can instead have its release
@@ -1451,7 +1467,8 @@ version in the repo's `.cz.toml`; add `"CITATION.cff:^version:"` to its
 `version_files` so each bump keeps it current. The concept exists only after
 the first release is archived; org-bot's `zenodo` task then opens the PR that
 sets `zenodo_concept` and CITATION.cff's `doi:` from Zenodo's record (above),
-so the daily check here covers the repository.
+so the daily check here covers the repository. With `zenodo = false` (above)
+there is never a concept, a DOI badge or a `doi:` line.
 
 A repository is cited as AntHocNet is. `citation = true` also manages the
 README's **Releases & citing** section (`<!-- org-sync:begin citing -->`):
@@ -1607,6 +1624,8 @@ Rendered from Zenodo by `python3 -I tools/zenodo/zenodo.py table CONTRIBUTING.md
 --write` (#428): one row per org repository with a concept, its concept DOI
 (which resolves to the newest version) and its newest version with that
 version's DOI, every DOI as Zenodo returns it; never edit the block by hand.
+A repository with `zenodo = false` (skills, swarm-mcp, the site, this one;
+#811) has no row.
 The nightly `zenodo.yml` runs `table --check` and reports drift (a warning
 and its job summary), so a release that is not in the table yet shows up the
 next morning; org-bot's `release-aftercare` task opens the PR that renders
@@ -1633,7 +1652,9 @@ rate limit and was archived from its tag by `zenodo.py create` on 2026-11-11
 
 **When to release** (maintainer decision 2026-11-11, on #216 and its
 children). Every public repository releases, and Zenodo archives each release
-(#216). There is no automatic, scheduled or per-change release. A version's
+(#216), except the four with `zenodo = false` (skills, swarm-mcp, the site
+and this repository; maintainer decision 2026-11-22, #811), whose releases
+stay GitHub releases. There is no automatic, scheduled or per-change release. A version's
 scope is the set of issues labelled `release:vX.Y.Z`, set when the issue is
 opened or triaged (each repository's ladder, its `docs/roadmap.md`, or, for a
 repository whose ladder has not landed yet, the ROADMAP's release train;
@@ -1653,7 +1674,8 @@ next release rather than making one of their own. While a repository is at 0.x,
 Commitizen turns a breaking change into a minor (`major_version_zero`); a
 major is a deliberate input of the release workflow (#211). After the release
 is archived, read its concept DOI from Zenodo and set `zenodo_concept`,
-reseed `CITATION.cff` and get the DOI badge (Releases and DOIs, above).
+reseed `CITATION.cff` and get the DOI badge (Releases and DOIs, above); a
+repository with `zenodo = false` has none of these steps.
 
 Every org repository releases through `reusable-release.yml` (#20); none
 copies AntHocNet's `release.yml`. `main` takes no direct push (the `main`
@@ -1740,7 +1762,8 @@ actor), so the bump goes through a PR and the tag follows the merge
    (ns3-tools v0.1.0). Then the GitHub release is created
    with every asset and notes holding the version's `CHANGELOG.md` section,
    the checksums and the verify commands. Zenodo then archives it (above:
-   the integration's pull, or, with `zenodo: true`, the `zenodo` job's push).
+   the integration's pull, or, with `zenodo: true`, the `zenodo` job's push;
+   never with `zenodo = false`).
    A re-run resumes: a tag already on this commit is kept and the release
    completed; a tag on another commit fails the run.
 6. **Confirm the site saw it.** The publish job's last step sends the
@@ -1784,7 +1807,8 @@ actor), so the bump goes through a PR and the tag follows the merge
    date, its release page and its Zenodo version DOI), the version-DOI rows of
    a `CONTRIBUTING.md` that keeps them (AntHocNet's), and, here, the
    archived-releases table (`zenodo.py shipped`, `zenodo.py table`; every DOI
-   read from Zenodo, never typed; a release joins only once Zenodo has it).
+   read from Zenodo, never typed; a release joins only once Zenodo has it;
+   with `zenodo = false`, every release at once, with no DOI and no table row).
    Then it runs `release_check.py after` and posts what is still open (WARN
    and FAIL lines) as one comment, updated in place, on the site's
    `[release-sync] <repo> <tag>` issue. Nothing in this step waits for a
@@ -1798,7 +1822,8 @@ no open `release:vX.Y.Z` issue, a `bot/release` PR behind `main`), and
 `after <owner>/<repo> --tag vX.Y.Z` once the bump PR merged (the release and
 its provenance, its notes not empty, the site's `[release-sync]` issue, each consumer's lock or
 org-bot's bump PR, the vcpkg port, PyPI, the ladder marked shipped). Neither
-writes anything; the Zenodo DOI is still read with `zenodo.py status`.
+writes anything; the Zenodo DOI is still read with `zenodo.py status` (none
+with `zenodo = false`).
 
 Mode `dry-run` bumps on the runner only, then builds, signs and verifies, and
 stops: nothing is pushed, proposed, tagged or published, and its artifact

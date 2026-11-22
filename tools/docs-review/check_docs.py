@@ -12,7 +12,7 @@ metric twice, fails); an explanation near the top; a link to the project's page
 on the site (https://swarm-routing.github.io/projects/<id>/), and to the ns-3
 image when the repo builds with it; a layout block that matches the tree;
 Epics, License and how-to-work-here sections; for a released repository (a
-`v*` tag or `zenodo_concept`), AntHocNet's citing: the DOI badge, CITATION.cff's
+`v*` tag or `zenodo_concept`; none of the DOI checks with `zenodo = false`, #811), AntHocNet's citing: the DOI badge, CITATION.cff's
 `doi:` equal to the concept, a README section on citing it, and for a protocol
 a CITATION.cff reference per source with a DOI or the reason it has none;
 AGENTS.md with the org's
@@ -158,6 +158,8 @@ def config(repo):
         # [settings] and no kind: org-sync manages nothing here (#320)
         "settings_only": "settings" in cfg and not cfg.get("kind"),
         "zenodo_concept": concept if concept.isdigit() else "",
+        # `zenodo = false` (#811): released, never archived on Zenodo, so no DOI
+        "zenodo": cfg.get("zenodo", True) is not False,
         "references": cfg.get("references", []),
         "arena_id": d.get("arena_id", default_id),
         "uses_image": d.get("uses_image", cfg.get("kind") in ("protocol", "c-cpp")),
@@ -694,7 +696,10 @@ def check_citation(repo, cfg, readme, r):
         concept = m.group(1) if m else ""
     if not concept and not tags:
         return  # nothing released: nothing to cite yet
-    if not concept:
+    if not cfg.get("zenodo", True):
+        concept = ""  # a CITATION.cff and the citing section only, no DOI
+        r.add("PASS", "citation", "no Zenodo archive (`zenodo = false`): no DOI badge expected")
+    elif not concept:
         r.add(
             "WARN",
             "citation",
@@ -1622,6 +1627,21 @@ def self_test():
     )
     r = cites(**{"README.md": cited["README.md"].replace(badge, "")})
     expect("a released repo without the DOI badge fails", has(r, "FAIL", "no DOI badge"))
+    r = cites(
+        **{
+            ".github/org-sync.toml": cited[".github/org-sync.toml"] + "zenodo = false\n",
+            "README.md": cited["README.md"].replace(badge, ""),
+            "CITATION.cff": cited["CITATION.cff"].replace('doi: "10.5281/zenodo.42"\n', ""),
+        }
+    )
+    expect(
+        "zenodo = false: no DOI badge or doi expected, the citing section still is (#811)",
+        has(r, "PASS", "zenodo = false")
+        and has(r, "PASS", "how to cite")
+        and not any(
+            x["area"] == "citation" and x["level"] != "PASS" and "DOI" in x["msg"] for x in r.rows
+        ),
+    )
     r = cites(**{"CITATION.cff": cited["CITATION.cff"].replace("zenodo.42", "zenodo.41")})
     expect("a CITATION.cff doi that is not the concept fails", has(r, "FAIL", "not the concept"))
     r = repo({**cited}, drop=("CITATION.cff",))

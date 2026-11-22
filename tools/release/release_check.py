@@ -604,12 +604,23 @@ def after(repo, tag, org, gh, consumers=None, roadmap=ROADMAP):
                 "release-aftercare opens that PR (the shipped block, the version DOI read "
                 "from Zenodo) within the hour once Zenodo has it (swarm-routing/.github#465)",
             )
-    r.add(
-        "NEXT",
-        f"zenodo: python3 -I tools/zenodo/zenodo.py status --repo {repo} (the version "
-        "DOI from Zenodo, never typed; missing after the grace period: sync --dry-run, then ask)",
-    )
+    if zenodo_opted_out(contents_text(gh, repo, ".github/org-sync.toml")):
+        r.add("OK", "zenodo: none (zenodo = false: no Zenodo archive, swarm-routing/.github#811)")
+    else:
+        r.add(
+            "NEXT",
+            f"zenodo: python3 -I tools/zenodo/zenodo.py status --repo {repo} (the version DOI "
+            "from Zenodo, never typed; missing after the grace period: sync --dry-run, then ask)",
+        )
     return r
+
+
+def zenodo_opted_out(toml_text):
+    """Whether an org-sync config sets the top-level `zenodo = false` (#811)."""
+    try:
+        return tomllib.loads(toml_text or "").get("zenodo", True) is False
+    except tomllib.TOMLDecodeError:
+        return False
 
 
 # --- self-test --------------------------------------------------------------
@@ -994,6 +1005,15 @@ def self_test():
     expect("after: PyPI has the version", has(rep, "OK", "r-tools 0.4.0 is on PyPI"))
     expect("after: the ladder not marked shipped", has(rep, "WARN", "does not mark v0.4.0"))
     expect("after: zenodo is a NEXT step", has(rep, "NEXT", "zenodo.py status --repo o/r"))
+    out_routes = dict(routes)
+    out_routes["repos/o/r/contents/.github/org-sync.toml"] = b64(
+        'kind = "skills"\nzenodo = false\n[settings]\nhomepage = ""\n'
+    )
+    rep = quiet(after, "o/r", "v0.4.0", "o", FakeGh(out_routes, gh.urls))
+    expect(
+        "after: zenodo = false, no Zenodo step (#811)",
+        has(rep, "OK", "zenodo = false") and not any("zenodo.py" in m for _, m in rep.lines),
+    )
     expect("after: the notes are not empty", has(rep, "OK", "notes: v0.4.0 has notes"))
     expect("after: no FAIL", not rep.failed())
 

@@ -181,7 +181,8 @@ def markers(path):
 # Badges per kind (swarm-routing/.github#8). Each appears only when its target
 # exists (see badge_lines): `release` when a workflow calls reusable-release.yml,
 # `doi` when the config names its `zenodo_concept` (read from Zenodo, never
-# typed: the concept exists only after the first release is archived), `cite`
+# typed: the concept exists only after the first release is archived; never
+# with `zenodo = false`, a repository Zenodo does not archive, #811), `cite`
 # when the repository has a CITATION.cff (`citation = true` seeds one);
 # `scorecard` (OpenSSF Scorecard, #23) only where
 # .github/workflows/scorecard.yml runs it, so a private repository, which skips
@@ -783,6 +784,8 @@ def load_config(repo_dir, slug=None):
             f"org-sync: {CONFIG}: coderabbit_path_filters must be a list of glob strings, "
             "without double quotes or backslashes"
         )
+    if not isinstance(cfg.get("zenodo", True), bool):
+        sys.exit(f"org-sync: {CONFIG}: zenodo must be true or false (false: no Zenodo archive)")
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
     # the commit every reference to this repository names: the lock's (apply may move it)
@@ -1105,8 +1108,12 @@ def citing_section(cfg, repo_dir):
             "Versions follow [SemVer](https://semver.org)"
             + (" ([CHANGELOG.md](CHANGELOG.md))" if changelog else "")
             + f". Each release is listed under [Releases](https://github.com/{repo}/releases),"
-            " built by the org's release workflow and archived on [Zenodo](https://zenodo.org)"
-            " with its own DOI.",
+            " built by the org's release workflow"
+            + (
+                " and archived on [Zenodo](https://zenodo.org) with its own DOI."
+                if zenodo_archived(cfg)
+                else "."
+            ),
             "",
         ]
     what = "these data" if cfg["citation_type"] == "dataset" else "this repository"
@@ -1124,6 +1131,11 @@ def citing_section(cfg, repo_dir):
             "Each release also has its own **version DOI**, listed on"
             f" [its Zenodo record](https://doi.org/{doi}): cite that one when you reproduce a"
             " number measured at that release.",
+        ]
+    elif not zenodo_archived(cfg):
+        out += [
+            cite + ". Its releases are not archived on Zenodo, so it has no DOI: name the"
+            " release you used by its tag.",
         ]
     else:
         out += [
@@ -1200,10 +1212,17 @@ def uploads_coverage(cfg, repo_dir):
     )
 
 
+def zenodo_archived(cfg):
+    """False when the config opts out of Zenodo (`zenodo = false`, #811): the
+    repository's releases stay GitHub releases, with no archive and no DOI."""
+    return cfg.get("zenodo", True) is not False
+
+
 def zenodo_concept(cfg):
-    """The Zenodo concept record id from `zenodo_concept`, digits only, else ''."""
+    """The Zenodo concept record id from `zenodo_concept`, digits only, else ''
+    (always '' with `zenodo = false`: no DOI badge, no `doi:` line)."""
     c = str(cfg.get("zenodo_concept", "")).strip()
-    return c if c.isdigit() else ""
+    return c if c.isdigit() and zenodo_archived(cfg) else ""
 
 
 VCPKG_REGISTRY = "swarm-routing/vcpkg-registry"
