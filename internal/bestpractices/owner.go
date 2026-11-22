@@ -155,7 +155,8 @@ func readAlerts(gh AlertReader, repo, kind, path string) alertRead {
 var severityRank = map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
 
 func (a alert) rank() int {
-	if !a.Security {
+	// a Scorecard finding is policy, not a vulnerability (#629, 2026-11-22)
+	if !a.Security || a.Policy() {
 		return 0
 	}
 	return severityRank[a.Severity]
@@ -188,6 +189,17 @@ func openCount(reads map[string]alertRead, minRank int, what string) string {
 			}
 		}
 	}
+	crit, high := 0, 0
+	for _, k := range []string{"code scanning", "Dependabot"} {
+		for _, a := range reads[k].alerts {
+			switch a.rank() {
+			case 4:
+				crit++
+			case 3:
+				high++
+			}
+		}
+	}
 	var s string
 	switch {
 	case n == 0:
@@ -200,7 +212,8 @@ func openCount(reads map[string]alertRead, minRank int, what string) string {
 	if len(unread) > 0 {
 		s += " (the " + strings.Join(unread, " and ") + " alerts could not be read)"
 	}
-	return s + "."
+	// the maintainer's question: how many critical and high are open (#629, 2026-11-22)
+	return s + "." + fmt.Sprintf(" Critical open: %d, high open: %d.", crit, high)
 }
 
 // OwnerReport is what the check proposes for the attested criteria.

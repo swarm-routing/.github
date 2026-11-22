@@ -1206,7 +1206,10 @@ finding, a Dependabot alert, a leaked secret):
   `[security] open alerts across the org`, an issue in this repository. It
   lists the open alerts by repository and severity, the oldest age, those
   past the SLA, the fix PRs merged that week, and those waiting for the
-  maintainer. Private repositories are named only as `private repository N`
+  maintainer. It opens with the org's open critical and high
+  vulnerabilities, and lists the repositories with the most of them first
+  (maintainer, 2026-11-22: close the critical and high ones fast). Every run's
+  log also breaks the open alerts down by tool and severity. Private repositories are named only as `private repository N`
   (#622).
 
 ```mermaid
@@ -2075,7 +2078,9 @@ is **Save**, once per project, only when something changed. By hand, from a
   `vulnerabilities_fixed_60_days` for a medium or higher alert open more
   than 45 days (an escalation margin before the criterion's 60),
   `vulnerabilities_critical_fixed` for a critical alert open more than 14
-  days. An alert listing the token cannot read is named on the issue and
+  days. Both answers state how many critical and high
+  vulnerabilities are open in the repository; a Scorecard finding is policy
+  and counts for neither. An alert listing the token cannot read is named on the issue and
   turns the run red (the org App needs read access to code-scanning,
   Dependabot and secret-scanning alerts); it leaves `no_leaked_credentials`
   `?` but not the two defaults. An alert that withdraws an answer is a
