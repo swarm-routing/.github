@@ -238,63 +238,6 @@ jobs:
             echo "report=$report"
           } | tee -a "$GITHUB_OUTPUT"
 
-  backstop:
-    # the schedule backstop (cmd/backstop, .github/backstop.toml) on every
-    # org-bot run, in backstop.yml's group (#748): GitHub fires few of this
-    # repository's schedules, and org-bot runs dozens of times a day (each
-    # bestpractices nudge, each push), so its own runs are the clock that
-    # catches up a missed or replaced scheduled slot. A row within its period
-    # dispatches nothing, so most of these runs only read; --issue keeps the
-    # `[backstop] scheduled runs stalled` issue while the hourly row's alarm
-    # is up, and the job is red then. Not on a dry run.
-    if: ${{ !inputs.dry-run }}
-    runs-on: ubuntu-24.04
-    concurrency:
-      group: backstop-main
-      cancel-in-progress: false
-    timeout-minutes: 10
-    env:
-      IMG: ghcr.io/swarm-routing/ci-tools@sha256:47f8c68604a6f2926ad300f34714512c1e26f859f0a5cc360d3a21868dc7685b  # promoted from 5eea8a9: titled rows, alarms, --issue (#749)
-    steps:
-      - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
-        timeout-minutes: 2  # its download and start take seconds (#164)
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: The ci-tools image (pulled with retries, #645)
-        uses: ./.github/actions/pull-ci-tools
-        timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
-        with:
-          image: ${{ env.IMG }}
-      - name: Bot token
-        id: bot
-        uses: ./.github/actions/bot-token
-        with:
-          app-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
-          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
-      - name: Dispatch what is due
-        timeout-minutes: 5
-        env:
-          GH_TOKEN: ${{ steps.bot.outputs.token }}
-        run: |
-          set -o pipefail
-          docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$IMG" backstop --issue \
-            | tee "$RUNNER_TEMP/backstop.txt"
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "### backstop (from org-bot)"
-            echo
-            printf '%s\n' '```'
-            cat "$RUNNER_TEMP/backstop.txt" 2>/dev/null || echo "(no output)"
-            printf '%s\n' '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
   refresh:
     needs: plan
     if: needs.plan.outputs.refresh == 'true'
