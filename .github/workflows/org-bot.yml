@@ -189,7 +189,7 @@ jobs:
           IMG: ghcr.io/swarm-routing/ci-tools@sha256:47de777a458c52a808a970ba1c2cd1a557c991c26deebde249f5ee9c95a75547
         run: |
           set -euo pipefail
-          docker pull --quiet "$IMG" > /dev/null
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG"  # with retries (#645)
           id=$(docker create "$IMG")
           docker cp "$id:/usr/local/bin/bestpractices" "$RUNNER_TEMP/bestpractices"
           docker rm "$id" > /dev/null
@@ -276,6 +276,7 @@ jobs:
           args=()
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" branch-sweep "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: The site's release sync (release-sync-watch, hourly)
         id: sync
@@ -299,6 +300,7 @@ jobs:
           args=()
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" release-sync-watch "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: The org Project (project-sync)
         id: project
@@ -323,6 +325,7 @@ jobs:
           set -o pipefail
           args=()
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace \
             "$IMG" project-sync "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Security alert tickets (security-alerts, hourly)
@@ -354,6 +357,7 @@ jobs:
           if [ "$TASK" = security-report ] || { [ "$TASK" = all ] && [ "$(date -u +%u)" = 1 ]; }; then
             args+=(--report)
           fi
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" security-alerts "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
         if: ${{ always() }}

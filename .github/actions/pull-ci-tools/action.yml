@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: pull-ci-tools
+description: >-
+  Pull the ci-tools image (or any image) by digest with the org's one retry
+  (docker-retry.sh: three more tries, 15, 30 and 45 s apart; #645). Every
+  workflow that runs the image runs this first, so its `docker run` finds the
+  image local and never pulls it again.
+# In this repository's own workflows, after the checkout:
+#
+#   - uses: ./.github/actions/pull-ci-tools
+#     timeout-minutes: 3   # a pull of about 15 MB and up to 90 s of retries
+#     with:
+#       image: ${{ env.IMG }}
+#
+# In a reusable workflow, which runs in the caller's checkout:
+# `uses: swarm-routing/.github/.github/actions/pull-ci-tools@main`.
+inputs:
+  image:
+    description: the image reference to pull, `ghcr.io/swarm-routing/ci-tools@sha256:<digest>`
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Pull the image (with retries)
+      shell: bash
+      env:
+        IMG: ${{ inputs.image }}
+      run: '"$GITHUB_ACTION_PATH/docker-retry.sh" pull "$IMG"'
