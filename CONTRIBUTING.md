@@ -1150,20 +1150,31 @@ token, which reads Code scanning, Dependabot and Secret scanning alerts. It
 lists every open code-scanning (CodeQL, Scorecard), Dependabot and
 secret-scanning alert in every unarchived org repository; GitHub's alert
 events cannot trigger a workflow, so the hourly poll is the trigger. In the
-alert's repository it keeps one issue per alert:
+alert's repository it keeps one issue per vulnerability alert (a code
+finding, a Dependabot alert, a leaked secret):
 
-- **Labels:** `security`, `bug` and `ci`, a model suggestion, and a
-  priority from the severity: critical or high is `priority:P1`, medium
-  `P2`, low `P3`. A leaked secret is always P1.
+- **Labels:** `security`, `bug` and `ci`, a model suggestion, and
+  `priority:P1`. Every reported vulnerability is high priority, whatever its
+  severity (maintainer decision 2026-11-22), and the ticket states the
+  severity.
+- **Scorecard findings are policy, not vulnerabilities:** one ticket per
+  Scorecard check across the org, in this repository (marker
+  `<!-- security-policy: <check> -->`), listing every affected repository
+  and its alert (a private repository as `private repository N`, unlinked),
+  with the settings-as-code change that fixes the check where one does.
+  Labels `security`, `chore` and `ci`, `priority:P2`, and P1 once one of its
+  alerts is past the SLA. It is closed when no repository has the check's
+  alert open.
 - **Its alert:** the alert's URL is held in a hidden marker, matched to a
   boundary (#621), so alert 1's ticket never stands for alert 10. An open
   `bug` issue that already names the alert, such as one the `bestpractices`
   check opened before this task, is adopted, not duplicated.
-- **Bounded:** a run opens at most 30 new tickets, at most 3 in one
-  repository, the highest priority and then the oldest first; the rest wait
-  for the next hour. The first listing found 469 open alerts, so they land
-  over a day rather than in one burst that would trip GitHub's
-  content-creation limits.
+- **Bounded:** a run reads every repository first, then opens at most 25
+  new tickets across the org (`--max-new`), the highest priority and then
+  the oldest first. The rest wait for the next hour, and the run's summary
+  line says how many are left. The first listing found 482 open alerts, so
+  they land over hours rather than in one burst that would trip GitHub's
+  content-creation limits and flood everyone's notifications.
 - **Kept current:** the ticket is updated in place, and the task closes it
   with a comment once the alert is no longer open (fixed, or dismissed by
   the maintainer). It closes a ticket only when it could read that kind of
@@ -1174,8 +1185,8 @@ alert's repository it keeps one issue per alert:
   thresholds ("OpenSSF Best Practices" below).
 - **Who acts,** as the ticket says:
   - a code finding is fixed by an agent's test-first PR (below);
-  - a policy finding (Scorecard) gets a proposal: a `[settings]` change, or
-    a dismissal with its reason;
+  - a policy finding (Scorecard) is on its check's ticket, which proposes
+    a `[settings]` change, or a dismissal with its reason;
   - a Dependabot alert gets Dependabot's own security-update PR, on in every
     repository through `defaults.json`;
   - a leaked secret is rotated by the maintainer.
