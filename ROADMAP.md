@@ -238,7 +238,12 @@ first set, the review's question number in brackets):
     [ADR-0002](https://github.com/swarm-routing/swarm-web-ui/blob/main/docs/adr/0002-web-first-client-with-a-go-daemon.md)
     (swarm-web-ui#6) is accepted: a web-first client served by a Go daemon
     (org ADR-0002, replacing "FastAPI or Go"), Tauri or a PWA only as an
-    optional wrapper, no Electron; React + TypeScript + Vite, React Flow,
+    optional wrapper, no Electron. The same day the maintainer added "Keep
+    Go, record TypeScript for the frontend" (Node.js rejected for the daemon,
+    build-time tooling only) and "we should not have two services running in
+    different ports" (one Go process embeds the frontend with `go:embed` and
+    serves it, `/api/` and `/ws/` on one port; the static replay build still
+    runs with no daemon). React + TypeScript + Vite, React Flow,
     PixiJS, uPlot and ECharts, xterm.js, types generated from sim-tools'
     schemas, and an escape hatch (a raw-config tab, "Export native
     project" through `SimAdapter`). Only the decision is accepted: the UI
