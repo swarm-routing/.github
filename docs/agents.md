@@ -35,14 +35,53 @@ In the order the 2026-11-22 audit ranked them:
    swarm-routing/skills#186), and read-only searches to the built-in Explore
    agent, which skips them too.
 3. **Search large outputs, never read them whole**: an output the harness
-   saved to a file goes through `grep`, `head` or a section reader. Wait on a
-   PR with `tools/pr-status/pr_status.py` rather than raw activity (#794).
+   saved to a file goes through `grep`, `head`, `sed -n` or a section reader
+   (#286). Wait on a PR with `tools/pr-status/pr_status.py`, not by
+   subscribing to its activity (below; #794).
 4. **Run the script, read its verdict** (AntHocNet ADR-0014; #286 adds the
    issue index and readers).
 5. **Keep agent files under their budget**: `check_docs.py` fails an
    AGENTS.md whose org-sync sections pass 23,200 B, and its self-test fails a
    template PR that would (#793). A template PR states its byte delta
    (`token_audit.py files` before and after).
+
+## Large outputs and PR waits (#794)
+
+Every tool result stays in the context for the rest of the conversation and
+is re-read from cache on every later request. Two sources dominated the
+audited orchestrating session of 2026-11-22 (`token_audit.py transcript`,
+main transcript, measured):
+
+| Source | Calls | Result bytes | Per call |
+|---|---:|---:|---:|
+| `Read` of an output the harness had saved to a file | 21 | 4,036,452 (36 %) | ≈ 192,000; the largest 655,082 |
+| `ReadNotifications` (subscribed PR activity) | 152 | 1,517,535 (13 %) | ≈ 9,980 |
+
+**A saved output:** when a result is too large to show, the harness writes
+it to a file and says where. Search that file (`grep -n PATTERN`, `head -n`,
+`sed -n 'A,Bp'`, `tail`); never `Read` it whole. Better still, make the
+command print less in the first place (a summary flag, `--jq`, a filter).
+
+**Waiting on a PR:** poll with `pr_status.py`, do not subscribe.
+
+| Way to wait (one PR: CI, review, queue, merge) | Result bytes |
+|---|---:|
+| Subscription (`subscribe_pr_activity`, then `ReadNotifications`): every event, review-bot comments relayed whole, again on each edit | ≈ 9,980 per read (measured above); #801's two bot comments alone (a CodeRabbit rate-limit note, Sonar's gate) are 6,908 B before any edit |
+| `pr_status.py wait REPO#N` (CI done), `threads REPO#N`, `queued REPO#N`, `wait --merged REPO#N`: #801 from push to merge, measured 2026-11-22 | 179 + 22 + 110 + 27 = 338 in total |
+
+- `wait REPO#N` polls until no check is pending and prints one line per PR
+  (`ci=`, `merge=`, `threads=`); `--review` also waits for CodeRabbit.
+- `threads REPO#N` prints each unresolved review thread as one line
+  (severity, title from CodeRabbit's headings, path:line, comment id); read
+  the full comment only for the thread you are fixing.
+- `queued REPO#N` says whether the PR is in the merge queue and how its
+  queue runs stand; `wait --merged REPO#N` returns when it merged, or stops
+  at the first thing that needs a hand (an unresolved thread, a failed
+  required check, auto-merge off).
+
+Subscribe only when the session has nothing else to do for hours and expects
+a human reviewer, and the PR has no review bot: an active review bot makes a
+subscription the most expensive way to wait.
 
 ## Measure
 
