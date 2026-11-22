@@ -164,6 +164,25 @@ extracted text or file names from it.
 `swarm-routing/<repo>#N`) · **References**. Children of an epic say
 "Part of #N" and are linked as sub-issues.
 
+**A finished ticket is closed by the record, weekly** (#730; maintainer
+decision 2026-11-22). The `ticket-audit` task (`cmd/ticket-audit`, run by
+org-bot) reads every open, non-epic issue of every unarchived org repository
+and closes one as completed, with a comment, only when every box under its
+**Acceptance criteria** is ticked (at least one), or a merged PR's body says
+`Closes`, `Fixes` or `Resolves` `#N` (or `swarm-routing/<repo>#N`, or the
+issue's URL) for it and GitHub left it open, unless it was reopened after
+that merge. An unticked box keeps an issue open; boxes inside a `<details>`
+block or a code fence are superseded text and do not count, so move a
+replaced plan into one. It never closes an issue labelled `hold`, `epic`,
+`security`, `rcapa` (an RCAPA stays open until a release carries the fix) or
+`release:vX.Y.Z` before that release is published. A `handoff` issue is
+closed (as not planned) only when a newer open handoff in the same
+repository has a "Supersedes #N" line for it. At most 20 issues a run; the
+issues at least 80% ticked and those with no checkbox are listed, not
+closed, in the `[tickets] audit` issue here, updated in place (private
+repositories only as "private repository N"). To keep a finished-looking
+issue open, add an unticked box saying what remains, or `hold`.
+
 **Epics are the public plan.** An epic (label `epic`) groups the issues that
 deliver one outcome; its children are linked as sub-issues, so its status is
 read from them. An open epic is *Planned* (no sub-issue closed) or *In
