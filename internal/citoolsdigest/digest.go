@@ -61,16 +61,47 @@ const (
 )
 
 var (
-	pinRe      = regexp.MustCompile(`ghcr\.io/swarm-routing/ci-tools@(sha256:[0-9a-f]{64})`)
 	promotedRe = regexp.MustCompile(`#\s*promoted from [0-9a-f]{7,40}\b.*$`)
 	repoName   = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 )
 
+// pinPrefix is what a pin starts with; the digest follows it.
+const pinPrefix = Image + "@"
+
+// pinSpans finds every pin in s: the start and end of each digest. A pin is
+// the literal pinPrefix (not the tail of a longer host name) followed by a
+// whole sha256 digest; a literal scan, so no host pattern can match more
+// than this image.
+func pinSpans(s string) [][2]int {
+	var out [][2]int
+	for from := 0; ; {
+		i := strings.Index(s[from:], pinPrefix)
+		if i < 0 {
+			return out
+		}
+		i += from
+		start := i + len(pinPrefix)
+		from = start
+		if i > 0 && strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-/", rune(s[i-1])) {
+			continue
+		}
+		end := start + len("sha256:") + 64
+		if end > len(s) || !digestRe.MatchString(s[start:end]) {
+			continue
+		}
+		if end < len(s) && strings.ContainsRune("0123456789abcdef", rune(s[end])) {
+			continue
+		}
+		out = append(out, [2]int{start, end})
+		from = end
+	}
+}
+
 // Pins lists the distinct digests text pins, sorted.
 func Pins(text string) []string {
 	set := map[string]bool{}
-	for _, m := range pinRe.FindAllStringSubmatch(text, -1) {
-		set[m[1]] = true
+	for _, sp := range pinSpans(text) {
+		set[text[sp[0]:sp[1]]] = true
 	}
 	out := make([]string, 0, len(set))
 	for d := range set {
@@ -88,14 +119,21 @@ func Rewrite(text, digest, sha7 string, move func(old string) bool) string {
 	lines := strings.SplitAfter(text, "\n")
 	for i, line := range lines {
 		changed := false
-		out := pinRe.ReplaceAllStringFunc(line, func(m string) string {
-			old := m[len(Image)+1:]
-			if old == digest || !move(old) {
-				return m
+		var b strings.Builder
+		last := 0
+		for _, sp := range pinSpans(line) {
+			old := line[sp[0]:sp[1]]
+			b.WriteString(line[last:sp[0]])
+			if old != digest && move(old) {
+				changed = true
+				b.WriteString(digest)
+			} else {
+				b.WriteString(old)
 			}
-			changed = true
-			return Image + "@" + digest
-		})
+			last = sp[1]
+		}
+		b.WriteString(line[last:])
+		out := b.String()
 		if changed {
 			body, nl := strings.CutSuffix(out, "\n")
 			body = promotedRe.ReplaceAllString(body, "# promoted from "+sha7)
@@ -317,7 +355,7 @@ func (t *Tool) repo(r repo) error {
 		if err != nil {
 			return err
 		}
-		if strings.HasPrefix(text, ManagedMarker) || !pinRe.MatchString(text) {
+		if strings.HasPrefix(text, ManagedMarker) || len(pinSpans(text)) == 0 {
 			continue
 		}
 		next := Rewrite(text, t.digest, t.rev[:7], t.move)

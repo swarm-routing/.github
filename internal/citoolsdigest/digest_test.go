@@ -216,12 +216,14 @@ func TestRewrite(t *testing.T) {
 		"      IMG: " + Image + "@" + old + "\n" +
 		"      IMG: " + Image + "@" + cur + "  # promoted from 1234567: why\n" +
 		"  CI_TOOLS: " + Image + "@" + keep + "  # promoted from 7654321\n" +
+		"look-alikes: evil." + Image + "@" + old + " " + Image + "@" + old + "ff " + Image + "-dev@" + old + "\n" +
 		"no newline: " + Image + "@" + old
 	got := Rewrite(in, cur, "def5678", func(d string) bool { return d == old })
 	want := "      IMG: " + Image + "@" + cur + "  # promoted from def5678\n" +
 		"      IMG: " + Image + "@" + cur + "\n" +
 		"      IMG: " + Image + "@" + cur + "  # promoted from 1234567: why\n" +
 		"  CI_TOOLS: " + Image + "@" + keep + "  # promoted from 7654321\n" +
+		"look-alikes: evil." + Image + "@" + old + " " + Image + "@" + old + "ff " + Image + "-dev@" + old + "\n" +
 		"no newline: " + Image + "@" + cur
 	if got != want {
 		t.Fatalf("Rewrite:\n%s\nwant:\n%s", got, want)
