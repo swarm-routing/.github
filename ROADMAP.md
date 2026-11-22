@@ -77,7 +77,7 @@ sim-tools#128's criteria name); .github#268's other rungs wait with phase 2.
 | 1. Core | [swarm-core](https://github.com/swarm-routing/swarm-core) | simulator-free C++23 ports and primitives (`swarm::core`), the wire helpers, the testbench and the protocol contract tests; no OS or simulator header | created 2026-11-21, empty; the code is still in swarm-adapter-ns3's `core/` (released up to `v1.0.0` there) and moves in phase 1 |
 | 2. Runtimes and adapters | [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) (was `ns3-swarm-core`), [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) (the Linux daemon, *deferred*), one `swarm-adapter-<sim>` per in-process C++ simulator, `swarm-adapter-omnet` next (*proposed*, *deferred*; decision 24) | each runtime's implementation of the ports; CORE/EMANE and Shadow run the swarm-routingd binary and reuse its Linux adapter, so they need no adapter repository (decision 24) | swarm-adapter-ns3 is the ns-3 contrib module `swarm-core` (golden rule 4); swarm-routingd created 2026-11-21, empty |
 | 3. Protocols | AntHocNet, ARA, BeeAdHoc, Termite, HOPNET; POSANT, BeeSensor, Q-Swarm (*proposed*, *deferred*, [Protocol repositories](#protocol-repositories)) | each a simulator-free `core/` on swarm-core and its ns-3 module (`ns3/`); the Linux glue lives in swarm-routingd, which consumes the cores by release lock (decision 13) | five released; three created 2026-11-21, fidelity sheets only (decision 1) |
-| 4. Infrastructure and tooling | `.github`, [sim-containers](https://github.com/swarm-routing/sim-containers) (was `ns3-containers`), [sim-tools](https://github.com/swarm-routing/sim-tools) (was `ns3-tools`), [vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry), [benchmarks](https://github.com/swarm-routing/benchmarks), [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io), [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) (the workbench, *deferred*), `swarm-mcp` (*proposed*) | reusable CI, simulator images, orchestration and statistics, packages, released datasets, the public showcase, the workbench | the renames of 2026-11-22 are followed by the phase 0 PRs; swarm-web-ui created 2026-11-21, empty |
+| 4. Infrastructure and tooling | `.github`, [sim-containers](https://github.com/swarm-routing/sim-containers) (was `ns3-containers`), [sim-tools](https://github.com/swarm-routing/sim-tools) (was `ns3-tools`), [vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry), [benchmarks](https://github.com/swarm-routing/benchmarks), [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io), [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) (the workbench, *deferred*); **AI:** [skills](https://github.com/swarm-routing/skills), [swarm-mcp](https://github.com/swarm-routing/swarm-mcp) (decision 26) | reusable CI, simulator images, orchestration and statistics, packages, released datasets, the public showcase, the workbench; the AI pair: the skills and the Claude Code plugin, and the MCP server the plugin bundles (and will pin once the code has moved) | the renames of 2026-11-22 are followed by the phase 0 PRs; swarm-web-ui created 2026-11-21, empty; swarm-mcp created 2026-11-22, empty (its code is still in skills' `tools/swarm-mcp/`) |
 
 **Decided on 2026-11-22 (the maintainer, on .github#672):**
 
@@ -190,6 +190,8 @@ first set, the review's question number in brackets):
     org-bot, not Renovate. swarm-mcp and the phase 4 skills are prototyped
     in swarm-routing/skills, not benchmarks, by extending `protocol-review`,
     `fidelity-sheet` and `release` instead of adding four new skills.
+    *Amended by decision 26:* swarm-mcp moves out of swarm-routing/skills
+    into its own repository; the phase 4 skills stay there.
 21. **The paper** (q17) is folded into AntHocNet#109; cross-runtime results
     are stated qualitatively.
 22. **Overlapping tickets** (q20, q21). .github#54 (re-scoped to the
@@ -250,6 +252,18 @@ first set, the review's question number in brackets):
     track stays deferred under decision 23, and its children
     (swarm-web-ui#6 to #23, sub-issues of swarm-web-ui#1 and #2) are
     planned, not scheduled.
+26. **The AI repositories** (the maintainer, 2026-11-22: "Accept ADR-0005"
+    and "configure the MCP repo out of skills
+    https://github.com/swarm-routing/swarm-mcp — Skills and MCP repo need to
+    work together — update the org profile and site to have these two as our
+    AI repos"). [ADR-0005](docs/adr/0005-the-mcp-and-agent-tooling-standard.md)
+    is accepted and amended: [skills](https://github.com/swarm-routing/skills)
+    holds the procedures and ships the Claude Code plugin `swarm-routing`;
+    [swarm-mcp](https://github.com/swarm-routing/swarm-mcp) holds the
+    read-only stdio MCP server (today in skills' `tools/swarm-mcp/`,
+    swarm-routing/skills#185), versioned and released on its own; the plugin
+    bundles it and, once the code has moved, pins a swarm-mcp release. The two are listed together
+    as the org's AI repositories, a labelled group of layer 4.
 
 ```mermaid
 flowchart LR
@@ -371,9 +385,11 @@ repository, CORE/EMANE and Shadow by running the swarm-routingd binary
 
 The org's agent skills extended to the new layers, `llms.txt` on the site
 ([swarm-routing.github.io#234](https://github.com/swarm-routing/swarm-routing.github.io/issues/234)),
-a `swarm-mcp` prototype (*proposed*) and one paper. The MCP prototype and
-the skills live in swarm-routing/skills, as extensions of `protocol-review`,
-`fidelity-sheet` and `release` (decision 20); the paper folds into
+a `swarm-mcp` prototype and one paper. The skills live in
+swarm-routing/skills, as extensions of `protocol-review`, `fidelity-sheet`
+and `release` (decision 20); the MCP server moves to its own repository,
+[swarm-mcp](https://github.com/swarm-routing/swarm-mcp), which the plugin
+will pin (decision 26); the paper folds into
 AntHocNet#109, with cross-runtime results stated qualitatively (decision 21).
 The architecture page and porting guide is .github#260, now under
 .github#672.

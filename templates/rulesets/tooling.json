@@ -1,5 +1,5 @@
 {
-  "about": "Tooling repositories (.github, skills, sim-tools, sim-containers, vcpkg-registry): the same protection as a protocol. `code_scanning` and `code_quality` apply only where [settings] code_scanning = true; `required_status_checks` takes [settings] required_checks and is dropped when there are none.",
+  "about": "Tooling repositories (.github, skills, swarm-mcp, sim-tools, sim-containers, vcpkg-registry): the same protection as a protocol. `code_scanning` and `code_quality` apply only where [settings] code_scanning = true; `required_status_checks` takes [settings] required_checks and is dropped when there are none.",
   "repo": {
     "allow_squash_merge": true,
     "allow_merge_commit": false,
