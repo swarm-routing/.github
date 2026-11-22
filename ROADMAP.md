@@ -75,7 +75,7 @@ sim-tools#128's criteria name); .github#268's other rungs wait with phase 2.
 | Layer | Repositories | Responsibility | State on 2026-11-22 |
 |---|---|---|---|
 | 1. Core | [swarm-core](https://github.com/swarm-routing/swarm-core) | simulator-free C++23 ports and primitives (`swarm::core`), the wire helpers, the testbench and the protocol contract tests; no OS or simulator header | created 2026-11-21, empty; the code is still in swarm-adapter-ns3's `core/` (released up to `v1.0.0` there) and moves in phase 1 |
-| 2. Runtimes and adapters | [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) (was `ns3-swarm-core`), [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) (the Linux daemon, *deferred*), one `swarm-adapter-<sim>` per new simulator such as `swarm-adapter-omnet` (*proposed*, *deferred*; decision 24) | each runtime's implementation of the ports; CORE/EMANE and Shadow run swarm-routingd and need no adapter repository (decision 24, working assumption) | swarm-adapter-ns3 is the ns-3 contrib module `swarm-core` (golden rule 4); swarm-routingd created 2026-11-21, empty |
+| 2. Runtimes and adapters | [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) (was `ns3-swarm-core`), [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) (the Linux daemon, *deferred*), one `swarm-adapter-<sim>` per in-process C++ simulator, `swarm-adapter-omnet` next (*proposed*, *deferred*; decision 24) | each runtime's implementation of the ports; CORE/EMANE and Shadow run the swarm-routingd binary and reuse its Linux adapter, so they need no adapter repository (decision 24) | swarm-adapter-ns3 is the ns-3 contrib module `swarm-core` (golden rule 4); swarm-routingd created 2026-11-21, empty |
 | 3. Protocols | AntHocNet, ARA, BeeAdHoc, Termite, HOPNET; POSANT, BeeSensor, Q-Swarm (*proposed*, *deferred*, [Protocol repositories](#protocol-repositories)) | each a simulator-free `core/` on swarm-core and its ns-3 module (`ns3/`); the Linux glue lives in swarm-routingd, which consumes the cores by release lock (decision 13) | five released; three created 2026-11-21, fidelity sheets only (decision 1) |
 | 4. Infrastructure and tooling | `.github`, [sim-containers](https://github.com/swarm-routing/sim-containers) (was `ns3-containers`), [sim-tools](https://github.com/swarm-routing/sim-tools) (was `ns3-tools`), [vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry), [benchmarks](https://github.com/swarm-routing/benchmarks), [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io), [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) (the workbench, *deferred*), `swarm-mcp` (*proposed*) | reusable CI, simulator images, orchestration and statistics, packages, released datasets, the public showcase, the workbench | the renames of 2026-11-22 are followed by the phase 0 PRs; swarm-web-ui created 2026-11-21, empty |
 
@@ -105,9 +105,10 @@ sim-tools#128's criteria name); .github#268's other rungs wait with phase 2.
    created; the ns-3-specific parts (`routing-bench`, upstream fixes, the
    probe emitter) live under a GPL-2.0-only `ns3/` directory behind
    .github#674's `SimAdapter` contract; a split happens later only if licence
-   or release cadence forces it. *Amended by decision 24:* a new simulator's
-   adapter code goes to its own `swarm-adapter-<sim>` repository, not into
-   sim-tools.
+   or release cadence forces it. *Amended by decision 24:* an in-process
+   simulator's adapter code goes to its own `swarm-adapter-<sim>` repository,
+   not into sim-tools, whose per-simulator directories hold only
+   non-adapter glue.
 5. **swarm-web-ui is the workbench** (replay, live runs, the scenario editor);
    the Colony Arena site stays the public showcase and may later embed the
    replay view. Neither holds routing logic (site golden rule 10), and every
@@ -182,10 +183,10 @@ first set, the review's question number in brackets):
 20. **Tooling** (q14–q16). Per-simulator tooling lives in directories in
     sim-tools; `swarm-adapter-omnet` comes only after parity, once
     OMNeT++'s image licence is confirmed. *Amended by decision 24:* every
-    new simulator gets its own `swarm-adapter-<sim>` repository as the plan,
-    not after parity (still deferred, and OMNeT++'s image licence is still
-    confirmed first); sim-tools' per-simulator directories keep only what is
-    not adapter code. Dependency bumps are done by
+    in-process C++ simulator gets its own `swarm-adapter-<sim>` repository as
+    the plan, not after parity (still deferred, and OMNeT++'s image licence
+    is still confirmed first); CORE/EMANE and Shadow get none; sim-tools'
+    per-simulator directories keep only non-adapter glue. Dependency bumps are done by
     org-bot, not Renovate. swarm-mcp and the phase 4 skills are prototyped
     in swarm-routing/skills, not benchmarks, by extending `protocol-review`,
     `fidelity-sheet` and `release` instead of adding four new skills.
@@ -212,17 +213,26 @@ first set, the review's question number in brackets):
     and plan, marked deferred; its trigger is the maintainer re-planning it;
     decisions 1–22 are the rules that apply when it starts. sim-tools#128 and
     .github#268's ns-3 rung stay scheduled for sim-tools `v1.2.0`.
-24. **Every new simulator gets its own adapter repository**,
-    `swarm-adapter-<sim>` (`swarm-adapter-omnet` and so on). This amends
-    decision 20 (no longer "only after parity") and the part of decision 4
-    that put per-simulator code in sim-tools. Like the rest of the simulator
-    track the repositories are deferred (decision 23): they are created when
-    the maintainer re-plans that track, none now. *Working assumption, which
-    the maintainer can change:* sim-tools keeps the orchestration and the
-    statistics, and its per-simulator directories hold only what is not
-    adapter code (the ns-3 harness `routing-bench` stays under its `ns3/`);
-    emulators that run the Linux daemon (CORE/EMANE, Shadow) use
-    swarm-routingd and get no adapter repository.
+24. **Every in-process simulator gets its own adapter repository**,
+    `swarm-adapter-<sim>`. This amends decision 20 (no longer "only after
+    parity") and the part of decision 4 that put per-simulator code in
+    sim-tools. Like the rest of the simulator track it is deferred
+    (decision 23): the repositories are created when the maintainer re-plans
+    that track, none now. Its split, confirmed by the maintainer the same day:
+    - **sim-tools owns orchestration and statistics**: the simulator-agnostic
+      runner, seed-sweep orchestration, the shared telemetry schema, and
+      statistical analysis and plotting.
+    - **Its per-simulator subdirectories** (`ns3/`, `emane/`, `shadow/`,
+      `omnet/`) **hold only non-adapter glue**: launch and topology configs
+      (for example `shadow.yaml`, CORE/EMANE RF and mobility XMLs, ns-3 CLI
+      wrappers), and trace normalizers and probes that convert raw simulator
+      logs into the unified JSONL/Parquet schema.
+    - **CORE/EMANE and Shadow get no adapter repository**: both run the
+      compiled Linux swarm-routingd binary directly and reuse its Linux
+      adapter (epoll, UDP/TUN, rtnetlink).
+    - **Only in-process C++ simulators get a `swarm-adapter-<sim>`
+      repository**: ns-3 has swarm-adapter-ns3, and OMNeT++ gets
+      `swarm-adapter-omnet` later.
 
 ```mermaid
 flowchart LR
@@ -331,8 +341,9 @@ swarm-core's first release
 [BeeSensor#3](https://github.com/swarm-routing/BeeSensor/issues/3),
 [Q-Swarm#3](https://github.com/swarm-routing/Q-Swarm/issues/3)); the
 CORE/EMANE image follows the first parity run, OMNeT++ and Shadow follow
-parity (decision 8), each new simulator through its own `swarm-adapter-<sim>`
-repository (decision 24).
+parity (decision 8); OMNeT++ through its own `swarm-adapter-omnet`
+repository, CORE/EMANE and Shadow by running the swarm-routingd binary
+(decision 24).
 
 **Exit criteria**
 
@@ -370,14 +381,14 @@ results wait for phase 2 and 3b.
 | 2: scenario, probe and summary schemas | [sim-tools#279](https://github.com/swarm-routing/sim-tools/issues/279) | `scenario.v1`, the probe side-file, `summary.v1`, one validator for sim-tools and swarm-web-ui | decision 16: sim-tools owns them as marker contract v2; benchmarks vendors and validates them |
 | 4: offline replay | [swarm-web-ui#1](https://github.com/swarm-routing/swarm-web-ui/issues/1) | replay, KPI charts from benchmarks and `bench_parse` output only | epic 2; its demo is served under the Colony Arena site at a pinned commit, no Pages of its own (decision 17) |
 | 5: live runs | [swarm-web-ui#2](https://github.com/swarm-routing/swarm-web-ui/issues/2) | the workbench daemon, the scenario editor, runs on sim-containers images by digest | epic 4 |
-| 6: a second runtime | [swarm-routingd#3](https://github.com/swarm-routing/swarm-routingd/issues/3) (track A); OMNeT++ and Shadow (track B) | the same scenario on ns-3 and another runtime, side by side, labelled qualitative | parity (decision 8); each new simulator's adapter in its own `swarm-adapter-<sim>` repository, created when the track is re-planned, and sim-tools' per-simulator directories only for what is not adapter code (decision 24, amending decision 20); AntHocNet#32 is AntHocNet's instance of track B, .github#48 the other simulators |
+| 6: a second runtime | [swarm-routingd#3](https://github.com/swarm-routing/swarm-routingd/issues/3) (track A); OMNeT++ and Shadow (track B) | the same scenario on ns-3 and another runtime, side by side, labelled qualitative | parity (decision 8); an in-process simulator's adapter (OMNeT++: `swarm-adapter-omnet`) in its own repository, created when the track is re-planned, CORE/EMANE and Shadow on the swarm-routingd binary with no adapter repository, and sim-tools' per-simulator directories only for non-adapter glue (decision 24, amending decision 20); AntHocNet#32 is AntHocNet's instance of track B, .github#48 the other simulators |
 
 **Non-goals of the migration.**
 
 - **No code in a new protocol repository before swarm-core's first release from its own repository** (decision 1); fidelity sheets first.
 - **No wire-format change before its ADR** (decision 2), and no envelope that replaces a protocol's own version byte.
 - **No release without the maintainer's word** (decision 3), and no DOI typed: each is read from Zenodo.
-- **No `ns3-tools` repository** (decision 4); sim-tools keeps the orchestration and statistics, and a new simulator's adapter code goes to its own `swarm-adapter-<sim>` repository, none created before the maintainer re-plans the simulator track (decisions 23 and 24).
+- **No `ns3-tools` repository** (decision 4); sim-tools keeps the orchestration and statistics, and an in-process simulator's adapter code goes to its own `swarm-adapter-<sim>` repository (CORE/EMANE and Shadow get none), none created before the maintainer re-plans the simulator track (decisions 23 and 24).
 - **Nothing deferred starts by itself** (decision 23): no code for POSANT, BeeSensor or Q-Swarm, no swarm-routingd, swarm-web-ui or new-simulator work, and no `release:*` label on a deferred epic's children, until the maintainer re-plans it.
 - **No second Pages site and no routing logic or hand-made numbers in a UI** (decision 5; site golden rules 10–12).
 - **No OMNeT++ or Shadow before ns-3 and Linux parity, no EMANE image before the first parity run** (decision 8).
@@ -902,7 +913,7 @@ These lines come after the 1.0.0 releases (wave E). Each is a theme, not a date.
 
 A 2.0 here is a theme name. A repository bumps its major version only for a breaking change, and an additive security arm is a minor release in the repository that ships it.
 
-The **Later** row's other simulators now follow decision 8 of 2026-11-22 (OMNeT++ and Shadow after ns-3 and Linux parity, the CORE/EMANE image after the first parity run; [Architecture and migration](#architecture-and-migration-decided-2026-11-22)); the remaining swarm protocols' verdicts stay with .github#54, where POSANT, BeeSensor and Q-Swarm now have repositories. Both are deferred by decision 23 until the maintainer re-plans them, each new simulator through its own `swarm-adapter-<sim>` repository (decision 24).
+The **Later** row's other simulators now follow decision 8 of 2026-11-22 (OMNeT++ and Shadow after ns-3 and Linux parity, the CORE/EMANE image after the first parity run; [Architecture and migration](#architecture-and-migration-decided-2026-11-22)); the remaining swarm protocols' verdicts stay with .github#54, where POSANT, BeeSensor and Q-Swarm now have repositories. Both are deferred by decision 23 until the maintainer re-plans them, an in-process simulator through its own `swarm-adapter-<sim>` repository, CORE/EMANE and Shadow through swarm-routingd (decision 24).
 
 ## Epics
 
@@ -1338,9 +1349,10 @@ there; AntHocNet retires `pages.yml` and `web/` at cutover
 > deferred (decision 23: the maintainer re-plans them),
 > OMNeT++ and Shadow after ns-3 and Linux parity, the CORE/EMANE image (in
 > sim-containers, not a `<sim>-containers` repository) after the first parity
-> run (decision 8), each new simulator's adapter in its own
-> `swarm-adapter-<sim>` repository and the orchestration and statistics in
-> sim-tools (decision 24, amending decisions 4 and 20). The text below is the record of the 2026-11-03 and
+> run (decision 8), an in-process simulator's adapter in its own
+> `swarm-adapter-<sim>` repository (CORE/EMANE and Shadow run the
+> swarm-routingd binary and get none) and the orchestration, statistics and
+> non-adapter glue in sim-tools (decision 24, amending decisions 4 and 20). The text below is the record of the 2026-11-03 and
 > 2026-11-12 decisions; its trigger rule and "cross-simulator results stay
 > qualitative" still hold.
 
