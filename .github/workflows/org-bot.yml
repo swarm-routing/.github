@@ -356,7 +356,7 @@ jobs:
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5b8871db312aa437420362a530be522d1ad611425db015ecfe4e198fb293ff72  # promoted from 26e9061 (#713, #729)
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:32f1d5b2a68d1f40be8901d34e731f7d7c030d405ac02895ee855670c35c9cf0  # promoted from ea861a5 (#745)
         run: |
           set -o pipefail
           # at most 25 new tickets a run, the highest priority and the oldest first;
