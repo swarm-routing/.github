@@ -10,17 +10,27 @@ name: backstop
 # (6h), maintain (24h) and rotate (168h), with `mode: scheduled`, because GitHub has
 # fired no schedule there (swarm-routing/ns3-upstream-report#33); and org-bot.yml's
 # hourly, three-hourly and daily tasks here, a row each found by run-name, with a
-# 3-hour alarm on the hourly one kept as an issue by --issue (#748; org-bot.yml
-# runs the same backstop on each of its runs, in this group). Once a native
+# 3-hour alarm on the hourly one kept as an issue by --issue (#748). Once a native
 # schedule runs, its runs make the backstop skip that row.
 #
 # Token: the org App's installation token (.github/actions/bot-token), which may
 # dispatch workflows (Actions write; org-bot's release-rebuild uses the same). A pull
 # request that changes this workflow or the table runs a dry run with the
 # workflow's own token: it only reads runs.
+#
+# When org-bot finishes, too (#748): GitHub fires few of this repository's
+# schedules (this one ran 4 of its 24 hourly slots on 2026-11-21), while
+# org-bot runs dozens of times a day, so each of its runs ending is a tick of
+# the clock. This is a run of its own, not a job in org-bot's run: a job there
+# that a newer one replaced in this group would mark org-bot's run cancelled,
+# and the backstop does not count a cancelled run. A row within its period
+# dispatches nothing, so most of these runs only read.
 on:
   schedule:
     - cron: '7 * * * *'
+  workflow_run:
+    workflows: [org-bot]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry-run:
