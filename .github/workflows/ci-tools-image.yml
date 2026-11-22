@@ -268,6 +268,7 @@ jobs:
           grep -qx security-alerts list.txt
           grep -qx labels list.txt
           grep -qx project-sync list.txt
+          grep -qx os-refresh list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
           # labels (#570): this checkout's labels.json against the public repositories, read only
@@ -314,6 +315,12 @@ jobs:
           docker run --rm -e GH_TOKEN "$img" release-sync-watch --dry-run --repos .github,AntHocNet | tee release-sync.txt
           grep -Eq '^release-sync-watch: ' release-sync.txt \
             || { echo "::error::release-sync-watch: no summary line"; exit 1; }
+          # os-refresh (swarm-routing/sim-containers#218): a dry run on the fixture report, read-only
+          # as nonroot (the workflow token reads sim-containers' image runs and issues; nothing is dispatched)
+          docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" os-refresh --dry-run \
+            --repo swarm-routing/sim-containers --actor 'swarm-routing-bot[bot]' internal/osrefresh/testdata/fixable.json | tee os-refresh.txt
+          grep -Eq '^os-refresh: 1 images, 3 fixable OS CVEs \(CRITICAL 0, HIGH 1, MEDIUM 2\); ' os-refresh.txt \
+            || { echo "::error::os-refresh: no summary line"; exit 1; }
           # security-alerts (#629): a read-only dry run on this repository (the workflow
           # token reads its issues; an alert listing it may not read is reported, not fatal)
           docker run --rm -e GH_TOKEN "$img" security-alerts --dry-run --repos .github | tee security-alerts.txt

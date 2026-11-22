@@ -1,0 +1,27 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "ghcr.io/swarm-routing/ns3-dev:latest-debug",
+  "ArtifactType": "container_image",
+  "Metadata": {"OS": {"Family": "ubuntu", "Name": "24.04"}},
+  "Results": [
+    {
+      "Target": "ghcr.io/swarm-routing/ns3-dev:latest-debug (ubuntu 24.04)",
+      "Class": "os-pkgs",
+      "Type": "ubuntu",
+      "Vulnerabilities": [
+        {"VulnerabilityID": "CVE-2025-0001", "PkgName": "libc6", "InstalledVersion": "2.39-0ubuntu8.6", "FixedVersion": "", "Status": "affected", "Severity": "MEDIUM"},
+        {"VulnerabilityID": "CVE-2025-0002", "PkgName": "tar", "InstalledVersion": "1.35+dfsg-3build1", "FixedVersion": "1.35+dfsg-3ubuntu0.1", "Status": "fixed", "Severity": "LOW"},
+        {"VulnerabilityID": "CVE-2025-0003", "PkgName": "coreutils", "InstalledVersion": "9.4-3ubuntu6", "FixedVersion": "", "Status": "will_not_fix", "Severity": "HIGH"}
+      ]
+    },
+    {
+      "Target": "opt/venv/lib/python3.12/site-packages/lxml-5.3.0.dist-info/METADATA",
+      "Class": "lang-pkgs",
+      "Type": "python-pkg",
+      "Vulnerabilities": [
+        {"VulnerabilityID": "CVE-2025-0004", "PkgName": "lxml", "InstalledVersion": "5.3.0", "FixedVersion": "5.3.1", "Status": "fixed", "Severity": "MEDIUM"}
+      ]
+    },
+    {"Target": "ghcr.io/swarm-routing/ns3-dev:latest-debug (secrets)", "Class": "secret"}
+  ]
+}
