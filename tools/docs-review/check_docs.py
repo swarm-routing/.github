@@ -19,8 +19,8 @@ AGENTS.md with the org's
 sections (a settings-only org-sync.toml, `[settings]` and no `kind`, as this
 repository's, skips the badge row and the org sections with a SKIP line:
 org-sync manages nothing there, #320) and within its size budget (#277,
-warn-only: the org-sync sections, the repository's own text, or a
-settings-only file as a whole, each today's largest plus 10 %); CLAUDE.md
+the org-sync sections a FAIL since #793, the repository's own text or a
+settings-only file as a whole a WARN, each today's largest plus 10 %); CLAUDE.md
 importing it; CONTEXT.md past its seed; a docs/ map
 when docs/ holds more than ADRs; no broken relative link; a developer guide,
 docs/development.md, with every `##` section of templates/development.md
@@ -101,9 +101,11 @@ DEV_HEADINGS = (
     "Troubleshooting",
 )
 # What a session loads from AGENTS.md, in bytes (#277): today's largest plus
-# 10 %, measured on every repository's main on 2026-11-13. Warn-only, a
-# ratchet against growth: lower them when a file shrinks.
-AGENTS_ORG_BUDGET = 23_200  # the org-sync sections (21,018 today, the same in each repository)
+# 10 %, measured on every repository's main on 2026-11-13, a ratchet against
+# growth: lower them when a file shrinks. The org-sync sections are a FAIL
+# (#793; the self-test also renders templates/agents/ against it, so a template
+# PR that outgrows it fails CI here); the other two warn.
+AGENTS_ORG_BUDGET = 23_200  # the org-sync sections, a dependency section included (#793)
 AGENTS_OWN_BUDGET = 16_300  # the repository's own text (AntHocNet's 14,810 the largest)
 AGENTS_SETTINGS_ONLY_BUDGET = 27_700  # a settings-only repository's whole file (.github's 25,102)
 ORG_SECTION = re.compile(r"<!-- org-sync:begin (\S+) -->.*?<!-- org-sync:end \1 -->\n?", re.S)
@@ -190,22 +192,54 @@ class Report:
         return "\n".join(out)
 
 
+def org_section_bytes(text):
+    """Bytes between org-sync markers, the markers included."""
+    return sum(len(m.group(0).encode()) for m in ORG_SECTION.finditer(text))
+
+
+def rendered_agents_sections():
+    """The org-sync sections org_sync.py writes into an AGENTS.md, from this
+    checkout's templates/agents/, with the largest dependency section: what the
+    budget must hold in every repository (#793)."""
+    base = os.path.join(ORG_ROOT, "templates", "agents")
+
+    def block(name, fname):
+        with open(os.path.join(base, fname), encoding="utf-8") as f:
+            body = f.read()
+        return f"<!-- org-sync:begin {name} -->\n{body}<!-- org-sync:end {name} -->\n"
+
+    common = "".join(
+        block(n, f"{n}.md")
+        for n in ("org-rules", "conventions", "git-workflow", "skills", "agent-defaults")
+    )
+    deps = [block("dependencies", f) for f in os.listdir(base) if f.startswith("dependencies-")]
+    return common + max(deps, key=lambda d: len(d.encode()), default="")
+
+
 def check_agents_size(agents, cfg, r):
-    """Warn when AGENTS.md outgrows its budget (#277): every session loads it whole."""
+    """Fail when AGENTS.md's org-sync sections outgrow their budget (#793), warn
+    for the repository's own text or a settings-only file (#277): every session
+    loads it whole."""
     size = len(agents.encode())
+    org = 0
     if cfg["settings_only"]:
         over = [f"whole file {size:,} B > {AGENTS_SETTINGS_ONLY_BUDGET:,}"]
         over = over if size > AGENTS_SETTINGS_ONLY_BUDGET else []
     else:
-        org = sum(len(m.group(0).encode()) for m in ORG_SECTION.finditer(agents))
-        over = []
-        if org > AGENTS_ORG_BUDGET:
-            over.append(f"org-sync sections {org:,} B > {AGENTS_ORG_BUDGET:,} (a template grew)")
-        if size - org > AGENTS_OWN_BUDGET:
-            over.append(f"own text {size - org:,} B > {AGENTS_OWN_BUDGET:,}")
+        org = org_section_bytes(agents)
+        over = [f"own text {size - org:,} B > {AGENTS_OWN_BUDGET:,}"]
+        over = over if size - org > AGENTS_OWN_BUDGET else []
+    if org > AGENTS_ORG_BUDGET:
+        r.add(
+            "FAIL",
+            "AGENTS.md",
+            "org-sync sections over their budget (#793): shorten templates/agents/ in "
+            "swarm-routing/.github, then refresh",
+            [f"org-sync sections {org:,} B > {AGENTS_ORG_BUDGET:,}"],
+        )
     if over:
         r.add("WARN", "AGENTS.md", "over its size budget (#277): move detail to docs/", over)
-    else:
+    elif org <= AGENTS_ORG_BUDGET:
         r.add("PASS", "AGENTS.md", f"within its size budget ({size:,} B)")
 
 
@@ -1444,7 +1478,7 @@ def self_test():
             "org-sync's Develop section passes the README link check",
             re.search(r"\]\(docs/development\.md\)", f.read()) is not None,
         )
-    # #277: AGENTS.md's size budget, warn-only (own text, org-sync sections, settings-only whole)
+    # #277, #793: AGENTS.md's size budget (org-sync sections FAIL; own text, settings-only WARN)
     expect("…a small AGENTS.md is within its budget", has(ok, "PASS", "size budget"))
     big = "x" * (AGENTS_OWN_BUDGET + 1)
     r = repo({"AGENTS.md": agents_ok + big + "\n"})
@@ -1455,9 +1489,19 @@ def self_test():
         + "\n<!-- org-sync:end rules -->\n"
     )
     r = repo({"AGENTS.md": agents_ok + org_block})
-    expect("org-sync sections over their budget warn", has(r, "WARN", "size budget"))
+    expect("org-sync sections over their budget fail", has(r, "FAIL", "over their budget"))
     r = repo({"AGENTS.md": agents_ok + org_block.replace("y" * 1000, "y" * 10)})
-    expect("…sections under it do not, own text unchanged", not has(r, "WARN", "size budget"))
+    expect(
+        "…sections under it pass, own text unchanged",
+        not r.fail and has(r, "PASS", "size budget") and not has(r, "WARN", "size budget"),
+    )
+    rendered = rendered_agents_sections()
+    expect(
+        f"templates/agents/ render under the org budget ({org_section_bytes(rendered):,} B "
+        f"<= {AGENTS_ORG_BUDGET:,}, the largest dependency section included)",
+        "org-sync:begin dependencies" in rendered
+        and 0 < org_section_bytes(rendered) <= AGENTS_ORG_BUDGET,
+    )
     settings = {".github/org-sync.toml": "[settings]\nmerge_queue = true\n"}
     r = repo({**settings, "AGENTS.md": agents_ok + "z" * AGENTS_SETTINGS_ONLY_BUDGET})
     expect(

@@ -4,20 +4,15 @@
   umbrellas), area label(s) (`protocol`/`adapter`/`ns3`/`benchmark`/
   `observability`/`packaging`/`ci`/`learn-site`/`literature`), one `model:*`
   suggestion (a model on the Claude Pro plan), one `priority:P1|P2|P3` on
-  non-epic issues (none on an epic), a
-  `release:vX.Y.Z` label only when a release in the repository's ladder
-  (`docs/roadmap.md`; until it lands, the org ROADMAP's release train)
-  gates the issue: that label set is the version's scope,
-  and the version is released when its issues are done (CONTRIBUTING
-  "Cutting a release"). Labels come from `labels.json`, which `.github`'s
-  `labels` workflow applies to every repository, private ones included, as
-  soon as it changes (never deleting a label), the shared `release:v0.1.0`
-  to `release:v0.4.0` and `release:v1.0.0` among them; a version outside
-  that set is added to `swarm-routing/.github`'s `labels.json` (and
-  CONTRIBUTING's label table) when a ladder needs it, and reaches every
-  repository when that change merges,
-  or, in a repository that keeps its own release labels (AntHocNet), created
-  there with `gh label create release:vX.Y.Z` when its ladder adds the version.
+  non-epic issues (none on an epic), and a `release:vX.Y.Z` label only when
+  a release in the repository's ladder (`docs/roadmap.md`, else the org
+  ROADMAP's release train) gates the issue: that label set is the version's
+  scope, released when its issues are done (CONTRIBUTING "Cutting a
+  release"). Labels come from `.github`'s `labels.json`, applied to every
+  repository as soon as it changes (never deleting one); a release version
+  it lacks is added there (and to CONTRIBUTING's label table), or, in a
+  repository that keeps its own release labels (AntHocNet), created with
+  `gh label create release:vX.Y.Z`.
 - Issue bodies: **Context** (evidence, numbers, links) · **Scope** ·
   **Acceptance criteria** (checkboxes) · **Depends on** (cross-repo form
   `swarm-routing/<repo>#N`) · **References**. Children of an epic say "Part of
@@ -25,19 +20,12 @@
   footer.
 - Issues migrated from AntHocNet carry `migrated` and start with *Migrated from
   `danieljoppi/AntHocNet#N`*.
-- Epics are listed where contributors look. In a public repository, this
-  README's `## Epics` section and the org
-  [ROADMAP](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#epics)
-  are generated from the issues labelled `epic` by `swarm-routing/.github`'s
-  `tools/epics/epics.py`. An open epic is Planned (no sub-issue closed) or In
-  progress (some closed); it becomes Done or Dropped only when you close the
-  epic itself (as completed or as not planned), even if every sub-issue is
-  closed. The lists follow the issues with no hand step: an issue change
-  that can move them (an `epic` label, an epic opened, edited, closed or
-  reopened, a sub-issue closed or reopened) makes the org-managed
-  `epics-changed.yml` ask `.github`'s `epics-refresh` to run org-bot's
-  `epics` task, which opens the refresh PRs (debounced, plus hourly for a
-  sub-issue added or removed). Never edit a generated section by hand.
-  Private repositories are never listed and keep no generated section.
-- Make minimal, reviewable changes; update the relevant doc/ADR when you change
-  a documented decision.
+- Epics are listed in a public repository's README `## Epics` and the org
+  [ROADMAP](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#epics),
+  generated from the `epic` issues by `.github`'s `tools/epics/epics.py`. An
+  open epic is Planned (no sub-issue closed) or In progress (some closed); it
+  is Done or Dropped only once the epic itself is closed (completed or not
+  planned). The lists follow the issues with no hand step: an issue change
+  that can move them makes the org-managed `epics-changed.yml` run org-bot's
+  `epics` task, which opens the refresh PRs. Never edit a generated section
+  by hand; private repositories keep none.
