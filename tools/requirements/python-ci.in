@@ -6,5 +6,5 @@
 # python-ci.txt is the lock it installs with --require-hashes (OpenSSF
 # Scorecard Pinned-Dependencies, #716); regenerate it after a change here:
 #   uv pip compile --universal --generate-hashes --no-header tools/requirements/python-ci.in -o tools/requirements/python-ci.txt
-ruff==0.17.1
+ruff==0.17.5
 coverage==7.16.2
