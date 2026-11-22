@@ -61,7 +61,11 @@ set to null there or in the profile: that part is not managed):
   free plan (secret scanning, push protection, private vulnerability
   reporting, CodeQL): reported as such, not as drift. A repository whose own
   workflow runs `github/codeql-action/init` or `analyze` (advanced setup,
-  which default setup would conflict with) keeps it;
+  which default setup would conflict with) keeps it. Once default setup is
+  configured, every CodeQL language the repository holds
+  (`repos/{full}/languages`, plus `actions` where it has workflows) is
+  added to its `languages`, the query suite kept; a configured language
+  with no code left is a note, never removed (ns3-upstream-report#70);
 - `actions`: the Actions policy (enabled, allowed_actions `selected`, the
   allowed patterns, default `GITHUB_TOKEN` permissions read, no PR approval,
   and the fork-PR approval policy: workflows of a fork's PR wait for a
@@ -229,6 +233,23 @@ WORKFLOW_FILE = re.compile(r"^\.github/(workflows/[^/]+|actions/.+/action)\.ya?m
 USES = re.compile(r"^\s*(?:-\s+)?uses:\s*['\"]?([^'\"\s#]+)", re.M)
 API_PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._~/?&=%-]*")  # never a flag, never a space
 CODEQL = re.compile(r"github/codeql-action/(init|analyze)@", re.I)
+# GitHub linguist names -> the language ids CodeQL default setup takes
+# (docs.github.com, REST "Update a code scanning default setup configuration")
+CODEQL_LANGUAGE = {
+    "C": "c-cpp",
+    "C++": "c-cpp",
+    "C#": "csharp",
+    "Go": "go",
+    "Java": "java-kotlin",
+    "Kotlin": "java-kotlin",
+    "JavaScript": "javascript-typescript",
+    "TypeScript": "javascript-typescript",
+    "Python": "python",
+    "Ruby": "ruby",
+    "Swift": "swift",
+}
+# older ids default setup may still report for a configured language
+CODEQL_SAME = {"javascript": "javascript-typescript", "typescript": "javascript-typescript"}
 
 
 class GhError(Exception):
@@ -763,8 +784,43 @@ def plan_security(gh, res, full, meta, want, workflows):
                 continue
             if got.get("state") != "configured":
                 on(k, "PATCH", path, {"state": "configured"}, unsupported=(422,))
+            else:
+                plan_codeql_languages(gh, res, full, path, got, workflows)
     if skipped:
         res["notes"].append(f"unsupported here: {', '.join(skipped)}")
+
+
+def plan_codeql_languages(gh, res, full, path, got, workflows):
+    """Default setup is configured: every CodeQL language the repository now holds is
+    analysed (swarm-routing/ns3-upstream-report#70). Languages are only added; one with
+    no code left is a note, its removal the maintainer's call."""
+    langs = probe(gh, res, "security codeql_languages", f"repos/{full}/languages")
+    if langs is None:
+        return
+    found = {CODEQL_LANGUAGE[n] for n in (langs[1] if langs[0] else {}) if n in CODEQL_LANGUAGE}
+    if any("/workflows/" in p for p in workflows):
+        found.add("actions")
+    have = list(got.get("languages") or [])
+    covered = {CODEQL_SAME.get(x, x) for x in have}
+    missing = sorted(found - covered)
+    gone = sorted(x for x in have if CODEQL_SAME.get(x, x) not in found)
+    if gone:
+        res["notes"].append(
+            f"CodeQL default setup analyses {', '.join(gone)}, which the repository no "
+            "longer holds: removing it is the maintainer's decision"
+        )
+    if missing:
+        body = {"state": "configured", "languages": sorted(have + missing)}
+        if got.get("query_suite"):
+            body["query_suite"] = got["query_suite"]
+        item(
+            res,
+            "security codeql_languages",
+            sorted(have),
+            body["languages"],
+            ("PATCH", path, body),
+            unsupported=(422,),
+        )
 
 
 def plan_actions(gh, res, full, want, workflows):
@@ -1568,6 +1624,9 @@ def self_test():
             self.alerts = {"AntHocNet": True, "lean": True, "empty": True}
             self.pvr = {r: r in ("AntHocNet", "lean", "empty") for r in self.repos}
             self.codeql = {r: "not-configured" for r in self.repos}
+            # what default setup analyses once configured, and what linguist sees (#70 there)
+            self.codeql_langs = {r: ["actions", "c-cpp"] for r in self.repos}
+            self.langs = {r: {"C++": 9000, "CMake": 300} for r in self.repos}
             good = {"enabled": True, "allowed_actions": "selected"}
             self.perms = {
                 r: dict(good) for r in ("AntHocNet", "lean", "empty", "secret-lib", "rogue")
@@ -1694,8 +1753,15 @@ def self_test():
                     if repo == "empty":
                         raise GhError(method, path, "no CodeQL-supported language (HTTP 422)")
                     self.codeql[repo] = body["state"]
+                    if "languages" in body:
+                        self.codeql_langs[repo] = list(body["languages"])
                     return {"run_id": 1}
-                return {"state": self.codeql[repo], "languages": ["python"]}
+                got = {"state": self.codeql[repo], "query_suite": "default"}
+                if self.codeql[repo] == "configured":
+                    got["languages"] = list(self.codeql_langs[repo])
+                return got
+            if rest == "/languages":
+                return dict(self.langs[repo])
             if rest.startswith("/actions/permissions"):
                 if repo == "lean":
                     raise GhError(method, path, "not permitted through this proxy (HTTP 403)")
@@ -2093,6 +2159,60 @@ def self_test():
     check(
         "CodeQL 422 unsupported",
         rc == 0 and "empty: unsupported security codeql_default_setup (HTTP 422)" in out,
+    )
+    # default setup configured, but a language the repository now holds is not analysed
+    # (swarm-routing/ns3-upstream-report#70: Python -> Go, default setup kept `actions` only)
+    gh = FakeGitHub()
+    go("apply", ["ARA"], gh)
+    gh.langs["ARA"] = {"Go": 50000, "Python": 10, "Makefile": 200}
+    gh.codeql_langs["ARA"] = ["actions", "c-cpp"]
+    rc, out = go("check", ["ARA"], gh)
+    check(
+        "a detected language missing from default setup is drift",
+        rc == 1 and 'ARA security codeql_languages: differs: "actions,c-cpp" -> ' in out,
+    )
+    check(
+        "a configured language with no code left is a note, never removed",
+        "ARA: note: CodeQL default setup analyses c-cpp, which the repository no longer holds"
+        in out,
+    )
+    n = len(writes(gh))
+    rc, out = go("apply", ["ARA"], gh)
+    check(
+        "apply adds the missing languages, keeps the rest and the query suite",
+        rc == 0
+        and writes(gh)[n:]
+        == [
+            (
+                "PATCH",
+                f"repos/{ORG}/ARA/code-scanning/default-setup",
+                {
+                    "state": "configured",
+                    "languages": ["actions", "c-cpp", "go", "python"],
+                    "query_suite": "default",
+                },
+            )
+        ],
+    )
+    check("in sync once every language is analysed", go("check", ["ARA"], gh)[0] == 0)
+    n = len(writes(gh))
+    go("apply", ["ARA"], gh)
+    check("all present: no write", writes(gh)[n:] == [])
+    # no workflows: `actions` is not wanted; javascript/typescript count as one id
+    gh = FakeGitHub()
+    gh.codeql["empty"] = "configured"
+    gh.langs["empty"] = {"TypeScript": 100, "Python": 5}
+    gh.codeql_langs["empty"] = ["javascript", "python"]
+    rc, out = go("plan", ["empty"], gh)
+    check(
+        "no workflows: actions not wanted, older language ids understood",
+        "codeql_languages" not in out and "no longer holds" not in out,
+    )
+    gh.langs["empty"] = {"Ruby": 100, "Python": 5}
+    rc, out = go("plan", ["empty"], gh)
+    check(
+        "no workflows: only the language that is missing",
+        '"javascript,python" -> "javascript,python,ruby"' in out and '"actions' not in out,
     )
     # a truncated tree could hide a workflow: the repository fails, nothing is written
     gh = FakeGitHub()
