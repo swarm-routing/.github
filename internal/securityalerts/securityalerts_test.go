@@ -129,9 +129,11 @@ func TestSeverityPriorityAndSLA(t *testing.T) {
 		{Alert{Kind: CodeScanning, Severity: "critical", Created: now.Add(-10 * day)}, "P1", false},
 		{Alert{Kind: CodeScanning, Severity: "critical", Created: now.Add(-15 * day)}, "P1", true},
 		{Alert{Kind: CodeScanning, Severity: "high", Created: now.Add(-1 * day)}, "P1", false},
-		{Alert{Kind: Dependabot, Severity: "medium", Created: now.Add(-30 * day)}, "P2", false},
+		{Alert{Kind: Dependabot, Severity: "medium", Created: now.Add(-30 * day)}, "P1", false}, // every vulnerability is P1
 		{Alert{Kind: Dependabot, Severity: "medium", Created: now.Add(-46 * day)}, "P1", true},
-		{Alert{Kind: CodeScanning, Severity: "low", Created: now.Add(-400 * day)}, "P3", false},
+		{Alert{Kind: CodeScanning, Severity: "low", Created: now.Add(-400 * day)}, "P1", false},
+		{Alert{Kind: CodeScanning, Tool: "Scorecard", Severity: "high", Created: now.Add(-10 * day)}, "P2", false}, // policy
+		{Alert{Kind: CodeScanning, Tool: "Scorecard", Severity: "medium", Created: now.Add(-50 * day)}, "P1", true},
 		{Alert{Kind: SecretScanning, Created: now}, "P1", false},
 	}
 	for i, c := range cases {
@@ -176,11 +178,11 @@ func TestSyncOpensUpdatesAdoptsCloses(t *testing.T) {
 	}
 	f.issues["X"][0]["body"] = Body(cs1(), now)
 	g := f.server(t)
-	res, err := Sync(g, Repo{Name: "X"}, now, false)
+	res, err := Sync(g, Repo{Name: "X"}, now, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Opened != 2 || res.Updated != 2 || res.Adopted != 1 || res.Closed != 1 || len(res.Unread) != 1 {
+	if res.Opened != 1 || len(res.Policy) != 1 || res.Updated != 2 || res.Adopted != 1 || res.Closed != 1 || len(res.Unread) != 1 {
 		t.Fatalf("opened %d updated %d adopted %d closed %d unread %v\n%s", res.Opened, res.Updated, res.Adopted, res.Closed,
 			res.Unread, strings.Join(res.Messages, "\n"))
 	}
@@ -190,22 +192,22 @@ func TestSyncOpensUpdatesAdoptsCloses(t *testing.T) {
 		`PATCH X/issues/6`,       // alert 3 adopted
 		`code scanning alert #3`, //
 		`Past its SLA`,           // and past its SLA
-		`POST X/issues {"body":"\u003c!-- security-alert: https://github.com/swarm-routing/X/security/code-scanning/10 --\u003e`,
-		`posts a proposal here`, // the policy finding's ticket
+		`POST X/issues {"body":"\u003c!-- security-alert: https://github.com/swarm-routing/X/security/dependabot/2 --\u003e`,
+		`"priority:P1"]`, // a low Dependabot alert is P1 too
 		`POST X/issues/7/comments`, `PATCH X/issues/7 {"state":"closed","state_reason":"completed"}`,
 	} {
 		if !strings.Contains(w, want) {
 			t.Errorf("writes lack %q:\n%s", want, w)
 		}
 	}
-	if strings.Contains(w, "issues/8") || strings.Contains(w, "`query`") || strings.Contains(w, "@user") {
+	if strings.Contains(w, "code-scanning/10 --") || strings.Contains(w, "issues/8") || strings.Contains(w, "`query`") || strings.Contains(w, "@user") {
 		t.Errorf("an unread kind's ticket is left alone; alert text is neutralised:\n%s", w)
 	}
 	// a second run on the state the first left: nothing to do for the new tickets
 	f.writes = nil
 	f.issues["X"] = f.issues["X"][2:] // 5, 6 dropped; 7 still listed by this fake (closed by the run)
 	f.issues["X"] = f.issues["X"][2:]
-	res, err = Sync(g, Repo{Name: "X"}, now, true)
+	res, err = Sync(g, Repo{Name: "X"}, now, true, nil)
 	if err != nil || len(f.writes) != 0 || res.Opened != 2 {
 		t.Errorf("a dry run writes nothing: %v %v", f.writes, err)
 	}
@@ -254,7 +256,7 @@ func TestMainAndReport(t *testing.T) {
 	o := out.String()
 	if rc != 0 || strings.Contains(o, "secretproj") || !strings.Contains(o, "private repository 1: code scanning alert #4: opened") ||
 		!strings.Contains(o, "pub: secret scanning alert #1: opened") || strings.Contains(o, "old:") ||
-		!strings.Contains(o, "security-alerts: 3 repositories, 2 open alerts; opened 2, updated 0, closed 0 tickets") ||
+		!strings.Contains(o, "security-alerts: 3 repositories, 2 open alerts; opened 2, updated 0, closed 0 tickets, 0 new left for later runs") ||
 		!strings.Contains(o, "report: opened #") {
 		t.Errorf("rc %d\n%s\n%s", rc, o, errb.String())
 	}
@@ -332,5 +334,85 @@ func TestFromJSON(t *testing.T) {
 	}
 	if _, err := FromJSON(CodeScanning, map[string]any{"number": "x"}); err == nil {
 		t.Error("a malformed item is an error")
+	}
+}
+
+func sc(repo string, n int, rule, created string) map[string]any {
+	return map[string]any{"number": n, "html_url": fmt.Sprintf("https://github.com/swarm-routing/%s/security/code-scanning/%d", repo, n),
+		"created_at": created, "tool": map[string]any{"name": "Scorecard"},
+		"rule": map[string]any{"id": rule, "description": "score is 0", "security_severity_level": "high"}}
+}
+
+// The maintainer's decisions of 2026-11-22 (#629): every vulnerability is
+// P1; Scorecard findings are one ticket per check across the org in .github
+// (security + chore, P2); a run opens at most --max-new new tickets, the
+// highest priority and the oldest first, and says how many wait.
+func TestGroupsPriorityAndCap(t *testing.T) {
+	f := &fakeOrg{
+		repos: []map[string]any{{"name": ".github"}, {"name": "A"}, {"name": "B"}, {"name": "hidden", "private": true}},
+		alerts: map[string][]map[string]any{
+			"A code-scanning/alerts": {
+				sc("A", 1, "BranchProtectionID", "2026-11-01T00:00:00Z"), sc("A", 2, "TokenPermissionsID", "2026-11-02T00:00:00Z"),
+				sc("A", 3, "CodeReviewID", "2026-11-03T00:00:00Z"),
+				cs("A", 5, "CodeQL", "low", "2026-01-01T00:00:00Z"),
+			},
+			"B code-scanning/alerts": {
+				sc("B", 1, "BranchProtectionID", "2026-11-05T00:00:00Z"), sc("B", 2, "CodeReviewID", "2026-11-06T00:00:00Z"),
+				cs("B", 6, "CodeQL", "high", "2026-11-10T00:00:00Z"),
+			},
+			"hidden code-scanning/alerts": {sc("hidden", 1, "BranchProtectionID", "2026-10-10T00:00:00Z")},
+		},
+		status: map[string]int{}, issues: map[string][]map[string]any{},
+	}
+	g := f.server(t)
+	env := func(string) string { return "tok" }
+	run := func(args ...string) string {
+		var out, errb bytes.Buffer
+		if rc := Main(append(args, "--now", "2026-11-17T00:00:00Z"), env, g.Client, g.API, &out, &errb); rc != 0 {
+			t.Fatalf("rc %d: %s %s", rc, out.String(), errb.String())
+		}
+		return out.String()
+	}
+	o := run("--max-new", "3")
+	if !strings.Contains(o, "opened 3, updated 0, closed 0 tickets, 2 new left for later runs") {
+		t.Errorf("the cap: %s", o)
+	}
+	for _, r := range []string{"A", "B", "hidden"} {
+		for _, i := range f.issues[r] {
+			if strings.Contains(i["body"].(string), "Scorecard") || strings.Contains(fmt.Sprint(i["labels"]), "chore") {
+				t.Errorf("%s: no per-repository Scorecard ticket: %v", r, i["title"])
+			}
+		}
+	}
+	// the two code findings are P1 whatever their severity, and go first
+	if len(f.issues["A"]) != 1 || len(f.issues["B"]) != 1 ||
+		!strings.Contains(fmt.Sprint(f.issues["A"][0]["labels"]), "priority:P1") ||
+		!strings.Contains(fmt.Sprint(f.issues["B"][0]["labels"]), "priority:P1") {
+		t.Errorf("code findings: A %v B %v", f.issues["A"], f.issues["B"])
+	}
+	// the third slot: the check with the oldest alert (the private repository's branch protection)
+	gh := f.issues[".github"]
+	if len(gh) != 1 || !strings.Contains(gh[0]["title"].(string), "BranchProtectionID: 3 repositories") {
+		t.Fatalf(".github: %v", gh)
+	}
+	body, labels := gh[0]["body"].(string), fmt.Sprint(gh[0]["labels"])
+	if !strings.Contains(labels, "security") || !strings.Contains(labels, "chore") || !strings.Contains(labels, "priority:P2") ||
+		!strings.Contains(body, "| A | [#1](https://github.com/swarm-routing/A/security/code-scanning/1)") ||
+		!strings.Contains(body, "| B | [#1](") || !strings.Contains(body, "| private repository 1 | #1 |") ||
+		strings.Contains(body, "hidden") || strings.Contains(o, "hidden") || !strings.Contains(body, "templates/rulesets/") {
+		t.Errorf("the group ticket:\n%s\n%s", labels, body)
+	}
+	// the next run opens what waited
+	o = run()
+	if !strings.Contains(o, "opened 2, updated 0, closed 0 tickets, 0 new left for later runs") || len(f.issues[".github"]) != 3 {
+		t.Errorf("second run: %s", o)
+	}
+	// a check that no repository fails any more is closed
+	f.alerts["A code-scanning/alerts"] = f.alerts["A code-scanning/alerts"][:1]
+	f.alerts["B code-scanning/alerts"] = f.alerts["B code-scanning/alerts"][:1]
+	f.writes = nil
+	o = run()
+	if !strings.Contains(o, "Scorecard CodeReviewID: close #") || !strings.Contains(o, "Scorecard TokenPermissionsID: close #") {
+		t.Errorf("closed checks: %s", o)
 	}
 }

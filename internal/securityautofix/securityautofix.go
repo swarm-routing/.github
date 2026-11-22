@@ -248,6 +248,13 @@ var settingsFix = map[string]string{
 	"SecurityPolicyID": "`SECURITY.md` from org-sync's template",
 }
 
+// SettingsFix is the settings-as-code change that answers a Scorecard
+// check, where one exists.
+func SettingsFix(rule string) (string, bool) {
+	fix, ok := settingsFix[rule]
+	return fix, ok
+}
+
 // ProposalBody is the comment a policy finding gets.
 func ProposalBody(a Alert) string {
 	rule := clip(a.Rule.ID, 60)

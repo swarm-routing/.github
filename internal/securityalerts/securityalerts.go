@@ -40,6 +40,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -295,18 +296,15 @@ func (a Alert) PastSLA(now time.Time) bool {
 	return false
 }
 
-// Priority from the severity, P1 for a secret or past the SLA.
+// Priority (maintainer decision 2026-11-22, #629): every reported
+// vulnerability (a code finding, a Dependabot alert, a leaked secret) is P1
+// whatever its severity, which the ticket still states; a policy finding
+// (Scorecard) is P2, P1 past its SLA.
 func (a Alert) Priority(now time.Time) string {
-	if a.Kind == SecretScanning || a.PastSLA(now) {
-		return "P1"
-	}
-	switch a.Severity {
-	case "critical", "high":
-		return "P1"
-	case "medium":
+	if a.Policy() && !a.PastSLA(now) {
 		return "P2"
 	}
-	return "P3"
+	return "P1"
 }
 
 // clip quotes alert text: collapsed, clipped, no backticks, no @-mentions.
@@ -487,6 +485,9 @@ type Result struct {
 	Alerts   []Alert
 	Unread   []string // kinds whose listing could not be read
 	Opened   int
+	Deferred int     // new alerts left for a later run (the Budget)
+	New      []Alert // the alerts with no ticket yet (policy findings excepted)
+	Policy   []Alert // the policy findings (Scorecard), ticketed per check across the org
 	Updated  int
 	Closed   int
 	Adopted  int
@@ -494,8 +495,22 @@ type Result struct {
 	Messages []string
 }
 
-// Sync reads one repository's alerts and keeps its tickets.
-func Sync(g GitHub, r Repo, now time.Time, dry bool) (Result, error) {
+// Budget bounds the new tickets of a run (#629): only the alerts in Allow
+// get a ticket now; the rest wait for a later run. Main fills Allow with the
+// run's MaxNew highest-priority, oldest new tickets across the org, so a
+// first listing of hundreds of alerts lands over hours without tripping
+// GitHub's content-creation limits or flooding anyone's notifications.
+// Updates and closes are never bounded. A nil Budget is no bound.
+type Budget struct {
+	Allow map[string]bool // alert URLs, and "policy:<rule>" for a policy group
+}
+
+// DefaultMaxNew is the default bound on new tickets per run.
+const DefaultMaxNew = 25
+
+// Sync reads one repository's alerts and keeps its tickets, opening new
+// ones within b.
+func Sync(g GitHub, r Repo, now time.Time, dry bool, b *Budget) (Result, error) {
 	res := Result{Repo: r}
 	full := Org + "/" + r.Name
 	read := map[string]bool{}
@@ -536,14 +551,28 @@ func Sync(g GitHub, r Repo, now time.Time, dry bool) (Result, error) {
 		}
 	}
 	open := map[string]bool{}
-	sort.Slice(res.Alerts, func(i, j int) bool {
-		if res.Alerts[i].Kind != res.Alerts[j].Kind {
-			return res.Alerts[i].Kind < res.Alerts[j].Kind
+	// the highest priority first, then the oldest, so a bounded run opens
+	// what matters most
+	sort.SliceStable(res.Alerts, func(i, j int) bool {
+		x, y := res.Alerts[i], res.Alerts[j]
+		if px, py := x.Priority(now), y.Priority(now); px != py {
+			return px < py
 		}
-		return res.Alerts[i].Number < res.Alerts[j].Number
+		if !x.Created.Equal(y.Created) {
+			return x.Created.Before(y.Created)
+		}
+		if x.Kind != y.Kind {
+			return x.Kind < y.Kind
+		}
+		return x.Number < y.Number
 	})
 	for _, a := range res.Alerts {
 		open[a.URL] = true
+		if a.Policy() {
+			// one ticket per check across the org, in swarm-routing/.github (SyncPolicy)
+			res.Policy = append(res.Policy, a)
+			continue
+		}
 		title, body, labels := Title(a), Body(a, now), Labels(a, now)
 		t, ok := byURL[a.URL]
 		if !ok {
@@ -556,6 +585,11 @@ func Sync(g GitHub, r Repo, now time.Time, dry bool) (Result, error) {
 			}
 		}
 		if !ok {
+			res.New = append(res.New, a)
+			if b != nil && !b.Allow[a.URL] {
+				res.Deferred++
+				continue
+			}
 			res.Opened++
 			msg := fmt.Sprintf("%s alert #%d: open a ticket (%s)", a.Kind, a.Number, "priority:"+a.Priority(now))
 			if !dry {
@@ -754,16 +788,20 @@ func Report(g GitHub, body string, dry bool) (string, error) {
 	return fmt.Sprintf("report: opened #%d", got.Number), nil
 }
 
-const usage = `usage: security-alerts [--repos A,B] [--report] [--dry-run] [--now RFC3339]
+const usage = `usage: security-alerts [--repos A,B] [--report] [--dry-run] [--max-new N] [--now RFC3339]
 
 Keeps one issue (label security) per open code-scanning, Dependabot and
-secret-scanning alert in every org repository (or --repos), with the org
-App's token in GH_TOKEN; --report also refreshes the summary issue in
-swarm-routing/.github. --dry-run only reads. Exit 0 done, 1 failed, 2 usage.`
+secret-scanning alert in its repository, and one per Scorecard check across
+the org in swarm-routing/.github, for every org repository (or --repos),
+with the org App's token in GH_TOKEN; --report also refreshes the summary
+issue there. A run opens at most --max-new new tickets (default 25), the
+highest priority and then the oldest first; the rest wait for the next run.
+--dry-run only reads. Exit 0 done, 1 failed, 2 usage.`
 
 // Main is the command.
 func Main(args []string, getenv func(string) string, client *http.Client, api string, stdout, stderr io.Writer) int {
 	dry, report, nowS := false, false, ""
+	maxNew := DefaultMaxNew
 	var names []string
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -771,6 +809,14 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 			dry = true
 		case a == "--report":
 			report = true
+		case a == "--max-new" && i+1 < len(args):
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil || n < 0 {
+				fmt.Fprintln(stderr, usage)
+				return 2
+			}
+			maxNew = n
+			i++
 		case (a == "--repos" || a == "--now") && i+1 < len(args):
 			if a == "--repos" {
 				for _, n := range strings.Split(args[i+1], ",") {
@@ -810,19 +856,41 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 		fmt.Fprintln(stderr, "security-alerts:", m.Error(err))
 		return 1
 	}
+	// the plan: read every repository first (nothing written), so the run's
+	// new tickets are the highest-priority, oldest ones across the org
+	var planned []Result
+	for _, r := range repos {
+		if res, err := Sync(g, r, now, true, nil); err == nil {
+			planned = append(planned, res)
+		}
+	}
+	groups := Groups(planned)
+	ptickets, err := policyTickets(g)
+	if err != nil {
+		fmt.Fprintln(stderr, "security-alerts: the policy tickets:", m.Error(err))
+		return 1
+	}
+	budget, _ := Plan(planned, groups, ptickets, maxNew, now)
 	var results []Result
-	failed, alerts, opened, updated, closed, unread := 0, 0, 0, 0, 0, 0
+	failed, alerts, opened, updated, closed, unread, deferred := 0, 0, 0, 0, 0, 0, 0
+	mayClose := true
 	fixes := map[string]int{}
 	for _, r := range repos {
 		name := m.Repo(r.Name, r.Private, Org+"/"+r.Name, r.Name)
-		res, err := Sync(g, r, now, dry)
+		res, err := Sync(g, r, now, dry, budget)
 		for _, msg := range res.Messages {
 			fmt.Fprintf(stdout, "%s: %s\n", name, m.Scrub(msg))
 		}
 		if err != nil {
 			failed++
+			mayClose = false
 			fmt.Fprintf(stdout, "%s: FAILED: %s\n", name, m.Error(err))
 			continue
+		}
+		for _, u := range res.Unread {
+			if strings.HasPrefix(u, CodeScanning+" ") && !r.Private {
+				mayClose = false // a public repository's code scanning unread: its Scorecard alerts unknown
+			}
 		}
 		if report {
 			n, err := fixesMerged(g, r.Name, now)
@@ -837,16 +905,27 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 		}
 		alerts += len(res.Alerts)
 		opened += res.Opened
+		deferred += res.Deferred
 		updated += res.Updated
 		closed += res.Closed
 		results = append(results, res)
 	}
+	po, pu, pc, pd, pmsgs, perr := SyncPolicy(g, Groups(results), ptickets, budget, &m, now, dry, mayClose)
+	for _, msg := range pmsgs {
+		fmt.Fprintf(stdout, "%s: %s\n", PolicyRepo, m.Scrub(msg))
+	}
+	if perr != nil {
+		failed++
+		fmt.Fprintf(stdout, "%s: FAILED: the policy tickets: %s\n", PolicyRepo, m.Error(perr))
+	}
+	opened, updated, closed, deferred = opened+po, updated+pu, closed+pc, deferred+pd
 	verb := ""
 	if dry {
 		verb = "would have "
 	}
-	fmt.Fprintf(stdout, "security-alerts: %d repositories, %d open alerts; %sopened %d, updated %d, closed %d tickets; "+
-		"%d with an unreadable listing, %d failed\n", len(repos), alerts, verb, opened, updated, closed, unread, failed)
+	fmt.Fprintf(stdout, "security-alerts: %d repositories, %d open alerts; %sopened %d, updated %d, closed %d tickets, "+
+		"%d new left for later runs; %d with an unreadable listing, %d failed\n", len(repos), alerts, verb, opened, updated, closed,
+		deferred, unread, failed)
 	if report {
 		out, err := Report(g, ReportBody(results, fixes, &m, now), dry)
 		if err != nil {
