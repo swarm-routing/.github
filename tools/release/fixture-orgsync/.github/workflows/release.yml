@@ -1,0 +1,9 @@
+# The release self-test's org-sync caller (release-selftest.yml, leg
+# `release-orgsync`, #810): never run (GitHub runs only the root's
+# .github/workflows/); it is here so org-sync renders the README's
+# "Releases & citing" for a repository that calls reusable-release.yml.
+name: release
+on: workflow_dispatch
+jobs:
+  release:
+    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@71abce8269d2bb1d71f36b4aea21c221d174319d # main@2026-11-22

@@ -1,0 +1,13 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+# The release self-test's org-sync caller (.github/workflows/release-selftest.yml,
+# leg `release-orgsync`, #810): a first release (no v* tag, no CHANGELOG.md)
+# of a repository whose README is org-managed. Never released: a dry run.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.0"
+version_scheme = "semver"
+tag_format = "v$version"
+major_version_zero = true
+update_changelog_on_bump = true
+version_files = ["VERSION"]

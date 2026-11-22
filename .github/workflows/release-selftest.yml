@@ -28,6 +28,16 @@ name: Release self-test
 # 0.1.0. The `release` leg leaves the input false, so it proves the default
 # unchanged.
 #
+# The `release-orgsync` leg (#810) dry-runs it on
+# tools/release/fixture-orgsync/, a first release (no tag, no CHANGELOG.md)
+# of a caller whose README "Releases & citing" is org-managed at the commit
+# its .github/org-sync.lock pins. `check-orgsync` requires the bump commit to
+# carry CHANGELOG.md, the README's new link to it, and `org_sync.py check`
+# green at that pin; and the same check red on the bump commit with the
+# README as before the bump (what a bump without org-sync proposed). It
+# passes `increment: PATCH`, which a first release does not use (it is
+# 0.1.0), so its artifact is named apart from the `release` leg's.
+#
 # The `zenodo` job then archives that release's assets as the release job's
 # opt-in `zenodo` job does (#232), with this checkout's
 # tools/zenodo/zenodo.py `publish-release`, against the self-test's fake
@@ -280,6 +290,78 @@ jobs:
           git -C "$RUNNER_TEMP/g" bundle list-heads "$PWD/release.bundle" | grep -q ' refs/tags/v0.33.0$'
           test -z "$(git ls-remote --tags "${SERVER}/${REPO}.git" "refs/tags/${TAG}")"
           echo "dry run ${TAG} (first-release-from-config from 0.32.2): complete, verified, nothing pushed or published" >> "$GITHUB_STEP_SUMMARY"
+
+  release-orgsync:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    # The same grant as `release`.
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/reusable-release.yml
+    with:
+      working-directory: tools/release/fixture-orgsync
+      build: make -f ../fixture/Makefile dist
+      dry-run: true
+      increment: PATCH   # unused by a first release (0.1.0); names the artifact apart
+      notify-site: false
+      notify-org: false
+
+  check-orgsync:
+    needs: release-orgsync
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      MODE: ${{ needs.release-orgsync.outputs.mode }}
+      VER: ${{ needs.release-orgsync.outputs.version }}
+      TAG: ${{ needs.release-orgsync.outputs.tag }}
+      ART: ${{ needs.release-orgsync.outputs.artifact }}
+      PR_URL: ${{ needs.release-orgsync.outputs.pull-request }}
+      FX: tools/release/fixture-orgsync
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.release-orgsync.outputs.artifact }}
+          path: ${{ runner.temp }}/rel
+      - name: a first release's bump commit passes org_sync.py check at the pin
+        env:
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -x
+          test "$MODE" = dry-run && test -z "$PR_URL"
+          test "$VER" = 0.1.0 && test "$TAG" = v0.1.0
+          case "$ART" in *-patch) ;; *) exit 1 ;; esac
+          test ! -e "$FX/CHANGELOG.md"
+          git fetch -q "$RUNNER_TEMP/rel/meta/release.bundle" "refs/tags/${TAG}:refs/tags/${TAG}"
+          git -c advice.detachedHead=false checkout -q --detach "$TAG"
+          test "$(git rev-parse HEAD^)" = "$GITHUB_SHA"
+          grep -q '^## v0.1.0 ' "$FX/CHANGELOG.md"
+          test "$(cat "$FX/VERSION")" = 0.1.0
+          grep -qF 'Versions follow [SemVer](https://semver.org) ([CHANGELOG.md](CHANGELOG.md)).' "$FX/README.md"
+          # the templates and tools at the fixture's pin, as check / org-sync reads them
+          pin="$(sed -nE 's/^commit = "([0-9a-f]{40})"[[:space:]]*$/\1/p' "$FX/.github/org-sync.lock")"
+          org="$RUNNER_TEMP/org"
+          git clone -q --filter=blob:none --no-checkout "${SERVER}/swarm-routing/.github" "$org"
+          git -C "$org" -c advice.detachedHead=false checkout -q --detach "$pin"
+          python3 -I "$org/tools/org-sync/org_sync.py" check "$FX"
+          # what a bump without org-sync proposed: the README as before it
+          git show "HEAD^:$FX/README.md" > "$FX/README.md"
+          if python3 -I "$org/tools/org-sync/org_sync.py" check "$FX" > "$RUNNER_TEMP/before.txt"; then exit 1; fi
+          grep -q 'README.md#citing: update' "$RUNNER_TEMP/before.txt"
+          test -z "$(git ls-remote --tags "${SERVER}/${REPO}.git" "refs/tags/${TAG}")"
+          echo "dry run ${TAG} (a first release, org-managed README): the bump commit links CHANGELOG.md and passes org_sync.py check at ${pin:0:12}, nothing pushed or published" >> "$GITHUB_STEP_SUMMARY"
 
   zenodo:
     needs: release
