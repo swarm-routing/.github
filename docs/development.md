@@ -24,6 +24,7 @@ contract); how issues and pull requests work is
 | ruff | `RUFF_VERSION` in [`tools/versions.env`](../tools/versions.env) (0.17.5) | Python lint and format |
 | Go | go.mod's `toolchain` version (1.27.4), as `GOTOOLCHAIN=local` in CI | the Go tools (`cmd/`, `internal/`) and the go-ci fixtures |
 | staticcheck, govulncheck | `STATICCHECK_VERSION`, `GOVULNCHECK_VERSION` in `tools/versions.env` | the Go checks of reusable-go-ci.yml |
+| clang-format | `CLANG_FORMAT_VERSION` in `tools/versions.env` (major 18), as `clang-format` on PATH | `make lint` in a C++ repository, as the clang-format-18 check of reusable-ns3-ci.yml |
 | Docker | any recent | only to build the `ci-tools` image locally |
 | actionlint, shellcheck | `pip install actionlint-py==1.7.12.25 shellcheck-py==0.10.0.1` | workflow lint (actionlint also shellchecks `run:` blocks) |
 | GitHub CLI `gh`, logged in | any recent | only the read-only runs against the real org, and `epics.py` |
