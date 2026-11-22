@@ -82,7 +82,7 @@ jobs:
       PR_URL: ${{ needs.release.outputs.pull-request }}
     steps:
       - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
           egress-policy: audit
@@ -147,7 +147,7 @@ jobs:
       contents: read
     steps:
       - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
           egress-policy: audit
@@ -188,7 +188,7 @@ jobs:
       PR_URL: ${{ needs.release-major.outputs.pull-request }}
     steps:
       - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
           egress-policy: audit
@@ -250,7 +250,7 @@ jobs:
       PR_URL: ${{ needs.release-config.outputs.pull-request }}
     steps:
       - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
           egress-policy: audit
@@ -292,7 +292,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Harden the runner (audit egress)
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
           egress-policy: audit
