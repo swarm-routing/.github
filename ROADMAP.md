@@ -950,7 +950,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#467](https://github.com/swarm-routing/.github/issues/467) release automation, less duplication, correctness guards (2026-11 improvement round) | In progress | 11 / 23 |
 | [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | In progress | 1 / 2 |
 | [#35](https://github.com/swarm-routing/.github/issues/35) code quality across the org — order of work and maintainer decisions | Planned | no sub-issues yet |
-| [#48](https://github.com/swarm-routing/.github/issues/48) Other simulators: container and tooling repos for OMNeT++/INET and Veins (deferred; ns-3 first) | Planned | 0 / 1 |
+| [#48](https://github.com/swarm-routing/.github/issues/48) Other simulators: container and tooling repos for OMNeT++/INET and Veins (deferred; ns-3 first) | Planned | 0 / 2 |
 | [#216](https://github.com/swarm-routing/.github/issues/216) every public repository releases and is archived on zenodo: sim-containers, benchmarks, skills, the site and .github too | Planned | 0 / 5 |
 | [#252](https://github.com/swarm-routing/.github/issues/252) A swarm protocol of our own, designed from what the five implementations measured | Planned | 0 / 4 |
 | [#272](https://github.com/swarm-routing/.github/issues/272) Routing security: one threat model, shared adversaries, default-off defences per protocol, secure comparators | Planned | 0 / 5 |
@@ -978,7 +978,7 @@ Every epic of every public repository, open first. A status is derived from the 
 |------|--------|-------------------|
 | [#64](https://github.com/swarm-routing/AntHocNet/issues/64) Abstract discrete-event testbench in core/tests — trend regression without a simulator | In progress | 1 / 2 |
 | [#109](https://github.com/swarm-routing/AntHocNet/issues/109) Publish the AntHocNet implementation (reproducibility + cross-simulator paper) | In progress | 1 / 4 |
-| [#328](https://github.com/swarm-routing/AntHocNet/issues/328) 5-star open-source packaging — visibility, supply-chain trust, onboarding, docs site | In progress | 19 / 25 |
+| [#328](https://github.com/swarm-routing/AntHocNet/issues/328) 5-star open-source packaging — visibility, supply-chain trust, onboarding, docs site | In progress | 20 / 25 |
 | [#1068](https://github.com/swarm-routing/AntHocNet/issues/1068) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 1 |
 | [#32](https://github.com/swarm-routing/AntHocNet/issues/32) Add an OMNeT++/INET adapter (third simulator target) | Planned | 0 / 4 |
 | [#65](https://github.com/swarm-routing/AntHocNet/issues/65) CORE/EMANE emulation target — run the real core as a Linux daemon | Planned | 0 / 3 |
@@ -1150,7 +1150,9 @@ Every epic of every public repository, open first. A status is derived from the 
 
 ### [swarm-adapter-omnet](https://github.com/swarm-routing/swarm-adapter-omnet)
 
-No open epic: the work here is tracked as single issues.
+| Epic | Status | Sub-issues closed |
+|------|--------|-------------------|
+| [#2](https://github.com/swarm-routing/swarm-adapter-omnet/issues/2) OMNeT++/INET adapter of swarm-core's ports (deferred: decisions 23, 24) | Planned | no sub-issues yet |
 
 ### [swarm-core](https://github.com/swarm-routing/swarm-core)
 
@@ -1179,8 +1181,8 @@ No open epic: the work here is tracked as single issues.
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#1](https://github.com/swarm-routing/swarm-web-ui/issues/1) swarm-web-ui MVP — Offline Replay & Benchmark Explorer | Planned | no sub-issues yet |
-| [#2](https://github.com/swarm-routing/swarm-web-ui/issues/2) Local & Remote Execution Control Plane (swarm-web-ui/daemon) | Planned | no sub-issues yet |
+| [#1](https://github.com/swarm-routing/swarm-web-ui/issues/1) swarm-web-ui MVP — Offline Replay & Benchmark Explorer | In progress | 1 / 10 |
+| [#2](https://github.com/swarm-routing/swarm-web-ui/issues/2) Local & Remote Execution Control Plane (swarm-web-ui/daemon) | Planned | 0 / 8 |
 
 ### [Termite](https://github.com/swarm-routing/Termite)
 
