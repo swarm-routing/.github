@@ -2036,7 +2036,19 @@ examples and the verify commands (`cosign verify`, `gh attestation verify`).
   `startup_failure` on a caller (ADR-0002, amended 2026-11-17). The image has
   no git and no `gh`: a tool that needs either reads git's files itself, as
   `cmd/check-headers` does. Dependabot keeps both bases
-  current (`.github/dependabot.yml`).
+  current (`.github/dependabot.yml`). No pin is bumped by hand (#533): the
+  promote job dispatches org-bot's `ci-tools-digest`, which resolves
+  `ci-tools:latest` to its digest, verifies its keyless signature by
+  `ci-tools-image.yml` on `main`, and runs `cmd/ci-tools-digest` from that
+  digest: every `ghcr.io/swarm-routing/ci-tools@sha256` pin under
+  `.github/workflows/` and `.github/actions/` (here also `templates/`) of
+  every public repository moves to it, only forward (each image's
+  `org.opencontainers.image.revision` label, compared on this repository),
+  in one pull request per repository on `org-bot/ci-tools-digest`
+  (`chore(deps): bump ci-tools to sha-<sha7>`, auto-merge on). A pin whose
+  image cannot be placed is kept and named, an open hand PR bumping the
+  same pin holds the repository, and an org-managed file moves with its
+  template here. The daily org-bot run is the backstop.
 
 ## Quality gates
 
