@@ -968,11 +968,19 @@ by hand). If such a PR exists anyway, close it in favour of org-bot's, or
 update its branch from `main`, run `org_sync.py apply .` on it (from a
 checkout of `swarm-routing/.github` next to the repository:
 `python3 ../.github/tools/org-sync/org_sync.py apply .`) and push. Seeds
-(SECURITY.md, the Makefile, LICENSING.md, CITATION.cff, …) are the
-exception: once written they belong to the repository, a template change
-never reaches them and org-bot's PR does not bring it in, so a seed is
-changed in each repository (or rewritten from the template with
-`org_sync.py reseed FILE`). Text a
+(SECURITY.md, the Makefile, LICENSING.md, CITATION.cff, …) belong to the
+repository once written, so their shared parts are managed sections inside
+them (maintainer decision on #615, option (a)): the Makefile's `org-tools`
+block at its end (the org tooling's variables, `org-tools`,
+`org-sync-check`, `pre-push`) and LICENSING.md's `licence-texts` block,
+which org-bot's refresh brings in like any section; the recipes and the
+rows stay the repository's. A seed written before a block existed carries
+its text unmarked: `apply` adopts it only when it is the org's text byte
+for byte, and a piece the repository changed is a conflict, never
+rewritten. A seed still exactly as the pinned templates rendered it (never
+edited) takes today's render in the same PR (`apply --reseed-untouched`);
+an edited seed is listed there and left alone (`org_sync.py reseed FILE`
+takes the template on request). Text a
 repository owns outside the markers is likewise edited in that repository.
 
 A repository with its own `.github/ISSUE_TEMPLATE/` (a form of its own, as
