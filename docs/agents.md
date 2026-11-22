@@ -39,7 +39,10 @@ In the order the 2026-11-22 audit ranked them:
    PR with `tools/pr-status/pr_status.py` rather than raw activity (#794).
 4. **Run the script, read its verdict** (AntHocNet ADR-0014; #286 adds the
    issue index and readers).
-5. **Keep agent files under their budget** (`check_docs.py`; #793).
+5. **Keep agent files under their budget**: `check_docs.py` fails an
+   AGENTS.md whose org-sync sections pass 23,200 B, and its self-test fails a
+   template PR that would (#793). A template PR states its byte delta
+   (`token_audit.py files` before and after).
 
 ## Measure
 
@@ -52,3 +55,169 @@ python3 -I ../skills/tools/token-audit/token_audit.py transcript ~/.claude/proje
 
 Compare a task with and without the change: the first request's context, the
 totals, and the calls and bytes per tool.
+
+## Agent pitfalls in full
+
+Every repository's AGENTS.md states each pitfall in one or two sentences
+(`templates/agents/agent-defaults.md`, kept under its budget, #793). This is
+the long form each line was shortened from on 2026-11-22, with the detail and
+the story; CONTRIBUTING holds the procedures it names.
+
+- **Before every push, run the repository's `make check`** (where it has
+  none, the commands of its "Build & verify" section; `make pre-push
+  TITLE='…'` where the Makefile has it) **and check the PR title** is a
+  lowercase Conventional Commit, `type(scope)!: subject` with the type one
+  of `feat fix docs style refactor perf test build ci chore revert` and a
+  subject that starts lowercase. A check that goes red because a step was
+  skipped costs a whole CI round (swarm-routing/.github#586). Never add
+  commits to an unrelated PR to re-apply org-sync or fix template drift:
+  each repository is checked at the template commit its
+  `.github/org-sync.lock` pins, and org-bot's refresh PR moves the pin and
+  the text together.
+- `gh api … -F body=@file` reads the file; `-f body=@file` posts the literal
+  text `@file`.
+- When the permission system refuses a command (a merge, say), stop and report
+  it. Never retry it another way, and never ask another agent to run it.
+- Edit files with the editor tools, never a shell heredoc or `sed -i`, and
+  touch one repository per command: the permission system refuses the
+  others (swarm-routing/.github#578).
+- Stage files by name, never `git add -A`, and keep build output in
+  `.gitignore` (`build/core-local/` reached three repositories,
+  swarm-routing/.github#644).
+- A Go test reads only files under `cmd/` or `internal/` (`testdata/`):
+  the image build sees nothing else (swarm-routing/.github#587).
+- Clean up only your own directory, never a shared one
+  (swarm-routing/.github#644).
+- A PR body's `Closes #N` closes the issue on merge; write `Part of #N` while
+  acceptance criteria remain open.
+- Before saying a tool or check is missing, look at `main` (`git fetch`,
+  `origin/main`), not a stale local checkout.
+- In an issue, PR or comment, write every issue of another repository in
+  full, `swarm-routing/<repo>#N`, also inside a list or a range. A bare `#N`
+  links to the repository the text is in: in
+  `swarm-routing/AntHocNet#65, #151` the second number points at this
+  repository's #151 (swarm-routing/.github#277). An ns-3 item on GitHub is
+  its full GitLab URL (or a link whose text is `nsnam/ns-3-dev#N`); in
+  anything bound for ns-3's GitLab, an item of ours is its full GitHub URL,
+  never `swarm-routing/<repo>#N` or a bare `#N` / `!N` (CONTRIBUTING "ns-3
+  bugs (RCAPA)").
+- A sentence in `ROADMAP.md` or an AGENTS.md that calls an issue done is not
+  evidence: read the issue's acceptance criteria. On 2026-11-12 nine issues
+  described as done had open criteria (swarm-routing/.github#274).
+- Change text inside `org-sync:begin/end` markers only through the template
+  in `swarm-routing/.github` `templates/`: one PR there, then org-bot's
+  `bot/org-sync` refresh PR in each repository. A hand edit per repository
+  stays red on `check / org-sync` (swarm-routing/.github#236).
+- In a repository with a merge queue, merge by enabling auto-merge (squash);
+  a direct merge (`PUT pulls/<n>/merge`) is refused with HTTP 405. Only the
+  required checks (`gh api 'repos/{owner}/{repo}/rules/branches/main'`, which
+  `gh` fills from the checkout) gate a merge: a red or pending report-only
+  check (`codecov/patch`, Sonar) is triaged, not waited on. `dco` (not
+  required, `pull_request` only) passes at once on a member's, an agent's or
+  the org bot's PR (swarm-routing/.github#586); merge an outside
+  contributor's PR only after `dco` passed on the head that merges, and
+  never push to it: ask them, or follow up after the merge
+  (swarm-routing/.github#288). A maintainer who must push to it first
+  disables auto-merge or removes it from the queue, and re-enables only
+  after `dco` passed on the new head.
+- `review / coderabbit` is a required check (the review gate,
+  swarm-routing/.github#294): it passes once CodeRabbit has reviewed the PR,
+  once it says it will not, for a draft, or 30 minutes after the PR opened
+  (then with one comment). So auto-merge may be enabled at once: the merge
+  waits for the gate, and the ruleset holds it while a CodeRabbit thread is
+  unresolved. Still read every thread and fix or answer it before resolving;
+  call a PR free of threads only after CodeRabbit has posted and
+  `pulls/N/comments` and the reviews show none
+  (swarm-routing/ns3-upstream-report#41).
+  Where the gate is not required yet (`gh api
+  'repos/{owner}/{repo}/rules/branches/main'` does not list it), wait first
+  with `python3 -I ../.github/tools/pr-status/pr_status.py gate REPO#N`,
+  which waits for CodeRabbit alone (swarm-routing/.github#238).
+- Never add a `Signed-off-by` trailer, for the maintainer or anyone else: a
+  DCO sign-off is a person's own certification (CONTRIBUTING "Outside
+  contributions").
+- Leave a stale branch (a closed PR's head, a validation branch, a
+  superseded bot branch) to org-bot's daily `branch-sweep`, which deletes it
+  once its PR has been closed for 2 days, or after 7 days without a commit
+  for a `claude/*` or `org-bot/*` branch that never had a PR
+  (swarm-routing/.github#595). Agent sessions cannot delete branches; never
+  ask the maintainer to delete one.
+- Releases are cut on request only: dispatch the release `bump` when the
+  maintainer asks, once the version's `release:vX.Y.Z` issues are done and
+  its exit criteria in the ladder (`docs/roadmap.md`, or the org ROADMAP's
+  release train until it lands) are met; never approve a gated publish. A
+  failed publish is recovered with "Re-run all jobs", never "Re-run failed
+  jobs" (CONTRIBUTING "Cutting a release"). Never type a release's DOI: read
+  it from Zenodo. A public repository's release reaches the site by itself:
+  a `[release-sync] <repo> <tag>` issue opens in
+  `swarm-routing/swarm-routing.github.io` and a `release-sync.yml` run named
+  `Release sync swarm-routing/<repo> <tag>` ends green. If, an hour after
+  the release, either is missing, org-bot's hourly `release-sync-watch`
+  dispatches that run again within the next hour (swarm-routing/.github#571;
+  CONTRIBUTING "Cutting a release"); never dispatch it by hand, and the
+  site's weekly Monday run is only the backstop.
+- Cite a paper in a public issue, PR or doc by its `https://doi.org/<DOI>`
+  link, read from its record (`lit-search` confirms it), or, for a work with
+  no DOI, by its publisher's or institution's page; never point into or name
+  the private paper library there.
+- Never dismiss a security alert, and never rotate or handle a leaked
+  secret: both are the maintainer's. Every open alert has a `security`
+  ticket kept by the hourly `security-alerts` task (P1 past its SLA), and
+  `security-autofix.yml` opens a test-first fix PR for a code finding and a
+  proposal for a policy finding (swarm-routing/.github#629); review its PR
+  like any other (CONTRIBUTING "Security alerts").
+- An ns-3 bug, or an investigation of one, always gets an RCAPA ticket in
+  swarm-routing/sim-tools first (form *ns-3 bug (RCAPA)*, labels `rcapa` and
+  `ns3-upstream`, ID `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its
+  `docs/ns3-bugs.md` row follow, and every workaround links the ID. Upstream
+  reports go out only through swarm-routing/ns3-upstream-report (CONTRIBUTING
+  "ns-3 bugs (RCAPA)"). A regression in a published library, a version
+  another project consumes (a swarm-core or ns3-tools release through its
+  lock, PyPI, a vcpkg port), gets an RCAPA too, in that library's repository,
+  even when a consumer finds it: ticket first (form *Regression in a release (RCAPA)*,
+  `<PREFIX>-NNN`), then `docs/rcapa/rcapa-<name>.md` and its row in
+  `docs/rcapa/README.md`; the ticket stays open until a release carries the
+  fix. A Docker image gets one only when its composition is the cause.
+  None for a bug that never reached a published version, for changes in
+  .github, the site, skills, benchmarks or ns3-upstream-report, or for a
+  typo with no behaviour; the pins and `git tag --contains <commit>` decide,
+  never memory (CONTRIBUTING "RCAPA").
+
+## Detail cut from the other org sections (#793)
+
+The rules stay in every AGENTS.md; these sentences, cut for size, are their
+detail.
+
+- **Conventions:** the shared release labels are `release:v0.1.0` to
+  `release:v0.4.0` and `release:v1.0.0`; `.github`'s `labels` workflow applies
+  `labels.json` to every repository, private ones included. An issue change
+  that moves the epic lists is an `epic` label, an epic opened, edited,
+  closed or reopened, or a sub-issue closed or reopened; `epics-changed.yml`
+  asks `.github`'s `epics-refresh`, debounced, plus hourly for a sub-issue
+  added or removed. "Make minimal, reviewable changes; update the relevant
+  doc/ADR when you change a documented decision" is now part of *Surgical
+  diffs* (Working defaults).
+- **Git workflow:** the PR-title rule (type list, lowercase subject) lives
+  here once; the pre-push pitfall points to it. A `[settings]` change's push
+  runs `settings-apply.yml`, which asks `repo-settings` in
+  `swarm-routing/.github` to apply that one repository; the daily run only
+  checks, a manual `apply` dispatch is the fallback. A new third-party action
+  goes into `defaults.json` in the same `swarm-routing/.github` PR as the
+  workflow that uses it, otherwise merged there first.
+- **Agent skills:** each skill's own description carries what its table row
+  no longer does (`references`: Crossref, DataCite or Zenodo, DOI links first,
+  the fidelity Sources table and CITATION.cff references generated;
+  `pr-shepherd`: each finding verified and fixed or answered, auto-merge where
+  there is a merge queue; `dependency-bump`: the places that name the release
+  and the `swarm-core / pin` check, org-bot's bump PR first; `release`: the
+  ladder row, dry-run, bump, merge, the Zenodo DOI, the site, consumers'
+  locks, the vcpkg port, PyPI; `sonar-triage`: recorded where the quality gate
+  reads it, never by exclusion or in the UI). Some hosted sessions with several
+  repositories do not read a repository's settings. The section is managed by
+  org-sync: a new row goes into `templates/agents/skills.md`, never into a
+  repository's AGENTS.md (an edit there is undone by the next
+  `org_sync.py apply`).
+- **Response style:** the carve-out keeps byte-for-byte exact code, commands,
+  file paths, error text and benchmark numbers, and keeps commit messages, PR
+  bodies, ADRs, `docs/` and issue / finding threads detailed, because
+  cross-session traceability depends on them.

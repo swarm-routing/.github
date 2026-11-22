@@ -1,37 +1,31 @@
 ## Agent skills
 
-The org's procedures ship as the Claude Code plugin **`swarm-routing`**, from
-[`swarm-routing/skills`](https://github.com/swarm-routing/skills). This
-repository's `.claude/settings.json` enables it, so Claude Code offers a skill
-when the task matches its description. Other agents (Codex, Cursor, Copilot, …)
-install the same skills with `npx skills add swarm-routing/skills`
-([skills.sh](https://skills.sh)). A skill is the procedure; the script does the
-work and runs without it (golden rule 9), so an agent without the skill starts
-from the script; so does a session that does not read this repository's
-settings (some hosted sessions with several repositories do not). If Claude
-Code says the plugin is missing (it was called
-`org-repo` before 2026-11-09, and a cached marketplace keeps the old list), run
-`claude plugin marketplace update swarm-routing` and start a new session.
+The org's procedures ship as the Claude Code plugin **`swarm-routing`**
+([`swarm-routing/skills`](https://github.com/swarm-routing/skills)), which this
+repository's `.claude/settings.json` enables; other agents install the same
+skills with `npx skills add swarm-routing/skills` ([skills.sh](https://skills.sh)).
+A skill is the procedure; its script does the work without it (golden rule 9),
+so an agent without the skill, or a session that does not read this
+repository's settings, starts from the script. Plugin missing (it was
+`org-repo` before 2026-11-09)? Run `claude plugin marketplace update
+swarm-routing` and start a new session.
 
 | Task | Script (any agent) | Skill |
 |------|--------------------|-------|
 | Bring this repository onto the org templates, or fix their drift | `swarm-routing/.github` `tools/org-sync/org_sync.py` | `org-repo` |
 | Write or review a protocol's paper-fidelity sheet (`docs/fidelity.md`) | `swarm-routing/.github` `tools/fidelity/fidelity.py` | `fidelity-sheet` |
 | Check a diff against the org golden rules before a PR or a review | `swarm-routing/.github` `tools/protocol-review/check_invariants.py` | `protocol-review` |
-| Bring the README, AGENTS/CLAUDE/CONTEXT and docs/ to the org documentation standard | `swarm-routing/.github` `tools/docs-review/check_docs.py` | `docs-review` |
-| Find new papers on a topic, or confirm a reference (Crossref, Semantic Scholar, OpenAlex; free sources only) | `swarm-routing/.github` `tools/lit-search/lit_search.py` | `lit-search` |
-| Give a repository its docs/references.bib, or review it: every paper and org release it relies on, confirmed from Crossref, DataCite or Zenodo (a work with no DOI, such as a thesis, from its publisher's or institution's record, with its url), DOI links first, the fidelity Sources table and CITATION.cff references generated from it | `swarm-routing/.github` `tools/fidelity/fidelity.py` (bib), `tools/zenodo/zenodo.py` | `references` |
-| Take open pull requests from review to merge: CI, mergeable state and unresolved review threads in one view, each finding verified and fixed or answered, then merged when green (auto-merge where the repository has a merge queue) | `swarm-routing/.github` `tools/pr-status/pr_status.py` | `pr-shepherd` |
-| Measure what a Claude Code session loads from the agent files (`CLAUDE.md` and its `@` imports, or `AGENTS.md` alone), or where a finished Claude Code session's tokens went, before cutting or adding agent text | `swarm-routing/skills` `tools/token-audit/token_audit.py` | `token-audit` |
-| Register a repository for the OpenSSF Best Practices badge, propose its answers and check they stay current | `swarm-routing/.github` `cmd/bestpractices` (Go) | `bestpractices` |
-| Check or bump the release a repository builds on (`swarm-core.lock`, `ns3-tools.lock`), the places that name it, and the `swarm-core / pin` check; org-bot's bump PR first, nothing typed | `swarm-routing/.github` `tools/checks/release_lock.py`, `tools/checks/check-swarm-core-pin.py` | `dependency-bump` |
-| Cut a release on the maintainer's request: readiness (the ladder row, the `release:vX.Y.Z` scope), dry-run, bump, merge, then the aftercare (the Zenodo DOI, the site, consumers' locks, the vcpkg port, PyPI) | `swarm-routing/.github` `tools/release/release_check.py`, `tools/zenodo/zenodo.py` | `release` |
-| Record a reviewed SonarQube Cloud false positive (or an accepted finding) where the quality gate reads it, never by exclusion or in the UI | `swarm-routing/.github` `tools/sonar-triage/sonar_triage.py` | `sonar-triage` |
+| Bring the README, AGENTS/CLAUDE/CONTEXT and docs/ to the org standard | `swarm-routing/.github` `tools/docs-review/check_docs.py` | `docs-review` |
+| Find new papers on a topic, or confirm a reference (free sources only) | `swarm-routing/.github` `tools/lit-search/lit_search.py` | `lit-search` |
+| Give a repository its docs/references.bib, or review it (every paper and org release it relies on, confirmed from its record) | `swarm-routing/.github` `tools/fidelity/fidelity.py` (bib), `tools/zenodo/zenodo.py` | `references` |
+| Take open pull requests from review to merge (CI, review threads, merge) | `swarm-routing/.github` `tools/pr-status/pr_status.py` | `pr-shepherd` |
+| Measure what a session loads from the agent files, or where a finished session's tokens went | `swarm-routing/skills` `tools/token-audit/token_audit.py` | `token-audit` |
+| Register a repository for the OpenSSF Best Practices badge, or check its answers | `swarm-routing/.github` `cmd/bestpractices` (Go) | `bestpractices` |
+| Check or bump the release a repository builds on (`swarm-core.lock`, `ns3-tools.lock`) | `swarm-routing/.github` `tools/checks/release_lock.py`, `tools/checks/check-swarm-core-pin.py` | `dependency-bump` |
+| Cut a release on the maintainer's request, and its aftercare | `swarm-routing/.github` `tools/release/release_check.py`, `tools/zenodo/zenodo.py` | `release` |
+| Record a reviewed SonarQube Cloud false positive or accepted finding | `swarm-routing/.github` `tools/sonar-triage/sonar_triage.py` | `sonar-triage` |
 
-A skill only this repository uses lives in its own `.claude/skills/`; a skill
-two repositories need moves to the plugin. Skills that file, cite and extract
-papers stay in a private library the maintainer keeps; finding
-new papers and confirming a reference is public (`lit-search`). A public skill
-may point to that library's skills, never carry its content. This section is managed by org-sync: add
-a row in `swarm-routing/.github` `templates/agents/skills.md`, not here (an edit
-here is undone by the next `org_sync.py apply`).
+A skill only this repository uses lives in its own `.claude/skills/`; one two
+repositories need moves to the plugin. Skills that file, cite and extract
+papers stay in the maintainer's private library; a public skill may point to
+them, never carry their content.
