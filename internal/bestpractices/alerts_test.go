@@ -13,6 +13,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/swarm-routing/.github/internal/securityalerts"
 )
 
 func alertsServer(t *testing.T, lists map[string]string, denied map[string]bool) *HTTP {
@@ -83,6 +85,9 @@ func TestVulnerabilityAnswersFromAlertsAPI(t *testing.T) {
 		if !met {
 			got = o.Blocked["vulnerabilities_fixed_60_days"]
 		}
+		if met && !strings.Contains(got, "Critical open: 0, high open: ") {
+			t.Errorf("%s: the critical and high counts: %q", c.name, got)
+		}
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: %q\nnot in %q", c.name, c.want, got)
 		}
@@ -93,5 +98,17 @@ func TestVulnerabilityAnswersFromAlertsAPI(t *testing.T) {
 		if c.denied != nil && (len(o.Unread) != 1 || !strings.Contains(o.Unread[0], "HTTP 403")) {
 			t.Errorf("%s: the 403 is reported as unread: %q", c.name, o.Unread)
 		}
+	}
+}
+
+// A Scorecard finding is policy, not a vulnerability (#629, 2026-11-22):
+// it neither counts as critical or high nor withdraws an answer.
+func TestScorecardIsNoVulnerability(t *testing.T) {
+	a := alert{securityalerts.Alert{Kind: "code scanning", Tool: "Scorecard", Severity: "critical", Security: true}}
+	if a.rank() != 0 {
+		t.Errorf("a Scorecard alert ranks %d", a.rank())
+	}
+	if b := (alert{securityalerts.Alert{Kind: "code scanning", Tool: "CodeQL", Severity: "critical", Security: true}}); b.rank() != 4 {
+		t.Errorf("a CodeQL critical ranks %d", b.rank())
 	}
 }

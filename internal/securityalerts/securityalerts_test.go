@@ -260,14 +260,21 @@ func TestMainAndReport(t *testing.T) {
 		!strings.Contains(o, "report: opened #") {
 		t.Errorf("rc %d\n%s\n%s", rc, o, errb.String())
 	}
+	if !strings.Contains(o, "security-alerts: by tool: CodeQL: critical 1, high 0, medium 0, low 0; Dependabot: critical 0, high 0, medium 0, low 0; secret scanning: 1; Scorecard: 0 checks (0 alerts)") {
+		t.Errorf("the severity breakdown:\n%s", o)
+	}
 	var report string
 	for _, i := range f.issues[".github"] {
 		if i["title"] == ReportTitle {
 			report = i["body"].(string)
 		}
 	}
-	if strings.Contains(report, "secretproj") || !strings.Contains(report, "| private repository 1 | 1 | 0 | 0 | 0 | 0 | 47 | 1 | 0 | 0 |") ||
-		!strings.Contains(report, "| pub | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 1 | 1 |") {
+	if !strings.Contains(report, "**Open now: 1 critical, 0 high vulnerabilities**") ||
+		strings.Index(report, "| private repository 1 |") > strings.Index(report, "| pub |") {
+		t.Errorf("critical and high first:\n%s", report)
+	}
+	if strings.Contains(report, "secretproj") || !strings.Contains(report, "| private repository 1 | 1 | 0 | 0 | 0 | 0 | 0 | 47 | 1 | 0 | 0 |") ||
+		!strings.Contains(report, "| pub | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 | 1 | 1 |") {
 		t.Errorf("report:\n%s", report)
 	}
 	// the report again, unchanged
@@ -401,6 +408,9 @@ func TestGroupsPriorityAndCap(t *testing.T) {
 		!strings.Contains(body, "| B | [#1](") || !strings.Contains(body, "| private repository 1 | #1 |") ||
 		strings.Contains(body, "hidden") || strings.Contains(o, "hidden") || !strings.Contains(body, "templates/rulesets/") {
 		t.Errorf("the group ticket:\n%s\n%s", labels, body)
+	}
+	if !strings.Contains(o, "CodeQL: critical 0, high 1, medium 0, low 1; Dependabot: critical 0, high 0, medium 0, low 0; secret scanning: 0; Scorecard: 3 checks (6 alerts)") {
+		t.Errorf("the breakdown: %s", o)
 	}
 	// the next run opens what waited
 	o = run()

@@ -710,19 +710,51 @@ func fixesMerged(g GitHub, repo string, now time.Time) (int, error) {
 
 // ReportBody is the summary issue's body.
 func ReportBody(results []Result, fixes map[string]int, m *repomask.Masker, now time.Time) string {
+	// critical and high first (maintainer, 2026-11-22: close them fast)
+	results = append([]Result(nil), results...)
+	counts := func(r Result) (int, int) {
+		c, h := 0, 0
+		for _, a := range r.Alerts {
+			if !a.Policy() && a.Security && a.Severity == "critical" {
+				c++
+			}
+			if !a.Policy() && a.Security && a.Severity == "high" {
+				h++
+			}
+		}
+		return c, h
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		ci, hi := counts(results[i])
+		cj, hj := counts(results[j])
+		if ci != cj {
+			return ci > cj
+		}
+		return hi > hj
+	})
+	tc, th := 0, 0
+	for _, r := range results {
+		c, h := counts(r)
+		tc, th = tc+c, th+h
+	}
 	lines := []string{"## Open security alerts", "",
-		"Kept by the `security-alerts` task (swarm-routing/.github#629), refreshed every week. One ticket per alert lives in " +
-			"the alert's repository (label `security`).", "",
-		"| Repository | Critical | High | Medium | Low | Secrets | Oldest (days) | Past SLA | Fixes merged (7 days) | Waiting for the maintainer |",
-		"|---|---|---|---|---|---|---|---|---|---|"}
+		fmt.Sprintf("**Open now: %d critical, %d high vulnerabilities** across the org (code scanning and Dependabot; "+
+			"Scorecard's policy findings are counted apart).", tc, th), "",
+		"Kept by the `security-alerts` task (swarm-routing/.github#629), refreshed every week. One ticket per vulnerability lives in " +
+			"the alert's repository, one per Scorecard check in swarm-routing/.github (label `security`).", "",
+		"| Repository | Critical | High | Medium | Low | Secrets | Scorecard | Oldest (days) | Past SLA | Fixes merged (7 days) | Waiting for the maintainer |",
+		"|---|---|---|---|---|---|---|---|---|---|---|"}
 	total := 0
 	for _, r := range results {
 		c := map[string]int{}
 		oldest, past, waiting := 0, 0, 0
 		for _, a := range r.Alerts {
-			if a.Kind == SecretScanning {
+			switch {
+			case a.Kind == SecretScanning:
 				c["secret"]++
-			} else {
+			case a.Policy():
+				c["scorecard"]++
+			default:
 				c[a.Severity]++
 			}
 			if d := int(a.Age(now).Hours() / 24); d > oldest {
@@ -743,11 +775,11 @@ func ReportBody(results []Result, fixes map[string]int, m *repomask.Masker, now 
 		if len(r.Unread) > 0 {
 			name += " (unread: " + strings.Join(r.Unread, ", ") + ")"
 		}
-		lines = append(lines, fmt.Sprintf("| %s | %d | %d | %d | %d | %d | %d | %d | %d | %d |", name,
-			c["critical"], c["high"], c["medium"], c["low"], c["secret"], oldest, past, fixes[r.Repo.Name], waiting))
+		lines = append(lines, fmt.Sprintf("| %s | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d |", name,
+			c["critical"], c["high"], c["medium"], c["low"], c["secret"], c["scorecard"], oldest, past, fixes[r.Repo.Name], waiting))
 	}
 	if total == 0 {
-		lines = append(lines, "| (none) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
+		lines = append(lines, "| (none) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
 	}
 	lines = append(lines, "",
 		fmt.Sprintf("SLA: critical %d days, medium or higher %d days; past it, the ticket is P1. \"Waiting for the maintainer\": "+
@@ -755,6 +787,68 @@ func ReportBody(results []Result, fixes map[string]int, m *repomask.Masker, now 
 			CriticalDays, EscalateDays),
 		"", "Updated "+now.UTC().Format("2006-01-02")+".")
 	return strings.Join(lines, "\n") + Footer
+}
+
+// Breakdown is the run log's severity line by tool (#629): every code
+// scanning tool but Scorecard and Dependabot by severity, secret scanning
+// by count, Scorecard by checks and alerts.
+func Breakdown(results []Result) string {
+	sev := []string{"critical", "high", "medium", "low"}
+	by := map[string]map[string]int{}
+	var tools []string
+	secrets, sc := 0, 0
+	checks := map[string]bool{}
+	for _, r := range results {
+		for _, a := range r.Alerts {
+			switch {
+			case a.Kind == SecretScanning:
+				secrets++
+				continue
+			case a.Policy():
+				sc++
+				rule := a.What
+				if i := strings.Index(rule, ":"); i > 0 {
+					rule = rule[:i]
+				}
+				checks[rule] = true
+				continue
+			}
+			tool := a.Tool
+			if a.Kind == Dependabot {
+				tool = Dependabot
+			}
+			if tool == "" {
+				tool = "code scanning"
+			}
+			if by[tool] == nil {
+				by[tool] = map[string]int{}
+				tools = append(tools, tool)
+			}
+			s := a.Severity
+			if !a.Security {
+				s = "no security severity"
+			}
+			by[tool][s]++
+		}
+	}
+	sort.Strings(tools)
+	if by[Dependabot] == nil {
+		by[Dependabot] = map[string]int{}
+		tools = append(tools, Dependabot)
+	}
+	var parts []string
+	for _, t := range tools {
+		var f []string
+		for _, s := range sev {
+			f = append(f, fmt.Sprintf("%s %d", s, by[t][s]))
+		}
+		if n := by[t]["no security severity"]; n > 0 {
+			f = append(f, fmt.Sprintf("no security severity %d", n))
+		}
+		parts = append(parts, t+": "+strings.Join(f, ", "))
+	}
+	parts = append(parts, fmt.Sprintf("secret scanning: %d", secrets), fmt.Sprintf("Scorecard: %d checks (%d alerts)", len(checks), sc))
+	return "security-alerts: by tool: " + strings.Join(parts, "; ")
 }
 
 // Report creates or updates the summary issue in swarm-routing/.github.
@@ -926,6 +1020,7 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 	fmt.Fprintf(stdout, "security-alerts: %d repositories, %d open alerts; %sopened %d, updated %d, closed %d tickets, "+
 		"%d new left for later runs; %d with an unreadable listing, %d failed\n", len(repos), alerts, verb, opened, updated, closed,
 		deferred, unread, failed)
+	fmt.Fprintln(stdout, Breakdown(results))
 	if report {
 		out, err := Report(g, ReportBody(results, fixes, &m, now), dry)
 		if err != nil {

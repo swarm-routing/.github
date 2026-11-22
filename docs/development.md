@@ -71,9 +71,9 @@ is #489.
 Only the Go tools compile: `CGO_ENABLED=0 go build -trimpath ./...` at the
 root (the `ci-tools` image builds every `cmd/<tool>` the same way). Everything
 else takes effect from `main`: GitHub reads the community
-defaults and every `@main` workflow reference from the default branch, and
-`org-sync` renders `templates/` into each repository through org-bot's
-refresh PRs after a template change merges.
+defaults from the default branch, and `org-sync` renders `templates/` into
+each repository, and moves its pinned references to the reusable workflows
+and actions (ADR-0004), through org-bot's refresh PRs after a change merges.
 
 ## Test
 
@@ -150,7 +150,8 @@ merge queue, so a pull request is merged by enabling auto-merge.
 
 ## Release
 
-This repository is not released: callers use `@main`, so a reusable
+This repository is not released: callers pin a commit of `main`, moved by
+org-bot's refresh PR (ADR-0004), so a reusable
 workflow never renames or removes an input or changes a default's meaning,
 and a breaking change needs a new file and an issue in every caller (golden
 rule 10). The procedure every other repository follows is

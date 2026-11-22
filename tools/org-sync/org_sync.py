@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """Apply the swarm-routing org templates to a repository, and check for drift.
 
-Usage: org_sync.py {init,plan,apply,conflicts,check,seeds,settings} [REPO_DIR] [options]
+Usage: org_sync.py {init,plan,apply,conflicts,check,seeds,settings,refs} [REPO_DIR] [options]
        org_sync.py reseed FILE [REPO_DIR]
        org_sync.py citation-refs [REPO_DIR] [--check]
        org_sync.py profile [REPO_DIR] [--check]
@@ -114,6 +114,21 @@ leaves the lock as it is and says so. The lock is separate from
 `.github/org-sync.toml`: that file is the repository's own configuration (and
 a push changing it re-applies the repository's settings), the lock is
 machine-written state, never edited by hand.
+
+The org's own references (#716, ADR-0004): every `uses:
+swarm-routing/.github/<path>@<ref>` line of a repository's workflows and
+composite actions names the lock's commit, `@<sha> # main@<date>`: the
+managed workflows are rendered so, and each of the repository's own workflow
+or action files that calls this repository is a `refs` item (only that
+reference is the org's); `check` fails on any other ref, `@main` included;
+the comment after the commit is not compared. `apply` pins the lock and the
+references to `content_pin`: the newest first-parent commit that changed
+what renders or a workflow or action the references name, and keeps the
+lock's commit when that renders nothing new and no referenced workflow
+changed (`target_pin`). `refs [REPO] [--check] [--rev REV]` is the same for
+swarm-routing/.github's own reusable workflows (org-bot runs it there): their
+calls to its own actions and workflows at `self_pin`, the newest commit that
+changed those by more than these references.
 
 Output is a summary, never file contents, so an agent reads a few lines per
 run (AntHocNet ADR-0014). Only `conflicts` and `reseed` print text: the hunks
@@ -601,6 +616,133 @@ class SettingsOnly(Exception):
 SETTINGS_ONLY_JSON = {"plan": '{"unchanged":0,"changes":[]}', "seeds": "[]", "settings": "{}"}
 
 
+# --- the org's own workflow references (#716) ----------------------------------
+# Every `uses: swarm-routing/.github/<path>@<ref>` line in a repository's
+# workflows and composite actions names the commit .github/org-sync.lock pins,
+# `@<sha> # main@<its date>`, so OpenSSF Scorecard's Pinned-Dependencies sees a
+# commit, and org-bot's refresh PR moves the pin and every reference together.
+# The org-managed workflows are rendered so; the repository's own workflow
+# files are the `refs` items: only that reference is the org's, the rest of the
+# file stays the repository's. A comment after the commit is not compared.
+REF_LINE = re.compile(
+    r"^([ \t]*(?:-[ \t]+)?uses:[ \t]*swarm-routing/\.github/[^@\s#\"']+)@([^\s#\"']+)"
+    r"(?:[ \t]*#[^\n]*)?[ \t]*$",
+    re.M,
+)
+# what decides a render: the files of this repository org-sync reads (the lock
+# moves to the newest commit that changed one of them, or a workflow a
+# reference names), so a commit that touches none of them moves no pin
+RENDER_PATHS = ("templates", "tools/org-sync", "tools/fidelity", "ISSUE_TEMPLATE", "LICENSE")
+_dates = {}
+
+
+def ref_files(repo_dir):
+    """The workflow and composite-action files of `repo_dir` that call this repository."""
+    out = []
+    wf = os.path.join(repo_dir, ".github", "workflows")
+    for name in sorted(os.listdir(wf)) if os.path.isdir(wf) else ():
+        if name.endswith((".yml", ".yaml")):
+            out.append(f".github/workflows/{name}")
+    acts = os.path.join(repo_dir, ".github", "actions")
+    for root, dirs, files in os.walk(acts):
+        dirs.sort()
+        for name in sorted(files):
+            if name in ("action.yml", "action.yaml"):
+                out.append(os.path.relpath(os.path.join(root, name), repo_dir).replace(os.sep, "/"))
+    return [
+        p
+        for p in out
+        if not os.path.islink(os.path.join(repo_dir, p))
+        and REF_LINE.search(read(os.path.join(repo_dir, p)) or "")
+    ]
+
+
+def org_git(*args):
+    return subprocess.run(["git", "-C", ORG, *args], capture_output=True, text=True)
+
+
+def pin_refs(text, pin):
+    """`text` with every reference to this repository at commit `pin` (None: as it is)."""
+    if not pin:
+        return text
+    if pin not in _dates:
+        r = org_git("show", "-s", "--format=%cs", pin)
+        _dates[pin] = r.stdout.strip() if r.returncode == 0 else ""
+    note = f"# main@{_dates[pin]}" if _dates[pin] else "# main"
+    return REF_LINE.sub(lambda m: f"{m.group(1)}@{pin} {note}", text)
+
+
+def ref_key(text):
+    """`text` as references are compared: the commit kept, its comment dropped."""
+    return REF_LINE.sub(lambda m: f"{m.group(1)}@{m.group(2)}", text)
+
+
+def history():
+    """Make this checkout's history complete enough to read (org-bot's is shallow)."""
+    if org_git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        org_git("fetch", "-q", "--unshallow", "origin")
+
+
+def reusable_paths(rev):
+    """The workflows of this repository at `rev` that others call, and its actions."""
+    names = org_git("ls-tree", "--name-only", f"{rev}:.github/workflows").stdout.split()
+    out = [".github/actions"]
+    for name in names:
+        r = org_git("show", f"{rev}:.github/workflows/{name}")
+        if r.returncode == 0 and re.search(r"^[ \t]*workflow_call:", r.stdout, re.M):
+            out.append(f".github/workflows/{name}")
+    return out
+
+
+def content_pin(sha):
+    """The newest first-parent commit up to `sha` that changed what a render reads
+    or what a reference names: every later commit renders the same text, so the
+    pin (and every reference) stays where it was. `sha` itself when unreadable."""
+    history()
+    r = org_git(
+        "log", "-1", "--first-parent", "--format=%H", sha, "--", *RENDER_PATHS, *reusable_paths(sha)
+    )
+    got = r.stdout.strip()
+    return got if r.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", got) else sha
+
+
+def refs_moved(old, new):
+    """Did a workflow or an action others call change between `old` and `new`?"""
+    if old == new:
+        return False
+    history()
+    r = org_git("diff", "--quiet", old, new, "--", *reusable_paths(new))
+    return r.returncode != 0
+
+
+def ref_only(commit, paths):
+    """Did `commit` change nothing in `paths` but references to this repository?"""
+    r = org_git("diff", "-U0", "--no-color", "--no-ext-diff", f"{commit}^", commit, "--", *paths)
+    if r.returncode:
+        return False  # the root commit, or history this checkout lacks
+    minus, plus = [], []
+    for ln in r.stdout.splitlines():
+        if ln.startswith(("---", "+++")):
+            continue
+        if ln[:1] in "-+":
+            (minus if ln[0] == "-" else plus).append(REF_LINE.sub(r"\1@REF", ln[1:]))
+    return sorted(minus) == sorted(plus)
+
+
+def self_pin(sha):
+    """For this repository's own workflows (`refs`): the newest first-parent commit
+    up to `sha` that changed a workflow others call, or an action, by more than
+    the references to itself. Pinning a reference rewrites only those lines, so
+    the pin never chases its own refresh."""
+    history()
+    paths = reusable_paths(sha)
+    r = org_git("log", "--first-parent", "--format=%H", sha, "--", *paths)
+    for commit in r.stdout.split():
+        if not ref_only(commit, paths):
+            return commit
+    return sha
+
+
 def load_config(repo_dir, slug=None):
     text = read(os.path.join(repo_dir, CONFIG))
     if text is None:
@@ -643,6 +785,9 @@ def load_config(repo_dir, slug=None):
         )
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
+    # the commit every reference to this repository names: the lock's (apply may move it)
+    cfg["pin"] = read_lock(repo_dir)
+    cfg["ref_files"] = ref_files(repo_dir)
     cfg["references"] = check_references(cfg.get("references", []))
     if cfg["references"] and bib_references(repo_dir) is not None:
         print(
@@ -1414,6 +1559,8 @@ def render_dependabot(repo_dir):
                 "      codeql-action:\n"
                 "        patterns:\n"
                 '          - "github/codeql-action*"\n'
+                "    ignore:\n"
+                '      - dependency-name: "swarm-routing/.github*"\n'
             )
     return text
 
@@ -1637,6 +1784,10 @@ def items(cfg):
                 out.append(
                     ("file", f".github/ISSUE_TEMPLATE/{name}", f"../ISSUE_TEMPLATE/{name}", None)
                 )
+    # the repository's own workflows and actions: only their references to
+    # swarm-routing/.github are the org's, pinned to the lock's commit (#716)
+    managed = {i[1] for i in out if i[0] == "file"}
+    out += [("refs", p, None, None) for p in cfg.get("ref_files", []) if p not in managed]
     skip = set(cfg.get("skip", []))
     return [i for i in out if i[1] not in skip and f"{i[1]}#{i[3]}" not in skip]
 
@@ -1805,6 +1956,8 @@ def render(cfg, repo_dir, item, v=None):
             want = render_dependabot(repo_dir)
         else:
             want = want.format_map(v or values(cfg))
+    if kind == "file" and path.startswith(".github/workflows/"):
+        want = pin_refs(want, cfg.get("pin"))  # #716
     return want
 
 
@@ -1814,6 +1967,13 @@ def evaluate(cfg, repo_dir, item):
     kind, path, src, name = item
     full = os.path.join(repo_dir, path)
     cur = read(full)
+    if kind == "refs":
+        if cur is None:
+            return "unchanged", None, ""
+        new = pin_refs(cur, cfg.get("pin"))
+        if ref_key(new) == ref_key(cur):
+            return "unchanged", None, ""
+        return "update", new, "references to swarm-routing/.github not at the pinned commit"
     want = render(cfg, repo_dir, item)
     if kind == "targets":
         if cur is None:
@@ -1826,7 +1986,7 @@ def evaluate(cfg, repo_dir, item):
     if kind == "seed":
         return ("unchanged", None, "repo-owned") if cur is not None else ("create", want, "")
     if kind == "file":
-        if cur == want:
+        if cur == want or (cur is not None and ref_key(cur) == ref_key(want)):
             return "unchanged", None, ""
         return ("create" if cur is None else "update"), want, ""
     if kind == "json":
@@ -2118,15 +2278,39 @@ def read_lock(repo_dir):
     return m.group(1) if m else None
 
 
-def write_lock(repo_dir, changed):
-    """Record the template commit after an apply that changed a file, or when
-    the lock is missing; a line for apply's output, or None."""
+def target_pin(cfg, repo_dir, reseed=False):
+    """The commit an apply renders the references at, and records in the lock
+    (#716): the newest commit that changed what renders (content_pin), from a
+    clean `main` or detached checkout; the lock's own commit when that
+    renders nothing new and no workflow or action the references name
+    changed since, so a commit here that renders nothing new opens no PR
+    (#586); the lock's commit, unchanged, from a branch or a dirty tree."""
+    old = read_lock(repo_dir)
+    sha, _ = org_commit()
+    if not sha:
+        return old
+    new = content_pin(sha)
+    if not old or old == new or refs_moved(old, new):
+        return new
+    keep = dict(cfg, pin=old)
+    if any(status != "unchanged" for _, status, _, _ in plan(keep, repo_dir)):
+        return new
+    if reseed and untouched_seeds(keep, repo_dir):
+        return new
+    return old
+
+
+def write_lock(repo_dir, changed, pin=None):
+    """Record the template commit (`pin`, else this checkout's) after an apply
+    that changed a file, or when the lock is missing; a line for apply's
+    output, or None."""
     old = read_lock(repo_dir)
     if not changed and old:
         return None
     sha, why = org_commit()
     if not sha:
         return f"{'kept':9} {LOCK}: {why}" if changed else None
+    sha = pin or sha
     if sha == old:
         return None
     write(
@@ -2209,14 +2393,16 @@ def cmd_plan(a):
 
 def cmd_apply(a):
     cfg = load_config(a.repo)
+    reseed = getattr(a, "reseed_untouched", False)
+    cfg["pin"] = target_pin(cfg, a.repo, reseed)
     changed, conflicts = apply(
         cfg,
         a.repo,
         set(getattr(a, "force", None) or ()),
         prune=getattr(a, "prune_orphans", False),
-        reseed=getattr(a, "reseed_untouched", False),
+        reseed=reseed,
     )
-    pinned = write_lock(a.repo, changed)
+    pinned = write_lock(a.repo, changed, cfg["pin"])
     if pinned:
         changed.append(pinned)
     for line in changed + conflicts:
@@ -2224,6 +2410,32 @@ def cmd_apply(a):
     if not changed and not conflicts:
         print("org-sync: nothing to do")
     return 1 if conflicts else 0
+
+
+def cmd_refs(a):
+    """swarm-routing/.github's own workflows and actions (#716): every reference
+    to itself at `self_pin` of --rev (default HEAD; org-bot runs it on main).
+    Inside a reusable workflow a local `./` path names the caller's checkout,
+    so these stay full references, pinned. --check changes nothing, exit 1."""
+    r = org_git("rev-parse", "--verify", f"{a.rev}^{{commit}}")
+    if r.returncode:
+        sys.exit(f"org-sync: refs: no commit {a.rev} in {ORG}")
+    pin = self_pin(r.stdout.strip())
+    drift = 0
+    for path in ref_files(a.repo):
+        cur = read(os.path.join(a.repo, path))
+        new = pin_refs(cur, pin)
+        if ref_key(new) == ref_key(cur):
+            continue
+        drift += 1
+        if a.check:
+            print(f"drift     {path}: references to swarm-routing/.github not at {pin[:12]}")
+        else:
+            write(a.repo, path, new)
+            print(f"{'update':9} {path}")
+    if not drift:
+        print(f"org-sync: references at {pin[:12]}")
+    return 1 if a.check and drift else 0
 
 
 def cmd_conflicts(a):
@@ -2344,7 +2556,7 @@ RENDER_INPUTS = (
 )
 
 
-def base_drift(repo_dir, base, slug):
+def base_drift(repo_dir, base, slug, pin=None):
     """The labels of the items that drift at `base`'s merge base with HEAD,
     judged with the same templates on that commit's own tree (its config, its
     managed files, its .github/ and SECURITY.md, which decide the badges).
@@ -2373,6 +2585,9 @@ def base_drift(repo_dir, base, slug):
                     tar.extractall(tmp)  # our own git objects, filtered by path above
         # the config was read before the tree was there: the mode it reads from the tree
         cfg["swarm_core_mode"] = swarm_core_mode(tmp)
+        # the references, judged at the commit HEAD pins (the templates checked against)
+        cfg["ref_files"] = ref_files(tmp)
+        cfg["pin"] = pin
         return {
             drift_key(item, status)
             for item, status, _, _ in plan(cfg, tmp)
@@ -2396,7 +2611,7 @@ def cmd_check(a):
     warned = 0
     if a.changed_only and drift:
         changes = pr_changes(a.repo, a.changed_only)
-        before = base_drift(a.repo, a.changed_only, cfg["repo"])
+        before = base_drift(a.repo, a.changed_only, cfg["repo"], cfg["pin"])
         own = []
         for d in drift:
             item, status, detail = d
@@ -2639,6 +2854,7 @@ def main(argv=None):
         "settings",
         "citation-refs",
         "profile",
+        "refs",
     ):
         s = sub.add_parser(name)
         if name == "reseed":
@@ -2662,8 +2878,14 @@ def main(argv=None):
                 nargs="*",
                 help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)",
             )
-        if name == "profile":
+        if name in ("profile", "refs"):
             s.add_argument("--check", action="store_true", help="change nothing; exit 1 on drift")
+        if name == "refs":
+            s.add_argument(
+                "--rev",
+                default="HEAD",
+                help="the swarm-routing/.github commit whose history picks the pin (default HEAD)",
+            )
         if name == "citation-refs":
             s.add_argument(
                 "--check",

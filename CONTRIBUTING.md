@@ -70,7 +70,11 @@ is the long form.
 4. **Determinism.** Fixed `--seed=<N>` ⇒ byte-identical output. Comparisons are
    paired per-seed deltas over ≥ 20 seeds, emitting `##CONFIG##`, `##RUN##`,
    `##BENCH##`, `##DIAG##` lines.
-5. **CI hygiene.** Actions pinned by full SHA; buildx caches scoped per profile;
+5. **CI hygiene.** Actions pinned by full SHA, the org's own reusable workflows
+   and actions too: every `uses: swarm-routing/.github/...` names the commit the
+   repository's `.github/org-sync.lock` pins, `@<sha> # main@<date>`, written
+   and moved only by org-sync (org-bot's refresh PR), and `check / org-sync`
+   fails on any other ref, `@main` included (ADR-0004, #716); buildx caches scoped per profile;
    transient artifacts `retention-days` ≤ 7. Every job that runs steps has a
    `timeout-minutes` cap (a job that only calls a reusable workflow cannot take
    one: the called workflow's jobs carry it), and every apt, npm or installer step its own, sized from recent green
@@ -308,7 +312,7 @@ is something that worked in such a version and broke in a later one.
 | A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/sim-tools |
 | A regression in a published library (above) | **yes**: `<PREFIX>-NNN` in that library's repository |
 | A bug in a Docker image (the `ns3-dev` images, `ci-tools`, any image) | **no** by default; **yes** only when it is traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image): then in the repository that owns that Dockerfile (`CNT-NNN` for swarm-routing/sim-containers) |
-| A change in a repository whose output no project consumes at a version: swarm-routing/.github (reusable workflows at `@main`), the site's Pages deploy, swarm-routing/skills (the plugin), swarm-routing/benchmarks (datasets), swarm-routing/ns3-upstream-report | **no** for its own changes |
+| A change in a repository whose output no project consumes at a version: swarm-routing/.github (reusable workflows at a pinned commit of `main`, ADR-0004), the site's Pages deploy, swarm-routing/skills (the plugin), swarm-routing/benchmarks (datasets), swarm-routing/ns3-upstream-report | **no** for its own changes |
 | A bug or change that never reached a published version (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
 | A trivial change with no behaviour (a typo, a comment, docs wording) that affects no behaviour, output, number or released artifact | **no** |
 
@@ -704,8 +708,9 @@ release tag, as vcpkg has no ns-3 port (#440).
 - **The lock stays**, as the record of the release the ns-3 build uses: the
   `Makefile`, the ns-3 `dependencies:` and `core-deps` name its tag and
   commit as above, and `make dist` ships it.
-- **The CI job.** `swarm-routing/.github/.github/actions/setup-vcpkg@main`
-  (an org composite action, so `@main` as the reusable workflows): vcpkg at a
+- **The CI job.** `swarm-routing/.github/.github/actions/setup-vcpkg`
+  (an org composite action, pinned by commit as the reusable workflows,
+  ADR-0004): vcpkg at a
   pinned microsoft/vcpkg commit (its `vcpkg-commit` input; the configuration's
   `builtin` baseline is fetched beside it, one shallow fetch each), and
   vcpkg's binary cache on the org's GitHub Packages NuGet feed
@@ -1225,7 +1230,10 @@ finding, a Dependabot alert, a leaked secret):
   `[security] open alerts across the org`, an issue in this repository. It
   lists the open alerts by repository and severity, the oldest age, those
   past the SLA, the fix PRs merged that week, and those waiting for the
-  maintainer. Private repositories are named only as `private repository N`
+  maintainer. It opens with the org's open critical and high
+  vulnerabilities, and lists the repositories with the most of them first
+  (maintainer, 2026-11-22: close the critical and high ones fast). Every run's
+  log also breaks the open alerts down by tool and severity. Private repositories are named only as `private repository N`
   (#622).
 
 ```mermaid
@@ -1794,7 +1802,8 @@ on:
         default: auto
 jobs:
   release:
-    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
+    # the commit .github/org-sync.lock pins, moved by org-bot's refresh PR (ADR-0004)
+    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@<sha> # main@<date>
     with:
       mode: ${{ inputs.mode }}
       increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}   # auto, or a push: ''
@@ -1858,7 +1867,7 @@ jobs:
     # Quoted: the expression holds ': ', which YAML reads as a mapping in a plain scalar.
     if: "${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}"
     permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
-    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main
+    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@<sha> # main@<date>  (ADR-0004)
     with:
       mode: ${{ inputs.mode }}   # empty on push: release
     secrets:
@@ -2094,7 +2103,9 @@ is **Save**, once per project, only when something changed. By hand, from a
   `vulnerabilities_fixed_60_days` for a medium or higher alert open more
   than 45 days (an escalation margin before the criterion's 60),
   `vulnerabilities_critical_fixed` for a critical alert open more than 14
-  days. An alert listing the token cannot read is named on the issue and
+  days. Both answers state how many critical and high
+  vulnerabilities are open in the repository; a Scorecard finding is policy
+  and counts for neither. An alert listing the token cannot read is named on the issue and
   turns the run red (the org App needs read access to code-scanning,
   Dependabot and secret-scanning alerts); it leaves `no_leaked_credentials`
   `?` but not the two defaults. An alert that withdraws an answer is a

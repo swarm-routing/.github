@@ -1884,6 +1884,11 @@ check(not flagged, f"no template names the private paper library: {flagged}")
 # .github/org-sync.lock when it changes a file or the lock is missing, never
 # otherwise, and never from a feature branch or a dirty tree.
 SHA_A, SHA_B = "a" * 40, "b" * 40
+# made-up commits: no history to read, so each is its own pin and no
+# referenced workflow moved between them (section 12b tests both on real git)
+REAL_CONTENT_PIN, REAL_REFS_MOVED = org_sync.content_pin, org_sync.refs_moved
+org_sync.content_pin = lambda sha: sha
+org_sync.refs_moved = lambda old, new: False
 dk = fresh()
 run("init", dk, "--kind", "data")
 lock = os.path.join(dk, org_sync.LOCK)
@@ -1983,6 +1988,169 @@ with tempfile.TemporaryDirectory() as og:
         "org_commit: main or detached and clean names HEAD; a dirty tree or a branch does not",
     )
 org_sync.org_commit = lambda: (None, "self-test")
+
+# 12b. The org's own references (#716): every `uses: swarm-routing/.github/...`
+# line names the lock's commit, in the managed workflows and in the
+# repository's own; check fails on any other ref, `@main` included, once a
+# lock pins one; a comment after the commit is not compared; third-party and
+# commented-out lines are never touched.
+org_sync.org_commit = lambda: (SHA_A, "")
+dr = fresh()
+run("init", dr, "--kind", "data")
+run("apply", dr)
+check(
+    f"reusable-dco.yml@{SHA_A} # main\n" in read(os.path.join(dr, ".github/workflows/dco.yml"))
+    and "@main" not in read(os.path.join(dr, ".github/workflows/dco.yml")),
+    "a managed workflow calls swarm-routing/.github at the lock's commit",
+)
+org_sync.org_commit = lambda: (SHA_B, "")
+check(
+    run("apply", dr)[1].strip() == "org-sync: nothing to do" and org_sync.read_lock(dr) == SHA_A,
+    "a newer commit with no referenced workflow changed moves no reference",
+)
+org_sync.refs_moved = lambda old, new: True
+rc, out = run("apply", dr)
+check(
+    org_sync.read_lock(dr) == SHA_B
+    and f"reusable-dco.yml@{SHA_B} # main\n" in read(os.path.join(dr, ".github/workflows/dco.yml")),
+    "a referenced workflow that changed moves the lock and the references, nothing else new",
+)
+org_sync.refs_moved = lambda old, new: False
+org_sync.org_commit = lambda: (SHA_A, "")
+write(os.path.join(dr, org_sync.LOCK), 'commit = "' + SHA_A + '"\n')
+run("apply", dr)
+own = os.path.join(dr, ".github/workflows/ci.yml")
+CHECKOUT = "actions/checkout@" + "c" * 40 + " # v7.0.1"
+OLD_PIN = "d" * 40
+write(
+    own,
+    "jobs:\n"
+    "  py:\n"
+    "    uses: swarm-routing/.github/.github/workflows/reusable-python-ci.yml@main\n"
+    "  tok:\n"
+    "    steps:\n"
+    f"      - uses: {CHECKOUT}\n"
+    f"      - uses: swarm-routing/.github/.github/actions/bot-token@{OLD_PIN}  # main 2026-11-13\n"
+    "#     uses: swarm-routing/.github/.github/workflows/reusable-dco.yml@main\n",
+)
+rc, out = run("check", dr)
+check(
+    rc == 1 and "drift     .github/workflows/ci.yml: update" in out,
+    "check fails on the repository's own workflow calling swarm-routing/.github at @main or another commit",
+)
+rc, out = run("plan", dr)
+check(
+    "update    .github/workflows/ci.yml: references to swarm-routing/.github" in out
+    and org_sync.read_lock(dr) == SHA_A,
+    "plan names the own workflow's references",
+)
+run("apply", dr)
+got = read(own)
+check(
+    f"reusable-python-ci.yml@{SHA_A} # main\n" in got
+    and f"      - uses: swarm-routing/.github/.github/actions/bot-token@{SHA_A} # main\n" in got
+    and f"      - uses: {CHECKOUT}\n" in got
+    and "#     uses: swarm-routing/.github/.github/workflows/reusable-dco.yml@main\n" in got
+    and run("check", dr)[0] == 0,
+    "apply pins the own workflow's references; third-party and commented lines stay",
+)
+write(own, got.replace(f"{SHA_A} # main\n", f"{SHA_A} # main@2026-11-22\n"))
+check(run("check", dr)[0] == 0, "a reference's comment is not compared")
+write(own, got.replace("reusable-python-ci.yml@" + SHA_A, "reusable-python-ci.yml@main"))
+edit(dr, org_sync.CONFIG, 'kind = "data"', 'kind = "data"\nskip = [".github/workflows/ci.yml"]')
+check(run("check", dr)[0] == 0, "a skipped own workflow keeps its references")
+edit(dr, org_sync.CONFIG, 'skip = [".github/workflows/ci.yml"]\n', "")
+org_sync.org_commit = lambda: (None, "self-test")
+dn = fresh()
+run("init", dn, "--kind", "data")
+write(os.path.join(dn, ".github/workflows/own.yml"), read(own))  # ci.yml would add a badge
+check(
+    not os.path.exists(os.path.join(dn, org_sync.LOCK))
+    and "reusable-dco.yml@main\n" in read(os.path.join(dn, ".github/workflows/dco.yml"))
+    and run("check", dn)[0] == 0,
+    "without a lock no commit is named: the templates' @main, own references left as they are",
+)
+check(
+    'dependency-name: "swarm-routing/.github*"' in org_sync.render_dependabot(dr),
+    "the dependabot seed leaves the org's own references to org-bot",
+)
+
+# the pins on a real history: content_pin moves only on a commit that changes
+# what renders or what a reference names; refs_moved only on a referenced
+# workflow or action; self_pin (`refs`, this repository's own references)
+# skips a commit that changed nothing but those references
+org_sync.content_pin, org_sync.refs_moved = REAL_CONTENT_PIN, REAL_REFS_MOVED
+with tempfile.TemporaryDirectory() as og:
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+
+    def og_git(*a):
+        return subprocess.run(
+            ["git", "-C", og, "-c", "user.name=t", "-c", "user.email=t@x", *a],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+        ).stdout.strip()
+
+    def commit(path, text):
+        os.makedirs(os.path.dirname(os.path.join(og, path)), exist_ok=True)
+        write(os.path.join(og, path), text)
+        og_git("add", "-A")
+        og_git("commit", "-q", "-m", path)
+        return og_git("rev-parse", "HEAD")
+
+    og_git("init", "-q", "-b", "main")
+    inner = "    uses: swarm-routing/.github/.github/actions/tok@main\n"
+    reusable = "on:\n  workflow_call:\njobs:\n  x:\n" + inner
+    c1 = commit(".github/workflows/reusable-x.yml", reusable)
+    ca = commit(".github/actions/tok/action.yml", "runs: {using: composite, steps: []}\n")
+    c2 = commit("templates/t", "x\n")
+    c3 = commit("docs/notes.md", "docs\n")
+    c4 = commit(".github/workflows/ci.yml", "on: push\n")  # not called by others
+    c5 = commit(".github/workflows/reusable-x.yml", reusable.replace("@main", "@" + c2))
+    c6 = commit(".github/workflows/reusable-x.yml", reusable.replace("x:\n", "y:\n"))
+    c7 = commit(
+        ".github/workflows/reusable-x.yml",
+        reusable.replace("x:\n", "y:\n").replace("@main", "@" + c6),
+    )
+    c8 = commit("docs/notes.md", "more docs\n")
+    saved = org_sync.ORG
+    org_sync.ORG = og
+    try:
+        pins = [org_sync.content_pin(c) for c in (c3, c4, c5, c8)]
+        moved = [org_sync.refs_moved(a, b) for a, b in ((c2, c4), (c1, c2), (c4, c5), (c7, c8))]
+        selfs = [org_sync.self_pin(c) for c in (c5, c8)]
+        date = og_git("show", "-s", "--format=%cs", c6)
+        pinned = org_sync.pin_refs(inner, c6)
+        sd = tempfile.mkdtemp()
+        os.makedirs(os.path.join(sd, ".github", "workflows"))
+        write(os.path.join(sd, ".github/workflows/reusable-x.yml"), reusable)
+        rc_drift = run("refs", sd, "--rev", c8, "--check")[0]
+        rc_write, out_write = run("refs", sd, "--rev", c8)
+        rc_clean = run("refs", sd, "--rev", c8, "--check")[0]
+    finally:
+        org_sync.ORG = saved
+    check(
+        pins == [c2, c2, c5, c7],
+        f"content_pin: the newest commit that renders or is referenced: {pins}",
+    )
+    check(
+        moved == [False, True, True, False],
+        f"refs_moved: only a referenced workflow or action: {moved}",
+    )
+    check(selfs == [ca, c6], f"self_pin skips a commit that only moved its own references: {selfs}")
+    check(
+        pinned == f"    uses: swarm-routing/.github/.github/actions/tok@{c6} # main@{date}\n",
+        "a reference names the commit and its date",
+    )
+    check(
+        rc_drift == 1
+        and rc_write == 0
+        and "update    .github/workflows/reusable-x.yml" in out_write
+        and f"tok@{c6} # main@" in read(os.path.join(sd, ".github/workflows/reusable-x.yml"))
+        and rc_clean == 0,
+        "refs: this repository's own references, --check then written at self_pin",
+    )
 
 # 30. The shared parts of two seeds are managed sections (#615): the Makefile's
 # org tooling (`org-tools`) and LICENSING.md's licence texts (`licence-texts`).

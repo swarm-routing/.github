@@ -86,7 +86,7 @@ jobs:
       # minutes on 2026-11-17 (04:53-04:58Z, with no login in this job): the org's
       # one retry, three more tries before the gate fails (#578, #645)
       - name: The ci-tools image (pulled with retries)
-        uses: swarm-routing/.github/.github/actions/pull-ci-tools@main
+        uses: swarm-routing/.github/.github/actions/pull-ci-tools@1bc793e3d32b2a6e847968227ef095a903be533a # main@2026-11-22
         timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
         with:
           image: ${{ env.IMG }}

@@ -21,7 +21,9 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             render (`org_sync.py seeds`), for information: the bot never
             changes an edited seed. A seed still exactly as the pinned
             templates rendered it is reseeded in the PR (`apply
-            --reseed-untouched`, #615).
+            --reseed-untouched`, #615). The references to this repository's
+            workflows and actions move with the lock's commit; in .github
+            itself `org_sync.py refs` pins its own (ADR-0004, #716).
   zenodo    tools/zenodo/zenodo.py record --write, in each repository with a
             CITATION.cff: when Zenodo holds a concept for its releases (a
             record linking the newest tag) and CITATION.cff's `doi:` or
@@ -679,6 +681,10 @@ def generate(task, repo, clone, data, out, skip=None):
             [sys.executable, "-I", ORG_SYNC, "apply", clone, "--prune-orphans"]
             + ["--reseed-untouched"]
         ]
+        if repo == ".github":
+            # its reusable workflows call its own actions and workflows: pinned
+            # by commit too, at the newest commit that changed them (#716)
+            cmds.append([sys.executable, "-I", ORG_SYNC, "refs", clone])
     for c in cmds:
         # org_sync.py apply exits 1 when sections the repository owns differ (it
         # leaves them and lists them on stdout); only a crash writes to stderr.
@@ -1771,6 +1777,24 @@ def self_test():
         sorted(os.listdir(settings_only)) == [".github"]
         and any("settings only" in n for n in notes),
     )
+    # .github itself (settings only) gets its own references pinned (#716): `refs`
+    # at the newest commit of this checkout that changed a reusable workflow or action
+    dotgithub = os.path.join(work, "dotgithub")
+    os.makedirs(os.path.join(dotgithub, ".github", "workflows"))
+    with open(os.path.join(dotgithub, ".github", "org-sync.toml"), "w") as fh:
+        fh.write('[settings]\ndescription = "x"\n')
+    inner = os.path.join(dotgithub, ".github", "workflows", "reusable-x.yml")
+    with open(inner, "w") as fh:
+        fh.write(
+            "on:\n  workflow_call:\njobs:\n  x:\n    uses: swarm-routing/.github/.github/actions/bot-token@main\n"
+        )
+    notes = generate("org-sync", ".github", dotgithub, data, [])
+    with open(inner) as fh:
+        check(
+            ".github's own references pinned by commit",
+            re.search(r"bot-token@[0-9a-f]{40} # main", fh.read()) is not None
+            and any("update    .github/workflows/reusable-x.yml" in n for n in notes),
+        )
     # org-sync notes list the seeds that differ, for information, and leave them alone
     adopted = os.path.join(work, "adopted")
     os.makedirs(adopted)
