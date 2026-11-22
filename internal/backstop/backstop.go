@@ -233,8 +233,8 @@ func (g GitHub) lastRun(repo, workflow, branch string) (time.Time, string, error
 }
 
 // titled reads the runs on branch created since `since`, newest first, and
-// returns the newest counted run's start and event and the newest counted
-// completed run's end (zero: none). A counted run is not cancelled and, when
+// returns the newest counted run's start and event and the latest end of any
+// completed counted run in the window (zero: none). A counted run is not cancelled and, when
 // title is set, has that run-name.
 func (g GitHub) titled(repo, workflow, branch, title string, since time.Time) (time.Time, string, time.Time, error) {
 	var started, done time.Time
@@ -269,11 +269,9 @@ func (g GitHub) titled(repo, workflow, branch, title string, since time.Time) (t
 					started = run.RunStartedAt
 				}
 			}
-			if done.IsZero() && run.Status == "completed" {
+			// the latest end of any counted run: an older run may end after a newer one
+			if run.Status == "completed" && run.UpdatedAt.After(done) {
 				done = run.UpdatedAt
-			}
-			if !done.IsZero() {
-				return started, event, done, nil
 			}
 		}
 		if len(r.Runs) < 100 {
