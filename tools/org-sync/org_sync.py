@@ -1330,6 +1330,90 @@ def render_makefile(cfg):
     )
 
 
+# Dependabot ecosystems by manifest file name (#716); a directory under one of
+# DEPENDABOT_SKIP (fixtures, vendored or built trees) is never watched.
+DEPENDABOT_MANIFESTS = {
+    "pip": ("requirements.txt", "pyproject.toml", "setup.py", "Pipfile"),
+    "gomod": ("go.mod",),
+    "docker": ("Dockerfile",),
+    "npm": ("package.json",),
+}
+DEPENDABOT_SKIP = {
+    ".git",
+    "node_modules",
+    "build",
+    "dist",
+    "vendor",
+    "third_party",
+    "third-party",
+    "testdata",
+    "fixtures",
+    ".venv",
+    "venv",
+}
+
+
+def repo_files(repo_dir):
+    """The repository's tracked files (git ls-files), else every file on disk."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo_dir, "ls-files", "-z"],
+            capture_output=True,
+            check=True,
+        ).stdout.decode()
+        files = [f for f in out.split("\0") if f]
+        if files:
+            return files
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    found = []
+    for root, dirs, names in os.walk(repo_dir):
+        dirs[:] = [x for x in dirs if x != ".git"]
+        found += [os.path.relpath(os.path.join(root, n), repo_dir) for n in names]
+    return found
+
+
+def dependabot_entries(repo_dir):
+    """(ecosystem, directory) pairs Dependabot should watch, sorted."""
+    out = {("github-actions", "/")}
+    for path in repo_files(repo_dir):
+        parts = path.replace(os.sep, "/").split("/")
+        if any(p in DEPENDABOT_SKIP for p in parts[:-1]):
+            continue
+        name = parts[-1]
+        for eco, manifests in DEPENDABOT_MANIFESTS.items():
+            # requirements-dev.txt, Dockerfile.ns3, ci.Dockerfile count too
+            extra = (eco == "pip" and re.fullmatch(r"requirements[\w.-]*\.txt", name)) or (
+                eco == "docker" and re.fullmatch(r"Dockerfile\.[\w.-]+|[\w.-]+\.Dockerfile", name)
+            )
+            if name in manifests or extra:
+                out.add((eco, "/" + "/".join(parts[:-1])))
+    order = ["github-actions", *DEPENDABOT_MANIFESTS]
+    return sorted(out, key=lambda e: (order.index(e[0]), e[1]))
+
+
+def render_dependabot(repo_dir):
+    """dependabot.yml.in plus one monthly entry per (ecosystem, directory)."""
+    text = template("dependabot/dependabot.yml.in")
+    for eco, directory in dependabot_entries(repo_dir):
+        text += (
+            f"  - package-ecosystem: {eco}\n"
+            f"    directory: {directory}\n"
+            "    schedule:\n"
+            "      interval: monthly\n"
+            "    commit-message:\n"
+            '      prefix: "chore(deps)"\n'
+        )
+        if eco == "github-actions":
+            text += (
+                "    groups:\n"
+                "      codeql-action:\n"
+                "        patterns:\n"
+                '          - "github/codeql-action*"\n'
+            )
+    return text
+
+
 def render_citation(cfg, repo_dir):
     """CITATION.cff.in for this repository: the abstract from the GitHub
     description (`[settings] description`, else the README's `description`),
@@ -1502,6 +1586,9 @@ def items(cfg):
         # every open security alert starts an automated fix; the maintainer keeps
         # dismissals and secret rotation (#629)
         ("file", ".github/workflows/security-autofix.yml", "workflows/security-autofix.yml", None),
+        # version updates for every ecosystem the repository has (OpenSSF
+        # Scorecard Dependency-Update-Tool, #716): a seed, the repository's own
+        ("seed", ".github/dependabot.yml", "dependabot/dependabot.yml.in", None),
         ("json", ".claude/settings.json", "claude-settings.json", None),
         ("seed", ".coderabbit.yaml", "coderabbit/coderabbit.yaml.in", None),
         ("section", ".coderabbit.yaml", "coderabbit/head.yaml", "coderabbit-head"),
@@ -1710,6 +1797,8 @@ def render(cfg, repo_dir, item, v=None):
             want = render_makefile(cfg)
         elif path == "CITATION.cff":
             want = render_citation(cfg, repo_dir)
+        elif path == ".github/dependabot.yml":
+            want = render_dependabot(repo_dir)
         else:
             want = want.format_map(v or values(cfg))
     return want

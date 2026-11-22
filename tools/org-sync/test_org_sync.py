@@ -2186,4 +2186,48 @@ try:
 finally:
     org_sync.PIN_ORG = saved_pin
 
+# the dependabot seed (#716): github-actions always, plus each manifest's
+# directory; fixtures and vendored trees are not watched; an existing file stays
+d = fresh()
+for path in (
+    "go.mod",
+    "docker/ci-tools/Dockerfile",
+    "requirements/ruff.txt",
+    "requirements/requirements-dev.txt",
+    "python/pyproject.toml",
+    "web/package.json",
+    "test/fixtures/x/package.json",
+    "vendor/y/go.mod",
+):
+    os.makedirs(os.path.dirname(os.path.join(d, path)) or d, exist_ok=True)
+    write(os.path.join(d, path), "")
+subprocess.run(["git", "-C", d, "add", "-A"], check=True)
+check(
+    org_sync.dependabot_entries(d)
+    == [
+        ("github-actions", "/"),
+        ("pip", "/python"),
+        ("pip", "/requirements"),
+        ("gomod", "/"),
+        ("docker", "/docker/ci-tools"),
+        ("npm", "/web"),
+    ],
+    "dependabot watches github-actions and each manifest's directory, no fixture or vendor",
+)
+run("init", d, "--kind", "python", "--dual", "")
+dep = read(os.path.join(d, ".github", "dependabot.yml"))
+check(
+    dep.startswith("# Dependabot version updates")
+    and "package-ecosystem: npm\n    directory: /web\n" in dep
+    and '- "github/codeql-action*"' in dep,
+    "init seeds .github/dependabot.yml",
+)
+write(os.path.join(d, ".github", "dependabot.yml"), "version: 2\nupdates: []\n")
+run("apply", d)
+check(
+    read(os.path.join(d, ".github", "dependabot.yml")) == "version: 2\nupdates: []\n",
+    "an existing dependabot.yml is the repository's own",
+)
+check(org_sync.dependabot_entries(fresh()) == [("github-actions", "/")], "an empty repo: actions")
+
 print("org-sync self-test: OK")
