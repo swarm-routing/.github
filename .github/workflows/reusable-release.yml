@@ -13,8 +13,10 @@ name: Reusable release
 #
 # 1. mode `bump` (a workflow_dispatch). Commitizen bumps the version from the
 #    Conventional-Commit history since the last tag (the first release is
-#    v0.1.0), rewrites the caller's version files and writes CHANGELOG.md.
-#    The `propose` job puts that commit on the fixed branch `bot/release`,
+#    v0.1.0), rewrites the caller's version files and writes CHANGELOG.md;
+#    org_sync.py apply at the caller's .github/org-sync.lock commit then
+#    renders its org-managed files again into the same commit (a first
+#    release's CHANGELOG.md link in the README, #810). The `propose` job puts that commit on the fixed branch `bot/release`,
 #    rebuilt on the default branch's tip (force-pushed), and opens or updates
 #    the PR `chore(release): bump version A to B`. It pushes with the org
 #    GitHub App's token (.github/actions/bot-token: BOT_APP_ID /
@@ -626,6 +628,48 @@ jobs:
               echo "::warning::${tag} has empty notes (no feat or fix since the last tag): write its paragraph under '## ${tag}' in CHANGELOG.md on the bump PR before merging, or the release fails before publishing (#524)"
             else
               echo "notes-empty=false" >> "$GITHUB_OUTPUT"
+            fi
+            # org-sync after the bump (#810): a first release creates
+            # CHANGELOG.md, which the org-managed README "Releases & citing"
+            # then links, so `check / org-sync` on the bump PR would fail.
+            # The caller's .github/org-sync.lock (the working directory's,
+            # else the repository root's) names the swarm-routing/.github
+            # commit its files were rendered from; org_sync.py apply at that
+            # commit (a blobless clone in the runner's temp directory, never
+            # in the caller's checkout) renders them again with the bump's
+            # files, and any change goes into the bump commit. The pin never
+            # moves here: an apply that would move the lock, or that meets a
+            # conflict, is undone with a warning and the bump stays as
+            # Commitizen made it. No lock: nothing to do.
+            sync_dir=""
+            for d in . "$GITHUB_WORKSPACE"; do
+              if [ -f "$d/.github/org-sync.lock" ]; then sync_dir="$(cd "$d" && pwd)"; break; fi
+            done
+            if [ -n "$sync_dir" ]; then
+              pin="$(sed -nE 's/^commit = "([0-9a-f]{40})"[[:space:]]*$/\1/p' "$sync_dir/.github/org-sync.lock")"
+              if [ -z "$pin" ]; then
+                echo "::warning::${sync_dir#"$GITHUB_WORKSPACE"/}/.github/org-sync.lock names no commit: org-sync not run after the bump"
+              else
+                org="$RUNNER_TEMP/org-sync-templates"
+                git clone -q --filter=blob:none --no-checkout https://github.com/swarm-routing/.github "$org"
+                git -C "$org" -c advice.detachedHead=false checkout -q --detach "$pin"
+                lock_before="$(sha256sum "$sync_dir/.github/org-sync.lock")"
+                rc=0
+                python3 -I "$org/tools/org-sync/org_sync.py" apply "$sync_dir" || rc=$?
+                if [ "$rc" -ne 0 ] || [ "$(sha256sum "$sync_dir/.github/org-sync.lock")" != "$lock_before" ]; then
+                  echo "::warning::org_sync.py apply at ${pin:0:12} after the bump exited ${rc} or moved .github/org-sync.lock: undone; if check / org-sync fails on the bump PR, run it there by hand (#810)"
+                  git reset -q --hard HEAD
+                  git clean -fdq
+                elif [ -n "$(git status --porcelain)" ]; then
+                  git status --short
+                  git add -A
+                  git commit -q --amend --no-edit
+                  git tag -f "$tag" HEAD > /dev/null
+                  echo "::notice::org-sync at ${pin:0:12} after the bump: its changes are in the bump commit (#810)"
+                else
+                  echo "org-sync at ${pin:0:12} after the bump: nothing to change"
+                fi
+              fi
             fi
             if [ "$(git rev-parse -q --verify "refs/tags/${tag}^{commit}")" != "$(git rev-parse HEAD)" ]; then
               echo "::error::Commitizen did not tag HEAD as ${tag}: set tag_format = \"v\$version\""

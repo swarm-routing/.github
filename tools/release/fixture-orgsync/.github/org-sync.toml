@@ -1,0 +1,52 @@
+# The release self-test's org-sync caller (release-selftest.yml, leg
+# `release-orgsync`, #810): a repository with no CHANGELOG.md yet whose README
+# "Releases & citing" is org-managed, rendered at the commit
+# .github/org-sync.lock pins. Every other item is skipped, so the fixture holds
+# only what the leg proves. Never released: the self-test is a dry run.
+kind = "data"
+repo = "swarm-routing/release-fixture"
+title = "release fixture"
+citation = true
+zenodo = false
+skip = [
+  "docs/development.md",
+  "AGENTS.md",
+  "AGENTS.md#org-rules",
+  "AGENTS.md#conventions",
+  "AGENTS.md#git-workflow",
+  "AGENTS.md#skills",
+  "AGENTS.md#agent-defaults",
+  "CLAUDE.md",
+  "CONTEXT.md",
+  "SECURITY.md",
+  "SECURITY.md#reporting",
+  "LICENSE",
+  "LICENSING.md",
+  "LICENSING.md#licence-texts",
+  "docs/adr/0000-template.md",
+  "docs/adr/README.md",
+  "docs/adr/0001-record-architecture-decisions.md",
+  "Makefile",
+  "Makefile#org-tools",
+  "Makefile#targets",
+  ".github/workflows/org-sync.yml",
+  ".github/workflows/dco.yml",
+  ".github/workflows/review-gate.yml",
+  ".github/workflows/scorecard.yml",
+  ".github/workflows/bestpractices-evidence.yml",
+  ".github/workflows/settings-apply.yml",
+  ".github/workflows/epics-changed.yml",
+  ".github/workflows/security-autofix.yml",
+  ".github/dependabot.yml",
+  ".claude/settings.json",
+  ".coderabbit.yaml",
+  ".coderabbit.yaml#coderabbit-head",
+  ".coderabbit.yaml#coderabbit-tail",
+  ".github/CODEOWNERS",
+  ".github/CODEOWNERS#codeowners",
+  "docs/references.bib",
+  "docs/references.bib#bib-header",
+  "docs/rcapa/README.md",
+  "docs/rcapa/_template.md",
+  "CITATION.cff",
+]
