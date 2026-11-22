@@ -274,7 +274,7 @@ jobs:
         if: env.TASK == 'all' || env.TASK == 'bestpractices'
         timeout-minutes: 3
         env:
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:93a5c6a786694356323bd63fbd8683ed78080e619e1c2c0f6fc75fdd5296fd9a  # promoted from f414692 (#697)
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0f1dcded005413992387233469e195cdcbd248a7cce9cca42011af0e119ba006  # promoted from de64b8f: the bestpractices attested wording (#791)
         run: |
           set -euo pipefail
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG"  # with retries (#645)
@@ -604,7 +604,7 @@ jobs:
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:32f1d5b2a68d1f40be8901d34e731f7d7c030d405ac02895ee855670c35c9cf0  # promoted from ea861a5 (#745)
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0f1dcded005413992387233469e195cdcbd248a7cce9cca42011af0e119ba006  # promoted from de64b8f: a code finding's file and line (#789)
         run: |
           set -o pipefail
           # at most 25 new tickets a run, the highest priority and the oldest first;

@@ -62,7 +62,7 @@ jobs:
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
       # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md)
-      IMG: ghcr.io/swarm-routing/ci-tools@sha256:5b8871db312aa437420362a530be522d1ad611425db015ecfe4e198fb293ff72  # promoted from 26e9061 (#729: critical and high counts)
+      IMG: ghcr.io/swarm-routing/ci-tools@sha256:0f1dcded005413992387233469e195cdcbd248a7cce9cca42011af0e119ba006  # promoted from de64b8f: the attested wording (#791)
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
