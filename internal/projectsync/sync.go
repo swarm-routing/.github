@@ -21,7 +21,9 @@
 //     public workflow log holds it);
 //   - a view missing by name is created (REST; the API cannot update or
 //     delete a view, so a changed view is reported for the maintainer to
-//     delete in the project, and the next run recreates it).
+//     delete in the project, and the next run recreates it);
+//   - every project the org owns, this one included, is made public, and a
+//     refusal fails the run and keeps the maintainer's issue (public.go, #707).
 //
 // A dry run reads everything and prints the diff. Writes are bounded per run
 // (MaxWrites) and paced (GitHub's secondary rate limits); what is left waits
@@ -54,9 +56,11 @@ const (
 type Result struct {
 	Wanted, Added, Updated, Removed, Views, Refused int
 	Deferred                                        bool
-	// VisibilityRefused: the token may not make the project public (a
-	// maintainer step, reported as a warning; the run still succeeds)
+	// VisibilityRefused: the token may not make an org project public (the
+	// maintainer's step, in the issue public.go keeps; the run fails, #707)
 	VisibilityRefused bool
+	// MadePublic counts the private org projects the run made public.
+	MadePublic int
 }
 
 type syncer struct {
@@ -134,6 +138,10 @@ func Run(g GitHub, d *Definition, dry bool, out io.Writer) (Result, error) {
 	}
 	s.res.Wanted = len(issues)
 	err = s.sync(issues)
+	if err == nil {
+		// after the sync, so a project it just created is covered too
+		err = s.allPublic()
+	}
 	verb := map[bool]string{true: "would ", false: ""}[dry]
 	fmt.Fprintf(out, "project-sync: %q: %d items wanted; %sadd %d, %sset %d values, %sremove %d, %screate %d views; %d private repositories refused%s\n",
 		d.Title, s.res.Wanted, verb, s.res.Added, verb, s.res.Updated, verb, s.res.Removed, verb, s.res.Views, s.res.Refused,
@@ -196,22 +204,9 @@ func (s *syncer) sync(issues []Issue) error {
 // change a project's visibility.
 const VisibilityRefused = "not authorized to change project visibility"
 
+// project sets the title, description and readme; its visibility is the
+// all-public rule's, with every other org project (public).
 func (s *syncer) project(p *Project) error {
-	if p.Public != s.d.Public {
-		s.say("project %q: %sset public", s.d.Title, s.would())
-		if !s.dry && s.write() {
-			err := s.g.GraphQL(mSetPublic, map[string]any{"p": p.ID, "public": s.d.Public}, nil)
-			s.g.pause()
-			switch {
-			case err != nil && strings.Contains(err.Error(), VisibilityRefused):
-				// a one-time maintainer step; everything else still syncs
-				s.res.VisibilityRefused = true
-				s.say("::warning::project %q: this token may not change its visibility: the maintainer makes it public once (the project's Settings, Visibility: Public)", s.d.Title)
-			case err != nil:
-				return err
-			}
-		}
-	}
 	var diff []string
 	if p.Title != s.d.Title {
 		diff = append(diff, "title")

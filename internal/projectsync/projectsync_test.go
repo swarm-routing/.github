@@ -71,6 +71,77 @@ type fake struct {
 	refuse    string   // a GraphQL error for every query
 	noPublic  bool     // the token may not change the visibility
 	auth      []string
+	others    []*fProj // the org's other projects (#707)
+	issues    []*fOrgIssue
+	issueLog  []string // the issue writes: "open N", "edit N", "comment N", "close N"
+}
+
+// fProj is another org project: its visibility, and whether the token may change it.
+type fProj struct {
+	id, title string
+	number    int
+	public    bool
+	noPublic  bool
+	fail      string // any other error on SetPublic
+}
+
+// fOrgIssue is an issue of swarm-routing/.github, where the private-projects issue lives.
+type fOrgIssue struct {
+	number      int
+	title, body string
+	state       string
+	labels      []string
+}
+
+func (f *fake) orgIssues(w http.ResponseWriter, r *http.Request, path string) {
+	rest := strings.TrimPrefix(path, "repos/swarm-routing/.github/issues")
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	find := func(s string) *fOrgIssue {
+		n, _ := strconv.Atoi(strings.Split(strings.TrimPrefix(s, "/"), "/")[0])
+		for _, i := range f.issues {
+			if i.number == n {
+				return i
+			}
+		}
+		return nil
+	}
+	switch {
+	case r.Method == "GET" && rest == "":
+		var out []map[string]any
+		for _, i := range f.issues {
+			if i.state == r.URL.Query().Get("state") && strings.Contains(strings.Join(i.labels, ","), r.URL.Query().Get("labels")) {
+				out = append(out, map[string]any{"number": i.number, "title": i.title, "body": i.body})
+			}
+		}
+		pageOf(w, r, out)
+	case r.Method == "POST" && rest == "":
+		i := &fOrgIssue{number: 100 + len(f.issues), title: body["title"].(string), body: body["body"].(string), state: "open"}
+		for _, l := range body["labels"].([]any) {
+			i.labels = append(i.labels, l.(string))
+		}
+		f.issues = append(f.issues, i)
+		f.issueLog = append(f.issueLog, fmt.Sprintf("open %d", i.number))
+		w.WriteHeader(201)
+		_ = json.NewEncoder(w).Encode(map[string]any{"number": i.number})
+	case r.Method == "POST" && strings.HasSuffix(rest, "/comments") && find(rest) != nil:
+		f.issueLog = append(f.issueLog, fmt.Sprintf("comment %d", find(rest).number))
+		w.WriteHeader(201)
+		_, _ = w.Write([]byte(`{}`))
+	case r.Method == "PATCH" && find(rest) != nil:
+		i := find(rest)
+		if b, ok := body["body"].(string); ok {
+			i.body = b
+			f.issueLog = append(f.issueLog, fmt.Sprintf("edit %d", i.number))
+		}
+		if st, ok := body["state"].(string); ok {
+			i.state = st
+			f.issueLog = append(f.issueLog, fmt.Sprintf("close %d", i.number))
+		}
+		_, _ = w.Write([]byte(`{}`))
+	default:
+		http.Error(w, "unexpected "+r.Method+" "+path, 500)
+	}
 }
 
 func (f *fake) next(p string) string { f.seq++; return fmt.Sprintf("%s_%d", p, f.seq) }
@@ -151,6 +222,8 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			out = append(out, map[string]any{"name": x.name, "private": x.private, "archived": false})
 		}
 		pageOf(w, r, out)
+	case strings.HasPrefix(path, "repos/swarm-routing/.github/issues"):
+		f.orgIssues(w, r, path)
 	case r.Method == "GET" && strings.HasPrefix(path, "repos/swarm-routing/"):
 		parts := strings.Split(strings.TrimPrefix(path, "repos/swarm-routing/"), "/")
 		rp := f.repo(parts[0])
@@ -342,12 +415,42 @@ func (f *fake) graphql(op, q string, v map[string]any) (any, error) {
 		}
 		f.title, f.desc, f.readme = v["title"].(string), v["desc"].(string), v["readme"].(string)
 		return map[string]any{}, nil
-	case "SetPublic":
-		if f.noPublic {
-			return nil, fmt.Errorf("Viewer not authorized to change project visibility")
+	case "OrgProjects":
+		var nodes []map[string]any
+		if f.projNum != 0 {
+			nodes = append(nodes, map[string]any{"id": "PVT_1", "number": f.projNum, "title": f.title, "public": f.public,
+				"url": fmt.Sprintf("https://github.com/orgs/swarm-routing/projects/%d", f.projNum)})
 		}
-		f.public = v["public"].(bool)
-		return map[string]any{}, nil
+		for _, p := range f.others {
+			nodes = append(nodes, map[string]any{"id": p.id, "number": p.number, "title": p.title, "public": p.public,
+				"url": fmt.Sprintf("https://github.com/orgs/swarm-routing/projects/%d", p.number)})
+		}
+		return map[string]any{"organization": map[string]any{"projectsV2": map[string]any{
+			"pageInfo": map[string]any{"hasNextPage": false, "endCursor": ""}, "nodes": nodes}}}, nil
+	case "SetPublic":
+		if v["public"] != true {
+			return nil, fmt.Errorf("SetPublic only ever makes a project public")
+		}
+		if v["p"] == "PVT_1" {
+			if f.noPublic {
+				return nil, fmt.Errorf("Viewer not authorized to change project visibility")
+			}
+			f.public = true
+			return map[string]any{}, nil
+		}
+		for _, p := range f.others {
+			if v["p"] == p.id {
+				if p.noPublic {
+					return nil, fmt.Errorf("Viewer not authorized to change project visibility")
+				}
+				if p.fail != "" {
+					return nil, fmt.Errorf("%s", p.fail)
+				}
+				p.public = true
+				return map[string]any{}, nil
+			}
+		}
+		return nil, fmt.Errorf("no project %v", v["p"])
 	case "CreateField":
 		var opts []map[string]any
 		if o, ok := v["options"].([]any); ok {
@@ -864,22 +967,93 @@ func TestMain_(t *testing.T) {
 	}
 }
 
-// A token refused the visibility (GitHub: "Viewer not authorized to change
-// project visibility", the pilot's first run on 2026-11-17): a warning that
-// names the maintainer step, and the rest still syncs; the next run tries again.
-func TestVisibilityRefused(t *testing.T) {
-	f := newFake()
+// Every org Project is public (#707): every project the org owns is read, a
+// private one made public; one the token may not change (GitHub: "Viewer not
+// authorized to change project visibility", the pilot's first run on
+// 2026-11-17) fails the run and opens the chore issue, which the next
+// all-public run closes.
+func TestAllProjectsPublic(t *testing.T) {
+	runErr := func(f *fake, dry bool) (Result, string, error) {
+		srv := httptest.NewServer(f)
+		defer srv.Close()
+		var out bytes.Buffer
+		res, err := Run(GitHub{API: srv.URL, Token: "tok-secret", Client: srv.Client()}, defn(t), dry, &out)
+		return res, out.String(), err
+	}
+	synced := func() *fake {
+		f := newFake()
+		if _, out := run(t, f, defn(t), false); !f.public {
+			t.Fatalf("the created plan project is made public:\n%s", out)
+		}
+		f.writes = nil
+		return f
+	}
+
+	// all public: nothing written, no issue
+	f := synced()
+	f.others = []*fProj{{id: "PVT_9", number: 9, title: "Roadmap board", public: true}}
+	if res, out, err := runErr(f, false); err != nil || res.MadePublic != 0 || len(f.writes) != 0 || len(f.issueLog) != 0 ||
+		!strings.Contains(out, "project-sync: 2 org projects, 0 private, 0 made public, 0 refused") {
+		t.Fatalf("all public: %v %+v %v %v\n%s", err, res, f.writes, f.issueLog, out)
+	}
+
+	// a private project the token may flip: made public, the run green
+	f = synced()
+	f.others = []*fProj{{id: "PVT_9", number: 9, title: "Roadmap board"}}
+	if res, out, err := runErr(f, false); err != nil || res.MadePublic != 1 || !f.others[0].public || len(f.issueLog) != 0 ||
+		!strings.Contains(out, `project #9 "Roadmap board": private: set public`) {
+		t.Fatalf("flip: %v %+v %v\n%s", err, res, f.issueLog, out)
+	}
+
+	// a dry run only says it
+	f = synced()
+	f.others = []*fProj{{id: "PVT_9", number: 9, title: "Roadmap board"}}
+	if _, out, err := runErr(f, true); err != nil || f.others[0].public || len(f.writes) != 0 ||
+		!strings.Contains(out, `project #9 "Roadmap board": private: would set public`) {
+		t.Fatalf("dry: %v %v\n%s", err, f.writes, out)
+	}
+
+	// refused: the run fails, the rest still synced, the issue opened; the
+	// next refused run leaves it as it is
+	f = newFake()
 	f.noPublic = true
-	res, out := run(t, f, defn(t), false)
-	if !res.VisibilityRefused || f.public || f.desc != "generated" || len(f.items) != 6 || len(f.viewPosts) != 2 {
-		t.Fatalf("%+v public=%v desc=%q items=%d\n%s", res, f.public, f.desc, len(f.items), out)
+	f.others = []*fProj{{id: "PVT_9", number: 9, title: "Roadmap board", noPublic: true},
+		{id: "PVT_10", number: 10, title: "Sprint", public: true}}
+	res, out, err := runErr(f, false)
+	if err == nil || !res.VisibilityRefused || f.public || f.desc != "generated" || len(f.items) != 6 ||
+		!strings.Contains(err.Error(), `#7 "Swarm routing plan", #9 "Roadmap board"`) || strings.Contains(err.Error()+out, "tok-secret") {
+		t.Fatalf("refused: %v %+v public=%v\n%s", err, res, f.public, out)
 	}
-	if !strings.Contains(out, "::warning::project \"Swarm routing plan\": this token may not change its visibility: the maintainer makes it public once") {
-		t.Fatalf("no warning:\n%s", out)
+	if len(f.issues) != 1 || f.issueLog[0] != "open 100" || f.issues[0].title != IssueTitle ||
+		f.issues[0].labels[0] != "chore" || !strings.Contains(f.issues[0].body, IssueMarker) ||
+		!strings.Contains(f.issues[0].body, "- #9 Roadmap board: https://github.com/orgs/swarm-routing/projects/9") ||
+		!strings.Contains(f.issues[0].body, "Settings → Visibility → Public") || strings.Contains(f.issues[0].body, "Sprint") {
+		t.Fatalf("issue: %v %+v", f.issueLog, f.issues)
 	}
-	// made public by hand: the next run writes nothing
-	f.public, f.noPublic, f.writes = true, false, nil
-	if res, out = run(t, f, defn(t), false); res.VisibilityRefused || len(f.writes) != 0 {
-		t.Fatalf("%+v %v\n%s", res, f.writes, out)
+	if _, _, err := runErr(f, false); err == nil || len(f.issueLog) != 1 {
+		t.Fatalf("second refused run: %v %v", err, f.issueLog)
+	}
+	// one of them made public by hand: the issue is edited to the other
+	f.public = true
+	if _, _, err := runErr(f, false); err == nil || f.issueLog[1] != "edit 100" || strings.Contains(f.issues[0].body, "Swarm routing plan") {
+		t.Fatalf("one left: %v %v\n%s", err, f.issueLog, f.issues[0].body)
+	}
+
+	// every project public again: the next run closes the issue, with a comment
+	f.others[0].public = true
+	if res, out, err := runErr(f, false); err != nil || res.VisibilityRefused ||
+		strings.Join(f.issueLog[2:], ",") != "comment 100,close 100" || f.issues[0].state != "closed" ||
+		!strings.Contains(out, "closing issue #100") {
+		t.Fatalf("closed: %v %+v %v\n%s", err, res, f.issueLog, out)
+	}
+	if _, _, err := runErr(f, false); err != nil || len(f.issueLog) != 4 {
+		t.Fatalf("closed stays closed: %v %v", err, f.issueLog)
+	}
+
+	// an error other than the refusal fails the run and opens nothing
+	f = synced()
+	f.others = []*fProj{{id: "PVT_x", number: 11, title: "Broken", fail: "Something went wrong"}}
+	if _, _, err := runErr(f, false); err == nil || !strings.Contains(err.Error(), "Something went wrong") || len(f.issueLog) != 0 {
+		t.Fatalf("other error: %v %v", err, f.issueLog)
 	}
 }
