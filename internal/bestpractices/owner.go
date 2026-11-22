@@ -94,21 +94,19 @@ func LoadAttestation(r Remote) (*Attestation, error) {
 	return a, nil
 }
 
-// alert is one open security alert, as the issue lists it.
-type alert struct {
-	kind, severity, created, url string
-	number                       string
-}
+// alert is one open security alert, read by securityalerts.FromJSON, the
+// reading the security-alerts tickets use (#680).
+type alert struct{ securityalerts.Alert }
 
 func (a alert) String() string {
-	s := fmt.Sprintf("%s alert #%s", a.kind, a.number)
-	if a.severity != "" {
-		s += " (" + a.severity + ")"
+	s := fmt.Sprintf("%s alert #%d", a.Kind, a.Number)
+	if a.Security {
+		s += " (" + a.Severity + ")"
 	}
-	if a.created != "" {
-		s += ", open since " + a.created[:min(10, len(a.created))]
+	if !a.Created.IsZero() {
+		s += ", open since " + a.Created.UTC().Format("2006-01-02")
 	}
-	return s + ": " + a.url
+	return s + ": " + a.URL
 }
 
 // alertRead is one listing's result: the open alerts, or why it could not
@@ -143,30 +141,66 @@ func readAlerts(gh AlertReader, repo, kind, path string) alertRead {
 	}
 	var out alertRead
 	for _, x := range list {
-		m, _ := x.(map[string]any)
-		a := alert{kind: kind, number: pyStr(m["number"]), url: pyStr(m["html_url"])}
-		a.created, _ = m["created_at"].(string)
-		switch kind {
-		case "code scanning":
-			if rule, ok := m["rule"].(map[string]any); ok {
-				a.severity, _ = rule["security_severity_level"].(string)
-			}
-		case "Dependabot":
-			if adv, ok := m["security_advisory"].(map[string]any); ok {
-				a.severity, _ = adv["severity"].(string)
-			}
+		a, err := securityalerts.FromJSON(kind, x)
+		if err != nil {
+			return alertRead{err: err.Error()}
 		}
-		out.alerts = append(out.alerts, a)
+		out.alerts = append(out.alerts, alert{a})
 	}
 	return out
 }
 
-var severityRank = map[string]int{"low": 1, "medium": 2, "moderate": 2, "high": 3, "critical": 4}
+// severityRank orders the security severities; an alert without one (a
+// code-scanning quality rule) ranks 0 and never counts as a vulnerability.
+var severityRank = map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
+
+func (a alert) rank() int {
+	if !a.Security {
+		return 0
+	}
+	return severityRank[a.Severity]
+}
 
 // olderThan: the alert was opened more than days ago.
 func (a alert) olderThan(days int) bool {
-	t, err := time.Parse(time.RFC3339, a.created)
-	return err == nil && now().Sub(t) > time.Duration(days)*24*time.Hour
+	return !a.Created.IsZero() && a.Age(now()) > time.Duration(days)*24*time.Hour
+}
+
+// openCount is the vulnerability answers' sentence on today's alerts (#680):
+// how many code-scanning and Dependabot alerts of at least minRank are open
+// and the oldest one, or which listing could not be read.
+func openCount(reads map[string]alertRead, minRank int, what string) string {
+	var oldest *alert
+	n := 0
+	var unread []string
+	for _, k := range []string{"code scanning", "Dependabot"} {
+		if reads[k].err != "" {
+			unread = append(unread, k)
+			continue
+		}
+		for i, a := range reads[k].alerts {
+			if a.rank() < minRank {
+				continue
+			}
+			n++
+			if oldest == nil || a.Created.Before(oldest.Created) {
+				oldest = &reads[k].alerts[i]
+			}
+		}
+	}
+	var s string
+	switch {
+	case n == 0:
+		s = fmt.Sprintf(" Open now: no %s code-scanning or Dependabot alert", what)
+	case n == 1:
+		s = fmt.Sprintf(" Open now: 1 %s alert, %s", what, oldest)
+	default:
+		s = fmt.Sprintf(" Open now: %d %s alerts, the oldest %s", n, what, oldest)
+	}
+	if len(unread) > 0 {
+		s += " (the " + strings.Join(unread, " and ") + " alerts could not be read)"
+	}
+	return s + "."
 }
 
 // OwnerReport is what the check proposes for the attested criteria.
@@ -242,8 +276,8 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 	seen := map[string]bool{}
 	blockBy := func(c string, a alert) {
 		block(c, "open "+a.String())
-		if !seen[a.url] {
-			seen[a.url] = true
+		if !seen[a.URL] {
+			seen[a.URL] = true
 			rep.Alerts = append(rep.Alerts, a)
 		}
 	}
@@ -251,7 +285,7 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 	// an alert past its age withdraws the answer
 	for _, k := range []string{"code scanning", "Dependabot"} {
 		for _, a := range reads[k].alerts {
-			r := severityRank[strings.ToLower(a.severity)]
+			r := a.rank()
 			if r >= 2 && a.olderThan(EscalateDays) {
 				blockBy("vulnerabilities_fixed_60_days", a)
 			}
@@ -271,11 +305,15 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 		"vulnerabilities_fixed_60_days":  fmt.Sprintf("a medium-or-higher alert stays open more than %d days", EscalateDays),
 		"vulnerabilities_critical_fixed": fmt.Sprintf("a critical alert stays open more than %d days", CriticalDays),
 	}
+	today := map[string]string{
+		"vulnerabilities_fixed_60_days":  openCount(reads, 2, "medium-or-higher"),
+		"vulnerabilities_critical_fixed": openCount(reads, 4, "critical"),
+	}
 	for _, c := range []string{"vulnerabilities_fixed_60_days", "vulnerabilities_critical_fixed"} {
 		if a, ok := rep.Answers[c]; ok {
 			rep.Answers[c] = [2]string{a[0], a[1] + " Every code-scanning alert starts an automated fix " +
 				"(security-autofix.yml) and Dependabot opens security updates; the weekly check withdraws " +
-				"this answer when " + guard[c] + ": " + security + "."}
+				"this answer when " + guard[c] + ": " + security + "." + today[c]}
 		}
 	}
 	if a, ok := rep.Answers["no_leaked_credentials"]; ok {
@@ -299,7 +337,7 @@ func ownerAnswers(att *Attestation, repo string, proposed map[string]any, tree m
 		}
 		rep.Answers[c] = a
 	}
-	sort.Slice(rep.Alerts, func(i, j int) bool { return rep.Alerts[i].url < rep.Alerts[j].url })
+	sort.Slice(rep.Alerts, func(i, j int) bool { return rep.Alerts[i].URL < rep.Alerts[j].URL })
 	return rep
 }
 
