@@ -46,7 +46,7 @@ is the long form.
    opens the pin-bump PR in every protocol repository that pins swarm-core
    (the failing check names each place to change), until org-bot does it
    (#208). A repository with a release lock, `swarm-core.lock`
-   (`tools/checks/release_lock.py`, swarm-routing/ns3-swarm-core#134), is
+   (`tools/checks/release_lock.py`, swarm-routing/swarm-adapter-ns3#134), is
    checked against swarm-core's releases instead: the `Makefile` and the ns-3
    CI's dependency name the lock's tag (a `canary-dependencies:` block may
    name `main`, #411), `core-deps` and a benchmark cell's dependency the
@@ -66,7 +66,7 @@ is the long form.
    swarm-core**, AntHocNet included: its `core/` on swarm-core's dual-licensed
    `core/`, its ns-3 adapter on `SwarmRoutingBase`; what a protocol needs and
    the base lacks is promoted into swarm-core (maintainer decision,
-   swarm-routing/ns3-swarm-core#14).
+   swarm-routing/swarm-adapter-ns3#14).
 4. **Determinism.** Fixed `--seed=<N>` ⇒ byte-identical output. Comparisons are
    paired per-seed deltas over ≥ 20 seeds, emitting `##CONFIG##`, `##RUN##`,
    `##BENCH##`, `##DIAG##` lines.
@@ -130,7 +130,7 @@ is the long form.
    moves when ns-3 raises it (maintainer decision 2026-11-14;
    swarm-core's `ci.yml` `cxx-standard` job checks its `core/` against the
    image, and `swarm::core` passes the standard on to every protocol core:
-   swarm-routing/ns3-swarm-core#141, its `docs/api-policy.md` "C++ standard").
+   swarm-routing/swarm-adapter-ns3#141, its `docs/api-policy.md` "C++ standard").
 8. **If we can automate, we always automate** (maintainer rule 2026-11-17).
    Anything that can run as a pipeline runs as one: a check, a bump, a
    dispatch after a merge, a refresh, a recovery after a missed run. A step
@@ -276,10 +276,10 @@ is something that worked in such a version and broke in a later one.
 
 | Defect | RCAPA |
 |--------|-------|
-| A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/ns3-tools ("ns-3 bugs (RCAPA)" below) |
-| A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/ns3-tools |
+| A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/sim-tools ("ns-3 bugs (RCAPA)" below) |
+| A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/sim-tools |
 | A regression in a published library (above) | **yes**: `<PREFIX>-NNN` in that library's repository |
-| A bug in a Docker image (the `ns3-dev` images, `ci-tools`, any image) | **no** by default; **yes** only when it is traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image): then in the repository that owns that Dockerfile (`CNT-NNN` for swarm-routing/ns3-containers) |
+| A bug in a Docker image (the `ns3-dev` images, `ci-tools`, any image) | **no** by default; **yes** only when it is traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image): then in the repository that owns that Dockerfile (`CNT-NNN` for swarm-routing/sim-containers) |
 | A change in a repository whose output no project consumes at a version: swarm-routing/.github (reusable workflows at `@main`), the site's Pages deploy, swarm-routing/skills (the plugin), swarm-routing/benchmarks (datasets), swarm-routing/ns3-upstream-report | **no** for its own changes |
 | A bug or change that never reached a published version (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
 | A trivial change with no behaviour (a typo, a comment, docs wording) that affects no behaviour, output, number or released artifact | **no** |
@@ -293,7 +293,7 @@ the next one never reached a published version.
 **Worked example.** AntHocNet bumps its `swarm-core.lock` to a new swarm-core
 release and a check that passed on the old one fails. The suspect is a bug in
 the released swarm-core: the RCAPA is an `SWC-NNN` ticket in
-swarm-routing/ns3-swarm-core, opened from AntHocNet's finding (its issue or
+swarm-routing/swarm-adapter-ns3, opened from AntHocNet's finding (its issue or
 PR linked), and the regression is verified with AntHocNet's failing check on
 the new release against the old one. It closes when a swarm-core release
 carries the fix and AntHocNet's lock bump to it is green. If the cause turns
@@ -315,7 +315,7 @@ For a regression in a published library:
    items, a link whose text is `nsnam/ns-3-dev#N` to the full GitLab URL for
    ns-3's; never a bare `#N`.
 4. **The ticket stays open until the corrective action is merged and a
-   release carries the fix** (PROC-001's rule, swarm-routing/ns3-tools#247,
+   release carries the fix** (PROC-001's rule, swarm-routing/sim-tools#247,
    generalised), and the consumer that found it runs green on that release.
 
 Every repository keeps `docs/rcapa/README.md`, linked from its README: its
@@ -325,22 +325,22 @@ adds its row here):
 
 | Repository | Prefix | Published as |
 |------------|--------|--------------|
-| swarm-routing/ns3-swarm-core | `SWC` | releases: `swarm-core.lock`, the `swarm-core` vcpkg port |
-| swarm-routing/ns3-tools | `NST` (its own code; ns-3 bugs keep `NS3`, process defects `PROC`) | releases: `ns3-tools.lock`, PyPI |
+| swarm-routing/swarm-adapter-ns3 | `SWC` | releases: `swarm-core.lock`, the `swarm-core` vcpkg port |
+| swarm-routing/sim-tools | `NST` (its own code; ns-3 bugs keep `NS3`, process defects `PROC`) | releases: `ns3-tools.lock`, PyPI |
 | swarm-routing/AntHocNet | `AHN` | the `anthocnet-core` vcpkg port, once published |
 | swarm-routing/ARA | `ARA` | the `ara-core` vcpkg port |
 | swarm-routing/BeeAdHoc | `BAH` | the `beeadhoc-core` vcpkg port |
 | swarm-routing/HOPNET | `HOP` | the `hopnet-core` vcpkg port, once published |
 | swarm-routing/Termite | `TRM` | the `termite-core` vcpkg port, once published |
 | swarm-routing/vcpkg-registry | `VCP` (maintainer decision, 2026-11-16) | port recipes at a registry baseline: a regression in a published port is a `VCP-NNN` there |
-| swarm-routing/ns3-containers | `CNT` | image composition only (the table above) |
+| swarm-routing/sim-containers | `CNT` | image composition only (the table above) |
 
 ### ns-3 bugs (RCAPA)
 
 A defect in upstream ns-3 (the simulator, not our code), or an investigation
 of one, always gets an **RCAPA ticket** (root cause analysis + corrective and
 preventive actions; maintainer decision, 2026-11-16) in
-**swarm-routing/ns3-tools** first, opened from the form *ns-3 bug (RCAPA)*
+**swarm-routing/sim-tools** first, opened from the form *ns-3 bug (RCAPA)*
 (`ISSUE_TEMPLATE/rcapa.yml`: labels `rcapa`, `ns3-upstream`, `verification`,
 `ns3`; title
 `[rcapa] NS3-NNN ...`, the next free ID of the index). It holds the ns-3
@@ -348,7 +348,7 @@ versions and modules, the symptom, a reproducer (command, `ns3-dev` image tag
 and digest, seed, expected vs actual), the evidence and the workarounds in our
 repositories. The register follows the ticket:
 
-- `docs/ns3-bugs.md` in swarm-routing/ns3-tools is the index, one row per
+- `docs/ns3-bugs.md` in swarm-routing/sim-tools is the index, one row per
   `NS3-NNN`;
 - `docs/ns3-rcapa/ns3-rcapa-<short-description>.md` is the full RCAPA: the 5
   whys, each cited; the reproducer, verified on `ns3-dev:latest` and on
@@ -357,7 +357,7 @@ repositories. The register follows the ticket:
   actions, linked; the upstream report text.
 
 Every workaround links its `NS3-NNN` ID: a `test/known-failures.txt` XFAIL in
-swarm-routing/ns3-containers, an ns-3 version pin in a workflow, a refused or
+swarm-routing/sim-containers, an ns-3 version pin in a workflow, a refused or
 restricted arm.
 
 **Upstream reports go through the bridge,**
@@ -374,7 +374,7 @@ deployment. The bridge mirrors every GitLab note and the state of the issue
 and merge requests onto the mirror ticket every 6 h and flags stalls.
 
 **An RCAPA ticket stays open until the fix is in an ns-3 release we run**
-(PROC-001, swarm-routing/ns3-tools#247): filing upstream is a step, not the
+(PROC-001, swarm-routing/sim-tools#247): filing upstream is a step, not the
 end; the ticket closes when the release ships the fix and the workarounds it
 lists are removed.
 
@@ -511,7 +511,7 @@ defaults in `templates/agents/agent-defaults.md`).
 
 ## Dependencies
 
-How one org repository builds on another's code (swarm-routing/ns3-swarm-core#134,
+How one org repository builds on another's code (swarm-routing/swarm-adapter-ns3#134,
 maintainer decision 2026-11-14). Every protocol's `core/` builds on swarm-core's
 `core/`, and its ns-3 module on swarm-core and ns3-tools' `routing-bench`.
 
@@ -613,9 +613,9 @@ python3 -I ../.github/tools/checks/check-swarm-core-pin.py --bump   # what org-b
 python3 -I ../.github/tools/checks/release_lock.py latest swarm-core.lock      # locked vs newest release
 python3 -I ../.github/tools/checks/release_lock.py bump ns3-tools.lock        # what release-lock would write (--write writes it)
 # write a lock for the newest release (a switch PR; a bump keeps the lock's header comment)
-tag=$(gh api repos/swarm-routing/ns3-swarm-core/releases/latest --jq .tag_name)
+tag=$(gh api repos/swarm-routing/swarm-adapter-ns3/releases/latest --jq .tag_name)
 python3 -I ../.github/tools/checks/release_lock.py render --prefix SWARM_CORE \
-    --repo swarm-routing/ns3-swarm-core --tag "$tag" --asset 'swarm-core-{version}.tar.gz' \
+    --repo swarm-routing/swarm-adapter-ns3 --tag "$tag" --asset 'swarm-core-{version}.tar.gz' \
     > swarm-core.lock.new && mv swarm-core.lock.new swarm-core.lock
 ```
 
@@ -646,7 +646,7 @@ release tag, as vcpkg has no ns-3 port (#440).
   `builtin` registry at a microsoft/vcpkg commit. Both files are JSON written
   as `json.dumps(indent=2)` writes it, since org-bot rewrites them so.
 - **The CMake.** `core/CMakeLists.txt` calls `find_package(swarm-core CONFIG
-  REQUIRED)` (the installed package, swarm-routing/ns3-swarm-core#137, target
+  REQUIRED)` (the installed package, swarm-routing/swarm-adapter-ns3#137, target
   `swarm::core`) and reads no lock; with the vcpkg toolchain file it gets the
   port, with `CMAKE_PREFIX_PATH` any install. As the manifest is at the root,
   it sets `VCPKG_MANIFEST_DIR` to `..` before `project()` when the caller did
@@ -755,7 +755,7 @@ Which language a piece of code is written in follows what it is
   REST; its queries and mutations live in `internal/projectsync`, covered by
   its tests against a fake API, with a dry run that prints the diff
   ([ADR-0002](docs/adr/0002-pipelines-are-go.md) "GraphQL in project-sync").
-- **swarm-routing/ns3-tools stays Python + C++**; protocol cores and ns-3
+- **swarm-routing/sim-tools stays Python + C++**; protocol cores and ns-3
   modules stay C++.
 
 A Go module follows the org's conventions:
@@ -908,7 +908,7 @@ runs until their secret is set, and the secrets belong to the maintainer:
 
 | Workflow | What it does | Secret |
 |---|---|---|
-| `org-bot` (daily, and on every push that changes `templates/` or a generator; task `swarm-core-pin` also every three hours; on each release's `org-release` repository_dispatch, sent by `reusable-release.yml`'s `notify-org` job and AntHocNet's `release.yml`: `release` for that repository, then `release-lock` (and `swarm-core-pin` after a swarm-core release) everywhere, the hourly run staying the backstop, #479) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted, or when Zenodo holds a concept its CITATION.cff and `zenodo_concept` do not name yet (task `zenodo`, #232), or when swarm-core `main` changed `core/` since a protocol repository's pin, or, for a repository with a release lock `swarm-core.lock`, when a newer swarm-core release is out (task `swarm-core-pin`, #208, swarm-routing/ns3-swarm-core#134: `check-swarm-core-pin.py --bump` rewrites the old commit on the pin lines only, `SWARM_CORE_REF` and the workflows' `core-deps` and ns-3 dependency lines, never recorded results, docs or campaign plans, #407; one PR per repository on `org-bot/swarm-core-pin`, updated in place when swarm-core moves again). A pin or lock bump and a template refresh are never left as two PRs that each fail the other's required check (`check / org-sync`, `swarm-core / pin`; every protocol repository deadlocked that way on 2026-11-14, #429): when either task changes a repository, the other generator runs on the same clone, and if both change something they go in one PR on `org-bot/swarm-core-pin` and the bot's open template-refresh PR there is closed as superseded. Every other release lock (a root `<name>.lock` that `release_lock.py` parses, AntHocNet's `ns3-tools.lock` today) is moved by task `release-lock` when the repository it names has a newer release (#478): `release_lock.py bump --write`, every value read from the release, one PR per repository on `org-bot/release-lock`, updated in place, carrying any template drift too while the template-refresh PR stays open; a lock an open hand PR already changes is left alone, and an asset the release renamed fails that repository for a person. Its PR runs the consumer's CI and merges only through the queue when green. Every hour (task `release`, #430, #465, with `release-lock`): `release-rebuild` dispatches `bump` again where an open `bot/release` PR is behind its base, with the `increment` it records; `release-aftercare` records each release younger than 14 days once Zenodo has it (`docs/roadmap.md`'s shipped block, a `CONTRIBUTING.md`'s version-DOI rows, the archived-releases table here) and posts what `release_check.py after` still finds on the site's `[release-sync]` issue; `release-sync-watch` (the Go tool `cmd/release-sync-watch`, from the `ci-tools` image by digest, #571) dispatches the site's `release-sync.yml` for a release published more than an hour ago that has no `[release-sync]` issue or no green run named for it ("Cutting a release" step 6). Daily (`branch-sweep`, #595), the Go tool `branch-sweep` (`cmd/branch-sweep`, from the `ci-tools` image by digest) deletes the org's stale branches in every unarchived repository: a branch whose PRs are all closed, the newest more than 2 days ago, with no commit since and no open PR using it as head or base, and a `claude/*` or `org-bot/*` branch with no PR and no commit for 7 days; never the default branch, `main`, `bot/release`, `gh-readonly-queue/*`, `release/*` or `releases/*`, a protected branch or a tag; at most 200 a run, each deletion listed in the run's summary. Agents never delete a branch by hand and never ask the maintainer to: they leave it to this task. Hourly, daily and on repository_dispatch `project` (task `project-sync`, #541; each repository's org-managed `epics-changed.yml` sends it when a `release:*`, `rcapa`, `ns3-upstream` or, on such an issue, `priority:*` label changes, or such an issue is closed, reopened, deleted or transferred), the Go tool `project-sync` (`cmd/project-sync`, from the `ci-tools` image by digest) makes the public org Project match `templates/projects/plan.json` ("Where the plan lives"); those runs have their own concurrency group, so a burst of label changes never replaces a pending `org-release` run. The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents (also `branch-sweep`'s deletions), Pull requests and Workflows read and write, organization Projects read and write (`project-sync`; the App's permission, granted 2026-11-16), and Actions read and write (`release-rebuild` dispatches a release workflow, `release-sync-watch` the site's `release-sync.yml`) and Issues read and write (`release-aftercare` comments on the site's `[release-sync]` issue) |
+| `org-bot` (daily, and on every push that changes `templates/` or a generator; task `swarm-core-pin` also every three hours; on each release's `org-release` repository_dispatch, sent by `reusable-release.yml`'s `notify-org` job and AntHocNet's `release.yml`: `release` for that repository, then `release-lock` (and `swarm-core-pin` after a swarm-core release) everywhere, the hourly run staying the backstop, #479) | Opens one PR per repository when its `## Epics` section (and, here, ROADMAP.md and the profile) or its org-managed files have drifted, or when Zenodo holds a concept its CITATION.cff and `zenodo_concept` do not name yet (task `zenodo`, #232), or when swarm-core `main` changed `core/` since a protocol repository's pin, or, for a repository with a release lock `swarm-core.lock`, when a newer swarm-core release is out (task `swarm-core-pin`, #208, swarm-routing/swarm-adapter-ns3#134: `check-swarm-core-pin.py --bump` rewrites the old commit on the pin lines only, `SWARM_CORE_REF` and the workflows' `core-deps` and ns-3 dependency lines, never recorded results, docs or campaign plans, #407; one PR per repository on `org-bot/swarm-core-pin`, updated in place when swarm-core moves again). A pin or lock bump and a template refresh are never left as two PRs that each fail the other's required check (`check / org-sync`, `swarm-core / pin`; every protocol repository deadlocked that way on 2026-11-14, #429): when either task changes a repository, the other generator runs on the same clone, and if both change something they go in one PR on `org-bot/swarm-core-pin` and the bot's open template-refresh PR there is closed as superseded. Every other release lock (a root `<name>.lock` that `release_lock.py` parses, AntHocNet's `ns3-tools.lock` today) is moved by task `release-lock` when the repository it names has a newer release (#478): `release_lock.py bump --write`, every value read from the release, one PR per repository on `org-bot/release-lock`, updated in place, carrying any template drift too while the template-refresh PR stays open; a lock an open hand PR already changes is left alone, and an asset the release renamed fails that repository for a person. Its PR runs the consumer's CI and merges only through the queue when green. Every hour (task `release`, #430, #465, with `release-lock`): `release-rebuild` dispatches `bump` again where an open `bot/release` PR is behind its base, with the `increment` it records; `release-aftercare` records each release younger than 14 days once Zenodo has it (`docs/roadmap.md`'s shipped block, a `CONTRIBUTING.md`'s version-DOI rows, the archived-releases table here) and posts what `release_check.py after` still finds on the site's `[release-sync]` issue; `release-sync-watch` (the Go tool `cmd/release-sync-watch`, from the `ci-tools` image by digest, #571) dispatches the site's `release-sync.yml` for a release published more than an hour ago that has no `[release-sync]` issue or no green run named for it ("Cutting a release" step 6). Daily (`branch-sweep`, #595), the Go tool `branch-sweep` (`cmd/branch-sweep`, from the `ci-tools` image by digest) deletes the org's stale branches in every unarchived repository: a branch whose PRs are all closed, the newest more than 2 days ago, with no commit since and no open PR using it as head or base, and a `claude/*` or `org-bot/*` branch with no PR and no commit for 7 days; never the default branch, `main`, `bot/release`, `gh-readonly-queue/*`, `release/*` or `releases/*`, a protected branch or a tag; at most 200 a run, each deletion listed in the run's summary. Agents never delete a branch by hand and never ask the maintainer to: they leave it to this task. Hourly, daily and on repository_dispatch `project` (task `project-sync`, #541; each repository's org-managed `epics-changed.yml` sends it when a `release:*`, `rcapa`, `ns3-upstream` or, on such an issue, `priority:*` label changes, or such an issue is closed, reopened, deleted or transferred), the Go tool `project-sync` (`cmd/project-sync`, from the `ci-tools` image by digest) makes the public org Project match `templates/projects/plan.json` ("Where the plan lives"); those runs have their own concurrency group, so a burst of label changes never replaces a pending `org-release` run. The same change is never proposed twice; an older bot PR is closed as superseded, so a repository has at most one open bot PR per task. Where `main` has a merge queue (`merge_queue = true`), it enables auto-merge on its own PR, which enters the queue once green and lands with no hand step (#178); a repository without a queue is logged and its PR is merged by hand | The org GitHub App (`BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`; below), else `ORG_BOT_TOKEN`: a fine-grained token on the org, all repositories, with Contents (also `branch-sweep`'s deletions), Pull requests and Workflows read and write, organization Projects read and write (`project-sync`; the App's permission, granted 2026-11-16), and Actions read and write (`release-rebuild` dispatches a release workflow, `release-sync-watch` the site's `release-sync.yml`) and Issues read and write (`release-aftercare` comments on the site's `[release-sync]` issue) |
 | `bestpractices` (weekly, on demand) | `bestpractices check --issues` from the `ci-tools` image by digest: one `[bestpractices]` issue per public repository, with the proposal link(s) to Save or the registration steps ("OpenSSF Best Practices" below, #531); org-bot's task `bestpractices` regenerates `.bestpractices.json` (daily, and on each repository's `bestpractices-evidence.yml` dispatch) | The org GitHub App, else `ORG_BOT_TOKEN` (Issues read and write; Code scanning alerts, Dependabot alerts and Secret scanning alerts: read, for the three owner-only answers it checks against open alerts, #612) |
 | `zenodo` (daily) | See Releases and DOIs below | `ZENODO_TOKEN` |
 | `labels` (on every push here that changes `labels.json`, weekly, on demand; a PR that changes it runs a read-only dry run; #570) | `labels` from the `ci-tools` image by digest: `labels.json` on every org repository, private ones included (a private one is logged as `private repository N`, never by name); missing labels created, colour, description or a name's case updated, nothing deleted | The org GitHub App, else `ORG_BOT_TOKEN` (Issues read and write on every repository) |
@@ -997,7 +997,7 @@ Each protocol repository benchmarks its own changes; `swarm-routing/benchmarks`
 records released versions (#156). One cell workflow serves every repository:
 `reusable-benchmark-cell.yml` (#157), called by a thin `workflow_dispatch`
 caller in the protocol repository (its header has the caller), and dispatched
-cell by cell by `ns3-campaign` (`swarm-routing/ns3-tools`). A cell is one
+cell by cell by `ns3-campaign` (`swarm-routing/sim-tools`). A cell is one
 harness invocation in one image, on one commit:
 
 | Input | Meaning |
@@ -1307,7 +1307,7 @@ that has a badge (#415): **Build** (`ci`, `container-security`, `hadolint`,
 its `docs/rcapa/README.md`; ADR-0003) is on in every repository; `ns3-bugs`
 ("ns-3 bugs", open issues labelled `ns3-upstream`, linking
 `docs/ns3-bugs.md`) appears only where that register exists
-(swarm-routing/ns3-tools). Both are counts, in a neutral colour. A repository's `badges` list
+(swarm-routing/sim-tools). Both are counts, in a neutral colour. A repository's `badges` list
 says which appear, never their order. A badge of the repository's own (a
 coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
 `.github/org-sync.toml` (`group`, `alt`, `image`, `link`), placed after its
@@ -1590,7 +1590,7 @@ actor), so the bump goes through a PR and the tag follows the merge
    or a previous tag Commitizen cannot see) gets a hand-written paragraph or
    the regenerated entries in a commit on the bump PR first, since the
    release notes are that section (ns3-tools v1.0.0 shipped one empty,
-   swarm-routing/ns3-tools#185). The workflow enforces it (#524): a bump
+   swarm-routing/sim-tools#185). The workflow enforces it (#524): a bump
    whose section is empty warns, and its PR body asks for the paragraph; a
    release whose merged `CHANGELOG.md` has nothing under `## vX.Y.Z` fails
    before anything is tagged or published. A release already out with empty
