@@ -85,7 +85,7 @@ DIST_TARGET = re.compile(r"^dist\s*:", re.M)
 INCREMENT = re.compile(r"\binputs\.increment\b")
 COMMENT = re.compile(r"(?:^|\s)#.*$")  # a YAML comment, to the end of the line
 # an own release.yml builds its assets when a live (uncommented) line names dist/ as a path
-OWN_DIST = re.compile(r"(?:^|\s)\"?dist/?\"?(?=\s|$)", re.M)
+OWN_DIST = re.compile(r"(?:^|\s)\"?(?:\./)?dist/?\"?(?=\s|$)", re.M)
 WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
 KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):(.*)$")  # the value is stripped after the match
 SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
@@ -794,6 +794,18 @@ def self_test():
         rep = quiet(ready, d, None, None, gh)
         expect(
             "ready: an own release.yml assembling into dist/ builds (AntHocNet)",
+            has(rep, "OK", "build: the own release.yml builds its assets into dist/"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(
+                own.replace("jobs: {}\n", "")
+                + "jobs:\n  propose:\n    steps:\n      - env:\n"
+                + "          INCREMENT: ${{ inputs.increment }}\n"
+                + "        run: |\n          mkdir -p ./dist/\n          cp out/* ./dist/\n"
+            )
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: ./dist/ is the same path as dist/",
             has(rep, "OK", "build: the own release.yml builds its assets into dist/"),
         )
     flow = (
