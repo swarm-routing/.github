@@ -27,7 +27,7 @@ jobs:
     uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
     with:
       modules: ara=ns3
-      dependencies: swarm-core=swarm-routing/ns3-swarm-core@main
+      dependencies: swarm-core=swarm-routing/swarm-adapter-ns3@main
 ```
 
 Inputs are documented at the top of the workflow file.
@@ -74,6 +74,8 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 | [#323](https://github.com/swarm-routing/.github/issues/323) Linux daemon host: every core over real sockets, packaged for amd64 and arm64 | Planned | 0 / 5 |
 | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
+| [#672](https://github.com/swarm-routing/.github/issues/672) Swarm-Routing Architecture & Migration Roadmap (Hexagonal Multi-Runtime) | Planned | 0 / 7 |
+| [#674](https://github.com/swarm-routing/.github/issues/674) Multi-Simulator & Unified Web UI Plan (sim-tools, ns3-tools, swarm-ui) | Planned | no sub-issues yet |
 
 <details><summary>Closed: 2 epics</summary>
 

@@ -54,6 +54,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: The ci-tools image (pulled with retries, #645)
+        uses: ./.github/actions/pull-ci-tools
+        timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
+        with:
+          image: ${{ env.IMG }}
       - name: Dry run (pull request, reads only)
         if: github.event_name == 'pull_request'
         timeout-minutes: 5

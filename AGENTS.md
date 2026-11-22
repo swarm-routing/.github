@@ -22,6 +22,7 @@ profile/README.md, ROADMAP.md, CONTRIBUTING.md   the org landing page, its phase
 ISSUE_TEMPLATE/, pull_request_template.md, labels.json   the default forms and the label taxonomy
 SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, DCO, .github/FUNDING.yml   the org default community files
 .clang-format, ruff.toml           the C++ style and the Python lint baseline
+.clang-tidy                        the clang-tidy checks the protocol cores' `core` check runs, findings as errors (#635)
 go.mod, cmd/<tool>/, internal/, docker/ci-tools/   the Go pipeline tools and the ci-tools image (ADR-0002)
 tools/<tool>/                       the org's scripts, each with --self-test (checks, org-sync, org-bot, epics, zenodo, docs-review, fidelity, protocol-review, pr-status, lit-search, repo-settings, release)
 templates/                          what org-sync renders into each repository; templates/rulesets/: the settings profiles
@@ -99,7 +100,7 @@ Org-wide (1–9), then this repo's own.
 4. **No contrib module named `core`** (collides with ns-3's `src/core`). The
    shared module is `swarm-core` (`#include "ns3/swarm-core-module.h"`), and
    every protocol builds on it, AntHocNet included: `core/` on its `core/`, the
-   ns-3 adapter on `SwarmRoutingBase` (swarm-routing/ns3-swarm-core#14).
+   ns-3 adapter on `SwarmRoutingBase` (swarm-routing/swarm-adapter-ns3#14).
 5. **Determinism.** A fixed `--seed=<N>` gives byte-identical output. All
    randomness through the simulator's seeded streams or an injected RNG port;
    never libc `rand()`, wall-clock time, or unordered-container iteration order
@@ -369,7 +370,7 @@ because the issue threads were thorough. Caveman the chat, not the record.
   proposal for a policy finding (swarm-routing/.github#629); review its PR
   like any other (CONTRIBUTING "Security alerts").
 - An ns-3 bug, or an investigation of one, always gets an RCAPA ticket in
-  swarm-routing/ns3-tools first (form *ns-3 bug (RCAPA)*, labels `rcapa` and
+  swarm-routing/sim-tools first (form *ns-3 bug (RCAPA)*, labels `rcapa` and
   `ns3-upstream`, ID `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its
   `docs/ns3-bugs.md` row follow, and every workaround links the ID. Upstream
   reports go out only through swarm-routing/ns3-upstream-report (CONTRIBUTING
@@ -409,7 +410,7 @@ changing what the row names.
 | Change what every repo shares (org sections, badges, SECURITY, ADR template, Makefile) | `templates/` + `tools/org-sync/org_sync.py`; each repo is checked at the commit its `.github/org-sync.lock` pins, so a template change turns nothing red: org-bot's refresh PR moves the pin and the text together (#586) |
 | Bring a repo onto the templates | `tools/org-sync/org_sync.py init` (new repo) or `plan` → `apply` → `check` |
 | Change the org security policy | `SECURITY.md`, `templates/SECURITY.md.in`; write no claim a repo cannot back |
-| Record an ns-3 bug, or look one up (RCAPA) | swarm-routing/ns3-tools `docs/ns3-bugs.md`, `docs/ns3-rcapa/`; form `ISSUE_TEMPLATE/rcapa.yml` |
+| Record an ns-3 bug, or look one up (RCAPA) | swarm-routing/sim-tools `docs/ns3-bugs.md`, `docs/ns3-rcapa/`; form `ISSUE_TEMPLATE/rcapa.yml` |
 | Record a regression in a published library (RCAPA), or change the rule | CONTRIBUTING "RCAPA", ADR-0003, `templates/rcapa/` (seeded into each repo's `docs/rcapa/`), form `ISSUE_TEMPLATE/rcapa-regression.yml` |
 | Change the C++ style | `.clang-format` |
 | Change the org landing page | `profile/README.md` |

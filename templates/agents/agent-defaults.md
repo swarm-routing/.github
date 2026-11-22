@@ -158,7 +158,7 @@ because the issue threads were thorough. Caveman the chat, not the record.
   proposal for a policy finding (swarm-routing/.github#629); review its PR
   like any other (CONTRIBUTING "Security alerts").
 - An ns-3 bug, or an investigation of one, always gets an RCAPA ticket in
-  swarm-routing/ns3-tools first (form *ns-3 bug (RCAPA)*, labels `rcapa` and
+  swarm-routing/sim-tools first (form *ns-3 bug (RCAPA)*, labels `rcapa` and
   `ns3-upstream`, ID `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its
   `docs/ns3-bugs.md` row follow, and every workaround links the ID. Upstream
   reports go out only through swarm-routing/ns3-upstream-report (CONTRIBUTING

@@ -4,13 +4,13 @@ name: benchmark cell self-test
 
 # Proves reusable-benchmark-cell.yml from this checkout (so a PR that changes
 # it is tested with its own version), in build mode: ns3-dev:latest-debug
-# resolved to its digest, ns3-tools' routing-bench at a pinned commit built in
+# resolved to its digest, sim-tools' routing-bench at a pinned commit built in
 # the job, one tiny routing-compare cell (OLSR, the stock arm that delivers on
 # `latest`, 2 seeds). On a PR, source_sha is the PR's head commit, which is
 # not the merge ref the run is dispatched at, so the pinned checkout and the
 # HEAD == source_sha check are exercised. The prebuilt mode (a campaign image
 # of the caller's repo) is proven by a protocol repo's caller (AntHocNet#905).
-# The cell is given a `key` (swarm-routing/ns3-tools#94): `check-key` proves
+# The cell is given a `key` (swarm-routing/sim-tools#94): `check-key` proves
 # the artifact is named benchmark-cell-<key> and ##PROV## ends with key=<key>.
 #
 # Pull requests only: the cell runs the code at a commit it is given, and a
@@ -53,7 +53,7 @@ jobs:
     with:
       image: ${{ needs.resolve.outputs.image }}
       source_sha: ${{ github.event.pull_request.head.sha }}
-      dependencies: routing-bench=swarm-routing/ns3-tools@a13d4775d11316721bf7cd532378f7a23e726067:ns3/routing-bench
+      dependencies: routing-bench=swarm-routing/sim-tools@a13d4775d11316721bf7cd532378f7a23e726067:ns3/routing-bench
       harness: routing-compare
       args: --scenario=paper --nNodes=20 --time=30 --protocols=olsr
       seeds: 1-2

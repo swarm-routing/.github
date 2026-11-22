@@ -27,4 +27,4 @@
 - **Working against an unreleased swarm-core**: `-DSWARM_CORE_DIR=<checkout>/core`
   builds `core/` on a local checkout instead of the lock (development only).
 - **Later**: `find_package(swarm-core CONFIG)` from an installed release, then
-  a vcpkg registry (swarm-routing/ns3-swarm-core#135).
+  a vcpkg registry (swarm-routing/swarm-adapter-ns3#135).

@@ -11,9 +11,9 @@ Since 2026-11-16 every defect in upstream ns-3, and every investigation of
 one, gets an **RCAPA** (root cause analysis with corrective and preventive
 actions): a ticket first, then a document with five cited whys, a
 reproducer, diagrams, the actions and a timeline. The register lives in
-swarm-routing/ns3-tools (`docs/ns3-bugs.md`, `docs/ns3-rcapa/`, IDs
+swarm-routing/sim-tools (`docs/ns3-bugs.md`, `docs/ns3-rcapa/`, IDs
 `NS3-NNN`), and a defect in how we carry a report is a `PROC-NNN` there
-(PROC-001, swarm-routing/ns3-tools#247).
+(PROC-001, swarm-routing/sim-tools#247).
 
 Our own defects had no such record. A bug in a protocol, a tool or a
 pipeline was an ordinary `bug` issue, whatever it cost. That is enough for
@@ -51,10 +51,10 @@ repository a library: what counts is a consumer pinning it.
 
 | Defect | RCAPA |
 |--------|-------|
-| A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/ns3-tools, unchanged |
-| A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/ns3-tools, unchanged |
+| A bug in upstream ns-3, or an investigation of one | **always**: `NS3-NNN` in swarm-routing/sim-tools, unchanged |
+| A defect in how we carry an ns-3 report upstream | **always**: `PROC-NNN` in swarm-routing/sim-tools, unchanged |
 | A **regression in a published library**: it worked in a version a consumer pins and broke in a later one | **yes**: `<PREFIX>-NNN` in that library's repository |
-| A bug in a Docker image (`ns3-dev`, `ci-tools`, any image) | **no** by default; **yes** only when traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image), in the repository that owns the Dockerfile (`CNT-NNN` for swarm-routing/ns3-containers) |
+| A bug in a Docker image (`ns3-dev`, `ci-tools`, any image) | **no** by default; **yes** only when traced to the image's composition (its Dockerfile, `build-contrib.sh`, the configure line, the base image), in the repository that owns the Dockerfile (`CNT-NNN` for swarm-routing/sim-containers) |
 | A change in a repository nothing consumes at a version: swarm-routing/.github (reusable workflows at `@main`), the site's Pages deploy, swarm-routing/skills (the plugin), swarm-routing/benchmarks (datasets), swarm-routing/ns3-upstream-report | **no** for its own changes |
 | A bug or change that never reached a published version (caught on `main`, in a PR, in a campaign before the next release) | **no**: an ordinary `bug` issue |
 | A trivial change with no behaviour: a typo, a comment, wording in docs, with no effect on any behaviour, output, number or released artifact | **no** |
@@ -65,7 +65,7 @@ a registry baseline does.
 
 **Worked example.** AntHocNet bumps its swarm-core lock and something
 breaks. The suspect is a bug in the released swarm-core, so the RCAPA is an
-`SWC-NNN` in swarm-routing/ns3-swarm-core, opened from the consumer's
+`SWC-NNN` in swarm-routing/swarm-adapter-ns3, opened from the consumer's
 finding and verified with the consumer's failing check on the new release
 against the old one.
 
@@ -78,7 +78,7 @@ against the old one.
   The prefixes are one table in CONTRIBUTING ("RCAPA"), for the repositories
   where RCAPA applies; a new library adds its row there.
 - ns-3 bugs keep `NS3-NNN` and process defects `PROC-NNN` in
-  swarm-routing/ns3-tools (`docs/ns3-bugs.md`, `docs/ns3-rcapa/`), as
+  swarm-routing/sim-tools (`docs/ns3-bugs.md`, `docs/ns3-rcapa/`), as
   before.
 
 ### Ticket, form and template
@@ -118,7 +118,7 @@ consumes, the ns-3 register).
 
 Every repository's README shows "open RCAPA" (its open issues labelled
 `rcapa`, linking `docs/rcapa/README.md`) in the Community & docs group;
-swarm-routing/ns3-tools also shows "ns-3 bugs" (open issues labelled
+swarm-routing/sim-tools also shows "ns-3 bugs" (open issues labelled
 `ns3-upstream`, the `NS3-NNN` tickets, linking `docs/ns3-bugs.md`). Both are
 counts in a neutral colour.
 
@@ -140,8 +140,8 @@ in it or an `rcapa-*.md` missing from its index.
 - Every repository gets two seeded files under `docs/rcapa/` through the
   org-bot refresh; a repository that never has a released regression keeps
   an index with no rows.
-- swarm-routing/ns3-containers copies the org forms by hand; it re-copies
-  the new form under swarm-routing/ns3-containers#177.
+- swarm-routing/sim-containers copies the org forms by hand; it re-copies
+  the new form under swarm-routing/sim-containers#177.
 - An agent decides "published or not" from the consumers' pins and the
   release tags, not from memory; the pitfall line in
   `templates/agents/agent-defaults.md` says so.
