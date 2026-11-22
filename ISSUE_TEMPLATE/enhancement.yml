@@ -53,7 +53,7 @@ body:
     id: proposal
     attributes:
       label: Proposed change
-      description: Code references as `file:line`; which layer (`core/` vs `ns3/` adapter vs ns3-swarm-core).
+      description: Code references as `file:line`; which layer (`core/` vs `ns3/` adapter vs swarm-adapter-ns3).
     validations:
       required: true
   - type: textarea
@@ -67,7 +67,7 @@ body:
     id: depends
     attributes:
       label: Depends on
-      description: Issue references, cross-repo form (e.g. `swarm-routing/ns3-swarm-core#3`). Leave blank if none.
+      description: Issue references, cross-repo form (e.g. `swarm-routing/swarm-adapter-ns3#3`). Leave blank if none.
   - type: textarea
     id: refs
     attributes:

@@ -79,7 +79,7 @@ name: Reusable ns-3 image
 #       uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@main
 #       with:
 #         modules: ara=ns3
-#         dependencies: swarm-core=swarm-routing/ns3-swarm-core@v0.3.0
+#         dependencies: swarm-core=swarm-routing/swarm-adapter-ns3@v0.3.0
 #         image: ara                             # the repository's name (epic #370)
 #         tag: ${{ github.ref_name }}            # -> ara:v1.2.0-{optimized,debug}, latest-*, latest
 #
@@ -92,8 +92,8 @@ name: Reusable ns-3 image
 #       with:
 #         modules: ara=ns3
 #         dependencies: |
-#           swarm-core=swarm-routing/ns3-swarm-core@<40-char commit>
-#           routing-bench=swarm-routing/ns3-tools@<40-char commit>:ns3/routing-bench
+#           swarm-core=swarm-routing/swarm-adapter-ns3@<40-char commit>
+#           routing-bench=swarm-routing/sim-tools@<40-char commit>:ns3/routing-bench
 #         image: ara-dev
 #         profiles: '["optimized"]'
 #         tag: ${{ inputs.commit7 }}-{base7}     # -> ara-dev:1a2b3c4-9c24572-optimized
@@ -102,7 +102,7 @@ name: Reusable ns-3 image
 #       needs: image   # needs.image.outputs.image = ghcr.io/...@sha256:... (one profile)
 #
 # A campaign with an AODV-family arm passes `ns3-version: '3.48'` until
-# ns-3.49's AODV livelock is fixed (ns3-containers#35, AntHocNet#843).
+# ns-3.49's AODV livelock is fixed (sim-containers#35, AntHocNet#843).
 #
 # `stage` (optional): a command run with bash in the caller's checkout
 # (`$GITHUB_WORKSPACE/src`) after its dependencies are cloned and before the
@@ -121,7 +121,7 @@ name: Reusable ns-3 image
 # `name=owner/repo@ref[:subdir]`, built first, in order; `ref` is a branch, a
 # tag or a 40-char commit (a campaign pins commits).
 #
-# Verify a pushed image (as ns3-containers' SECURITY.md does for ns3-dev):
+# Verify a pushed image (as sim-containers' SECURITY.md does for ns3-dev):
 #
 #   cosign verify \
 #     --certificate-identity-regexp '^https://github\.com/swarm-routing/\.github/\.github/workflows/reusable-ns3-image\.yml@refs/heads/main$' \
@@ -206,7 +206,7 @@ jobs:
       image: ${{ steps.result.outputs.image }}
       tag: ${{ steps.resolve.outputs.tag }}
     env:
-      # Same pin as ns3-containers' publish-images.yml and test/run.sh.
+      # Same pin as sim-containers' publish-images.yml and test/run.sh.
       TRIVY: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
       BASE_REPO: ghcr.io/swarm-routing/ns3-dev
       PROFILE: ${{ matrix.profile }}

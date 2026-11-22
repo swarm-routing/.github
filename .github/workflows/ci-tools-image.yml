@@ -121,6 +121,19 @@ jobs:
     if: needs.changes.outputs.build == 'true'
     uses: ./.github/workflows/reusable-go-ci.yml
 
+  # The Go coverage of the `go` job to Codecov (report-only; GitHub OIDC, no
+  # stored token; #635). Skipped with `go`, and in the merge queue.
+  codecov:
+    needs: go
+    if: github.event_name != 'merge_group'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-codecov.yml
+    with:
+      artifact: go-coverage
+      flags: go
+
   dockerfile:
     needs: changes
     if: needs.changes.outputs.build == 'true'
@@ -212,7 +225,7 @@ jobs:
           elif [ "$GITHUB_EVENT_NAME" = merge_group ]; then tag="queue-${GITHUB_SHA::7}"
           else tag="main-${GITHUB_SHA::7}"; fi
           docker tag ci-tools:candidate "$CANDIDATES:$tag"
-          docker push --quiet "$CANDIDATES:$tag"
+          .github/actions/pull-ci-tools/docker-retry.sh push "$CANDIDATES:$tag"  # GHCR's `unknown blob` clears on a retry (#618, #645)
           digest=$(docker buildx imagetools inspect "$CANDIDATES:$tag" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
           docker buildx imagetools inspect --raw "$CANDIDATES@$digest" > "$RUNNER_TEMP/manifest.json"
           python3 - "$RUNNER_TEMP/manifest.json" "$digest" "$ID" <<'PY'
@@ -234,7 +247,7 @@ jobs:
           set -euo pipefail
           if [ -n "$DIGEST" ]; then
             docker rmi ci-tools:candidate > /dev/null
-            img="$CANDIDATES@$DIGEST"; docker pull --quiet "$img"
+            img="$CANDIDATES@$DIGEST"; .github/actions/pull-ci-tools/docker-retry.sh pull "$img"
           else
             img=ci-tools:candidate; echo "::notice::fork PR: testing the local image, nothing pushed"
           fi

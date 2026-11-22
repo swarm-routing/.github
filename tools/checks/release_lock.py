@@ -2,12 +2,12 @@
 # Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """A release lock: which released version of another org repository a repository
-builds on, checked against the release itself (swarm-routing/ns3-swarm-core#134).
+builds on, checked against the release itself (swarm-routing/swarm-adapter-ns3#134).
 
 A lock is a `KEY=VALUE` file (`#` comments), the shape of AntHocNet's
 `ns3-tools.lock`. Every key but the hashes starts with one prefix, `<P>_`:
 
-    <P>_REPO=swarm-routing/ns3-swarm-core
+    <P>_REPO=swarm-routing/swarm-adapter-ns3
     <P>_TAG=vX.Y.Z
     <P>_COMMIT=<40 hex: the commit the tag names>
     <P>_VERSION=X.Y.Z
@@ -28,7 +28,10 @@ each `*_SHA256` follows its asset, found by its hash in the locked release's
 `SHA256SUMS` and named the same in the new one with the version moved
 (`routing-bench-0.2.0.tar.gz` -> `routing-bench-0.3.0.tar.gz`); an asset the new
 release no longer has under that name (renamed or dropped) is refused, for a
-person to bump with the consumer's code that names it. Nothing
+person to bump with the consumer's code that names it. A lock naming a
+repository by its name before the 2026-11-22 renames (`RENAMED`,
+swarm-routing/.github#672) still verifies, read from the new name, and a bump
+writes the new name. Nothing
 here clones a repository or reads a token. Stdlib only, one summary line per
 result (AntHocNet ADR-0014).
 
@@ -61,6 +64,19 @@ HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SEMVER = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 FIELDS = ("REPO", "TAG", "COMMIT", "VERSION")
+# org repositories renamed on 2026-11-22 (swarm-routing/.github#672): GitHub
+# redirects their old names for git and release downloads, but a lock is read
+# from, and bumped to, the new name
+RENAMED = {
+    "swarm-routing/ns3-swarm-core": "swarm-routing/swarm-adapter-ns3",
+    "swarm-routing/ns3-containers": "swarm-routing/sim-containers",
+    "swarm-routing/ns3-tools": "swarm-routing/sim-tools",
+}
+
+
+def canonical(repo):
+    """The repository's current name (`RENAMED`), or `repo` itself."""
+    return RENAMED.get(repo, repo)
 
 
 class LockError(Exception):
@@ -205,6 +221,7 @@ def version_key(tag):
 def verify(prefix, values, base=GITHUB):
     """Problems with the lock against its release (empty: it verifies)."""
     repo, tag, commit = (values[f"{prefix}_{f}"] for f in ("REPO", "TAG", "COMMIT"))
+    repo = canonical(repo)
     problems = []
     named = tags(base, repo).get(tag)
     if named is None:
@@ -272,7 +289,7 @@ def bump(text, base=GITHUB, name="lock"):
     release, or (None, old tag, old tag, old commit) when it is current. Comments, key
     order and every other line stay; LockError when an asset cannot be followed."""
     prefix, values = parse_text(text, name)
-    repo, tag = values[f"{prefix}_REPO"], values[f"{prefix}_TAG"]
+    repo, tag = canonical(values[f"{prefix}_REPO"]), values[f"{prefix}_TAG"]
     newest, commit = latest(base, repo)
     if newest is None:
         raise LockError(f"{name}: {repo} has no published release")
@@ -286,6 +303,7 @@ def bump(text, base=GITHUB, name="lock"):
     for a, h in old_sums.items():
         by_hash.setdefault(h, []).append(a)
     new = {
+        f"{prefix}_REPO": repo,  # a renamed repository's new name (#672)
         f"{prefix}_TAG": newest,
         f"{prefix}_COMMIT": commit,
         f"{prefix}_VERSION": new_ver,
@@ -529,6 +547,23 @@ def self_test():
             got = str(e)
         check("bump: a renamed asset is refused, for a person", "renamed or dropped" in got)
 
+        # a repository renamed on 2026-11-22 (#672): the lock's old name verifies,
+        # read from the new one, and a bump writes the new name
+        old_name, new_name = "swarm-routing/ns3-tools", "swarm-routing/sim-tools"
+        moved = fixture_repo(t, new_name, env)
+        r1, _ = make_release(t, new_name, "v1.0.0", {"x-1.0.0.tar.gz": b"a"}, env)
+        moved("two")
+        r2, _ = make_release(t, new_name, "v1.1.0", {"x-1.1.0.tar.gz": b"b"}, env)
+        legacy = render("NT", new_name, "v1.0.0", "x-{version}.tar.gz", base).replace(
+            f"NT_REPO={new_name}", f"NT_REPO={old_name}"
+        )
+        check("a renamed repository's old name verifies", verify(*parse_text(legacy), base) == [])
+        out, _, newest, _ = bump(legacy, base)
+        check(
+            "bump: a renamed repository's lock moves to its new name",
+            f"NT_REPO={new_name}\n" in out and newest == "v1.1.0" and f"NT_COMMIT={r2}" in out,
+        )
+
     for f in failures:
         print(f"FAIL: {f}")
     print(f"release_lock.py self-test: {'ok' if not failures else f'{len(failures)} failed'}")
@@ -575,7 +610,7 @@ def main(argv=None):
             )
             print(f"lock-target: {a.lock}@{newest}")
             return 0
-        repo, tag = values[f"{prefix}_REPO"], values[f"{prefix}_TAG"]
+        repo, tag = canonical(values[f"{prefix}_REPO"]), values[f"{prefix}_TAG"]
         if a.cmd == "show":
             print(f"{a.lock}: {repo} {tag} ({values[f'{prefix}_COMMIT']})")
             return 0

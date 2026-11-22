@@ -41,15 +41,15 @@ name: Reusable benchmark cell
 #
 # (one line; AntHocNet's field order, so its readers keep working), and
 # ` key=<64 hex>` after modules= when the caller passes `key`, the cell key
-# swarm-routing/ns3-tools' ns3-campaign computes over every pinned input
-# (ns3-tools#94); the artifact is then `benchmark-cell-<key>`, so a later
+# swarm-routing/sim-tools' ns3-campaign computes over every pinned input
+# (sim-tools#94); the artifact is then `benchmark-cell-<key>`, so a later
 # campaign finds the cell by its key and does not run it again. Without a key
 # the line and the artifact name are as before. base= names
 # the ns3-dev base by its immutable <version>-<profile>-<sha7> tag when the
 # registry has one for that digest, else by the image's own base tag. No other
 # 40-hex value appears in the line: swarm-routing/benchmarks' validate_run.py
 # takes every one as a module commit. `ns3-campaign collect`
-# (swarm-routing/ns3-tools) rejects a cell whose commit= or image digest is not
+# (swarm-routing/sim-tools) rejects a cell whose commit= or image digest is not
 # its plan's and lists it for re-dispatch.
 #
 # The artifact `benchmark-cell` (results.txt, ns3-stderr.log, time-v.log) is
@@ -88,8 +88,8 @@ name: Reusable benchmark cell
 #
 #         modules: ara=ns3
 #         dependencies: |
-#           swarm-core=swarm-routing/ns3-swarm-core@<40-char commit>
-#           routing-bench=swarm-routing/ns3-tools@<40-char commit>:ns3/routing-bench
+#           swarm-core=swarm-routing/swarm-adapter-ns3@<40-char commit>
+#           routing-bench=swarm-routing/sim-tools@<40-char commit>:ns3/routing-bench
 #
 # Callers: the safe pattern (#160). A cell checks out and runs the code at
 # `source_sha` in the caller's default-branch context, where Actions caches
@@ -311,7 +311,7 @@ jobs:
         run: |
           set -euo pipefail
           # The ns3-dev <version>-<profile>-<sha7> tag that points at the base
-          # digest, read from the registry (ns3-tools' campaign-cell.yml does the
+          # digest, read from the registry (sim-tools' campaign-cell.yml does the
           # same); the rolling tag when there is none (an older on-demand build).
           if [ "$BUILD" = true ]; then repo=${IMAGE%@*}; else repo=${BASE_TAG%:*}; fi
           path=${repo#ghcr.io/}

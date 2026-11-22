@@ -27,10 +27,23 @@ Each managed item is one of:
            0), whether each reads `same` as today's render, `differs (N
            lines)` or is `missing` (managed sections inside it are left to
            `check`); `reseed FILE` prints the diff and writes today's render
-           over that one seed, and refuses any file that is not a seed
+           over that one seed, and refuses any file that is not a seed.
+           `apply --reseed-untouched` (org-bot) writes today's render over
+           each seed whose own text is still what the templates the lock pins
+           rendered; a seed the repository edited is never written (#615)
   json     only the named keys of a JSON file are the org's
   targets  a Makefile that is the repository's own, checked only for the
            org's standard target names (swarm-routing/.github#11)
+
+Two seeds carry the org's shared text as sections (#615): the Makefile's
+`org-tools` block at its end (`# org-sync:begin org-tools`: the ORG_DIR,
+ORG_REF and TITLE variables, `org-tools`, `org-sync-check`, `pre-push`,
+`doctor`) and
+LICENSING.md's `licence-texts`. A seed from before carries that text
+unmarked, in pieces (ADOPT_PIECES): each is adopted only when it is the
+template's text, or an older render's, byte for byte; an edited piece, or a
+definition of the repository's own under an org name, is a conflict. A
+LICENSING.md with none of the org's text keeps its own, unmanaged.
 
 An orphan is an `org-sync:begin NAME` / `org-sync:end NAME` block left in a
 managed file whose section is not one of the repository's items (skipped, or
@@ -143,7 +156,7 @@ BIB_END = "% org-sync:end {}"
 
 def markers(path):
     """The (begin, end) marker formats for a managed section in this file."""
-    if path.endswith((".yaml", ".yml")) or os.path.basename(path) == "CODEOWNERS":
+    if path.endswith((".yaml", ".yml")) or os.path.basename(path) in ("CODEOWNERS", "Makefile"):
         return YAML_BEGIN, YAML_END
     if path.endswith(".bib"):
         return BIB_BEGIN, BIB_END
@@ -256,6 +269,40 @@ ADOPT = {
 # Adopted sections whose old text is the org's, not the repository's: a
 # difference from the template is replaced, not a conflict (#343)
 ADOPT_REPLACE = {("docs/references.bib", "bib-header")}
+# The shared parts of two seeds (#615): a seed written before its section was
+# managed carries the org's text unmarked, in pieces. `apply` adopts a piece only
+# when it is, byte for byte, the template's text or one it rendered before
+# (`old`), so a piece the repository changed is never rewritten. `own`: a line
+# that, left outside the markers after adoption, would define what the section
+# defines (a conflict, for a person). `at`: "end" appends the block at the end
+# of the file; "first" puts it where the first adopted piece was. `optional`: a
+# file with no piece and no markers keeps its own text, unmanaged (it is listed
+# by `seeds`), instead of a conflict.
+ADOPT_PIECES = {
+    ("Makefile", "org-tools"): {
+        "old": (
+            # Makefile.in from #13 to #586: the org tooling's variables
+            "# The org tooling (check-headers, org-sync): a shallow clone, refreshed to ORG_REF.\n"
+            "ORG_DIR   ?= $(HOME)/.cache/swarm-routing/dotgithub\n"
+            "ORG_REF   ?= main\n",
+        ),
+        "own": r"^(?:(?:ORG_DIR|ORG_REF|TITLE_RE)\s*[:?+!]?=|export TITLE\b|"
+        r"(?:org-tools|org-sync-check|pre-push|doctor)\s*:(?!=))",
+        "at": "end",
+        "optional": False,
+    },
+    ("LICENSING.md", "licence-texts"): {
+        "old": (
+            # LICENSING.md.in before #615
+            "`MIT OR GPL-2.0-only` means you may use that code under either licence, at\n"
+            "your option ([LICENSE-MIT](LICENSE-MIT) or [LICENSE](LICENSE)). Every source\n"
+            "file carries its SPDX identifier; CI checks it (`reusable-licence-check.yml`).\n",
+        ),
+        "own": None,
+        "at": "first",
+        "optional": True,
+    },
+}
 # Sections with nothing to adopt: inserted after the first match of the regex.
 INSERT_AFTER = {
     ("README.md", "badges"): r"^# .*\n",
@@ -270,7 +317,7 @@ INSERT_AFTER = {
     # after the skills block, before the repository's own table (#277: what
     # CLAUDE.md held, so CLAUDE.md is only `@AGENTS.md`)
     ("AGENTS.md", "agent-defaults"): r"\n(?=\n?## Where to look\n)",
-    # how a protocol gets swarm-core (swarm-routing/ns3-swarm-core#134): after
+    # how a protocol gets swarm-core (swarm-routing/swarm-adapter-ns3#134): after
     # Build & verify, before the golden rules
     ("AGENTS.md", "dependencies"): r"\n(?=\n?## Golden rules)",
     # an existing CODEOWNERS keeps its rules; the org's go last (the last match wins)
@@ -397,7 +444,7 @@ PROFILE_BADGES = {
         (
             "Images signed: cosign",
             shield("images signed", "cosign", "success"),
-            "https://github.com/swarm-routing/ns3-containers/blob/main/SECURITY.md",
+            "https://github.com/swarm-routing/sim-containers/blob/main/SECURITY.md",
         ),
     ],
     "Stack": [
@@ -409,17 +456,17 @@ PROFILE_BADGES = {
         (
             "C++23",
             shield("C++", "23", "blue") + "?logo=cplusplus",
-            "https://github.com/swarm-routing/ns3-swarm-core",
+            "https://github.com/swarm-routing/swarm-adapter-ns3",
         ),
         (
             "Python 3.10+",
             "https://img.shields.io/badge/python-3.10%2B-blue?logo=python",
-            "https://github.com/swarm-routing/ns3-swarm-core",
+            "https://github.com/swarm-routing/swarm-adapter-ns3",
         ),
         (
             "Go 1.27",
             "https://img.shields.io/badge/go-1.27-blue?logo=go",
-            "https://github.com/swarm-routing/ns3-swarm-core",
+            "https://github.com/swarm-routing/swarm-adapter-ns3",
         ),
     ],
     "Open Tickets": [
@@ -533,7 +580,7 @@ def swarm_core_mode(repo_dir):
     vcpkg.json that depends on swarm-core, #489), "lock" (swarm-core.lock), "pin"
     (a commit SWARM_CORE_REF in core/CMakeLists.txt) or None. The `dependencies`
     section of AGENTS.md renders only where one holds, in the matching text, so
-    it never says what the repository cannot back (swarm-routing/ns3-swarm-core#134)."""
+    it never says what the repository cannot back (swarm-routing/swarm-adapter-ns3#134)."""
     if os.path.exists(os.path.join(repo_dir, "swarm-core.lock")):
         try:
             deps = json.loads(read(os.path.join(repo_dir, "vcpkg.json")) or "{}")
@@ -1229,7 +1276,7 @@ def badges_by_kind(cfg, repo_dir):
                 f"(https://github.com/{repo}/blob/main/docs/rcapa/README.md)"
             )
         elif b == "ns3-bugs" and os.path.exists(os.path.join(repo_dir, "docs/ns3-bugs.md")):
-            # the upstream ns-3 bug register (ns3-tools): open tickets labelled `ns3-upstream`
+            # the upstream ns-3 bug register (sim-tools): open tickets labelled `ns3-upstream`
             out[b] = (
                 f"[![ns-3 bugs](https://img.shields.io/github/issues/{repo}/ns3-upstream"
                 "?label=ns-3%20bugs&color=blue)](docs/ns3-bugs.md)"
@@ -1421,6 +1468,8 @@ def items(cfg):
         ("section", "SECURITY.md", "security-reporting.md", "reporting"),
         ("file", "LICENSE", "../LICENSE", None),
         ("seed", "LICENSING.md", "LICENSING.md.in", None),
+        # the licence texts and the header check: the org's, refreshed (#615)
+        ("section", "LICENSING.md", "licensing-texts.md", "licence-texts"),
         ("file", "docs/adr/0000-template.md", "adr/0000-template.md", None),
         ("seed", "docs/adr/README.md", "adr/README.md", None),
         (
@@ -1430,6 +1479,9 @@ def items(cfg):
             None,
         ),
         ("seed", "Makefile", "make/Makefile.in", None),
+        # the org tooling's variables and targets (org-tools, org-sync-check,
+        # pre-push): the org's, refreshed; the recipes stay the repository's (#615)
+        ("section", "Makefile", "make/org-tools.mk", "org-tools"),
         ("targets", "Makefile", None, "targets"),
         ("file", ".github/workflows/org-sync.yml", "workflows/org-sync.yml", None),
         ("file", ".github/workflows/dco.yml", "workflows/dco.yml", None),
@@ -1579,6 +1631,52 @@ def adopt_span(text, path, name):
     return m.start(), end
 
 
+def find_line_text(text, piece):
+    """The offset of `piece` in `text` starting at a line start, or -1."""
+    i = text.find(piece)
+    while i > 0 and text[i - 1] != "\n":
+        i = text.find(piece, i + 1)
+    return i
+
+
+def adopt_pieces(cur, path, name, want):
+    """(status, new_text, detail) for a section of ADOPT_PIECES that has no
+    markers yet: the org's unmarked pieces taken out, the block put in."""
+    rule = ADOPT_PIECES[(path, name)]
+    # the template's own pieces: its paragraphs, and a comment that opens a group
+    pieces = [p + "\n" for p in re.split(r"\n\n+|\n(?=# make pre-push )", want.rstrip("\n"))]
+    text, first, found = cur, None, 0
+    for piece in sorted(set(pieces) | set(rule["old"]), key=len, reverse=True):
+        i = find_line_text(text, piece)
+        if i < 0:
+            continue
+        found += 1
+        first = i if first is None or i < first else first
+        e = i + len(piece)
+        if rule["at"] == "end" and text[:i].endswith("\n\n") and text[e : e + 1] == "\n":
+            e += 1  # the blank line that separated it goes with it
+        text = text[:i] + text[e:]
+    if not found and rule["optional"]:
+        return "unchanged", None, "no org text to adopt: the repository's own"
+    if rule["own"]:
+        mine = re.findall(rule["own"] + r".*", text, re.M)
+        if mine:
+            return (
+                "conflict",
+                None,
+                "the repository's own "
+                + "; ".join(f"`{m.strip()}`" for m in mine)
+                + " would clash with the org's block: rename or remove it, then apply",
+            )
+    block = wrap(name, want, path) + "\n"
+    if rule["at"] == "first" and first is not None:
+        new = text[:first] + block + text[first:]
+    else:
+        new = text.rstrip("\n") + "\n\n" + block if text.strip() else block
+    detail = f"markers added; {found} org piece(s) replaced" if found else "inserted"
+    return "adopt", new, detail
+
+
 def wrap(name, body, path=""):
     begin, end = markers(path)
     return f"{begin.format(name)}\n{body}{end.format(name)}"
@@ -1675,6 +1773,8 @@ def evaluate(cfg, repo_dir, item):
         if cur[s:e] == want:
             return "unchanged", None, ""
         return "update", cur[:s] + want + cur[e:], ""
+    if (path, name) in ADOPT_PIECES:
+        return adopt_pieces(cur, path, name, want)
     span = adopt_span(cur, path, name)
     ins = INSERT_AFTER.get((path, name))
     if not span and ins and (m := re.search(ins, cur, re.M)):
@@ -1751,6 +1851,88 @@ def seed_report(cfg, repo_dir):
     return out
 
 
+# Untouched seeds (#615): a seed whose own text (its org-sync blocks emptied) is
+# still exactly what the pinned templates (.github/org-sync.lock) rendered was
+# never edited by the repository, so today's render can replace it in a reviewed
+# refresh PR (`apply --reseed-untouched`, which org-bot passes). Any other seed
+# that differs is the repository's own edit: listed by `seeds`, never written.
+# The pinned render comes from that commit's own org_sync.py (`reseed`), run on
+# a copy of the files a render reads; a pin it cannot render (no lock, a commit
+# PIN_ORG cannot fetch, a seed that commit did not know) leaves the seed alone.
+PIN_ORG = ORG  # the git repository that holds the pinned commits (the self-test's own)
+
+
+def own_text(text, path):
+    """`text` with every org-sync block's body emptied: the repository's part."""
+    for name in block_names(text, path):
+        s, e = find_section(text, name, path)
+        text = text[:s] + text[e:]
+    return text
+
+
+def pinned_render(repo_dir, slug, sha, path):
+    """The seed `path` as the templates at commit `sha` rendered it, or None."""
+
+    def g(*args, **kw):
+        return subprocess.run(["git", "-C", PIN_ORG, *args], capture_output=True, **kw)
+
+    if g("cat-file", "-e", f"{sha}^{{commit}}").returncode:
+        g("fetch", "-q", "--depth", "1", "origin", sha)  # a shallow checkout (org-bot's)
+    tar = g("archive", "--format=tar", sha, "--", "templates", "tools/org-sync", "tools/fidelity")
+    if tar.returncode:
+        return None
+    with tempfile.TemporaryDirectory(prefix="org-sync-pin-") as tmp:
+        org, repo = os.path.join(tmp, "org"), os.path.join(tmp, "repo")
+        with tarfile.open(fileobj=io.BytesIO(tar.stdout)) as t:
+            if hasattr(tarfile, "data_filter"):
+                t.extractall(org, filter="data")
+            else:  # Python 3.11 before 3.11.4
+                t.extractall(org)  # our own git objects
+        # the render's inputs, as base_drift reads them; never the rest of the tree
+        for rel in (CONFIG, LOCK, path, ".cz.toml", "SECURITY.md", *RENDER_INPUTS):
+            src = os.path.join(repo_dir, rel)
+            if os.path.isfile(src) and not os.path.islink(src):
+                write(repo, rel, read(src))
+        wf = os.path.join(repo_dir, ".github", "workflows")
+        for name in sorted(os.listdir(wf)) if os.path.isdir(wf) else ():
+            if os.path.isfile(os.path.join(wf, name)):
+                write(repo, f".github/workflows/{name}", read(os.path.join(wf, name)))
+        # the copy is a checkout of the same origin, so the render names the same repository
+        subprocess.run(["git", "init", "-q", repo], capture_output=True)
+        subprocess.run(
+            ["git", "-C", repo, "remote", "add", "origin", f"https://github.com/{slug}"],
+            capture_output=True,
+        )
+        tool = os.path.join(org, "tools", "org-sync", "org_sync.py")
+        r = subprocess.run(
+            [sys.executable, "-I", tool, "reseed", path, repo], capture_output=True, text=True
+        )
+        return read(os.path.join(repo, path)) if r.returncode == 0 else None
+
+
+def untouched_seeds(cfg, repo_dir):
+    """[(path, today's render)] for each seed that differs from today's render
+    but is, outside its org-sync blocks, what the pinned templates rendered."""
+    sha = read_lock(repo_dir)
+    if not sha:
+        return []
+    out = []
+    for item in items(cfg):
+        if item[0] != "seed":
+            continue
+        path = item[1]
+        cur = read(os.path.join(repo_dir, path))
+        if cur is None or os.path.islink(os.path.join(repo_dir, path)):
+            continue
+        new = fresh_seed(cfg, repo_dir, item, cur)
+        if own_text(cur, path) == own_text(new, path):
+            continue
+        old = pinned_render(repo_dir, cfg["repo"], sha, path)
+        if old is not None and own_text(cur, path) == own_text(old, path):
+            out.append((path, new))
+    return out
+
+
 def plan(cfg, repo_dir):
     rows = []
     # seeds run before sections so a fresh repo gets the file, then its sections
@@ -1772,11 +1954,17 @@ def write(repo_dir, path, text):
         f.write(text)
 
 
-def apply(cfg, repo_dir, force=(), prune=False):
+def apply(cfg, repo_dir, force=(), prune=False, reseed=False):
     """Write every change; repeat until stable, since a badge can depend on a
     file a later item creates (at most three passes). An orphan block is removed
-    only with `prune`; otherwise it is left and reported, like a conflict."""
+    only with `prune`; otherwise it is left and reported, like a conflict. With
+    `reseed`, an untouched seed takes today's render first (#615)."""
     changed, conflicts = [], []
+    if reseed:
+        pin = (read_lock(repo_dir) or "")[:12]
+        for path, new in untouched_seeds(cfg, repo_dir):
+            write(repo_dir, path, new)
+            changed.append(f"{'reseeded':9} {path} (untouched since the pinned templates {pin})")
     for _ in range(3):
         c, conflicts = apply_once(cfg, repo_dir, force)
         if not c:
@@ -1933,6 +2121,7 @@ def cmd_apply(a):
         a.repo,
         set(getattr(a, "force", None) or ()),
         prune=getattr(a, "prune_orphans", False),
+        reseed=getattr(a, "reseed_untouched", False),
     )
     pinned = write_lock(a.repo, changed)
     if pinned:
@@ -2412,6 +2601,13 @@ def main(argv=None):
                 action="store_true",
                 help="remove org-sync blocks whose section is not one of this repository's items "
                 "(skipped, or not enabled); without it they are left and reported",
+            )
+            s.add_argument(
+                "--reseed-untouched",
+                action="store_true",
+                help="give each seed the repository never edited (its text is still the "
+                "render of the templates .github/org-sync.lock pins) today's render; "
+                "an edited seed is never written",
             )
     a = p.parse_args(argv)
     try:

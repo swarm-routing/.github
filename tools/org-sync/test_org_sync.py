@@ -8,6 +8,7 @@ import contextlib
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1982,5 +1983,207 @@ with tempfile.TemporaryDirectory() as og:
         "org_commit: main or detached and clean names HEAD; a dirty tree or a branch does not",
     )
 org_sync.org_commit = lambda: (None, "self-test")
+
+# 30. The shared parts of two seeds are managed sections (#615): the Makefile's
+# org tooling (`org-tools`) and LICENSING.md's licence texts (`licence-texts`).
+d = fresh()
+run("init", d, "--kind", "python", "--title", "demo", "--dual", "tools/")
+mk = read(os.path.join(d, "Makefile"))
+body = read(os.path.join(ORG, "templates", "make", "org-tools.mk"))
+check(
+    mk.endswith(f"# org-sync:begin org-tools\n{body}# org-sync:end org-tools\n")
+    and mk.count("org-sync-check:") == 1
+    and mk.count("ORG_REF   ?=") == 1,
+    "a seeded Makefile ends with the org-tools block, each org definition once",
+)
+lic = read(os.path.join(d, "LICENSING.md"))
+check(
+    "<!-- org-sync:begin licence-texts -->\nTexts: [`LICENSE`]" in lic and run("check", d)[0] == 0,
+    "a seeded LICENSING.md has the licence-texts block, and check is clean",
+)
+# a template change to a shared target reaches the repository through apply (the
+# refresh), and the repository's own recipes stay as they are
+edit(d, "Makefile", "python3 -m pytest -q", "python3 -m unittest")
+edit(d, "Makefile", '\tpython3 -I "$(ORG_DIR)/tools/org-sync/org_sync.py" check .', "\techo old")
+rc, out = run("check", d)
+check(rc == 1 and "Makefile#org-tools" in out, "an older org-tools block is drift")
+run("apply", d)
+mk = read(os.path.join(d, "Makefile"))
+check(
+    'org_sync.py" check .' in mk and "echo old" not in mk and "python3 -m unittest" in mk,
+    "apply refreshes the org-tools block and keeps the repository's recipe",
+)
+
+# an old seed carries the org pieces unmarked: adopted when they are the org's text
+OLD_VARS = org_sync.ADOPT_PIECES[("Makefile", "org-tools")]["old"][0]
+ORG_TARGETS = (
+    "org-tools:  # the same templates CI checks against: refreshed to ORG_REF every time\n"
+    + "".join(ln + "\n" for ln in body.split("org-tools:  #", 1)[1].splitlines()[1:3])
+)
+SYNC_TARGET = (
+    "org-sync-check: org-tools ## org-managed files match the org templates\n"
+    '\tpython3 -I "$(ORG_DIR)/tools/org-sync/org_sync.py" check .\n'
+)
+OLD_MAKEFILE = (
+    "# demo Makefile\n\nNS3_IMAGE ?= x\n"
+    + OLD_VARS
+    + "\n.DEFAULT_GOAL := help\n.PHONY: help org-sync-check org-tools\n\n"
+    "help: ## list\n\t@echo help\n\n"
+    + "".join(f"{t}: ## {t}\n\t@true\n" for t in ("build", "test", "lint", "format", "clean"))
+    + "shell: ## shell\n\t@true\n\nci: check ## ci\n\n"
+    + ORG_TARGETS
+    + '\nheaders: org-tools ## licence headers\n\t"$(ORG_DIR)/tools/checks/check-headers.sh" .\n\n'
+    + SYNC_TARGET
+    + "\ncheck: headers org-sync-check ## all\n\nmine: ## a repo-only target\n\t@echo mine\n"
+)
+write(os.path.join(d, "Makefile"), OLD_MAKEFILE)
+rc, out = run("plan", d)
+check(
+    "adopt     Makefile#org-tools: markers added; 3 org piece(s) replaced" in out,
+    "plan adopts the old unmarked org pieces of a Makefile",
+)
+run("apply", d)
+mk = read(os.path.join(d, "Makefile"))
+check(
+    "ORG_REF   ?= main" not in mk
+    and mk.count("org-tools:") == 1
+    and mk.count("org-sync-check:") == 1
+    and mk.index("mine:") < mk.index("# org-sync:begin org-tools")
+    and "\nci: check ## ci\n\nheaders:" in mk
+    and "NS3_IMAGE ?= x\n\n.DEFAULT_GOAL" in mk
+    and run("check", d)[0] == 0,
+    "apply moves them into the block at the end, keeps the rest byte for byte, check is clean",
+)
+check(run("plan", d)[1].count("Makefile") == 0, "a second apply changes nothing")
+# a piece the repository changed is never rewritten: a conflict, for a person
+write(os.path.join(d, "Makefile"), OLD_MAKEFILE.replace("ORG_REF   ?= main", "ORG_REF   ?= v1"))
+rc, out = run("apply", d)
+check(
+    rc == 1
+    and "conflict  Makefile#org-tools" in out
+    and "`ORG_REF   ?= v1`" in out
+    and read(os.path.join(d, "Makefile"))
+    == OLD_MAKEFILE.replace("ORG_REF   ?= main", "ORG_REF   ?= v1"),
+    "an edited org piece is a conflict and the Makefile is left as it is",
+)
+write(
+    os.path.join(d, "Makefile"),
+    OLD_MAKEFILE.replace(SYNC_TARGET, "org-sync-check: ## mine\n\t@echo mine\n"),
+)
+rc, out = run("plan", d)
+check(
+    "conflict  Makefile#org-tools" in out and "`org-sync-check: ## mine`" in out,
+    "a target of the repository's own under an org name is a conflict",
+)
+# a Makefile with none of the org pieces (AntHocNet's own) gets the block appended
+write(os.path.join(d, "Makefile"), "# own\n\ncheck: ## all\n\t@true\n")
+run("apply", d)
+mk = read(os.path.join(d, "Makefile"))
+check(
+    mk.startswith("# own\n\ncheck: ## all\n\t@true\n\n# org-sync:begin org-tools\n"),
+    "a Makefile with no org piece gets the block inserted at its end",
+)
+
+# LICENSING.md: the old seed's paragraph is the org's text, replaced in place
+run("reseed", "Makefile", d)
+lic = read(os.path.join(d, "LICENSING.md"))
+s, e = org_sync.find_section(lic, "licence-texts", "LICENSING.md")
+OLD_LIC = org_sync.ADOPT_PIECES[("LICENSING.md", "licence-texts")]["old"][0]
+old_file = (
+    lic[: s - len("<!-- org-sync:begin licence-texts -->\n")]
+    + OLD_LIC
+    + lic[e + len("<!-- org-sync:end licence-texts -->\n") :]
+)
+write(os.path.join(d, "LICENSING.md"), old_file)
+run("apply", d)
+check(
+    read(os.path.join(d, "LICENSING.md")) == lic,
+    "an old LICENSING.md paragraph is replaced by the block, in place",
+)
+own = "# Licensing\n\nOur own words. `tools/check.py` checks the headers.\n"
+write(os.path.join(d, "LICENSING.md"), own)
+rc, out = run("plan", d)
+check(
+    "LICENSING.md#licence-texts" not in out
+    and run("apply", d)[0] == 0
+    and read(os.path.join(d, "LICENSING.md")) == own
+    and run("check", d)[0] == 0,
+    "a LICENSING.md of the repository's own words is left unmanaged, not a conflict",
+)
+edited = old_file.replace("either licence", "either licence (ours)")
+write(os.path.join(d, "LICENSING.md"), edited)
+run("apply", d)
+check(
+    read(os.path.join(d, "LICENSING.md")) == edited,
+    "an edited old paragraph is the repository's own: never rewritten",
+)
+
+# 31. Untouched seeds (#615): a seed still exactly as the pinned templates rendered
+# it takes today's render with `apply --reseed-untouched`; an edited one never.
+pin = tempfile.mkdtemp()
+subprocess.run(["git", "init", "-q", pin], check=True)
+for sub in ("templates", "tools/org-sync", "tools/fidelity"):
+    shutil.copytree(
+        os.path.join(ORG, sub), os.path.join(pin, sub), ignore=shutil.ignore_patterns("__pycache__")
+    )
+with open(os.path.join(pin, "templates", "SECURITY.md.in"), "a", encoding="utf-8") as f:
+    f.write("\nAn older template's last line.\n")
+git_env = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@t",
+}
+subprocess.run(["git", "-C", pin, "add", "-A"], check=True)
+subprocess.run(["git", "-C", pin, "commit", "-qm", "pin"], check=True, env=git_env)
+sha = subprocess.run(
+    ["git", "-C", pin, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+).stdout.strip()
+saved_pin = org_sync.PIN_ORG
+org_sync.PIN_ORG = pin
+try:
+    d = fresh()
+    run("init", d, "--kind", "data", "--title", "demo")
+    today = read(os.path.join(d, "SECURITY.md"))
+    write(os.path.join(d, ".github", "org-sync.lock"), f'commit = "{sha}"\n')
+    old = org_sync.pinned_render(d, "swarm-routing/demo", sha, "SECURITY.md")
+    check(
+        old is not None and old.endswith("An older template's last line.\n") and old != today,
+        "the pinned render comes from the pinned commit's own templates",
+    )
+    write(os.path.join(d, "SECURITY.md"), old)
+    rc, out = run("apply", d)
+    check(
+        read(os.path.join(d, "SECURITY.md")) == old, "without --reseed-untouched no seed is written"
+    )
+    rc, out = run("apply", d, "--reseed-untouched")
+    check(
+        rc == 0
+        and f"reseeded  SECURITY.md (untouched since the pinned templates {sha[:12]})" in out
+        and read(os.path.join(d, "SECURITY.md")) == today,
+        "an untouched seed takes today's render",
+    )
+    write(os.path.join(d, "SECURITY.md"), old.replace("## Verifying", "Our note.\n\n## Verifying"))
+    rc, out = run("apply", d, "--reseed-untouched")
+    check(
+        "reseeded" not in out and "Our note." in read(os.path.join(d, "SECURITY.md")),
+        "a seed the repository edited is never written",
+    )
+    write(os.path.join(d, "SECURITY.md"), old)
+    write(os.path.join(d, ".github", "org-sync.lock"), f'commit = "{"f" * 40}"\n')
+    rc, out = run("apply", d, "--reseed-untouched")
+    check(
+        "reseeded" not in out and read(os.path.join(d, "SECURITY.md")) == old,
+        "a pin that cannot be rendered leaves the seed alone",
+    )
+    os.remove(os.path.join(d, ".github", "org-sync.lock"))
+    rc, out = run("apply", d, "--reseed-untouched")
+    check(
+        "reseeded" not in out and read(os.path.join(d, "SECURITY.md")) == old,
+        "without a lock no seed is written",
+    )
+finally:
+    org_sync.PIN_ORG = saved_pin
 
 print("org-sync self-test: OK")

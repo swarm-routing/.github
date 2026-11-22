@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 name: Reusable Python lint and coverage
 
-# Lint and coverage for the org's Python (ns3-tools' readers, tooling):
+# Lint and coverage for the org's Python (sim-tools' readers, tooling):
 #   ruff check (+ ruff format --check)   lint, fails on a finding (#25)
 #   coverage.py over the self-tests      line + branch coverage, report-only:
 #                                        no threshold (AntHocNet #162, #24)

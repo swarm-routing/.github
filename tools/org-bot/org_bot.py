@@ -17,8 +17,11 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
   org-sync  tools/org-sync/org_sync.py apply, in each repository with a
             .github/org-sync.toml. Sections the repository owns
             (`org_sync.py conflicts`) are never forced; the PR lists them,
-            and the seeds that differ from today's render (`org_sync.py
-            seeds`), for information: the bot never changes a seed.
+            and the seeds the repository edited that differ from today's
+            render (`org_sync.py seeds`), for information: the bot never
+            changes an edited seed. A seed still exactly as the pinned
+            templates rendered it is reseeded in the PR (`apply
+            --reseed-untouched`, #615).
   zenodo    tools/zenodo/zenodo.py record --write, in each repository with a
             CITATION.cff: when Zenodo holds a concept for its releases (a
             record linking the newest tag) and CITATION.cff's `doi:` or
@@ -188,10 +191,10 @@ SITE = (
 AFTERCARE_MARK = "<!-- org-bot:release-aftercare -->"
 # swarm-core's git URL for the swarm-core-pin task (a local path in the self-test)
 SWARM_CORE = os.environ.get(
-    "ORG_BOT_SWARM_CORE", "https://github.com/swarm-routing/ns3-swarm-core.git"
+    "ORG_BOT_SWARM_CORE", "https://github.com/swarm-routing/swarm-adapter-ns3.git"
 )
 # where the task reads swarm-core's tags and release assets for a repository with a
-# release lock, swarm-core.lock (swarm-routing/ns3-swarm-core#134; a file:// tree in
+# release lock, swarm-core.lock (swarm-routing/swarm-adapter-ns3#134; a file:// tree in
 # the self-test)
 SWARM_CORE_RELEASES = os.environ.get("ORG_BOT_SWARM_CORE_RELEASES", "https://github.com")
 # the vcpkg registry the swarm-core-pin task moves a vcpkg-mode baseline to (#489)
@@ -239,7 +242,7 @@ TASKS = {
         "what": "This repository's swarm-core pin is behind, so its `swarm-core / pin` check "
         "fails on every PR until the pin follows (#208): with a commit pin, swarm-core "
         "`main` changed `core/`; with a release lock (`swarm-core.lock`, "
-        "swarm-routing/ns3-swarm-core#134), a newer swarm-core release is out, and "
+        "swarm-routing/swarm-adapter-ns3#134), a newer swarm-core release is out, and "
         "nothing happens between releases. Rewritten by swarm-routing/.github "
         "`tools/checks/check-swarm-core-pin.py --bump`: the old commit or tag becomes the "
         "new one on the pin lines only (`SWARM_CORE_REF` in `core/CMakeLists.txt` and the "
@@ -670,8 +673,12 @@ def generate(task, repo, clone, data, out, skip=None):
     else:
         if not os.path.exists(os.path.join(clone, ".github", "org-sync.toml")):
             return None
-        # orphan blocks (#235) go too: the removal is proposed in this reviewed PR
-        cmds = [[sys.executable, "-I", ORG_SYNC, "apply", clone, "--prune-orphans"]]
+        # orphan blocks (#235) go too, and a seed the repository never edited takes
+        # today's render (#615): both proposed in this reviewed PR
+        cmds = [
+            [sys.executable, "-I", ORG_SYNC, "apply", clone, "--prune-orphans"]
+            + ["--reseed-untouched"]
+        ]
     for c in cmds:
         # org_sync.py apply exits 1 when sections the repository owns differ (it
         # leaves them and lists them on stdout); only a crash writes to stderr.
@@ -683,13 +690,14 @@ def generate(task, repo, clone, data, out, skip=None):
         r = sh([sys.executable, "-I", ORG_SYNC, "conflicts", clone], check=False)
         if r.stdout.strip():
             out.append("conflicts left to the repository:\n" + r.stdout.strip())
-        # seeds are the repository's own: listed for information, never changed (#91)
+        # a seed the repository edited is its own: listed for information, never
+        # changed (#91, #615); the untouched ones were reseeded by apply above
         r = sh([sys.executable, "-I", ORG_SYNC, "seeds", clone], check=False)
         differ = [ln for ln in r.stdout.splitlines() if ln.startswith(("differs", "missing"))]
         if differ:
             out.append(
-                "seeds that differ from today's render (the repository's own, not changed "
-                "here; `org_sync.py reseed FILE` takes the template):\n" + "\n".join(differ)
+                "seeds the repository edited, differing from today's render (its own, not "
+                "changed here; `org_sync.py reseed FILE` takes the template):\n" + "\n".join(differ)
             )
     return out
 
@@ -2149,13 +2157,13 @@ def self_test():
         and res[0][2]["branch"].startswith("org-bot/org-sync-")
         and not [c for c in gh.calls if c[0] == "PATCH"],
     )
-    # swarm-core-pin on a release lock (swarm-routing/ns3-swarm-core#134): a lock behind
+    # swarm-core-pin on a release lock (swarm-routing/swarm-adapter-ns3#134): a lock behind
     # the newest release gets the PR, a current one none, and none between releases
     sys.path.insert(0, os.path.dirname(PIN))
     import release_lock
 
     rel = os.path.join(work, "releases")
-    sc_repo = "swarm-routing/ns3-swarm-core"
+    sc_repo = "swarm-routing/swarm-adapter-ns3"
     sc_more = release_lock.fixture_repo(rel, sc_repo, env)
     release_lock.make_release(rel, sc_repo, "v0.3.0", {"swarm-core-0.3.0.tar.gz": b"3"}, env)
     rbase = "file://" + rel
@@ -2564,7 +2572,7 @@ def self_test():
     )
     # release-lock (#478): every other root lock follows its dependency's releases, one PR
     # on org-bot/release-lock; a hand PR on the lock, a renamed asset, a carried org-sync
-    nt_repo = "swarm-routing/ns3-tools"
+    nt_repo = "swarm-routing/sim-tools"
     nt_more = release_lock.fixture_repo(rel, nt_repo, env)
     _, n1 = release_lock.make_release(
         rel, nt_repo, "v0.1.0", {"routing-bench-0.1.0.tar.gz": b"rb1", "nt-0.1.0.whl": b"w1"}, env

@@ -1,0 +1,36 @@
+# The org's clang-tidy checks for a protocol's simulator-free core/
+# (swarm-routing/.github#635), as .clang-format is its style: each
+# repository's `core` check sparse-checks this file out and runs
+#   clang-tidy-18 -p <build> --config-file=.org/.clang-tidy --warnings-as-errors='*' \
+#     --header-filter="^$PWD/core/[^/]+\.h$" --quiet <core/*.cc>
+# so a finding fails the required check (static_analysis_fixed). The set is
+# AntHocNet's (#619 there): bug-finding and performance checks, no style
+# checks (a style sweep would bury the real findings). The tests under
+# core/test/ are not analysed: they read optionals and containers right
+# after asserting on them, which bugprone-unchecked-optional-access cannot see.
+#
+# Off, with reasons:
+#   bugprone-easily-swappable-parameters  (dest, neighbor) pairs everywhere by design
+#   bugprone-narrowing-conversions        the codecs narrow on purpose, bounds-checked
+#   performance-enum-size                 int-sized enums are not a hot-path cost here
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-err34-c,
+  cert-err58-cpp,
+  cert-flp30-c,
+  cert-msc50-cpp,
+  cert-msc51-cpp,
+  cert-oop54-cpp,
+  performance-*,
+  -performance-enum-size,
+  readability-container-size-empty,
+  readability-misleading-indentation,
+  readability-redundant-string-cstr,
+  misc-redundant-expression,
+  misc-unused-using-decls
+# the caller passes --warnings-as-errors='*' and its own --header-filter
+WarningsAsErrors: ''
+HeaderFilterRegex: ''
