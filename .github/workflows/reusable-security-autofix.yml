@@ -1,0 +1,323 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable security autofix
+
+# Every open security alert is a ticket, and every code-scanning ticket gets
+# an automated fix (maintainer decision 2026-11-17, #629). The hourly
+# `security-alerts` task (org-bot) keeps one `security` issue per alert in
+# its repository; callers get this workflow from org-sync's
+# templates/workflows/security-autofix.yml (every 6 hours, and on demand).
+#
+#   pick  no AI, the workflow token: `security-autofix pick` (the ci-tools
+#         image by digest) reads the open security tickets of this
+#         repository's code-scanning alerts. A policy finding (Scorecard)
+#         gets one proposal comment: the settings-as-code change that fixes
+#         it where one does, else a dismissal for the maintainer. The
+#         lowest-numbered code finding with no fix branch and no no-fix
+#         comment goes to the agent. Secret tickets are the maintainer's
+#         rotation, Dependabot ones Dependabot's own security update.
+#   fix   the agent (anthropics/claude-code-action, pinned by commit) with the
+#         rules of templates/security-autofix/prompt.md from this
+#         repository's main: a reproducing test first, then a minimal fix.
+#         It holds no token that can push (contents: read,
+#         security-events: read; checkout without credentials) and no secret
+#         but the model key. Its staged diff must pass `security-autofix
+#         guard` (a test and a fix, no workflow or check configuration, no
+#         suppression) and is handed on as an artifact. Without the
+#         ANTHROPIC_API_KEY secret it skips with a notice, green.
+#   pr    no AI, the bot's token (a PR it opens runs CI, unlike one opened
+#         with GITHUB_TOKEN): applies the diff to main, runs the guard again,
+#         pushes claude/security-fix-code-scanning-<n> (a new branch, never a
+#         force push), opens the PR naming the ticket and enables auto-merge:
+#         required CI, the review gate and the merge queue decide.
+#   failed  no AI, the workflow token: an alert the agent did not fix
+#         (refused, no change, an error) gets the no-fix comment on its
+#         ticket, so the next pick leaves it to the maintainer.
+#
+# No step dismisses an alert or touches a secret. Every job runs only on the
+# default branch, so only main's code runs. No alert text reaches a `run:`
+# line through an expression: alert and ticket numbers are checked to be
+# digits, everything else goes through files and env.
+on:
+  workflow_call:
+    secrets:
+      anthropic-api-key:
+        description: The model key (the org secret ANTHROPIC_API_KEY); without it the fix job does nothing
+        required: false
+      bot-app-id:
+        required: false
+      bot-app-private-key:
+        required: false
+      bot-fallback-token:
+        required: false
+
+permissions: {}
+
+env:
+  IMG: ghcr.io/swarm-routing/ci-tools@sha256:4c57d100f9e6a745c6c7e669c92b0fc5a7441f966f2f936b1de0ffc37abb9b3d  # promoted from fcef343 (#651)
+
+jobs:
+  pick:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read          # the fix branch lookup
+      issues: write           # read the tickets, post a proposal
+      security-events: read   # read each ticket's alert
+    outputs:
+      alert: ${{ steps.pick.outputs.alert }}
+      ticket: ${{ steps.pick.outputs.ticket }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Pick a ticket
+        id: pick
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          docker run --rm -e GH_TOKEN "$IMG" security-autofix pick --repo "$GITHUB_REPOSITORY" | tee "$RUNNER_TEMP/pick.txt"
+          alert=$(sed -n 's/^fix=\([0-9]*\) ticket=\([0-9]*\)$/\1/p' "$RUNNER_TEMP/pick.txt")
+          ticket=$(sed -n 's/^fix=\([0-9]*\) ticket=\([0-9]*\)$/\2/p' "$RUNNER_TEMP/pick.txt")
+          printf 'alert=%s\nticket=%s\n' "$alert" "$ticket" >> "$GITHUB_OUTPUT"
+          { echo '### Security tickets'; echo; sed 's/^/- /' "$RUNNER_TEMP/pick.txt"; } >> "$GITHUB_STEP_SUMMARY"
+
+  fix:
+    needs: pick
+    if: needs.pick.outputs.alert != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: read
+    outputs:
+      result: ${{ steps.guard.outputs.result }}
+    env:
+      ALERT: ${{ needs.pick.outputs.alert }}
+      TICKET: ${{ needs.pick.outputs.ticket }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: The model key
+        id: key
+        env:
+          HAS_KEY: ${{ secrets.anthropic-api-key != '' }}
+        run: |
+          [[ "$ALERT" =~ ^[0-9]+$ && "$TICKET" =~ ^[0-9]+$ ]] || { echo "::error::alert '$ALERT', ticket '$TICKET'"; exit 1; }
+          if [ "$HAS_KEY" = true ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the org secret ANTHROPIC_API_KEY is not set: no automated fix for code scanning alert #$ALERT, ticket #$TICKET (swarm-routing/.github#629); the run stays green"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout (no credentials)
+        if: steps.key.outputs.ok == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The rules (swarm-routing/.github main)
+        if: steps.key.outputs.ok == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/.github
+          ref: main
+          path: .security-autofix/org
+          sparse-checkout: templates/security-autofix
+          persist-credentials: false
+      - name: The alert
+        if: steps.key.outputs.ok == 'true'
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo '.security-autofix/' >> .git/info/exclude
+          gh api "repos/$GITHUB_REPOSITORY/code-scanning/alerts/$ALERT" > .security-autofix/alert.json
+          gh api "repos/$GITHUB_REPOSITORY/code-scanning/alerts/$ALERT/instances?per_page=20" > .security-autofix/instances.json
+      - name: The agent
+        id: agent
+        if: steps.key.outputs.ok == 'true'
+        continue-on-error: true
+        timeout-minutes: 35
+        uses: anthropics/claude-code-action@cc98b3ae241b0fcfb6a42a2690751afffecb4452 # v1.0.278
+        with:
+          anthropic_api_key: ${{ secrets.anthropic-api-key }}
+          github_token: ${{ github.token }}
+          prompt: |
+            Fix code scanning alert #${{ env.ALERT }} of this repository (its ticket is issue #${{ env.TICKET }}).
+            Read and follow .security-autofix/org/templates/security-autofix/prompt.md first;
+            the alert is .security-autofix/alert.json and its locations .security-autofix/instances.json.
+          claude_args: >-
+            --max-turns 60
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(make:*),Bash(cmake:*),Bash(ctest:*),Bash(python3:*),Bash(go test:*),Bash(go build:*),Bash(go vet:*),Bash(cargo test:*),Bash(npm test:*),Bash(git diff:*),Bash(git status:*)"
+            --disallowedTools "WebFetch,WebSearch"
+      - name: Guard the change
+        id: guard
+        if: steps.key.outputs.ok == 'true'
+        timeout-minutes: 3
+        env:
+          OUTCOME: ${{ steps.agent.outcome }}
+          EXEC: ${{ steps.agent.outputs.execution_file }}
+        run: |
+          git add -A
+          git diff --cached --no-renames --binary > "$RUNNER_TEMP/fix.diff"
+          why=""
+          if [ "$OUTCOME" != success ]; then
+            why="the agent's step ended $OUTCOME"
+          elif [ ! -s "$RUNNER_TEMP/fix.diff" ]; then
+            why="the agent made no change"
+          elif ! docker run --rm -v "$RUNNER_TEMP:/w:ro" -w /w "$IMG" security-autofix guard fix.diff > "$RUNNER_TEMP/guard.txt"; then
+            why="$(cat "$RUNNER_TEMP/guard.txt")"
+          fi
+          cat "$RUNNER_TEMP/guard.txt" 2> /dev/null || true
+          if [ -z "$why" ]; then
+            echo "result=accepted" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # the agent's last words, when it stopped on purpose (a false positive, a maintainer's call)
+          if [ -n "$EXEC" ] && [ -f "$EXEC" ]; then
+            last=$(jq -r '[.[] | select(.type == "result") | .result] | last // empty' "$EXEC" 2> /dev/null | head -c 1500 || true)
+            [ -n "$last" ] && why="$why. The agent: $last"
+          fi
+          printf '%s' "$why" > "$RUNNER_TEMP/why.txt"
+          echo "result=refused" >> "$GITHUB_OUTPUT"
+          echo "::warning::no fix for code scanning alert #$ALERT: see the guard output above"
+      - name: Hand on the change
+        if: steps.guard.outputs.result == 'accepted'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        timeout-minutes: 3
+        with:
+          name: security-fix
+          path: ${{ runner.temp }}/fix.diff
+          retention-days: 3
+          if-no-files-found: error
+      - name: Hand on why
+        if: steps.guard.outputs.result == 'refused'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        timeout-minutes: 3
+        with:
+          name: security-fix-refused
+          path: ${{ runner.temp }}/why.txt
+          retention-days: 3
+          if-no-files-found: error
+
+  pr:
+    needs: [pick, fix]
+    if: needs.fix.outputs.result == 'accepted'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      ALERT: ${{ needs.pick.outputs.alert }}
+      TICKET: ${{ needs.pick.outputs.ticket }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Bot token
+        id: bot
+        timeout-minutes: 2
+        uses: swarm-routing/.github/.github/actions/bot-token@main
+        with:
+          app-id: ${{ secrets.bot-app-id }}
+          private-key: ${{ secrets.bot-app-private-key }}
+          fallback-token: ${{ secrets.bot-fallback-token }}
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.bot.outputs.token }}
+      - name: The change
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        timeout-minutes: 3
+        with:
+          name: security-fix
+          path: ${{ runner.temp }}/fix
+      - name: Push the branch, open the PR, enable auto-merge
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          GIT_NAME: ${{ steps.bot.outputs.git-name }}
+          GIT_EMAIL: ${{ steps.bot.outputs.git-email }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ "$ALERT" =~ ^[0-9]+$ && "$TICKET" =~ ^[0-9]+$ ]] || { echo "::error::alert '$ALERT', ticket '$TICKET'"; exit 1; }
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::no bot token: the accepted fix for alert #$ALERT is not opened as a PR"
+            exit 0
+          fi
+          branch="claude/security-fix-code-scanning-$ALERT"
+          git apply --index "$RUNNER_TEMP/fix/fix.diff"
+          # the guard again, on the diff as it applies to main
+          git diff --cached --no-renames --binary > "$RUNNER_TEMP/applied.diff"
+          docker run --rm -v "$RUNNER_TEMP:/w:ro" -w /w "$IMG" security-autofix guard applied.diff
+          git config user.name "${GIT_NAME:-github-actions[bot]}"
+          git config user.email "${GIT_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+          url=$(gh api "repos/$GITHUB_REPOSITORY/code-scanning/alerts/$ALERT" --jq .html_url)
+          printf 'fix(security): fix code scanning alert #%s\n\nAn automated fix with a reproducing test, by security-autofix.yml\n(swarm-routing/.github#629): %s\n\nRun: %s\n' \
+            "$ALERT" "$url" "$RUN_URL" > "$RUNNER_TEMP/msg.txt"
+          git commit -q -F "$RUNNER_TEMP/msg.txt"
+          # a new branch only: an existing one is a fix in flight, never overwritten
+          git push origin "HEAD:refs/heads/$branch"
+          cat > "$RUNNER_TEMP/body.md" <<EOF
+          ## Summary
+
+          An automated fix for code scanning alert #$ALERT: $url
+
+          Ticket: #$TICKET (the security-alerts task closes it once the alert is no longer open).
+
+          Made by the security autofix pipeline (swarm-routing/.github#629): an agent wrote a reproducing test and a minimal fix under the rules in swarm-routing/.github \`templates/security-autofix/prompt.md\`, and \`security-autofix guard\` accepted the change (a test and a fix; no workflow, CI or check configuration; no suppression). Required CI, the review gate and the merge queue decide; auto-merge is on.
+
+          Run: $RUN_URL
+
+          ---
+          _Generated by [Claude Code](https://claude.ai/code)_
+          EOF
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls" -f title="fix(security): fix code scanning alert #$ALERT" \
+                 -f head="$branch" -f base="$GITHUB_REF_NAME" -F body=@"$RUNNER_TEMP/body.md" --jq .html_url)
+          echo "opened $pr"
+          echo "Opened $pr for $url" >> "$GITHUB_STEP_SUMMARY"
+          gh pr merge --auto --squash "$pr" || gh pr merge --auto "$pr" \
+            || echo "::warning::auto-merge could not be enabled on $pr"
+
+  failed:
+    needs: [pick, fix]
+    if: always() && needs.pick.outputs.ticket != '' && (needs.fix.outputs.result == 'refused' || needs.fix.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write   # the no-fix comment on the ticket
+    env:
+      TICKET: ${{ needs.pick.outputs.ticket }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - name: Why
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        timeout-minutes: 3
+        with:
+          name: security-fix-refused
+          path: ${{ runner.temp }}/why
+      - name: Record it on the ticket
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ "$TICKET" =~ ^[0-9]+$ ]] || { echo "::error::ticket '$TICKET'"; exit 1; }
+          why="the fix job failed"
+          [ -s "$RUNNER_TEMP/why/why.txt" ] && why=$(cat "$RUNNER_TEMP/why/why.txt")
+          docker run --rm -e GH_TOKEN "$IMG" security-autofix failed --repo "$GITHUB_REPOSITORY" \
+            --ticket "$TICKET" --why "$why" --run "$RUN_URL"
