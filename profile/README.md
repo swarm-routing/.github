@@ -114,11 +114,11 @@ no release yet, no SonarQube Cloud project, or no coverage upload.
 
 The org's two AI repositories, part of layer 4 (ROADMAP decision 26,
 [ADR-0005](https://github.com/swarm-routing/.github/blob/main/docs/adr/0005-the-mcp-and-agent-tooling-standard.md)):
-the skills and their Claude Code plugin, and the MCP server the plugin pins.
+the skills and their Claude Code plugin, and the MCP server the plugin bundles.
 
 | Repository | What it is | Release | Quality gate | Coverage |
 |---|---|---|---|---|
-| [skills](https://github.com/swarm-routing/skills) | The org's agent skills: one Claude Code plugin and plain Agent Skills for any agent, each a procedure over a script; the plugin bundles swarm-mcp at a pinned release | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_skills&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_skills) | — |
+| [skills](https://github.com/swarm-routing/skills) | The org's agent skills: one Claude Code plugin and plain Agent Skills for any agent, each a procedure over a script; the plugin bundles swarm-mcp, and will pin a swarm-mcp release (or commit) once the code has moved | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_skills&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_skills) | — |
 | [swarm-mcp](https://github.com/swarm-routing/swarm-mcp) | The org's MCP server: a local, read-only stdio server that returns the org scripts' verdicts (fidelity, invariants, release readiness, locks) as tools; versioned and released on its own. Created 2026-11-22, empty: the code is still in skills' `tools/swarm-mcp/` | — | — | — |
 
 ## Roadmap: now and later

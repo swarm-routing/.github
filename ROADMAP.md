@@ -77,7 +77,7 @@ sim-tools#128's criteria name); .github#268's other rungs wait with phase 2.
 | 1. Core | [swarm-core](https://github.com/swarm-routing/swarm-core) | simulator-free C++23 ports and primitives (`swarm::core`), the wire helpers, the testbench and the protocol contract tests; no OS or simulator header | created 2026-11-21, empty; the code is still in swarm-adapter-ns3's `core/` (released up to `v1.0.0` there) and moves in phase 1 |
 | 2. Runtimes and adapters | [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) (was `ns3-swarm-core`), [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) (the Linux daemon, *deferred*), one `swarm-adapter-<sim>` per in-process C++ simulator, `swarm-adapter-omnet` next (*proposed*, *deferred*; decision 24) | each runtime's implementation of the ports; CORE/EMANE and Shadow run the swarm-routingd binary and reuse its Linux adapter, so they need no adapter repository (decision 24) | swarm-adapter-ns3 is the ns-3 contrib module `swarm-core` (golden rule 4); swarm-routingd created 2026-11-21, empty |
 | 3. Protocols | AntHocNet, ARA, BeeAdHoc, Termite, HOPNET; POSANT, BeeSensor, Q-Swarm (*proposed*, *deferred*, [Protocol repositories](#protocol-repositories)) | each a simulator-free `core/` on swarm-core and its ns-3 module (`ns3/`); the Linux glue lives in swarm-routingd, which consumes the cores by release lock (decision 13) | five released; three created 2026-11-21, fidelity sheets only (decision 1) |
-| 4. Infrastructure and tooling | `.github`, [sim-containers](https://github.com/swarm-routing/sim-containers) (was `ns3-containers`), [sim-tools](https://github.com/swarm-routing/sim-tools) (was `ns3-tools`), [vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry), [benchmarks](https://github.com/swarm-routing/benchmarks), [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io), [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) (the workbench, *deferred*); **AI:** [skills](https://github.com/swarm-routing/skills), [swarm-mcp](https://github.com/swarm-routing/swarm-mcp) (decision 26) | reusable CI, simulator images, orchestration and statistics, packages, released datasets, the public showcase, the workbench; the AI pair: the skills and the Claude Code plugin, and the MCP server the plugin pins | the renames of 2026-11-22 are followed by the phase 0 PRs; swarm-web-ui created 2026-11-21, empty; swarm-mcp created 2026-11-22, empty (its code is still in skills' `tools/swarm-mcp/`) |
+| 4. Infrastructure and tooling | `.github`, [sim-containers](https://github.com/swarm-routing/sim-containers) (was `ns3-containers`), [sim-tools](https://github.com/swarm-routing/sim-tools) (was `ns3-tools`), [vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry), [benchmarks](https://github.com/swarm-routing/benchmarks), [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io), [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) (the workbench, *deferred*); **AI:** [skills](https://github.com/swarm-routing/skills), [swarm-mcp](https://github.com/swarm-routing/swarm-mcp) (decision 26) | reusable CI, simulator images, orchestration and statistics, packages, released datasets, the public showcase, the workbench; the AI pair: the skills and the Claude Code plugin, and the MCP server the plugin bundles (and will pin once the code has moved) | the renames of 2026-11-22 are followed by the phase 0 PRs; swarm-web-ui created 2026-11-21, empty; swarm-mcp created 2026-11-22, empty (its code is still in skills' `tools/swarm-mcp/`) |
 
 **Decided on 2026-11-22 (the maintainer, on .github#672):**
 
@@ -262,7 +262,7 @@ first set, the review's question number in brackets):
     [swarm-mcp](https://github.com/swarm-routing/swarm-mcp) holds the
     read-only stdio MCP server (today in skills' `tools/swarm-mcp/`,
     swarm-routing/skills#185), versioned and released on its own; the plugin
-    bundles it by pinning a swarm-mcp release. The two are listed together
+    bundles it and, once the code has moved, pins a swarm-mcp release. The two are listed together
     as the org's AI repositories, a labelled group of layer 4.
 
 ```mermaid
@@ -389,7 +389,7 @@ a `swarm-mcp` prototype and one paper. The skills live in
 swarm-routing/skills, as extensions of `protocol-review`, `fidelity-sheet`
 and `release` (decision 20); the MCP server moves to its own repository,
 [swarm-mcp](https://github.com/swarm-routing/swarm-mcp), which the plugin
-pins (decision 26); the paper folds into
+will pin (decision 26); the paper folds into
 AntHocNet#109, with cross-runtime results stated qualitatively (decision 21).
 The architecture page and porting guide is .github#260, now under
 .github#672.

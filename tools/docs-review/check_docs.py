@@ -780,7 +780,8 @@ ORG_REPOS = (
 FOREIGN = re.compile(
     r"\b(?:swarm-routing|danieljoppi)/|\bns-3(?:'s|-dev)?\b|"
     r"\b(?:that|each|every|a|the|its|another) (?:site |protocol |other )?(?:repo|repository|protocol)'s"
-    r"|\bthe site's\b|\b(?:"
+    # a name inside a local path (`tools/swarm-mcp/`) is not another repository
+    r"|\bthe site's\b|(?<![/\w])\b(?:"
     + "|".join(re.escape(r) for r in ORG_REPOS if not r.startswith("."))
     + r")\b"
 )
@@ -1149,6 +1150,8 @@ def self_test():
             for r in ("swarm-adapter-omnet", "swarm-core", "sim-tools", "swarm-mcp")
         ),
     )
+    # ... but not when the name is a directory of a local path (skills' tools/swarm-mcp/)
+    expect("local path", FOREIGN.search("`tools/swarm-mcp/` uses ") is None)
 
     agents_ok = "# AGENTS.md\n\n" + "".join(f"## {h}\n\ntext\n\n" for h in AGENTS_HEADINGS)
     agents_ok = agents_ok.replace(

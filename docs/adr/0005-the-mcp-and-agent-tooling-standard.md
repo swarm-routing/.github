@@ -92,7 +92,8 @@ Claude Code features that cut tokens with no new code (Claude Code docs,
 
 1. **Standard (every session that can run it):**
    - `swarm-mcp`, once swarm-routing/skills#185 ships it, bundled in the
-     `swarm-routing` plugin (a plugin `.mcp.json` that runs the release of
+     `swarm-routing` plugin (a plugin `.mcp.json`; once the code has moved,
+     it runs the release of
      [swarm-routing/swarm-mcp](https://github.com/swarm-routing/swarm-mcp)
      the plugin pins; see the amendment), so the committed
      `.claude/settings.json` that enables the plugin enables it; nothing to
@@ -153,11 +154,14 @@ repos".
   `tools/swarm-mcp/` (skills ADR-0002). It is versioned and released on its
   own, under the same review rules as the plugin (Decision 4: local, stdio,
   no account, nothing sent but to the model).
-- **The plugin pins it.** The plugin's `.mcp.json` runs one swarm-mcp
-  release (or commit) named in the skills repository, moved by a reviewed PR
-  like any other pin; a skills release never picks up an unreviewed
-  swarm-mcp change. How the plugin fetches and starts the pinned server is
-  decided in the skills and swarm-mcp repositories when the code moves.
+- **The plugin pins it** (the target state, once the code has moved; on
+  2026-11-22 the plugin's `.mcp.json` still runs the in-tree
+  `tools/swarm-mcp/swarm_mcp.py` and pins nothing). The plugin's `.mcp.json`
+  runs one swarm-mcp release (or commit) named in the skills repository,
+  moved by a reviewed PR like any other pin; a skills release never picks up
+  an unreviewed swarm-mcp change. How the plugin fetches and starts the
+  pinned server is decided in the skills and swarm-mcp repositories when the
+  code moves.
 - The two are the org's AI repositories: the org profile and ROADMAP list
   them together, as a labelled group of layer 4 (infrastructure and
   tooling).
