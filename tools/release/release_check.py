@@ -21,7 +21,8 @@ CONTRIBUTING "Cutting a release" is the procedure; this checks its steps.
     version the ladder fixes (swarm-routing/.github#512);
   - the Commitizen config (`.cz.toml`, or `[tool.commitizen]` in
     `pyproject.toml`) exists, with `tag_format = "v$version"`;
-  - `make dist` exists, unless the caller passes its own `build:`;
+  - `make dist` exists, unless the caller passes its own `build:` or an own
+    release.yml assembles its assets into `dist/` (AntHocNet);
   - with --version, `docs/roadmap.md` has a row for vX.Y.Z (the ladder gate,
     as `ladder`); without a ladder, the org ROADMAP's release train applies
     (a WARN);
@@ -83,6 +84,8 @@ REUSABLE = re.compile(
 DIST_TARGET = re.compile(r"^dist\s*:", re.M)
 INCREMENT = re.compile(r"\binputs\.increment\b")
 COMMENT = re.compile(r"(?:^|\s)#.*$")  # a YAML comment, to the end of the line
+# an own release.yml builds its assets when a live (uncommented) line names dist/ as a path
+OWN_DIST = re.compile(r"(?:^|\s)\"?dist/?\"?(?=\s|$)", re.M)
 WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
 KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):(.*)$")  # the value is stripped after the match
 SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
@@ -350,6 +353,8 @@ def ready(repo_dir, repo, version, gh):
         r.add("OK", "build: make dist")
     elif has_build:
         r.add("OK", "build: the caller's own build: input")
+    elif own and OWN_DIST.search(own_live):
+        r.add("OK", "build: the own release.yml builds its assets into dist/")
     else:
         r.add("FAIL", "build: no `dist:` target in the Makefile and no build: input in the caller")
     ladder(repo_dir, version, r)
@@ -773,6 +778,24 @@ def self_test():
             )
         rep = quiet(ready, d, None, None, gh)
         expect("ready: an own release.yml reading inputs.increment", has(rep, "OK", "increment"))
+        expect(
+            "ready: an own release.yml that builds nothing into dist/ fails build",
+            has(rep, "FAIL", "build: no `dist:` target"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "a", encoding="utf-8") as fh:
+            fh.write("      # tools/release/assemble.sh 1.0.0 dist\n")
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: dist only in a comment is no build",
+            has(rep, "FAIL", "build: no `dist:` target"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "a", encoding="utf-8") as fh:
+            fh.write('      - run: |\n          tools/release/assemble.sh "$VER" dist\n')
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: an own release.yml assembling into dist/ builds (AntHocNet)",
+            has(rep, "OK", "build: the own release.yml builds its assets into dist/"),
+        )
     flow = (
         "jobs:\n"
         "  build:\n"
