@@ -1,6 +1,13 @@
 # Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 name: org-bot
+# The task and how the run was started (#748): `org-bot <task> (<event>)`, with
+# `schedule` for a scheduled run and for the schedule backstop's catch-up
+# dispatch (`scheduled: true`), so .github/backstop.toml finds each scheduled
+# task's runs by name among the many others. The task expression is the plan
+# job's TASK below: keep the two in step.
+run-name: >-
+  org-bot ${{ inputs.task || (github.event.action == 'bestpractices' && 'bestpractices') || (github.event.action == 'project' && 'project-sync') || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'hourly') || 'all' }} (${{ (github.event_name == 'schedule' || inputs.scheduled) && 'schedule' || github.event_name }})
 
 # Keep every public org repository in step with this one, through PRs it opens
 # (tools/org-bot/org_bot.py):
@@ -143,37 +150,110 @@ on:
         description: 'Clone read-only and print what would be proposed'
         type: boolean
         default: false
+      scheduled:
+        description: 'Run as the schedule would: the schedule backstop catching up a slot GitHub did not run (#748)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-concurrency:
-  # One pending run per group, and a newer pending run replaces it. So:
-  # - a bestpractices nudge queues per repository, never in place of an
-  #   org-release run, and a project event in its own group (every run syncs
-  #   the whole project, so replacing a pending one loses nothing);
-  # - a workflow_dispatch has its own group keyed on its inputs (#614), so a
-  #   targeted dispatch (one task, some repositories) is never replaced by a
-  #   scheduled or push run, nor by a dispatch with other inputs; only a later
-  #   dispatch with the same inputs, which does the same work, replaces it.
-  #   A dispatch may then run beside the scheduled run: every task is
-  #   idempotent (one PR per repository and task, updated in place).
-  group: >-
-    ${{ github.event.action == 'bestpractices' && format('org-bot-bestpractices-{0}', github.event.client_payload.repository)
-        || github.event.action == 'project' && 'org-bot-project'
-        || github.event_name == 'workflow_dispatch' && format('org-bot-dispatch-{0}-{1}-{2}', inputs.task, inputs.repos, inputs.dry-run)
-        || 'org-bot' }}
-  cancel-in-progress: false
+# Concurrency is per job, not per run (#748). GitHub keeps one pending run per
+# group and a newer pending run replaces it, so one group for the whole
+# workflow let the push runs (each an `all` refresh of 40 to 60 minutes)
+# replace the pending scheduled run: none ran from 01:32 to 06:00 UTC on
+# 2026-11-22, and the hourly security-alerts (P1 SLA, #629) waited with it.
+# Now every job takes the group of the state it writes:
+# - refresh (tools/org-bot/org_bot.py): `org-bot-refresh`, one for every task
+#   it runs, because they write the same bot branches: org-sync's
+#   org-bot/org-sync-*, which swarm-core-pin closes and carries on
+#   org-bot/swarm-core-pin (#429) and release-lock carries on
+#   org-bot/release-lock (#478); all, hourly, release, a push and an
+#   org-release dispatch each run some of org-sync, swarm-core-pin and
+#   release-lock. A pending refresh another replaces is caught up by the
+#   schedule backstop (.github/backstop.toml finds the scheduled runs by
+#   their run-name and dispatches a missed slot with `scheduled: true`).
+#   Two exceptions write nothing another run of the group writes at the same
+#   time: a bestpractices nudge queues per repository (its own
+#   org-bot/bestpractices-* branch there, #531), and a dry run, which writes
+#   nothing, has a group of its own run;
+# - each Go tool its own group, `org-bot-<tool>`, whatever started it, so two
+#   runs of one tool never overlap and a pending one is replaced only by a
+#   run of the same tool, which does the same work (on Mondays every
+#   scheduled security-alerts run refreshes the weekly report, so a replaced
+#   one loses nothing), and none waits behind a refresh.
 
 jobs:
-  refresh:
+  plan:
+    # what this run does, once, for the jobs' `if` and groups
     runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      task: ${{ steps.plan.outputs.task }}
+      scheduled: ${{ steps.plan.outputs.scheduled }}
+      refresh: ${{ steps.plan.outputs.refresh }}
+      tools: ${{ steps.plan.outputs.tools }}
+      report: ${{ steps.plan.outputs.report }}
+    steps:
+      - name: Plan
+        id: plan
+        env:
+          TASK: ${{ inputs.task || (github.event.action == 'bestpractices' && 'bestpractices') || (github.event.action == 'project' && 'project-sync') || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'hourly') || 'all' }}
+          EVENT: ${{ github.event_name }}
+          IN_SCHEDULED: ${{ inputs.scheduled }}
+        run: |
+          set -euo pipefail
+          scheduled=false
+          if [ "$EVENT" = schedule ] || [ "$IN_SCHEDULED" = true ]; then scheduled=true; fi
+          monday=false
+          if [ "$(date -u +%u)" = 1 ]; then monday=true; fi
+          case "$TASK" in
+            branch-sweep|release-sync|project-sync|security-alerts|security-report|ticket-audit) refresh=false ;;
+            *) refresh=true ;;
+          esac
+          tools=""
+          # branch-sweep: the daily run and a dispatch of all or branch-sweep, never a push's all
+          if [ "$TASK" = branch-sweep ] || { [ "$TASK" = all ] && [ "$EVENT" != push ]; }; then
+            tools="$tools branch-sweep"
+          fi
+          case "$TASK" in hourly|release-aftercare|release-sync) tools="$tools release-sync" ;; esac
+          case "$TASK" in all|hourly|project-sync) tools="$tools project-sync" ;; esac
+          # security-alerts: hourly, the daily run, and a dispatch of security-alerts or security-report
+          if [ "$TASK" = hourly ] || [ "$TASK" = security-alerts ] || [ "$TASK" = security-report ] \
+             || { [ "$TASK" = all ] && [ "$scheduled" = true ]; }; then
+            tools="$tools security-alerts"
+          fi
+          # ticket-audit: weekly, the daily run on Mondays, and a dispatch of ticket-audit
+          if { [ "$TASK" = all ] && [ "$scheduled" = true ] && [ "$monday" = true ]; } \
+             || { [ "$EVENT" = workflow_dispatch ] && [ "$TASK" = ticket-audit ]; }; then
+            tools="$tools ticket-audit"
+          fi
+          report=false
+          if [ "$TASK" = security-report ] || { [ "$scheduled" = true ] && [ "$monday" = true ]; }; then report=true; fi
+          {
+            echo "task=$TASK"
+            echo "scheduled=$scheduled"
+            echo "refresh=$refresh"
+            echo "tools=${tools# }"
+            echo "report=$report"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  refresh:
+    needs: plan
+    if: needs.plan.outputs.refresh == 'true'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: >-
+        ${{ inputs.dry-run && format('org-bot-dry-run-{0}', github.run_id)
+            || github.event.action == 'bestpractices' && format('org-bot-bestpractices-{0}', github.event.client_payload.repository)
+            || 'org-bot-refresh' }}
+      cancel-in-progress: false
     # longest green run: 5.5 min; the fan-out throttle may wait up to 30 more
     # (ORG_BOT_BATCH_WAIT, #505) before it defers the rest to the next run
     timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
-      TASK: ${{ inputs.task || (github.event.action == 'bestpractices' && 'bestpractices') || (github.event.action == 'project' && 'project-sync') || (github.event_name == 'repository_dispatch' && 'release') || (github.event.schedule == '41 */3 * * *' && 'swarm-core-pin') || (github.event.schedule == '23 * * * *' && 'hourly') || 'all' }}
+      TASK: ${{ needs.plan.outputs.task }}
       REPOS: ${{ inputs.repos }}
       # org-release (#479): the released repository, checked below before use
       RELEASED: ${{ github.event.client_payload.repository }}
@@ -212,7 +292,6 @@ jobs:
           fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Refresh
         id: refresh
-        if: env.TASK != 'branch-sweep' && env.TASK != 'release-sync' && env.TASK != 'project-sync' && env.TASK != 'security-alerts' && env.TASK != 'security-report' && env.TASK != 'ticket-audit'
         env:
           ORG_BOT_TOKEN: ${{ steps.bot.outputs.token }}
           ORG_BOT_GIT_NAME: ${{ steps.bot.outputs.git-name }}
@@ -262,19 +341,64 @@ jobs:
             python3 -I tools/org-bot/org_bot.py run --task "$task" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
           done
           exit "$failed"
+      - name: Summary
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          OUTCOME: ${{ steps.refresh.outcome }}
+        run: |
+          # the repositories are not listed (a dispatch may name a private one, #622)
+          ran="$TASK: $OUTCOME"
+          if [ "$EVENT" = repository_dispatch ] && [ "$TASK" = release ]; then
+            ran="$ran (then release-lock, and swarm-core-pin after a swarm-core release)"
+          fi
+          {
+            echo "### org-bot refresh ($TASK)"
+            echo
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; $ran"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  branch-sweep:
+    needs: plan
+    if: contains(format(' {0} ', needs.plan.outputs.tools), ' branch-sweep ')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: ${{ inputs.dry-run && format('org-bot-dry-run-{0}-branch-sweep', github.run_id) || 'org-bot-branch-sweep' }}
+      cancel-in-progress: false
+    timeout-minutes: 20
+    env:
+      TASK: ${{ needs.plan.outputs.task }}
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Stale branches (branch-sweep, daily)
-        id: sweep
+        id: run
         # cmd/branch-sweep from the ci-tools image by digest (#595): in every
         # unarchived org repository, a branch whose PRs all closed more than 2
         # days ago (no commit since, no open PR on it) and a claude/* or org-bot/*
         # branch with no PR and no commit for 7 days; never the default branch,
         # main, bot/release, gh-readonly-queue/*, release branches, a protected
-        # branch or a tag. The daily run and a dispatch of `all` or `branch-sweep`;
-        # it runs even when Refresh failed. Deleting needs Contents: write.
-        if: >-
-          ${{ !cancelled() && steps.bot.outcome == 'success'
-              && ((github.event_name == 'schedule' && env.TASK == 'all')
-                  || (github.event_name == 'workflow_dispatch' && (env.TASK == 'all' || env.TASK == 'branch-sweep'))) }}
+        # branch or a tag. The daily run and a dispatch of `all` or `branch-sweep`
+        # (plan). Deleting needs Contents: write.
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
@@ -286,19 +410,60 @@ jobs:
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" branch-sweep "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: Summary
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          {
+            echo "### org-bot branch-sweep ($TASK)"
+            echo
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; branch-sweep: $OUTCOME"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release-sync:
+    needs: plan
+    if: contains(format(' {0} ', needs.plan.outputs.tools), ' release-sync ')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: ${{ inputs.dry-run && format('org-bot-dry-run-{0}-release-sync', github.run_id) || 'org-bot-release-sync' }}
+      cancel-in-progress: false
+    timeout-minutes: 15
+    env:
+      TASK: ${{ needs.plan.outputs.task }}
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: The site's release sync (release-sync-watch, hourly)
-        id: sync
+        id: run
         # cmd/release-sync-watch from the ci-tools image by digest (#571): for the
         # newest release of every public org repository published 1 hour to 14
         # days ago, when the site has no `[release-sync] <repo> <tag>` issue or
         # no green release-sync.yml run named for it, dispatch release-sync.yml
         # with repository and tag; at most once per release per 3 hours, at most
         # 2 site runs active. The hourly run and a dispatch of `hourly`,
-        # `release-aftercare` or `release-sync`; it runs even when Refresh
-        # failed. Dispatching needs Actions: write on the site.
-        if: >-
-          ${{ !cancelled() && steps.bot.outcome == 'success'
-              && (env.TASK == 'hourly' || env.TASK == 'release-aftercare' || env.TASK == 'release-sync') }}
+        # `release-aftercare` or `release-sync` (plan). Dispatching needs
+        # Actions: write on the site.
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
@@ -310,17 +475,58 @@ jobs:
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" release-sync-watch "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: Summary
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          {
+            echo "### org-bot release-sync ($TASK)"
+            echo
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; release-sync: $OUTCOME"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  project-sync:
+    needs: plan
+    if: contains(format(' {0} ', needs.plan.outputs.tools), ' project-sync ')
+    runs-on: ubuntu-24.04
+    concurrency:
+      # every run syncs the whole project: a pending one replaced loses nothing
+      group: ${{ inputs.dry-run && format('org-bot-dry-run-{0}-project-sync', github.run_id) || 'org-bot-project-sync' }}
+      cancel-in-progress: false
+    timeout-minutes: 40
+    env:
+      TASK: ${{ needs.plan.outputs.task }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: The org Project (project-sync)
-        id: project
+        id: run
         # cmd/project-sync from the ci-tools image by digest (#541): the public
         # org Project generated from templates/projects/plan.json (this
         # checkout, mounted read-only). The hourly and daily runs, a dispatch of
-        # `all`, `hourly` or `project-sync`, and repository_dispatch `project`;
-        # it runs even when Refresh failed. Needs the App's organization
-        # Projects permission (read and write).
-        if: >-
-          ${{ !cancelled() && steps.bot.outcome == 'success'
-              && (env.TASK == 'all' || env.TASK == 'hourly' || env.TASK == 'project-sync') }}
+        # `all`, `hourly` or `project-sync`, and repository_dispatch `project`
+        # (plan). Needs the App's organization Projects permission (read and
+        # write).
         # a full write budget (400 writes, about 200 new items) took over 14
         # minutes on the first sync (run 44968941723: 189 items in 14 min,
         # GitHub's mutations ~2 s each plus the pacing); a run with nothing
@@ -336,23 +542,65 @@ jobs:
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace \
             "$IMG" project-sync "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: Summary
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          {
+            echo "### org-bot project-sync ($TASK)"
+            echo
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; project-sync: $OUTCOME"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  security-alerts:
+    needs: plan
+    if: contains(format(' {0} ', needs.plan.outputs.tools), ' security-alerts ')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: ${{ inputs.dry-run && format('org-bot-dry-run-{0}-security-alerts', github.run_id) || 'org-bot-security-alerts' }}
+      cancel-in-progress: false
+    timeout-minutes: 20
+    env:
+      TASK: ${{ needs.plan.outputs.task }}
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+      REPORT: ${{ needs.plan.outputs.report }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Security alert tickets (security-alerts, hourly)
-        id: security
+        id: run
         # cmd/security-alerts from the ci-tools image by digest (#629): one
         # `security` issue per open code-scanning, Dependabot and
         # secret-scanning alert in every unarchived org repository (the list
         # comes from the org, so a new repository is covered), priority from
         # severity, P1 past the SLA (critical 14 days, medium or higher 45),
         # updated in place, closed when the alert is no longer open.
-        # `--report` (the daily run on Mondays, and a dispatch of
-        # `security-report`) also refreshes the summary issue here. The hourly
-        # run, the daily one, and a dispatch of `hourly`, `security-alerts` or
-        # `security-report`; it runs even when Refresh failed. Needs the App's
-        # Code scanning, Dependabot and Secret scanning alerts read, Issues write.
-        if: >-
-          ${{ !cancelled() && steps.bot.outcome == 'success'
-              && (env.TASK == 'hourly' || env.TASK == 'security-alerts' || env.TASK == 'security-report'
-                  || (github.event_name == 'schedule' && env.TASK == 'all')) }}
+        # `--report` (every scheduled run on Mondays, so a pending one that
+        # another replaces loses no report, #748, and a dispatch of
+        # `security-report`) also refreshes the summary issue here, edited in
+        # place. The hourly run, the daily one, and a dispatch of `hourly`,
+        # `security-alerts` or `security-report` (plan). Needs the App's Code
+        # scanning, Dependabot and Secret scanning alerts read, Issues write.
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
@@ -364,13 +612,55 @@ jobs:
           args=()
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
-          if [ "$TASK" = security-report ] || { [ "$TASK" = all ] && [ "$(date -u +%u)" = 1 ]; }; then
-            args+=(--report)
-          fi
+          [ "$REPORT" = true ] && args+=(--report)
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" security-alerts "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: Summary
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          {
+            echo "### org-bot security-alerts ($TASK)"
+            echo
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; security-alerts: $OUTCOME (report: $REPORT)"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ticket-audit:
+    needs: plan
+    if: contains(format(' {0} ', needs.plan.outputs.tools), ' ticket-audit ')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: ${{ inputs.dry-run && format('org-bot-dry-run-{0}-ticket-audit', github.run_id) || 'org-bot-ticket-audit' }}
+      cancel-in-progress: false
+    timeout-minutes: 25
+    env:
+      TASK: ${{ needs.plan.outputs.task }}
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
       - name: Finished tickets (ticket-audit, weekly)
-        id: tickets
+        id: run
         # cmd/ticket-audit from the ci-tools image by digest (#730): every open,
         # non-epic issue of every unarchived org repository (the list comes from
         # the org); closes, with a comment, one whose acceptance boxes are all
@@ -379,56 +669,29 @@ jobs:
         # box (outside <details> and code fences) or labelled hold, epic,
         # security, rcapa or release:vX.Y.Z before that release; at most 20 a
         # run; keeps `[tickets] audit` here. The daily run on Mondays and a
-        # dispatch of `ticket-audit`; it runs even when Refresh failed. Needs
-        # the App's Issues write, Pull requests and Contents read.
-        if: >-
-          ${{ !cancelled() && steps.bot.outcome == 'success'
-              && ((github.event_name == 'schedule' && env.TASK == 'all')
-                  || (github.event_name == 'workflow_dispatch' && env.TASK == 'ticket-audit')) }}
+        # dispatch of `ticket-audit` (plan). Needs the App's Issues write, Pull
+        # requests and Contents read.
         timeout-minutes: 20
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
           IMG: ghcr.io/swarm-routing/ci-tools@sha256:96290b386c6434a81534abdc0e8419bad19125da8857d53a730721fc8436fb37  # promoted from fb5549b: carries ticket-audit (#732)
         run: |
           set -o pipefail
-          if [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$(date -u +%u)" != 1 ]; then
-            echo "ticket-audit: weekly, on Mondays" | tee -a "$RUNNER_TEMP/org-bot.txt"
-            exit 0
-          fi
           args=()
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" ticket-audit "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
-        if: ${{ always() }}
+        if: always()
         env:
           EVENT: ${{ github.event_name }}
-          STEP_REFRESH: ${{ steps.refresh.outcome }}
-          STEP_SWEEP: ${{ steps.sweep.outcome }}
-          STEP_SYNC: ${{ steps.sync.outcome }}
-          STEP_SECURITY: ${{ steps.security.outcome }}
-          STEP_PROJECT: ${{ steps.project.outcome }}
-          STEP_TICKETS: ${{ steps.tickets.outcome }}
+          OUTCOME: ${{ steps.run.outcome }}
         run: |
-          # which tasks ran, and how each ended (#614); the repositories are
-          # not listed (a dispatch may name a private one, #622)
-          ran=""
-          if [ "$STEP_REFRESH" != skipped ] && [ -n "$STEP_REFRESH" ]; then
-            ran="$TASK: $STEP_REFRESH"
-            if [ "$EVENT" = repository_dispatch ] && [ "$TASK" = release ]; then
-              ran="$ran (then release-lock, and swarm-core-pin after a swarm-core release)"
-            fi
-          fi
-          [ "$STEP_SWEEP" != skipped ] && [ -n "$STEP_SWEEP" ] && ran="${ran:+$ran; }branch-sweep: $STEP_SWEEP"
-          [ "$STEP_SYNC" != skipped ] && [ -n "$STEP_SYNC" ] && ran="${ran:+$ran; }release-sync: $STEP_SYNC"
-          [ "$STEP_PROJECT" != skipped ] && [ -n "$STEP_PROJECT" ] && ran="${ran:+$ran; }project-sync: $STEP_PROJECT"
-          [ "$STEP_SECURITY" != skipped ] && [ -n "$STEP_SECURITY" ] && ran="${ran:+$ran; }security-alerts: $STEP_SECURITY"
-          [ "$STEP_TICKETS" != skipped ] && [ -n "$STEP_TICKETS" ] && ran="${ran:+$ran; }ticket-audit: $STEP_TICKETS"
           {
-            echo "### org-bot ($TASK)"
+            echo "### org-bot ticket-audit ($TASK)"
             echo
-            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; tasks run: ${ran:-none}"
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; ticket-audit: $OUTCOME"
             echo
             printf '%s\n' '```'
             cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"

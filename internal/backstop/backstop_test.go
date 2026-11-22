@@ -110,7 +110,7 @@ func run(t *testing.T, f *fakeGitHub, at time.Time, dry bool) string {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	_ = Run(GitHub{API: srv.URL, Token: "tok", Client: srv.Client()}, entries, at, dry, &out)
+	_, _ = Run(GitHub{API: srv.URL, Token: "tok", Client: srv.Client()}, entries, at, dry, &out)
 	return out.String()
 }
 
@@ -184,7 +184,7 @@ func TestDryRunAndFailure(t *testing.T) {
 	defer srv.Close()
 	entries, _ := Load([]byte(table))
 	var b bytes.Buffer
-	err := Run(GitHub{API: srv.URL, Token: "tok", Client: srv.Client()}, entries, now, false, &b)
+	_, err := Run(GitHub{API: srv.URL, Token: "tok", Client: srv.Client()}, entries, now, false, &b)
 	if err == nil || err.Error() != "1 of 4 entries failed" || len(f.dispatches) != 3 ||
 		!strings.Contains(b.String(), "read.yml: no run yet: dispatch failed:") || !strings.Contains(b.String(), "HTTP 403") {
 		t.Errorf("a failed dispatch is reported, the others still run: %v\n%s", err, b.String())
@@ -200,6 +200,10 @@ func TestLoad(t *testing.T) {
 		{"input", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\ninputs = { \"z z\" = \"x\", \"a b\" = \"x\" }\n", `input "a b" is not`},
 		{"unknown", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\ncron = \"x\"\n", "unknown key"},
 		{"twice", strings.Repeat("[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\n", 2), "listed twice"},
+		{"twice titled", strings.Repeat("[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\ntitle = \"t\"\n", 2), "listed twice"},
+		{"title", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\ntitle = \"a\\nb\"\n", "printable ASCII"},
+		{"alarm short", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"3h\"\nalarm = \"1h\"\n", "from the period (3h)"},
+		{"alarm", "[[entry]]\nrepo = \"swarm-routing/x\"\nworkflow = \"a.yml\"\nperiod = \"1h\"\nalarm = \"soon\"\n", "is not a duration"},
 	} {
 		if _, err := Load([]byte(c.text)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v", c.name, err)
@@ -280,7 +284,7 @@ period = "1h"
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	_ = Run(GitHub{API: srv.URL, Token: "tok", Client: srv.Client()}, entries, now, false, &out)
+	_, _ = Run(GitHub{API: srv.URL, Token: "tok", Client: srv.Client()}, entries, now, false, &out)
 	got := out.String()
 	if strings.Contains(got, "secret-lib") {
 		t.Errorf("a private repository's name reached the output:\n%s", got)
