@@ -258,6 +258,15 @@ repository is in the Project from its next sync, with no edit here. The
 first views are Releases and RCAPA; more views (epics, priorities, handoffs)
 are a `plan.json` change.
 
+**Every org Project is public** (maintainer decision 2026-11-22, #707; the
+plan is #541). This covers the generated one and any other Project the org
+owns. Each `project-sync` run lists every org Project and makes a private one
+public. Where GitHub refuses the bot's token that change ("Viewer not
+authorized to change project visibility"), the run fails and one `chore`
+issue here names each Project and gives the maintainer's step: the Project's
+Settings → Visibility → Public. The first run that finds every Project public
+closes that issue. Never make an org Project private.
+
 ### RCAPA
 
 An **RCAPA** (root cause analysis with corrective and preventive actions) is

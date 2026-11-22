@@ -29,6 +29,10 @@ const (
 		`... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2FieldCommon{name}}} ` +
 		`... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2FieldCommon{name}}}}}}}}}}`
 
+	// every project the org owns, for the all-public rule (#707)
+	qOrgProjects = `query OrgProjects($org:String!,$after:String){organization(login:$org){projectsV2(first:100,after:$after){` +
+		`pageInfo{hasNextPage endCursor} nodes{id number title public url}}}}`
+
 	mCreateProject = `mutation CreateProject($owner:ID!,$title:String!){createProjectV2(input:{ownerId:$owner,title:$title}){projectV2{id number}}}`
 
 	mUpdateProject = `mutation UpdateProject($p:ID!,$title:String!,$desc:String!,$readme:String!){` +
@@ -128,6 +132,46 @@ func (g GitHub) FindProject(org, title string) (string, int, error) {
 		}
 	}
 	return r.Organization.ID, 0, nil
+}
+
+// OrgProject is one project the org owns, as the all-public rule reads it.
+type OrgProject struct {
+	ID     string `json:"id"`
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Public bool   `json:"public"`
+	URL    string `json:"url"`
+}
+
+// OrgProjects lists every project the org owns (at most maxPages pages of 100).
+func (g GitHub) OrgProjects(org string) ([]OrgProject, error) {
+	var all []OrgProject
+	after := any(nil)
+	for page := 0; page < maxPages; page++ {
+		var r struct {
+			Organization *struct {
+				ProjectsV2 struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []OrgProject `json:"nodes"`
+				} `json:"projectsV2"`
+			} `json:"organization"`
+		}
+		if err := g.GraphQL(qOrgProjects, map[string]any{"org": org, "after": after}, &r); err != nil {
+			return nil, err
+		}
+		if r.Organization == nil {
+			return nil, fmt.Errorf("organization %s not readable", org)
+		}
+		all = append(all, r.Organization.ProjectsV2.Nodes...)
+		if !r.Organization.ProjectsV2.PageInfo.HasNextPage {
+			return all, nil
+		}
+		after = r.Organization.ProjectsV2.PageInfo.EndCursor
+	}
+	return nil, fmt.Errorf("organization %s: more than %d pages of projects", org, maxPages)
 }
 
 // ReadProject reads a project, its fields, views and every item.
