@@ -1692,6 +1692,10 @@ actor), so the bump goes through a PR and the tag follows the merge
    the next major of its configured version (**v1.0.0** from any 0.x), or,
    where the caller passes `first-release-from-config: true`, its configured
    version bumped by the commits like any later release (#636).
+   The same commit carries `org_sync.py apply` at the repository's
+   `.github/org-sync.lock` commit, so a first release's new `CHANGELOG.md`
+   link in the README's "Releases & citing" never turns `check / org-sync`
+   red on the bump PR (#810).
    The input `increment` (`PATCH`, `MINOR`, `MAJOR`) forces the bump's size
    (`cz bump --increment`) instead of the one read from the commits (#211).
    Pass it when the version the ladder fixes differs from the one Commitizen
