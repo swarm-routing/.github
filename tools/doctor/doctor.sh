@@ -8,7 +8,8 @@
 # every repository's Makefile keeps in ORG_DIR); Go is the repository's go.mod
 # `toolchain` line, else `go`, as reusable-go-ci.yml reads it. A tool is
 # checked only where the repository uses it: ruff and coverage when it tracks
-# a .py file, Go, staticcheck and govulncheck when it has a go.mod. Then the
+# a .py file, Go, staticcheck and govulncheck when it has a go.mod,
+# clang-format's major version when it tracks a C or C++ file. Then the
 # hosts the network steps need, each named with the steps that skip offline.
 #
 #   tools/doctor/doctor.sh [REPO]       one line per tool: ok, MISMATCH or MISSING
@@ -43,7 +44,9 @@ doctor() {
   local repo=$1 w have
   cd "$repo" || { echo "doctor: no directory $repo" >&2; return 2; }
   [ -r "$versions" ] || { echo "doctor: no $versions" >&2; return 2; }
-  if git ls-files -- '*.py' 2> /dev/null | grep -q .; then
+  # tracks FILES...: not `| grep -q`, whose early exit fails git under pipefail
+  tracks() { [ -n "$(git ls-files -- "$@" 2> /dev/null)" ]; }
+  if tracks '*.py'; then
     w=$(want RUFF_VERSION)
     have=$(ver ruff --version | sed -nE 's/^ruff ([0-9.]+).*/\1/p')
     report ruff "$w" "$have" "pip install ruff==$w"
@@ -62,6 +65,12 @@ doctor() {
     w=$(want GOVULNCHECK_VERSION)
     have=$(command -v govulncheck > /dev/null 2>&1 && govulncheck -version 2>&1 | sed -nE 's/.*govulncheck@(v[0-9.]+).*/\1/p')
     report govulncheck "$w" "$have" "go install golang.org/x/vuln/cmd/govulncheck@$w"
+  fi
+  if tracks '*.h' '*.hpp' '*.cc' '*.cpp'; then
+    # make lint runs plain clang-format; CI installs clang-format-$w
+    w=$(want CLANG_FORMAT_VERSION)
+    have=$(ver clang-format --version | sed -nE 's/.*clang-format version ([0-9]+)\..*/\1/p')
+    report clang-format "$w" "$have" "clang-format $w first on PATH as clang-format, e.g. apt-get install clang-format-$w"
   fi
   if [ "${DOCTOR_OFFLINE:-0}" != 1 ]; then
     probe github.com "make org-tools, headers and org-sync-check (the org checkout), reusable-python-ci's ruff.toml"
@@ -84,13 +93,14 @@ self_test() {
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' RETURN
   mkdir -p "$tmp/bin" "$tmp/repo"
-  printf 'RUFF_VERSION=0.17.1\nCOVERAGE_VERSION=7.16.2\nSTATICCHECK_VERSION=2026.2.2\nGOVULNCHECK_VERSION=v1.9.0\nBAD LINE\n' > "$tmp/versions.env"
+  printf 'RUFF_VERSION=0.17.1\nCOVERAGE_VERSION=7.16.2\nSTATICCHECK_VERSION=2026.2.2\nGOVULNCHECK_VERSION=v1.9.0\nCLANG_FORMAT_VERSION=18\nBAD LINE\n' > "$tmp/versions.env"
   fake() { printf '#!/bin/sh\n%s\n' "$2" > "$tmp/bin/$1"; chmod +x "$tmp/bin/$1"; }
   fake ruff 'echo "ruff 0.16.9"'
   fake python3 'echo "Coverage.py, version 7.16.2 with C extension"'
   fake go 'echo go1.27.4'
   fake staticcheck 'echo "staticcheck 2026.2.2 (0.8.2)"'
-  git -C "$tmp/repo" init -q && touch "$tmp/repo/a.py" && git -C "$tmp/repo" add a.py
+  fake clang-format 'echo "Ubuntu clang-format version 17.0.6 (++20231209124227+6009708b4367-1~exp1~20231209124336.77)"'
+  git -C "$tmp/repo" init -q && touch "$tmp/repo/a.py" "$tmp/repo/a.cc" && git -C "$tmp/repo" add a.py a.cc
   printf 'module x\n\ngo 1.27\n\ntoolchain go1.27.4\n' > "$tmp/repo/go.mod"
   check() {  # name want-rc pattern...
     local name=$1 wrc=$2; shift 2
@@ -104,14 +114,24 @@ self_test() {
   check "a mismatch, a missing tool, matches" 1 \
     "MISMATCH ruff: local 0.16.9, CI 0.17.1 (pip install ruff==0.17.1)" \
     "ok       coverage 7.16.2" "ok       go 1.27.4" "ok       staticcheck 2026.2.2" \
-    "MISSING  govulncheck: CI runs v1.9.0 (go install golang.org/x/vuln/cmd/govulncheck@v1.9.0)"
+    "MISSING  govulncheck: CI runs v1.9.0 (go install golang.org/x/vuln/cmd/govulncheck@v1.9.0)" \
+    "MISMATCH clang-format: local 17, CI 18 (clang-format 18 first on PATH as clang-format, e.g. apt-get install clang-format-18)"
   fake ruff 'echo "ruff 0.17.1"'
   fake govulncheck 'printf "Go: go1.27.4\nScanner: govulncheck@v1.9.0\n"'
+  fake clang-format 'echo "clang-format version 18.1.8"'
   run "$tmp/repo"
-  check "every tool as CI" 0 "ok       ruff 0.17.1" "ok       govulncheck v1.9.0"
+  check "every tool as CI" 0 "ok       ruff 0.17.1" "ok       govulncheck v1.9.0" "ok       clang-format 18"
   printf 'module x\n\ngo 1.28\n' > "$tmp/repo/go.mod"
   run "$tmp/repo"
   check "go from the go line when there is no toolchain line" 1 "MISMATCH go: local 1.27.4, CI 1.28 (go1.28 from https://go.dev/dl/, as GOTOOLCHAIN=local in CI)"
+  # more tracked names than a pipe buffer holds: an early-exiting reader would
+  # fail git under pipefail and skip the tool (AntHocNet's checkout did)
+  mkdir "$tmp/repo/many" && (cd "$tmp/repo/many" && for i in $(seq 4000); do : > "file-with-a-long-name-$i.h"; done)
+  git -C "$tmp/repo" add many
+  git -C "$tmp/repo" rm -q --cached a.cc
+  run "$tmp/repo"
+  check "a large tree is still seen" 1 "ok       clang-format 18"
+  git -C "$tmp/repo" rm -q -r --cached many
   rm "$tmp/repo/go.mod"; git -C "$tmp/repo" rm -q --cached a.py
   run "$tmp/repo"
   check "a repository with neither Python nor Go checks nothing" 0
