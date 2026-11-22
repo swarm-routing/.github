@@ -93,10 +93,24 @@ jobs:
             echo "::error::tools/versions.env has a line that is not KEY=VALUE"; exit 1
           fi
           grep -E '^[A-Z][A-Z0-9_]*=' "$src" | tee -a "$GITHUB_ENV"
-      - name: Install ruff and coverage (pinned)
+      - name: Install ruff and coverage (pinned by hash)
         timeout-minutes: 5
         run: |
-          python3 -m pip install --quiet --only-binary :all: "ruff==$RUFF_VERSION" "coverage==$COVERAGE_VERSION"
+          set -euo pipefail
+          # the hash-pinned lock of tools/requirements/python-ci.in (OpenSSF Scorecard
+          # Pinned-Dependencies, #716), from the same place as versions.env above
+          req="$GITHUB_WORKSPACE/tools/requirements/python-ci.txt"
+          if [ "$GITHUB_REPOSITORY" != swarm-routing/.github ] || [ ! -f "$req" ]; then
+            req="$RUNNER_TEMP/python-ci.txt"
+            curl --proto =https --tlsv1.2 -fsSL --retry 3 -o "$req" https://raw.githubusercontent.com/swarm-routing/.github/main/tools/requirements/python-ci.txt
+          fi
+          # versions.env stays the one source of the versions: the lock must pin the same
+          for pin in "ruff==$RUFF_VERSION" "coverage==$COVERAGE_VERSION"; do
+            if ! grep -qxF "$pin \\" "$req"; then
+              echo "::error::tools/requirements/python-ci.txt does not pin $pin (tools/versions.env); regenerate it"; exit 1
+            fi
+          done
+          python3 -m pip install --quiet --only-binary :all: --require-hashes -r "$req"
       - name: Org ruff.toml unless the repo has its own ruff config
         run: |
           if [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -qs '^\[tool\.ruff' pyproject.toml; then

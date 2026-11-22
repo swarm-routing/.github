@@ -356,6 +356,10 @@ on:
         description: "With zenodo: the release's version DOI on Zenodo"
         value: ${{ jobs.zenodo.outputs.doi }}
 
+# None at the top: every job declares its own, write scopes only where it
+# writes (OpenSSF Scorecard Token-Permissions, #716).
+permissions: {}
+
 jobs:
   # Which mode this run is, and, for a release, that the commit is the merge
   # of the bump PR. The commit title alone is not enough: any squash-merged

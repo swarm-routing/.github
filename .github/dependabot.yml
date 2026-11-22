@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 #
-# Version updates for the ci-tools image (docs/adr/0002-pipelines-are-go.md):
+# Version updates for the Python tool locks (below) and the ci-tools image (docs/adr/0002-pipelines-are-go.md):
 # its two digest-pinned bases and the root Go module's dependencies. A bump of
 # the golang image also needs go.mod's `toolchain` line moved to the same
 # version (ci-tools-image.yml fails until it is).
@@ -17,5 +17,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+  # The hash-pinned Python tool locks (tools/requirements/, #716). A bump of
+  # ruff or coverage also needs tools/versions.env moved to the same version
+  # (reusable-python-ci.yml fails until it is).
+  - package-ecosystem: pip
+    directory: /tools/requirements
+    schedule:
+      interval: monthly
     commit-message:
       prefix: "chore(deps)"

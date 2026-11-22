@@ -70,6 +70,9 @@ name: Reusable ns-3 image
 #   push: false   { contents: read } (ns3-dev is public)
 #   push: true    { contents: read, packages: write, id-token: write,
 #                   attestations: write }   (push, keyless sign, attest)
+# A top-level `permissions:` would cap the job the same way, so this is the
+# one workflow here without one; OpenSSF Scorecard's Token-Permissions flags
+# it ("no topLevel permission defined"), knowingly (#716).
 #
 # Release caller (a protocol repo's release workflow, after its tag):
 #

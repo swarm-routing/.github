@@ -160,6 +160,10 @@ on:
         type: string
         default: ''
 
+# None at the top: the one job declares its own (OpenSSF Scorecard
+# Token-Permissions, #716).
+permissions: {}
+
 jobs:
   cell:
     name: ${{ inputs.harness }} ${{ inputs.cell }}
