@@ -107,6 +107,23 @@ func TestAnswersDeterministicAndOld(t *testing.T) {
 	}
 }
 
+// .bestpractices.json is derived from the clone alone, so the attested
+// criteria stay `?` there (they depend on the repository's live alerts),
+// but their justification says the weekly check proposes them from the
+// owner file, not that only the owner can answer (#787).
+func TestAnswersAttestedNamesOwnerFile(t *testing.T) {
+	ans := derive(t, "Proto", "", "2026-11-13")
+	for _, c := range attestedOrder {
+		if status(ans, c) != "?" || !strings.Contains(why(ans, c), OwnerFile) ||
+			strings.Contains(why(ans, c), "Only the owner") {
+			t.Errorf("%s: %s %q", c, status(ans, c), why(ans, c))
+		}
+	}
+	if why(ans, "report_responses") != "Only the owner can answer this." {
+		t.Errorf("a non-attested owner-only criterion keeps its line: %q", why(ans, "report_responses"))
+	}
+}
+
 func TestAnswersBare(t *testing.T) {
 	b := derive(t, "Tools", Org+"/Tools", "2026-11-13")
 	for name, ok := range map[string]bool{
