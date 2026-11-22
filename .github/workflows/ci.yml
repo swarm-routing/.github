@@ -96,6 +96,34 @@ jobs:
           echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint" .github/workflows/*.yml
+      # The template pins follow the workflows' (#773): cmd/action-pins from
+      # this checkout, so a PR that changes it is checked with its own version.
+      # setup-go ignores go.mod's toolchain line, so it is read here (as
+      # reusable-go-ci.yml does).
+      - name: Go version from go.mod (toolchain)
+        id: go
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          v=$(sed -n 's/^toolchain go\([0-9][0-9.]*\)\s*$/\1/p' go.mod)
+          [ -n "$v" ] || { echo "::error file=go.mod::no toolchain line"; exit 1; }
+          echo "go=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        timeout-minutes: 5
+        with:
+          go-version: ${{ steps.go.outputs.go }}
+          cache: false
+      - name: Template pins are the workflows' pins (action-pins)
+        timeout-minutes: 5
+        env:
+          GOTOOLCHAIN: local
+          GOFLAGS: -buildvcs=false
+        run: |
+          set -o pipefail
+          go run ./cmd/action-pins . || {
+            echo "::error::templates/ pins an action at another commit than .github/workflows/: run \`go run ./cmd/action-pins --write .\` and commit the result (org-bot's action-pins sweep does it on Dependabot's pull requests)"
+            exit 1
+          }
 
   # The reusable workflows run here from this checkout, so a PR that changes
   # one is tested with its own version.

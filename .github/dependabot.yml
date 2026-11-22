@@ -1,12 +1,33 @@
 # Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 #
-# Version updates for the Python tool locks (below) and the ci-tools image (docs/adr/0002-pipelines-are-go.md):
+# Version updates for the actions (first entry), the Python tool locks and the ci-tools image (docs/adr/0002-pipelines-are-go.md):
 # its two digest-pinned bases and the root Go module's dependencies. A bump of
 # the golang image also needs go.mod's `toolchain` line moved to the same
 # version (ci-tools-image.yml fails until it is).
 version: 2
 updates:
+  # The actions this repository's workflows and composite actions pin
+  # (swarm-routing/.github#773): weekly, all in one pull request, before the
+  # consumers' monthly runs. Dependabot never scans templates/, so org-bot's
+  # action-pins sweep commits the same pins into templates/ on that pull
+  # request (`go run ./cmd/action-pins --write .` by hand; the lint job's
+  # check fails until they match). Our own workflows and actions follow
+  # .github/org-sync.lock (ADR-0004), never Dependabot.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "swarm-routing/.github*"
   - package-ecosystem: docker
     directory: /docker/ci-tools
     schedule:

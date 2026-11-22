@@ -790,6 +790,41 @@ first; the site's WebAssembly build follows
   refusal is a warning in the job, and then a person merges it). For a
   missed release a person runs the same command and opens the PR.
 
+### Action pins
+
+Every third-party action is pinned by commit SHA with its `# vX.Y.Z` comment
+(invariant 8), and the pins move without a hand edit (#773; maintainer
+decision 2026-11-22):
+
+- **Here first.** This repository's `.github/dependabot.yml` watches
+  `github-actions` in `.github/workflows/` and `.github/actions/*/`, weekly,
+  every action in one pull request. Dependabot does not scan `templates/`, so
+  the pins org-sync renders into every repository are kept equal to this
+  repository's own by `cmd/action-pins`: the lint job fails when a
+  `uses: <action>@<sha>` under `templates/` names another commit or version
+  than `.github/workflows/` uses for the same action, or an action no workflow
+  here uses (nothing would bump it), and prints the fix,
+  `go run ./cmd/action-pins --write .`. org-bot's `action-pins sweep`
+  commits that fix onto Dependabot's pull request here, so the one pull
+  request moves every pin, templates included. Our own workflows and actions
+  (`swarm-routing/.github/...`) are not Dependabot's: they follow
+  `.github/org-sync.lock` (ADR-0004).
+- **Then everywhere.** Once that pull request merges, org-bot's org-sync
+  refresh pull request carries the new pins into each repository's
+  org-managed files, the ones whose first line is
+  `# Managed by swarm-routing/.github tools/org-sync`.
+- **A consumer's own workflows** stay its Dependabot's (the seeded
+  `.github/dependabot.yml`, monthly). Dependabot cannot exclude a file, and
+  ignoring an action would also stop the bumps of the repository's own
+  workflows, so a consumer's Dependabot may still propose a bump in an
+  org-managed file, which fails `check / org-sync`. The same sweep handles it:
+  a pull request that edits only org-managed files is closed as superseded,
+  with a comment; one that also bumps the repository's own workflows gets
+  `@dependabot rebase` once the repository's default branch holds the managed
+  files as the pull request would make them (the refresh landed), so the
+  rebased pull request touches only its own files. Each pull request is acted
+  on once per head commit.
+
 ## Languages
 
 Which language a piece of code is written in follows what it is
