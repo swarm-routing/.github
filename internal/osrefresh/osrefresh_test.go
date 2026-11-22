@@ -52,7 +52,7 @@ func page[T any](w http.ResponseWriter, r *http.Request, items []T, wrap string)
 	per, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
 	pg, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if per <= 0 || pg <= 0 {
-		http.Error(w, "paging", 400)
+		http.Error(w, "paging", http.StatusBadRequest)
 		return
 	}
 	lo := min((pg-1)*per, len(items))
@@ -79,23 +79,23 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == "GET" && p == "/user":
 		if f.noUser {
-			http.Error(w, `{"message":"Resource not accessible by integration"}`, 403)
+			http.Error(w, `{"message":"Resource not accessible by integration"}`, http.StatusForbidden)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"login": bot})
 	case r.Method == "GET" && p == base+"/actions/workflows/"+Workflow+"/runs":
 		if r.URL.Query().Get("branch") != Branch || !strings.HasPrefix(r.URL.Query().Get("created"), ">=") {
-			http.Error(w, "filters", 400)
+			http.Error(w, "filters", http.StatusBadRequest)
 			return
 		}
 		page(w, r, f.runs, "workflow_runs")
 	case r.Method == "POST" && p == base+"/actions/workflows/"+Workflow+"/dispatches":
 		if f.refuse {
-			http.Error(w, `{"message":"Resource not accessible by integration"}`, 403)
+			http.Error(w, `{"message":"Resource not accessible by integration"}`, http.StatusForbidden)
 			return
 		}
 		f.dispatch = body
-		w.WriteHeader(204)
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == "GET" && p == base+"/issues":
 		var out []map[string]any
 		for _, is := range f.issues {
@@ -121,7 +121,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if is == nil {
-			http.Error(w, "no issue", 404)
+			http.Error(w, "no issue", http.StatusNotFound)
 			return
 		}
 		switch {
@@ -133,16 +133,16 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			page(w, r, out, "")
 		case r.Method == "POST" && strings.HasSuffix(rest, "/comments"):
 			is.Comments = append(is.Comments, body["body"].(string))
-			w.WriteHeader(201)
+			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte("{}"))
 		case r.Method == "PATCH":
 			is.State = body["state"].(string)
 			_, _ = w.Write([]byte("{}"))
 		default:
-			http.Error(w, "unexpected", 400)
+			http.Error(w, "unexpected", http.StatusBadRequest)
 		}
 	default:
-		http.Error(w, "unexpected "+r.Method+" "+p, 400)
+		http.Error(w, "unexpected "+r.Method+" "+p, http.StatusBadRequest)
 	}
 }
 
