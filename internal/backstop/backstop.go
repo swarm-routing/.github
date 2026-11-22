@@ -9,6 +9,14 @@
 // time when GitHub fires none of its schedules
 // (swarm-routing/ns3-upstream-report#33). It only reads runs and dispatches; it is
 // idempotent within a period: a run of either kind makes it skip.
+//
+// An entry with a `title` counts only the runs of that run-name, never a
+// cancelled one (a pending run another replaced did no work), so one workflow
+// that runs for many reasons, org-bot.yml, has a row per scheduled task
+// (swarm-routing/.github#748). An entry with an `alarm` is stalled when no
+// such run completed within it: the line says so, the command exits 1, and
+// with --issue it keeps one issue here open, listing the stalled rows, until
+// every row has completed a run again.
 package backstop
 
 import (
@@ -23,6 +31,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,11 +53,26 @@ type Entry struct {
 	Workflow string            `toml:"workflow"`
 	Period   string            `toml:"period"`
 	Inputs   map[string]string `toml:"inputs"`
+	// Title, when set: only runs whose run-name (display_title) is exactly this count.
+	Title string `toml:"title"`
+	// Alarm, when set: the row is stalled when no counted run completed within it.
+	Alarm string `toml:"alarm"`
 
 	period time.Duration
+	alarm  time.Duration
 }
 
+// IssueRepo holds the stalled-schedule issue; IssueTitle is its title.
+const (
+	IssueRepo  = "swarm-routing/.github"
+	IssueTitle = "[backstop] scheduled runs stalled"
+)
+
+// maxPages bounds a titled row's run listing (100 runs a page, newest first).
+const maxPages = 10
+
 var (
+	titleRe    = regexp.MustCompile(`^[ -~]{1,100}$`)
 	repoRe     = regexp.MustCompile(`^swarm-routing/[A-Za-z0-9_.-]+$`)
 	workflowRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+\.ya?ml$`)
 	inputRe    = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -84,6 +108,16 @@ func Load(data []byte) ([]Entry, error) {
 			return nil, fmt.Errorf("%s: period %q is not a duration from 1h to 744h", where, e.Period)
 		}
 		e.period = d
+		if e.Title != "" && !titleRe.MatchString(e.Title) {
+			return nil, fmt.Errorf("%s: title %q is not 1 to 100 printable ASCII characters", where, e.Title)
+		}
+		if e.Alarm != "" {
+			a, err := time.ParseDuration(e.Alarm)
+			if err != nil || a < d || a > 31*24*time.Hour {
+				return nil, fmt.Errorf("%s: alarm %q is not a duration from the period (%s) to 744h", where, e.Alarm, e.Period)
+			}
+			e.alarm = a
+		}
 		keys := make([]string, 0, len(e.Inputs))
 		for k := range e.Inputs {
 			keys = append(keys, k)
@@ -94,7 +128,7 @@ func Load(data []byte) ([]Entry, error) {
 				return nil, fmt.Errorf("%s: input %q is not a plain name with a short value", where, k)
 			}
 		}
-		key := e.Repo + " " + e.Workflow
+		key := e.Repo + " " + e.Workflow + " " + e.Title
 		if seen[key] {
 			return nil, fmt.Errorf("%s: %s listed twice", where, key)
 		}
@@ -198,6 +232,57 @@ func (g GitHub) lastRun(repo, workflow, branch string) (time.Time, string, error
 	return t, r.Runs[0].Event, nil
 }
 
+// titled reads the runs on branch created since `since`, newest first, and
+// returns the newest counted run's start and event and the newest counted
+// completed run's end (zero: none). A counted run is not cancelled and, when
+// title is set, has that run-name.
+func (g GitHub) titled(repo, workflow, branch, title string, since time.Time) (time.Time, string, time.Time, error) {
+	var started, done time.Time
+	event := ""
+	for page := 1; page <= maxPages; page++ {
+		data, _, err := g.do("GET", fmt.Sprintf("repos/%s/actions/workflows/%s/runs?branch=%s&created=%s&per_page=100&page=%d",
+			repo, workflow, url.QueryEscape(branch), url.QueryEscape(">="+since.UTC().Format(time.RFC3339)), page), nil)
+		if err != nil {
+			return started, event, done, err
+		}
+		var r struct {
+			Runs []struct {
+				CreatedAt    time.Time `json:"created_at"`
+				RunStartedAt time.Time `json:"run_started_at"`
+				UpdatedAt    time.Time `json:"updated_at"`
+				Event        string    `json:"event"`
+				Status       string    `json:"status"`
+				Conclusion   string    `json:"conclusion"`
+				Title        string    `json:"display_title"`
+			} `json:"workflow_runs"`
+		}
+		if err := json.Unmarshal(data, &r); err != nil {
+			return started, event, done, err
+		}
+		for _, run := range r.Runs {
+			if run.Conclusion == "cancelled" || (title != "" && run.Title != title) {
+				continue
+			}
+			if started.IsZero() {
+				started, event = run.CreatedAt, run.Event
+				if run.RunStartedAt.After(started) {
+					started = run.RunStartedAt
+				}
+			}
+			if done.IsZero() && run.Status == "completed" {
+				done = run.UpdatedAt
+			}
+			if !done.IsZero() {
+				return started, event, done, nil
+			}
+		}
+		if len(r.Runs) < 100 {
+			break
+		}
+	}
+	return started, event, done, nil
+}
+
 func (g GitHub) dispatch(repo, workflow, ref string, inputs map[string]string) error {
 	body := map[string]any{"ref": ref}
 	if len(inputs) > 0 {
@@ -224,11 +309,13 @@ func inputsText(in map[string]string) string {
 }
 
 // Run checks every entry and dispatches what is due; one line per entry. It tries
-// every entry and returns an error when any of them failed. A private
-// repository is printed as "private repository N" (the log is public) and its
-// name is scrubbed from every error.
-func Run(g GitHub, entries []Entry, now time.Time, dry bool, out io.Writer) error {
+// every entry and returns an error when any of them failed, and the lines of
+// the rows with an alarm that are stalled. A private repository is printed as
+// "private repository N" (the log is public) and its name is scrubbed from
+// every error.
+func Run(g GitHub, entries []Entry, now time.Time, dry bool, out io.Writer) ([]string, error) {
 	failed := 0
+	var stalled []string
 	repos := map[string]repoInfo{}
 	var mask repomask.Masker
 	for _, e := range entries {
@@ -244,11 +331,34 @@ func Run(g GitHub, entries []Entry, now time.Time, dry bool, out io.Writer) erro
 		}
 		br := ri.DefaultBranch
 		name := mask.Repo(e.Repo, ri.Private, e.Repo, strings.TrimPrefix(e.Repo, "swarm-routing/")) + " " + e.Workflow
-		last, event, err := g.lastRun(e.Repo, e.Workflow, br)
+		var last, done time.Time
+		var event string
+		var err error
+		if e.Title == "" && e.alarm == 0 {
+			last, event, err = g.lastRun(e.Repo, e.Workflow, br)
+		} else {
+			if e.Title != "" {
+				name += " " + strconv.Quote(e.Title)
+			}
+			look := e.period
+			if e.alarm > look {
+				look = e.alarm
+			}
+			last, event, done, err = g.titled(e.Repo, e.Workflow, br, e.Title, now.Add(-look-time.Hour))
+		}
 		if err != nil {
 			fmt.Fprintf(out, "%s: error: %v\n", name, mask.Error(err))
 			failed++
 			continue
+		}
+		if e.alarm > 0 && (done.IsZero() || now.Sub(done) > e.alarm) {
+			ended := "none within " + e.Alarm
+			if !done.IsZero() {
+				ended = fmt.Sprintf("the last ended %s, %s ago", done.UTC().Format(time.RFC3339), now.Sub(done).Truncate(time.Minute))
+			}
+			line := fmt.Sprintf("%s: stalled: no run completed within %s (%s)", name, e.Alarm, ended)
+			fmt.Fprintln(out, line)
+			stalled = append(stalled, line)
 		}
 		window := e.period - Slack
 		if !last.IsZero() && now.Sub(last) < window {
@@ -272,19 +382,125 @@ func Run(g GitHub, entries []Entry, now time.Time, dry bool, out io.Writer) erro
 		fmt.Fprintf(out, "%s: %s: dispatched on %s with %s\n", name, since, br, inputsText(e.Inputs))
 	}
 	if failed > 0 {
-		return fmt.Errorf("%d of %d entries failed", failed, len(entries))
+		return stalled, fmt.Errorf("%d of %d entries failed", failed, len(entries))
 	}
-	return nil
+	return stalled, nil
 }
 
-// Main is the command: backstop [--config FILE] [--dry-run] [--now RFC3339].
-// GH_TOKEN (needs Actions: write on each repository to dispatch; read to check).
+// issue is the part of an issue read.
+type issue struct {
+	Number int             `json:"number"`
+	Title  string          `json:"title"`
+	Body   string          `json:"body"`
+	PR     json.RawMessage `json:"pull_request"`
+}
+
+// IssueBody is the stalled-schedule issue's body for the stalled lines.
+func IssueBody(stalled []string, now time.Time) string {
+	var b strings.Builder
+	b.WriteString("The schedule backstop (`cmd/backstop`, `.github/backstop.toml`) found rows whose " +
+		"workflow completed no counted run within the row's `alarm` (swarm-routing/.github#748). " +
+		"It dispatches each due row on every run; this issue stays open, updated in place, until " +
+		"every row has completed a run again, and then it is closed.\n\n")
+	fmt.Fprintf(&b, "Checked %s:\n\n", now.UTC().Format(time.RFC3339))
+	for _, l := range stalled {
+		b.WriteString("- " + l + "\n")
+	}
+	b.WriteString("\nWhere to look: the workflow's run list (a pending run that another replaced shows " +
+		"as cancelled with no job), its concurrency groups, and the backstop's own run summary.\n")
+	return b.String()
+}
+
+// KeepIssue opens or updates the stalled-schedule issue while rows are stalled,
+// and closes it, with a comment, once none is; one line of what it did.
+func KeepIssue(g GitHub, stalled []string, now time.Time, dry bool) (string, error) {
+	var open *issue
+	for page := 1; page <= maxPages && open == nil; page++ {
+		data, _, err := g.do("GET", fmt.Sprintf("repos/%s/issues?state=open&labels=ci&per_page=100&page=%d", IssueRepo, page), nil)
+		if err != nil {
+			return "", err
+		}
+		var got []issue
+		if err := json.Unmarshal(data, &got); err != nil {
+			return "", err
+		}
+		for i := range got {
+			if got[i].Title == IssueTitle && len(got[i].PR) == 0 {
+				open = &got[i]
+				break
+			}
+		}
+		if len(got) < 100 {
+			break
+		}
+	}
+	if len(stalled) == 0 {
+		if open == nil {
+			return "issue: none open, nothing stalled", nil
+		}
+		if dry {
+			return fmt.Sprintf("issue: dry run: would close #%d", open.Number), nil
+		}
+		msg := fmt.Sprintf("Every row with an alarm completed a run within it again (checked %s); closing.\n\n"+
+			"---\n_Generated by the schedule backstop (`cmd/backstop`)._", now.UTC().Format(time.RFC3339))
+		if _, _, err := g.do("POST", fmt.Sprintf("repos/%s/issues/%d/comments", IssueRepo, open.Number), map[string]any{"body": msg}); err != nil {
+			return "", err
+		}
+		if _, _, err := g.do("PATCH", fmt.Sprintf("repos/%s/issues/%d", IssueRepo, open.Number),
+			map[string]any{"state": "closed", "state_reason": "completed"}); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("issue: closed #%d", open.Number), nil
+	}
+	body := IssueBody(stalled, now)
+	if open != nil {
+		// the check time alone changing is no update: compare without it
+		if strip(open.Body) == strip(body) {
+			return fmt.Sprintf("issue: #%d unchanged", open.Number), nil
+		}
+		if dry {
+			return fmt.Sprintf("issue: dry run: would update #%d", open.Number), nil
+		}
+		_, _, err := g.do("PATCH", fmt.Sprintf("repos/%s/issues/%d", IssueRepo, open.Number), map[string]any{"body": body})
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("issue: updated #%d", open.Number), nil
+	}
+	if dry {
+		return "issue: dry run: would open it", nil
+	}
+	data, _, err := g.do("POST", fmt.Sprintf("repos/%s/issues", IssueRepo), map[string]any{
+		"title": IssueTitle, "body": body, "labels": []string{"bug", "ci", "priority:P1"}})
+	if err != nil {
+		return "", err
+	}
+	var got issue
+	_ = json.Unmarshal(data, &got)
+	return fmt.Sprintf("issue: opened #%d", got.Number), nil
+}
+
+var checkedRe = regexp.MustCompile(`(?m)^Checked [^\n]*:$`)
+
+// strip removes the check time and the stalled-since ages, which change on every run.
+func strip(body string) string {
+	body = checkedRe.ReplaceAllString(body, "")
+	return agoRe.ReplaceAllString(body, "")
+}
+
+var agoRe = regexp.MustCompile(`the last ended [^)]*`)
+
+// Main is the command: backstop [--config FILE] [--issue] [--dry-run] [--now RFC3339].
+// GH_TOKEN (needs Actions: write on each repository to dispatch; read to check;
+// with --issue, Issues: write here). It exits 1 when a row failed or is stalled.
 func Main(args []string, getenv func(string) string, client *http.Client, api string, stdout, stderr io.Writer) int {
-	config, dry, nowS := ".github/backstop.toml", false, ""
+	config, dry, keep, nowS := ".github/backstop.toml", false, false, ""
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "--dry-run":
 			dry = true
+		case a == "--issue":
+			keep = true
 		case (a == "--config" || a == "--now") && i+1 < len(args):
 			if a == "--config" {
 				config = args[i+1]
@@ -293,7 +509,7 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 			}
 			i++
 		default:
-			fmt.Fprintln(stderr, "usage: backstop [--config FILE] [--dry-run] [--now RFC3339]")
+			fmt.Fprintln(stderr, "usage: backstop [--config FILE] [--issue] [--dry-run] [--now RFC3339]")
 			return 2
 		}
 	}
@@ -325,11 +541,28 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 		dry = true
 	}
 	g := GitHub{API: api, Token: token, Client: client}
-	if err := Run(g, entries, now, dry, stdout); err != nil {
+	stalled, err := Run(g, entries, now, dry, stdout)
+	code := 0
+	if err != nil {
 		fmt.Fprintln(stderr, "backstop:", err)
-		return 1
+		code = 1
 	}
-	return 0
+	// the issue follows the alarms only when every row was read: a read error
+	// is no evidence that a stalled row recovered
+	if keep && err == nil {
+		line, ierr := KeepIssue(g, stalled, now, dry)
+		if ierr != nil {
+			fmt.Fprintln(stderr, "backstop: issue:", ierr)
+			code = 1
+		} else {
+			fmt.Fprintln(stdout, line)
+		}
+	}
+	if len(stalled) > 0 {
+		fmt.Fprintf(stderr, "backstop: %d row(s) stalled\n", len(stalled))
+		code = 1
+	}
+	return code
 }
 
 // inside is a relative path within the working directory.
