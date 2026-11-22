@@ -7,8 +7,8 @@ name: Reusable Go CI
 #   gofmt         gofmt -l on the module's tracked .go files (a nested module's
 #                 are left to its own CI): none may need formatting
 #   vet           go vet ./...
-#   staticcheck   staticcheck ./... (default checks), pinned below
-#   govulncheck   govulncheck ./... (reachable known vulnerabilities), pinned below
+#   staticcheck   staticcheck ./... (default checks), pinned in tools/versions.env
+#   govulncheck   govulncheck ./... (reachable known vulnerabilities), pinned in tools/versions.env
 #   test          go test -race -covermode=atomic -coverprofile ./...
 #                 (-race needs cgo, so the tests alone run with CGO_ENABLED=1)
 # Every check runs even when an earlier one failed, so one run lists every
@@ -91,10 +91,7 @@ jobs:
       # cgo off everywhere (vet and the analysers see the shipped variant);
       # only the race test run turns it on, for its test binaries
       CGO_ENABLED: '0'
-      # pinned tools: staticcheck 2026.2.2 is module v0.8.2
-      STATICCHECK: honnef.co/go/tools/cmd/staticcheck@2026.2.2
-      GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
-      COBERTURA: github.com/boumenot/gocover-cobertura@v1.5.0
+      # the pinned tools' versions: swarm-routing/.github tools/versions.env (#647)
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -126,12 +123,32 @@ jobs:
           cache-dependency-path: |
             ${{ inputs.working-directory }}/go.sum
             ${{ inputs.working-directory }}/go.mod
+      - name: Tool versions (swarm-routing/.github tools/versions.env, #647)
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          # this repository's own file, so a pull request here tests the versions it
+          # sets; every caller reads main's, as `make doctor` does
+          src="$GITHUB_WORKSPACE/tools/versions.env"
+          if [ "$GITHUB_REPOSITORY" != swarm-routing/.github ] || [ ! -f "$src" ]; then
+            src="$RUNNER_TEMP/versions.env"
+            curl --proto =https --tlsv1.2 -fsSL --retry 3 -o "$src" https://raw.githubusercontent.com/swarm-routing/.github/main/tools/versions.env
+          fi
+          # only KEY=VALUE lines reach the environment; anything else fails the job
+          if grep -vE '^(#.*|[A-Z][A-Z0-9_]*=[A-Za-z0-9._-]+)?$' "$src"; then
+            echo "::error::tools/versions.env has a line that is not KEY=VALUE"; exit 1
+          fi
+          grep -E '^[A-Z][A-Z0-9_]*=' "$src" | tee -a "$GITHUB_ENV"
       - name: Install staticcheck, govulncheck, gocover-cobertura (pinned)
         timeout-minutes: 5
         run: |
           set -euo pipefail
           export GOBIN="$RUNNER_TEMP/gobin"
-          for t in "$STATICCHECK" "$GOVULNCHECK" "$COBERTURA"; do go install "$t"; done
+          for t in "honnef.co/go/tools/cmd/staticcheck@$STATICCHECK_VERSION" \
+                   "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION" \
+                   "github.com/boumenot/gocover-cobertura@$GOCOVER_COBERTURA_VERSION"; do
+            go install "$t"
+          done
           echo "$GOBIN" >> "$GITHUB_PATH"
           go version
       - name: build (CGO_ENABLED=0 -trimpath)

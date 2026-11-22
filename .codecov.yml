@@ -1,0 +1,22 @@
+# Codecov (https://docs.codecov.com/docs/codecov-yaml): this repository's own
+# coverage, report-only (#635, #24). Two uploads, each by reusable-codecov.yml:
+# python (ci.yml, coverage.py over tools/) on every push to main, go
+# (ci-tools-image.yml, go test over cmd/ and internal/) only when the Go code
+# changes, so each flag carries forward its last report: main's total is both.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: 80%
+        informational: true
+flag_management:
+  default_rules:
+    carryforward: true
+comment:
+  layout: "reach,diff,flags,files"
+  require_changes: true

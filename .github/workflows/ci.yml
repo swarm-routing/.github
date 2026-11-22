@@ -74,6 +74,8 @@ jobs:
         run: python3 -I tools/repo-settings/repo_settings.py --self-test
       - name: downstream self-test (tools/downstream)
         run: bash tools/downstream/downstream.sh --self-test
+      - name: doctor self-test (tools/doctor)
+        run: bash tools/doctor/doctor.sh --self-test
       - name: docker-retry self-test (.github/actions/pull-ci-tools)
         run: bash .github/actions/pull-ci-tools/docker-retry.sh --self-test
       - name: Forms, labels, style parse
@@ -102,6 +104,19 @@ jobs:
       paths: tools
       tests: tools/org-sync/test_org_sync.py
       source: tools
+
+  # The Python coverage of the `python` job to Codecov (report-only; GitHub
+  # OIDC, no stored token; #635). Not in the merge queue: main's push uploads it.
+  codecov:
+    needs: python
+    if: github.event_name != 'merge_group'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-codecov.yml
+    with:
+      artifact: python-coverage
+      flags: python
 
   title:
     # Not on push: there is no title. On a merge group the reusable job skips

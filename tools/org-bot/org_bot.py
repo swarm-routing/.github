@@ -17,8 +17,11 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
   org-sync  tools/org-sync/org_sync.py apply, in each repository with a
             .github/org-sync.toml. Sections the repository owns
             (`org_sync.py conflicts`) are never forced; the PR lists them,
-            and the seeds that differ from today's render (`org_sync.py
-            seeds`), for information: the bot never changes a seed.
+            and the seeds the repository edited that differ from today's
+            render (`org_sync.py seeds`), for information: the bot never
+            changes an edited seed. A seed still exactly as the pinned
+            templates rendered it is reseeded in the PR (`apply
+            --reseed-untouched`, #615).
   zenodo    tools/zenodo/zenodo.py record --write, in each repository with a
             CITATION.cff: when Zenodo holds a concept for its releases (a
             record linking the newest tag) and CITATION.cff's `doi:` or
@@ -670,8 +673,12 @@ def generate(task, repo, clone, data, out, skip=None):
     else:
         if not os.path.exists(os.path.join(clone, ".github", "org-sync.toml")):
             return None
-        # orphan blocks (#235) go too: the removal is proposed in this reviewed PR
-        cmds = [[sys.executable, "-I", ORG_SYNC, "apply", clone, "--prune-orphans"]]
+        # orphan blocks (#235) go too, and a seed the repository never edited takes
+        # today's render (#615): both proposed in this reviewed PR
+        cmds = [
+            [sys.executable, "-I", ORG_SYNC, "apply", clone, "--prune-orphans"]
+            + ["--reseed-untouched"]
+        ]
     for c in cmds:
         # org_sync.py apply exits 1 when sections the repository owns differ (it
         # leaves them and lists them on stdout); only a crash writes to stderr.
@@ -683,13 +690,14 @@ def generate(task, repo, clone, data, out, skip=None):
         r = sh([sys.executable, "-I", ORG_SYNC, "conflicts", clone], check=False)
         if r.stdout.strip():
             out.append("conflicts left to the repository:\n" + r.stdout.strip())
-        # seeds are the repository's own: listed for information, never changed (#91)
+        # a seed the repository edited is its own: listed for information, never
+        # changed (#91, #615); the untouched ones were reseeded by apply above
         r = sh([sys.executable, "-I", ORG_SYNC, "seeds", clone], check=False)
         differ = [ln for ln in r.stdout.splitlines() if ln.startswith(("differs", "missing"))]
         if differ:
             out.append(
-                "seeds that differ from today's render (the repository's own, not changed "
-                "here; `org_sync.py reseed FILE` takes the template):\n" + "\n".join(differ)
+                "seeds the repository edited, differing from today's render (its own, not "
+                "changed here; `org_sync.py reseed FILE` takes the template):\n" + "\n".join(differ)
             )
     return out
 

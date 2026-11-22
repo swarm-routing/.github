@@ -20,7 +20,6 @@
 package branchsweep
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/swarm-routing/.github/internal/github"
 	"github.com/swarm-routing/.github/internal/repomask"
 )
 
@@ -81,74 +81,18 @@ type GitHub struct {
 	Client *http.Client
 }
 
-// apiError carries the status of a failed call.
-type apiError struct {
-	status int
-	msg    string
+// rest is the shared client (#646) with this tool's User-Agent.
+func (g GitHub) rest() github.Client {
+	return github.Client{API: g.API, Token: g.Token, UserAgent: "swarm-routing-branch-sweep", HTTP: g.Client}
 }
 
-func (e *apiError) Error() string { return e.msg }
-
 func (g GitHub) do(method, path string, body any) ([]byte, error) {
-	var rd io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		rd = bytes.NewReader(b)
-	}
-	req, err := http.NewRequest(method, g.API+"/"+path, rd)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "swarm-routing-branch-sweep")
-	if g.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+g.Token)
-	}
-	resp, err := g.Client.Do(req)
-	if err != nil {
-		msg := err.Error()
-		if g.Token != "" {
-			msg = strings.ReplaceAll(msg, g.Token, "[redacted]")
-		}
-		return nil, fmt.Errorf("%s %s: %s", method, path, msg)
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		msg := strings.TrimSpace(string(data))
-		if len(msg) > 200 {
-			msg = msg[:200]
-		}
-		return nil, &apiError{resp.StatusCode, fmt.Sprintf("%s %s: HTTP %d: %s", method, path, resp.StatusCode, msg)}
-	}
-	return data, nil
+	return g.rest().Do(method, path, body)
 }
 
 // list reads every page of a listing (path has a query already).
 func list[T any](g GitHub, path string) ([]T, error) {
-	var all []T
-	for page := 1; page <= maxPages; page++ {
-		data, err := g.do("GET", fmt.Sprintf("%s&per_page=100&page=%d", path, page), nil)
-		if err != nil {
-			return nil, err
-		}
-		var got []T
-		if err := json.Unmarshal(data, &got); err != nil {
-			return nil, fmt.Errorf("GET %s: %v", path, err)
-		}
-		all = append(all, got...)
-		if len(got) < 100 {
-			return all, nil
-		}
-	}
-	return nil, fmt.Errorf("GET %s: more than %d pages", path, maxPages)
+	return github.List[T](g.rest(), path, maxPages)
 }
 
 // Repo is the part of a repository the sweep reads.
@@ -370,14 +314,13 @@ func (g GitHub) sweepRepo(r Repo, label string, now time.Time, dry, verbose bool
 			continue
 		}
 		_, err = g.do("DELETE", fmt.Sprintf("repos/%s/git/refs/heads/%s", r.FullName, refPath(b.Name)), nil)
-		var ae *apiError
 		switch {
 		case err == nil:
 			fmt.Fprintf(out, "%s %s: %s; deleted\n", label, name, d.Why)
 			deleted++
-		case errors.As(err, &ae) && ae.status == http.StatusUnprocessableEntity:
+		case github.Status(err) == http.StatusUnprocessableEntity:
 			fmt.Fprintf(out, "%s %s: %s; already gone\n", label, name, d.Why)
-		case errors.As(err, &ae) && ae.status == http.StatusForbidden:
+		case github.Status(err) == http.StatusForbidden:
 			fmt.Fprintf(out, "%s %s: delete refused (the token needs Contents: write): %v\n", label, name, show(err))
 			failed++
 		default:
