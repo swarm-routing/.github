@@ -14,8 +14,9 @@ reusable workflows other repos call (`reusable-ns3-ci.yml`, `reusable-ns3-image.
 `reusable-go-ci.yml`, `sync-labels.yml`). Pipelines (code a workflow runs) are
 written in Go, skill scripts stay Python ([ADR-0002](docs/adr/0002-pipelines-are-go.md),
 CONTRIBUTING § Languages; the existing Python tools move one at a time, #531).
-Files here only take effect from `main` (GitHub reads community defaults and
-`@main` workflow references from the default branch).
+Files here only take effect from `main` (GitHub reads community defaults from
+the default branch; callers reach a reusable workflow change once org-bot's
+refresh PR moves their pinned commit, ADR-0004).
 
 ```
 profile/README.md, ROADMAP.md, CONTRIBUTING.md   the org landing page, its phases, its invariants and conventions
@@ -121,7 +122,7 @@ Org-wide (1–9), then this repo's own.
    cause of a red run.
 9. **Nothing shipped depends on `.claude/`.** Skills hold procedures; scripts
    that anything shipped needs live in `tools/` (AntHocNet ADR-0014).
-10. **Reusable workflows are a public contract.** Callers pin `@main`: never rename or remove an input, never change a default's meaning; add inputs with backward-compatible defaults. A breaking change needs a new file or a tag, announced in an issue in every caller repo.
+10. **Reusable workflows are a public contract.** Callers pin them by commit: every `uses: swarm-routing/.github/...` names the commit the caller's `.github/org-sync.lock` pins (`@<sha> # main@<date>`), and org-bot's org-sync refresh PR moves the lock and every reference together; `check / org-sync` fails on any other ref, `@main` included ([ADR-0004](docs/adr/0004-callers-pin-the-org-workflows-by-commit.md), #716; amended 2026-11-22, was "callers pin `@main`"). Inside this repository a top-level workflow calls `./.github/workflows/...`; a reusable workflow calls this repository's actions and workflows pinned too (`org_sync.py refs`). Never rename or remove an input, never change a default's meaning; add inputs with backward-compatible defaults. A breaking change needs a new file or a tag, announced in an issue in every caller repo.
 11. **`labels.json` is the taxonomy.** Change it together with `CONTRIBUTING.md` and the issue forms; `sync-labels` never deletes labels, nor does the `labels` workflow that applies it to every repository on change, so a rename is a manual migration recorded in an issue.
 12. **The issue forms stay AntHocNet's shape.** Same fields, same body sections; org-specific additions only (areas, Depends on, literature).
 

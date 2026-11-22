@@ -8,5 +8,9 @@
 #
 # github/codeql-action/* (init, analyze, upload-sarif) bump in one PR: init
 # and analyze must run the same version (swarm-routing/AntHocNet#906).
+# swarm-routing/.github's own workflows and actions are ignored: they are
+# pinned to the commit .github/org-sync.lock names, and org-bot's org-sync
+# refresh PR moves the lock and every reference together
+# (swarm-routing/.github#716).
 version: 2
 updates:

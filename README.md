@@ -24,7 +24,8 @@ on: { push: { branches: [main] }, pull_request: {} }
 permissions: { contents: read, packages: read }
 jobs:
   ci:
-    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
+    # the commit .github/org-sync.lock pins; org-bot's refresh PR moves it (ADR-0004)
+    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@<sha> # main@<date>
     with:
       modules: ara=ns3
       dependencies: swarm-core=swarm-routing/swarm-adapter-ns3@main
