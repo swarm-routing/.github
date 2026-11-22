@@ -313,3 +313,24 @@ func TestListFollowsLink(t *testing.T) {
 		t.Errorf("two pages through the Link header: %v %v", got, err)
 	}
 }
+
+// FromJSON is Sync's reading of one listing item (#680): a code-scanning
+// rule's security severity is a security severity, its plain severity is not.
+func TestFromJSON(t *testing.T) {
+	sec, err := FromJSON(CodeScanning, map[string]any{"number": 10, "html_url": "u", "created_at": "2026-08-05T00:00:00Z",
+		"tool": map[string]any{"name": "CodeQL"}, "rule": map[string]any{"id": "r", "severity": "error", "security_severity_level": "high"}})
+	if err != nil || sec.Number != 10 || sec.Severity != "high" || !sec.Security || sec.Created.Format("2006-01-02") != "2026-08-05" {
+		t.Errorf("security rule: %+v %v", sec, err)
+	}
+	q, _ := FromJSON(CodeScanning, map[string]any{"number": 2, "rule": map[string]any{"severity": "warning"}})
+	if q.Severity != "medium" || q.Security {
+		t.Errorf("quality rule: %+v", q)
+	}
+	d, _ := FromJSON(Dependabot, map[string]any{"number": 3, "security_advisory": map[string]any{"severity": "moderate"}})
+	if d.Severity != "medium" || !d.Security {
+		t.Errorf("Dependabot: %+v", d)
+	}
+	if _, err := FromJSON(CodeScanning, map[string]any{"number": "x"}); err == nil {
+		t.Error("a malformed item is an error")
+	}
+}

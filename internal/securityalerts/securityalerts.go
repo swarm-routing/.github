@@ -186,6 +186,10 @@ type Alert struct {
 	Severity string // critical, high, medium, low ("" for a secret)
 	Tool     string // the code-scanning tool
 	What     string // the rule, the advisory or the secret type (data, quoted)
+	// Security: Severity is a security severity (a Dependabot advisory's, or
+	// a code-scanning rule's security_severity_level), not a rule's plain
+	// error/warning/note or the medium default
+	Security bool
 }
 
 // rawAlert is every listing's shape, read leniently.
@@ -235,6 +239,7 @@ func (r rawAlert) alert(kind string) Alert {
 	case CodeScanning:
 		a.Tool = r.Tool.Name
 		a.Severity = normSeverity(r.Rule.SecSeverity)
+		a.Security = a.Severity != ""
 		if a.Severity == "" {
 			a.Severity = normSeverity(r.Rule.Severity)
 		}
@@ -247,6 +252,7 @@ func (r rawAlert) alert(kind string) Alert {
 		}
 	case Dependabot:
 		a.Severity = normSeverity(r.Advisory.Severity)
+		a.Security = a.Severity != ""
 		if a.Severity == "" {
 			a.Severity = "medium"
 		}
@@ -255,6 +261,21 @@ func (r rawAlert) alert(kind string) Alert {
 		a.What = r.SecretType
 	}
 	return a
+}
+
+// FromJSON reads one item of an alert listing, already decoded from JSON,
+// as Sync reads it: the one reading of an alert's number, URL, age and
+// severity for every tool (bestpractices' vulnerability criteria, #680).
+func FromJSON(kind string, item any) (Alert, error) {
+	b, err := json.Marshal(item)
+	if err != nil {
+		return Alert{}, err
+	}
+	var r rawAlert
+	if err := json.Unmarshal(b, &r); err != nil {
+		return Alert{}, fmt.Errorf("%s alert: %v", kind, err)
+	}
+	return r.alert(kind), nil
 }
 
 // Policy: a code-scanning finding about repository policy, not code.
