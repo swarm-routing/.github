@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        An RCAPA is required only for a **regression in a published library**: a version another project consumes (a swarm-core release through `swarm-core.lock` or the vcpkg baseline, an ns3-tools release through `ns3-tools.lock` or PyPI, a protocol core's vcpkg port, a port recipe at a registry baseline, any release a consumer pins by version) worked, and a later one broke. A Docker image qualifies only when its composition (Dockerfile, `build-contrib.sh`, configure line, base image) is the cause. A bug that never reached a published version, and any change in .github, the site, skills, benchmarks or ns3-upstream-report, is an ordinary *Bug report*; an upstream ns-3 bug uses *ns-3 bug (RCAPA)* in swarm-routing/ns3-tools (CONTRIBUTING.md, "RCAPA", the decision table).
+        An RCAPA is required only for a **regression in a published library**: a version another project consumes (a swarm-core release through `swarm-core.lock` or the vcpkg baseline, an ns3-tools release through `ns3-tools.lock` or PyPI, a protocol core's vcpkg port, a port recipe at a registry baseline, any release a consumer pins by version) worked, and a later one broke. A Docker image qualifies only when its composition (Dockerfile, `build-contrib.sh`, configure line, base image) is the cause. A bug that never reached a published version, and any change in .github, the site, skills, benchmarks or ns3-upstream-report, is an ordinary *Bug report*; an upstream ns-3 bug uses *ns-3 bug (RCAPA)* in swarm-routing/sim-tools (CONTRIBUTING.md, "RCAPA", the decision table).
         A consumer that finds it (say AntHocNet after a swarm-core lock bump) files this in the **library's** repository, with its failing check as the reproducer. Replace `<PREFIX>` with that repository's prefix (CONTRIBUTING.md, "RCAPA") and `NNN` with the next free number in its `docs/rcapa/README.md`. The RCAPA document follows `docs/rcapa/_template.md`.
         Write every reference in full: `swarm-routing/<repo>#N`, never a bare `#N`. Add `priority:*`, `model:*` and the area labels as for any other issue (root cause work: usually `model:opus-5.5`).
         This ticket stays open until the corrective action is merged **and a release carries the fix**.
@@ -59,7 +59,7 @@ body:
     id: ns3
     attributes:
       label: ns-3 (optional)
-      description: The ns-3 version and modules involved, if any. If the cause turns out to be upstream ns-3, it moves to an `NS3-NNN` ticket in swarm-routing/ns3-tools.
+      description: The ns-3 version and modules involved, if any. If the cause turns out to be upstream ns-3, it moves to an `NS3-NNN` ticket in swarm-routing/sim-tools.
   - type: textarea
     id: workaround
     attributes:

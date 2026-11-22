@@ -71,7 +71,8 @@ SITE = "https://swarm-routing.github.io/"
 IMAGE = (
     "ghcr.io/swarm-routing/ns3-dev",
     "packages/container/package/ns3-dev",
-    "swarm-routing/ns3-containers",
+    "swarm-routing/sim-containers",
+    "swarm-routing/ns3-containers",  # its name until 2026-11-22 (#672)
 )
 AGENTS_HEADINGS = (
     "What this repo is",
@@ -753,7 +754,17 @@ ORG_REPOS = (
     "BeeAdHoc",
     "HOPNET",
     "Termite",
+    "POSANT",
+    "BeeSensor",
+    "Q-Swarm",
     "benchmarks",
+    "sim-containers",
+    "swarm-core",
+    "swarm-adapter-ns3",
+    "sim-tools",
+    "swarm-routingd",
+    "swarm-web-ui",
+    # the names before the 2026-11-22 renames (#672), still in older text
     "ns3-containers",
     "ns3-swarm-core",
     "ns3-tools",

@@ -9,9 +9,9 @@ commit, named in several places:
 - `core/CMakeLists.txt`: `set(SWARM_CORE_REF "<sha>" ...)`, the reference;
 - `Makefile`: `SWARM_CORE_REF ?= <sha>`;
 - every workflow's `core-deps` entry for swarm-core
-  (`swarm-routing/ns3-swarm-core@<sha>:core`): the licence check's, and the
+  (`swarm-routing/swarm-adapter-ns3@<sha>:core`): the licence check's, and the
   ns-3 CI's where `ns3/` exists;
-- the ns-3 build's dependency (`swarm-core=swarm-routing/ns3-swarm-core@<ref>`),
+- the ns-3 build's dependency (`swarm-core=swarm-routing/swarm-adapter-ns3@<ref>`),
   which follows swarm-core `main` (swarm-core golden rule 12): it must name
   `main` or the pinned commit.
 
@@ -34,7 +34,7 @@ campaign plan naming the old commit records what a run used, and recorded
 data is never rewritten (#407). A pin the files disagree on is left to a
 person (exit 1).
 
-Lock mode (swarm-routing/ns3-swarm-core#134), used when the repository has
+Lock mode (swarm-routing/swarm-adapter-ns3#134), used when the repository has
 `swarm-core.lock` (a release lock, `release_lock.py` beside this file): the
 pin is a swarm-core **release**, not a commit. The check fails when the lock
 does not verify against the release (the tag names the commit, the hash is
@@ -75,6 +75,11 @@ the lookup fails, a warning). Every other finding, a pin the files disagree
 on or a lock that does not verify, is the repository's own and fails in every
 mode.
 
+swarm-core's `core/` lives in swarm-routing/swarm-adapter-ns3, named
+swarm-routing/ns3-swarm-core until 2026-11-22 (swarm-routing/.github#672): the
+old name still counts on every pin line and in the lock, and a bump writes the
+new name on the lines it moves.
+
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
   check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--registry URL_OR_PATH]
                           [--stale fail|warn|bump-pr] [--bump]
@@ -100,8 +105,10 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script's dir
 import release_lock  # noqa: E402
 
-SWARM_CORE = "https://github.com/swarm-routing/ns3-swarm-core.git"
-SWARM_CORE_REPO = "swarm-routing/ns3-swarm-core"
+SWARM_CORE = "https://github.com/swarm-routing/swarm-adapter-ns3.git"
+SWARM_CORE_REPO = "swarm-routing/swarm-adapter-ns3"
+LEGACY_REPO = "swarm-routing/ns3-swarm-core"  # its name until 2026-11-22 (#672)
+SLUG = r"swarm-routing/(?:swarm-adapter-ns3|ns3-swarm-core)"
 CMAKE = "core/CMakeLists.txt"
 LOCK = "swarm-core.lock"
 LOCK_PREFIX = "SWARM_CORE"
@@ -109,12 +116,14 @@ ASSET = "swarm-core-{version}.tar.gz"
 KEY = re.compile(r"^\s*([A-Za-z0-9_-]+):")
 # core/CMakeLists.txt reads the lock on a line that is not a comment
 LOCK_READ = re.compile(r"^[^#\n]*file\(\s*(STRINGS|READ)\b[^#\n]*swarm-core\.lock", re.M)
-HARD_RELEASE = re.compile(r"ns3-swarm-core/releases/download/v\d|swarm-core-\d+\.\d+\.\d+\.tar")
+HARD_RELEASE = re.compile(
+    r"(?:swarm-adapter-ns3|ns3-swarm-core)/releases/download/v\d|swarm-core-\d+\.\d+\.\d+\.tar"
+)
 SHA = r"[0-9a-f]{40}"
 CMAKE_PIN = re.compile(rf'^\s*set\(\s*SWARM_CORE_REF\s+"({SHA})"', re.M)
 MAKE_PIN = re.compile(r"^\s*SWARM_CORE_REF\s*[?:]?=\s*(\S+)", re.M)
-CORE_DEP = re.compile(r"swarm-routing/ns3-swarm-core@([^\s:'\"]+):")
-NS3_DEP = re.compile(r"swarm-core=swarm-routing/ns3-swarm-core@([^\s:'\"]+)")
+CORE_DEP = re.compile(SLUG + r"@([^\s:'\"]+):")
+NS3_DEP = re.compile(r"swarm-core=" + SLUG + r"@([^\s:'\"]+)")
 # vcpkg mode (#489)
 REGISTRY = "https://github.com/swarm-routing/vcpkg-registry"
 VCPKG_MANIFEST = "vcpkg.json"
@@ -291,7 +300,7 @@ def bump(url):
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
         new = [
-            line.replace(pin, main)
+            reslug(line, line.replace(pin, main))
             if any(m.group(1) == pin for pat in patterns for m in pat.finditer(line))
             else line
             for line in lines
@@ -310,7 +319,7 @@ def bump(url):
     return 0
 
 
-# --- lock mode (swarm-routing/ns3-swarm-core#134) -----------------------------------
+# --- lock mode (swarm-routing/swarm-adapter-ns3#134) --------------------------------
 
 
 def dep_lines(path):
@@ -332,7 +341,7 @@ def check_lock_files():
     except (release_lock.LockError, OSError) as e:
         return None, None, [str(e)]
     errors = []
-    if prefix != LOCK_PREFIX or values[f"{prefix}_REPO"] != SWARM_CORE_REPO:
+    if prefix != LOCK_PREFIX or release_lock.canonical(values[f"{prefix}_REPO"]) != SWARM_CORE_REPO:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_REPO={SWARM_CORE_REPO}")
     tag, version = values[f"{prefix}_TAG"], values[f"{prefix}_VERSION"]
     commit = values[f"{prefix}_COMMIT"]
@@ -520,6 +529,14 @@ def retag(line, patterns, old, new):
     return line
 
 
+def reslug(old_line, new_line):
+    """A pin line the bump moved, with swarm-core's old repository name (#672)
+    replaced by its new one; a line the bump left is returned as it is."""
+    if new_line == old_line:
+        return new_line
+    return new_line.replace(LEGACY_REPO + "@", SWARM_CORE_REPO + "@")
+
+
 def run_lock(releases, registry=REGISTRY, stale_mode="fail"):
     prefix, values, errors = check_lock_files()
     stale = []
@@ -530,7 +547,9 @@ def run_lock(releases, registry=REGISTRY, stale_mode="fail"):
     if values:
         try:
             errors += release_lock.verify(prefix, values, releases)
-            newest, _ = release_lock.latest(releases, values[f"{prefix}_REPO"])
+            newest, _ = release_lock.latest(
+                releases, release_lock.canonical(values[f"{prefix}_REPO"])
+            )
         except release_lock.LockError as e:
             errors.append(str(e))
         tag = values[f"{prefix}_TAG"]
@@ -573,7 +592,7 @@ def bump_lock(releases, registry=REGISTRY):
     if not values or errors:
         print("swarm-core pin (lock): not bumped (fix the lock by hand first)")
         return 1
-    repo, tag = values[f"{prefix}_REPO"], values[f"{prefix}_TAG"]
+    repo, tag = release_lock.canonical(values[f"{prefix}_REPO"]), values[f"{prefix}_TAG"]
     try:
         newest, commit = release_lock.latest(releases, repo)
         if not newest or release_lock.version_key(newest) <= release_lock.version_key(tag):
@@ -622,7 +641,7 @@ def bump_lock(releases, registry=REGISTRY):
             lines = f.readlines()
         old_commit = values[f"{prefix}_COMMIT"]
         new = [
-            retag(retag(line, patterns, tag, newest), patterns, old_commit, commit)
+            reslug(line, retag(retag(line, patterns, tag, newest), patterns, old_commit, commit))
             for line in lines
         ]
         if new != lines:
@@ -690,6 +709,8 @@ def self_test():
         git("commit", "-q", "-m", msg, cwd=d)
         return git("rev-parse", "HEAD", cwd=d)[1]
 
+    # the fixtures name swarm-core by its old repository name on purpose: it
+    # still counts (#672); a bump moves it to the new one
     def protocol(d, cmake, make, licence, ns3=None):
         files = {
             CMAKE: f'set(SWARM_CORE_REF "{cmake}" CACHE STRING "swarm-core commit")\n',
@@ -804,6 +825,13 @@ def self_test():
             and "core/ changes" in out
             and "bench.yml" in out,
         )
+        with open(os.path.join(stale, ".github", "workflows", "licence.yml")) as f:
+            licence_text = f.read()
+        check(
+            "--bump writes swarm-core's new repository name on the lines it moves (#672)",
+            f"swarm-routing/swarm-adapter-ns3@{c}:core" in licence_text
+            and "ns3-swarm-core" not in licence_text,
+        )
         rc, out = go(stale, url)
         check("…after which the check passes", rc == 0)
 
@@ -865,7 +893,7 @@ def self_test():
             rc == 1 and "Makefile: no SWARM_CORE_REF" in out and "no core-deps entry" in out,
         )
 
-        # lock mode (swarm-routing/ns3-swarm-core#134): the pin is a release
+        # lock mode (swarm-routing/swarm-adapter-ns3#134): the pin is a release
         rel = os.path.join(t, "rel")
         base = "file://" + rel
         env = dict(os.environ)
@@ -925,6 +953,13 @@ def self_test():
         check("lock: newest release, every place on its tag: ok", rc == 0 and "lock): ok" in out)
         rc, out = golock(current, bump_mode=True)
         check("lock: --bump on the newest release changes nothing", rc == 0 and "current" in out)
+        legacy = locked("lock-legacy", "v0.3.0")
+        with open(os.path.join(legacy, LOCK), encoding="utf-8") as f:
+            text = f.read().replace(SWARM_CORE_REPO, LEGACY_REPO)
+        with open(os.path.join(legacy, LOCK), "w", encoding="utf-8") as f:
+            f.write(text)
+        rc, out = golock(legacy)
+        check("lock: swarm-core's name before 2026-11-22 still verifies (#672)", rc == 0)
         rc, out = golock(locked("lock-ns3", "v0.3.0", ns3_ref="main"))
         check(
             "lock: the ns-3 dependency on main is refused outside canary-dependencies",
@@ -1019,6 +1054,7 @@ def self_test():
             and "v0.4.0:" in out
             and cell == "##PROV## swarm-core@v0.3.0\n"
             and "@v0.4.0\n" in ns3
+            and "swarm-core=swarm-routing/swarm-adapter-ns3@v0.4.0\n" in ns3
             and open(os.path.join(current, "Makefile"), encoding="utf-8").read()
             == "SWARM_CORE_REF?=v0.4.0\n"
             and "@main\n" in ns3

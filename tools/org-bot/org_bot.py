@@ -188,10 +188,10 @@ SITE = (
 AFTERCARE_MARK = "<!-- org-bot:release-aftercare -->"
 # swarm-core's git URL for the swarm-core-pin task (a local path in the self-test)
 SWARM_CORE = os.environ.get(
-    "ORG_BOT_SWARM_CORE", "https://github.com/swarm-routing/ns3-swarm-core.git"
+    "ORG_BOT_SWARM_CORE", "https://github.com/swarm-routing/swarm-adapter-ns3.git"
 )
 # where the task reads swarm-core's tags and release assets for a repository with a
-# release lock, swarm-core.lock (swarm-routing/ns3-swarm-core#134; a file:// tree in
+# release lock, swarm-core.lock (swarm-routing/swarm-adapter-ns3#134; a file:// tree in
 # the self-test)
 SWARM_CORE_RELEASES = os.environ.get("ORG_BOT_SWARM_CORE_RELEASES", "https://github.com")
 # the vcpkg registry the swarm-core-pin task moves a vcpkg-mode baseline to (#489)
@@ -239,7 +239,7 @@ TASKS = {
         "what": "This repository's swarm-core pin is behind, so its `swarm-core / pin` check "
         "fails on every PR until the pin follows (#208): with a commit pin, swarm-core "
         "`main` changed `core/`; with a release lock (`swarm-core.lock`, "
-        "swarm-routing/ns3-swarm-core#134), a newer swarm-core release is out, and "
+        "swarm-routing/swarm-adapter-ns3#134), a newer swarm-core release is out, and "
         "nothing happens between releases. Rewritten by swarm-routing/.github "
         "`tools/checks/check-swarm-core-pin.py --bump`: the old commit or tag becomes the "
         "new one on the pin lines only (`SWARM_CORE_REF` in `core/CMakeLists.txt` and the "
@@ -2149,13 +2149,13 @@ def self_test():
         and res[0][2]["branch"].startswith("org-bot/org-sync-")
         and not [c for c in gh.calls if c[0] == "PATCH"],
     )
-    # swarm-core-pin on a release lock (swarm-routing/ns3-swarm-core#134): a lock behind
+    # swarm-core-pin on a release lock (swarm-routing/swarm-adapter-ns3#134): a lock behind
     # the newest release gets the PR, a current one none, and none between releases
     sys.path.insert(0, os.path.dirname(PIN))
     import release_lock
 
     rel = os.path.join(work, "releases")
-    sc_repo = "swarm-routing/ns3-swarm-core"
+    sc_repo = "swarm-routing/swarm-adapter-ns3"
     sc_more = release_lock.fixture_repo(rel, sc_repo, env)
     release_lock.make_release(rel, sc_repo, "v0.3.0", {"swarm-core-0.3.0.tar.gz": b"3"}, env)
     rbase = "file://" + rel
@@ -2564,7 +2564,7 @@ def self_test():
     )
     # release-lock (#478): every other root lock follows its dependency's releases, one PR
     # on org-bot/release-lock; a hand PR on the lock, a renamed asset, a carried org-sync
-    nt_repo = "swarm-routing/ns3-tools"
+    nt_repo = "swarm-routing/sim-tools"
     nt_more = release_lock.fixture_repo(rel, nt_repo, env)
     _, n1 = release_lock.make_release(
         rel, nt_repo, "v0.1.0", {"routing-bench-0.1.0.tar.gz": b"rb1", "nt-0.1.0.whl": b"w1"}, env

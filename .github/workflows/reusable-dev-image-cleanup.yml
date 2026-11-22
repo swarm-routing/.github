@@ -18,10 +18,10 @@ name: Reusable dev-image cleanup
 #   - a version whose digest, or any of whose tags, is pinned;
 #   - the package's newest image (GHCR refuses to delete the last version);
 #   - an untagged version (the children and attestations of tagged images,
-#     swarm-routing/ns3-containers#36);
+#     swarm-routing/sim-containers#36);
 #   - the signatures and attestations (`sha256-<hex>.sig`, ...) of a kept image;
 #   - anything in a package whose name does not end in `-dev`, or in `ns3-dev`,
-#     which keeps the frozen official base images (ns3-containers sweeps its
+#     which keeps the frozen official base images (sim-containers sweeps its
 #     candidates itself).
 # It fails closed: if a repository or a pull request cannot be read, nothing
 # is deleted. A failed delete fails the job; each package's result is a line
