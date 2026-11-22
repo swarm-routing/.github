@@ -103,6 +103,19 @@ jobs:
       tests: tools/org-sync/test_org_sync.py
       source: tools
 
+  # The Python coverage of the `python` job to Codecov (report-only; GitHub
+  # OIDC, no stored token; #635). Not in the merge queue: main's push uploads it.
+  codecov:
+    needs: python
+    if: github.event_name != 'merge_group'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-codecov.yml
+    with:
+      artifact: python-coverage
+      flags: python
+
   title:
     # Not on push: there is no title. On a merge group the reusable job skips
     # itself, which still reports `title / title` (a skipped check passes).
