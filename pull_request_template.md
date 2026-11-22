@@ -18,6 +18,8 @@ Default PR template for swarm-routing repos (a repo's own template overrides it)
 - docs-only: link check
 -->
 
+- [ ] A `feat` or `fix` that changes code adds or changes a test that fails without it, or the Verification says why none applies ([test policy](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#tests))
+
 ## Record
 
 <!-- Closes #NNN / Refs owner/repo#NNN; ADR or fidelity row touched. -->

@@ -22,6 +22,7 @@ profile/README.md, ROADMAP.md, CONTRIBUTING.md   the org landing page, its phase
 ISSUE_TEMPLATE/, pull_request_template.md, labels.json   the default forms and the label taxonomy
 SECURITY.md, CODE_OF_CONDUCT.md, SUPPORT.md, DCO, .github/FUNDING.yml   the org default community files
 .clang-format, ruff.toml           the C++ style and the Python lint baseline
+.clang-tidy                        the clang-tidy checks the protocol cores' `core` check runs, findings as errors (#635)
 go.mod, cmd/<tool>/, internal/, docker/ci-tools/   the Go pipeline tools and the ci-tools image (ADR-0002)
 tools/<tool>/                       the org's scripts, each with --self-test (checks, org-sync, org-bot, epics, zenodo, docs-review, fidelity, protocol-review, pr-status, lit-search, repo-settings, release)
 templates/                          what org-sync renders into each repository; templates/rulesets/: the settings profiles
