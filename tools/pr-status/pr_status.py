@@ -176,6 +176,7 @@ DEFAULT_REPOS = [
     "sim-containers",
     "swarm-core",
     "swarm-adapter-ns3",
+    "swarm-adapter-omnet",
     "sim-tools",
     "swarm-routingd",
     "swarm-web-ui",
@@ -1435,6 +1436,9 @@ def self_test():
     def check(name, cond):
         if not cond:
             failures.append(name)
+
+    # the default listing covers every public org repository, the ones of 2026-11-22 included
+    check("default repos", {"swarm-adapter-omnet", "swarm-core", "sim-tools"} <= set(DEFAULT_REPOS))
 
     def run(argv, data=None, **kw):
         gh = FakeGitHub(data or fixture())

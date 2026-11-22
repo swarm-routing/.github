@@ -761,6 +761,7 @@ ORG_REPOS = (
     "sim-containers",
     "swarm-core",
     "swarm-adapter-ns3",
+    "swarm-adapter-omnet",
     "sim-tools",
     "swarm-routingd",
     "swarm-web-ui",
@@ -1138,6 +1139,12 @@ def self_test():
     def expect(name, cond):
         if not cond:
             failures.append(name)
+
+    # every org repository, the ones created on 2026-11-22 included, names another repository's path
+    expect(
+        "org repos",
+        all(FOREIGN.search(f"see {r}") for r in ("swarm-adapter-omnet", "swarm-core", "sim-tools")),
+    )
 
     agents_ok = "# AGENTS.md\n\n" + "".join(f"## {h}\n\ntext\n\n" for h in AGENTS_HEADINGS)
     agents_ok = agents_ok.replace(
