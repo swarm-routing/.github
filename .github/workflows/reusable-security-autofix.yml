@@ -31,8 +31,9 @@ name: Reusable security autofix
 #         force push), opens the PR naming the ticket and enables auto-merge:
 #         required CI, the review gate and the merge queue decide.
 #   failed  no AI, the workflow token: an alert the agent did not fix
-#         (refused, no change, an error) gets the no-fix comment on its
-#         ticket, so the next pick leaves it to the maintainer.
+#         (refused, no change, an error), or whose accepted fix the pr job
+#         could not publish, gets the no-fix comment on its ticket, so the
+#         next pick leaves it to the maintainer.
 #
 # No step dismisses an alert or touches a secret. Every job runs only on the
 # default branch, so only main's code runs. No alert text reaches a `run:`
@@ -289,8 +290,8 @@ jobs:
             || echo "::warning::auto-merge could not be enabled on $pr"
 
   failed:
-    needs: [pick, fix]
-    if: always() && needs.pick.outputs.ticket != '' && (needs.fix.outputs.result == 'refused' || needs.fix.result == 'failure')
+    needs: [pick, fix, pr]
+    if: always() && needs.pick.outputs.ticket != '' && (needs.fix.outputs.result == 'refused' || needs.fix.result == 'failure' || needs.pr.result == 'failure')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -314,10 +315,17 @@ jobs:
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_RESULT: ${{ needs.pr.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           [[ "$TICKET" =~ ^[0-9]+$ ]] || { echo "::error::ticket '$TICKET'"; exit 1; }
-          why="the fix job failed"
-          [ -s "$RUNNER_TEMP/why/why.txt" ] && why=$(cat "$RUNNER_TEMP/why/why.txt")
+          if [ "$PR_RESULT" = failure ]; then
+            # the guard accepted the fix, but publishing it failed: without this record a
+            # pushed branch with no PR would hide the ticket until branch-sweep removes it
+            why="the guard accepted the agent's fix, but the pr job failed to apply, push or open it (see the run)"
+          else
+            why="the fix job failed"
+            [ -s "$RUNNER_TEMP/why/why.txt" ] && why=$(cat "$RUNNER_TEMP/why/why.txt")
+          fi
           docker run --rm -e GH_TOKEN "$IMG" security-autofix failed --repo "$GITHUB_REPOSITORY" \
             --ticket "$TICKET" --why "$why" --run "$RUN_URL"
