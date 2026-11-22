@@ -74,6 +74,8 @@ jobs:
         run: python3 -I tools/repo-settings/repo_settings.py --self-test
       - name: downstream self-test (tools/downstream)
         run: bash tools/downstream/downstream.sh --self-test
+      - name: doctor self-test (tools/doctor)
+        run: bash tools/doctor/doctor.sh --self-test
       - name: docker-retry self-test (.github/actions/pull-ci-tools)
         run: bash .github/actions/pull-ci-tools/docker-retry.sh --self-test
       - name: Forms, labels, style parse

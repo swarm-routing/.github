@@ -37,7 +37,8 @@ Each managed item is one of:
 
 Two seeds carry the org's shared text as sections (#615): the Makefile's
 `org-tools` block at its end (`# org-sync:begin org-tools`: the ORG_DIR,
-ORG_REF and TITLE variables, `org-tools`, `org-sync-check`, `pre-push`) and
+ORG_REF and TITLE variables, `org-tools`, `org-sync-check`, `pre-push`,
+`doctor`) and
 LICENSING.md's `licence-texts`. A seed from before carries that text
 unmarked, in pieces (ADOPT_PIECES): each is adopted only when it is the
 template's text, or an older render's, byte for byte; an edited piece, or a
@@ -286,7 +287,7 @@ ADOPT_PIECES = {
             "ORG_REF   ?= main\n",
         ),
         "own": r"^(?:(?:ORG_DIR|ORG_REF|TITLE_RE)\s*[:?+!]?=|export TITLE\b|"
-        r"(?:org-tools|org-sync-check|pre-push)\s*:(?!=))",
+        r"(?:org-tools|org-sync-check|pre-push|doctor)\s*:(?!=))",
         "at": "end",
         "optional": False,
     },

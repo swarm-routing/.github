@@ -19,3 +19,8 @@ pre-push: check ## before every push: make check, then TITLE='type(scope): subje
 	@[ -n "$$TITLE" ] || { echo "make pre-push: pass TITLE='<the PR title>'" >&2; exit 2; }
 	@printf '%s\n' "$$TITLE" | grep -Eq '$(TITLE_RE)' || { echo "PR title is not a lowercase Conventional Commit: $$TITLE" >&2; exit 1; }
 	@echo "pre-push: ok ($$TITLE)"
+
+.PHONY: doctor
+doctor: ## this machine's tools against the versions CI runs (the org's tools/versions.env, go.mod), and the hosts the network steps need
+	@$(MAKE) -s org-tools || echo "doctor: could not refresh $(ORG_DIR) (offline?): using it as it is" >&2
+	@"$(ORG_DIR)/tools/doctor/doctor.sh" .
