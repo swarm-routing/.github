@@ -275,7 +275,7 @@ func FailedBody(why, runURL string) string {
 		run = " Run: " + runURL + "."
 	}
 	return strings.Join([]string{FailedMarker, "## No automated fix", "",
-		"The security autofix (swarm-routing/.github#629) produced no change the guard accepts." + run, "",
+		"The security autofix (swarm-routing/.github#629) opened no fix PR for this alert: the agent produced no change the guard accepts, or its accepted change could not be published." + run, "",
 		"Why: " + clip(why, 1500), "",
 		"The pipeline leaves this alert to the maintainer: fix it by hand (a reproducing test first), or dismiss it " +
 			"with its reason. Delete this comment to let the pipeline try again.",

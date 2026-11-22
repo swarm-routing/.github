@@ -144,6 +144,12 @@ because the issue threads were thorough. Caveman the chat, not the record.
   link, read from its record (`lit-search` confirms it), or, for a work with
   no DOI, by its publisher's or institution's page; never point into or name
   the private paper library there.
+- Never dismiss a security alert, and never rotate or handle a leaked
+  secret: both are the maintainer's. Every open alert has a `security`
+  ticket kept by the hourly `security-alerts` task (P1 past its SLA), and
+  `security-autofix.yml` opens a test-first fix PR for a code finding and a
+  proposal for a policy finding (swarm-routing/.github#629); review its PR
+  like any other (CONTRIBUTING "Security alerts").
 - An ns-3 bug, or an investigation of one, always gets an RCAPA ticket in
   swarm-routing/sim-tools first (form *ns-3 bug (RCAPA)*, labels `rcapa` and
   `ns3-upstream`, ID `NS3-NNN`); its doc in `docs/ns3-rcapa/` and its
