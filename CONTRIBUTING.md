@@ -366,6 +366,7 @@ adds its row here):
 | swarm-routing/Termite | `TRM` | the `termite-core` vcpkg port, once published |
 | swarm-routing/vcpkg-registry | `VCP` (maintainer decision, 2026-11-16) | port recipes at a registry baseline: a regression in a published port is a `VCP-NNN` there |
 | swarm-routing/sim-containers | `CNT` | image composition only (the table above) |
+| swarm-routing/swarm-mcp | `MCP` | the commit or release the `swarm-routing` plugin pins (swarm-routing/skills `swarm-mcp.lock`) |
 
 ### ns-3 bugs (RCAPA)
 
