@@ -55,13 +55,36 @@ begin an implementation or a new investigation.
 
 ## Ecosystem Architecture
 
-Our repositories are divided into three main pillars. 
+The repositories sit in four layers, the hexagonal (ports and adapters)
+layout the maintainer decided on 2026-11-22
+([ROADMAP, Architecture and migration](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md#architecture-and-migration-decided-2026-11-22)):
+every protocol's simulator-free `core/` sits on one shared `swarm-core`, and
+each runtime (ns-3 today; a Linux daemon and other simulators later) is an
+adapter of its ports. Three repositories were renamed that day:
+`ns3-swarm-core` is now swarm-adapter-ns3, `ns3-containers` is sim-containers
+and `ns3-tools` is sim-tools. A repository marked *deferred* is planned for later,
+not scheduled (ROADMAP decision 23): it starts when the maintainer re-plans it.
+
 Every badge below is live: the latest release, each repository's SonarQube
 Cloud quality gate and its Codecov line coverage on `main` (report-only,
 uploaded by CI from the repository's own code). A dash means not measured:
 no release yet, no SonarQube Cloud project, or no coverage upload.
 
-### 1. The Protocols
+### 1. Core
+
+| Repository | What it is | Release | Quality gate | Coverage |
+|---|---|---|---|---|
+| [swarm-core](https://github.com/swarm-routing/swarm-core) | The simulator-free C++23 ports and primitives (`swarm::core`), the wire helpers, the testbench and the protocol contract tests; no OS or simulator header. Created 2026-11-21, empty: the code is still in swarm-adapter-ns3's `core/` and moves here with its history in phase 1 | — | — | — |
+
+### 2. Runtimes and adapters
+
+| Repository | What it is | Release | Quality gate | Coverage |
+|---|---|---|---|---|
+| [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) | The ns-3 adapter of swarm-core's ports (was `ns3-swarm-core`): the `swarm-core` contrib module every protocol links against, with `SwarmRoutingBase`, the link monitors, the energy hook and the deferred queue, and for now the C++23 primitives in `core/` | [![Release](https://img.shields.io/github/v/release/swarm-routing/swarm-adapter-ns3?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/swarm-adapter-ns3/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-swarm-core&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-swarm-core) | [![codecov](https://codecov.io/gh/swarm-routing/swarm-adapter-ns3/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/swarm-adapter-ns3/tree/main) |
+| [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) | *deferred*: the Linux userspace routing daemon that runs the protocol cores over real sockets, rtnetlink routes and a TUN device; CORE/EMANE and Shadow run it unmodified | — | — | — |
+| [swarm-adapter-omnet](https://github.com/swarm-routing/swarm-adapter-omnet) | *deferred*: the OMNeT++/INET adapter of swarm-core's ports, one `swarm-adapter-<sim>` per in-process C++ simulator (ROADMAP decision 24); no code yet | — | — | — |
+
+### 3. The Protocols
 
 | Repository | What it is | Release | Quality gate | Coverage |
 |---|---|---|---|---|
@@ -70,25 +93,41 @@ no release yet, no SonarQube Cloud project, or no coverage upload.
 | [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | Honeybee routing (Wedde & Farooq, 2005), as the PG 460 Linux module specifies it: `core/` and ns-3 module in progress (Phase 4) | [![Release](https://img.shields.io/github/v/release/swarm-routing/BeeAdHoc?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/BeeAdHoc/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_BeeAdHoc&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_BeeAdHoc) | [![codecov](https://codecov.io/gh/swarm-routing/BeeAdHoc/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/BeeAdHoc/tree/main) |
 | [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005): `core/` and ns-3 module in progress (Phase 5) | [![Release](https://img.shields.io/github/v/release/swarm-routing/Termite?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/Termite/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_Termite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_Termite) | [![codecov](https://codecov.io/gh/swarm-routing/Termite/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/Termite/tree/main) |
 | [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007), the one published result benchmarked against AntHocNet: `core/` and ns-3 module in progress | [![Release](https://img.shields.io/github/v/release/swarm-routing/HOPNET?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/HOPNET/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_HOPNET&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_HOPNET) | [![codecov](https://codecov.io/gh/swarm-routing/HOPNET/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/HOPNET/tree/main) |
+| [POSANT](https://github.com/swarm-routing/POSANT) | *deferred*: position-based ant colony routing for geographic and 3D networks (UAV swarms, FANETs), on swarm-core's location port; fidelity sheet only | — | — | — |
+| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | *deferred*: honeybee-inspired, energy-aware convergecast routing for wireless sensor networks; fidelity sheet only | — | — | — |
+| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | *deferred*: Q-routing with energy-aware updates and Boltzmann next-hop selection, a learned comparator for the swarm protocols; fidelity sheet only | — | — | — |
 
-### 2. Core & Tooling
+### 4. Infrastructure and tooling
 
 | Repository | What it is | Release | Quality gate | Coverage |
 |---|---|---|---|---|
-| [ns3-swarm-core](https://github.com/swarm-routing/ns3-swarm-core) | The `swarm-core` contrib module every protocol links against: shared primitives (visited path, LE codecs, pheromone table, route decision, router observer) and ns-3 cross-layer glue (`SwarmRoutingBase`, link monitors) | [![Release](https://img.shields.io/github/v/release/swarm-routing/ns3-swarm-core?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/ns3-swarm-core/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-swarm-core&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-swarm-core) | [![codecov](https://codecov.io/gh/swarm-routing/ns3-swarm-core/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/ns3-swarm-core/tree/main) |
-| [ns3-tools](https://github.com/swarm-routing/ns3-tools) | The protocol-agnostic `routing-bench` comparison harness every arm registers with, the `ns3-tool` readers and paired statistics, the `ns3-campaign` driver; probes and universal arenas planned | [![Release](https://img.shields.io/github/v/release/swarm-routing/ns3-tools?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/ns3-tools/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-tools&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-tools) | [![codecov](https://codecov.io/gh/swarm-routing/ns3-tools/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/ns3-tools/tree/main) |
-| [ns3-containers](https://github.com/swarm-routing/ns3-containers) | `ghcr.io/swarm-routing/ns3-dev`: ns-3 pre-built (default, debug, sanitized, optimized) and tested by digest, so a contrib module compiles in seconds | [![Release](https://img.shields.io/github/v/release/swarm-routing/ns3-containers?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/ns3-containers/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-containers&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-containers) | — |
+| [sim-tools](https://github.com/swarm-routing/sim-tools) | Orchestration and statistics (was `ns3-tools`): the protocol-agnostic `routing-bench` comparison harness every arm registers with, the `ns3-tool` readers and paired statistics, the `ns3-campaign` driver; other simulators' launch configs and trace normalizers join it as directories | [![Release](https://img.shields.io/github/v/release/swarm-routing/sim-tools?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/sim-tools/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-tools&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-tools) | [![codecov](https://codecov.io/gh/swarm-routing/sim-tools/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/sim-tools/tree/main) |
+| [sim-containers](https://github.com/swarm-routing/sim-containers) | `ghcr.io/swarm-routing/ns3-dev` (was `ns3-containers`): ns-3 pre-built (default, debug, sanitized, optimized) and tested by digest, so a contrib module compiles in seconds | [![Release](https://img.shields.io/github/v/release/swarm-routing/sim-containers?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/sim-containers/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_ns3-containers&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_ns3-containers) | — |
 | [benchmarks](https://github.com/swarm-routing/benchmarks) | Immutable 20-seed datasets of released versions, with their reproducibility manifests and a validator | [![Release](https://img.shields.io/github/v/release/swarm-routing/benchmarks?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/benchmarks/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_benchmarks&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_benchmarks) | — |
-| [swarm-routing.github.io](https://swarm-routing.github.io) | Colony Arena, the org site: a colony map of every project, a page per protocol, AntHocNet's game, docs and API with its C++ core in WebAssembly; leaderboard planned | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_swarm-routing.github.io&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_swarm-routing.github.io) | — |
 | [vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry) | The org's vcpkg git registry: ports of the simulator-free C++ cores (swarm-core first, then each protocol's), installed on `x64-linux` and `wasm32-emscripten` in CI | — | — | — |
+| [swarm-routing.github.io](https://swarm-routing.github.io) | Colony Arena, the org site: a colony map of every project, a page per protocol, AntHocNet's game, docs and API with its C++ core in WebAssembly; leaderboard planned | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_swarm-routing.github.io&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_swarm-routing.github.io) | — |
+| [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) | *deferred*: the web workbench: offline replay of simulation run bundles with paired-delta charts, then a local control plane to launch runs in sim-containers | — | — | — |
 | [ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report) | The bridge to ns-3's GitLab: a mirror ticket per upstream ns-3 bug report, GitLab notes and state mirrored every 6 h, reports and replies sent only after the maintainer approves | — | — | — |
-
-### 3. AI & Automation Operations
-
-| Repository | What it is | Release | Quality gate | Coverage |
-|---|---|---|---|---|
-| [skills](https://github.com/swarm-routing/skills) | The org's agent skills: one Claude Code plugin and plain Agent Skills for any agent, each a procedure over a script | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_skills&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_skills) | — |
 | [.github](https://github.com/swarm-routing/.github) | Org-wide defaults: CONTRIBUTING, labels, issue forms, the reusable CI and release workflows, org-sync templates and the bots that keep every repository current | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_.github&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_.github) | — |
+| [skills](https://github.com/swarm-routing/skills) | The org's agent skills: one Claude Code plugin and plain Agent Skills for any agent, each a procedure over a script | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_skills&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_skills) | — |
+
+## Roadmap: now and later
+
+The maintainer narrowed what is scheduled on 2026-11-22 (ROADMAP decision 23).
+Every deferred item keeps its epic and its plan; none starts by itself.
+
+- **Now:** phase 0 (the renames and settings as code), phase 1 (swarm-core
+  in its own repository, then its first release there), phase 3a (the five
+  released protocols on the extracted swarm-core, with the contract tests),
+  the release train and the ns-3 work, and phase 4 (agent tooling, docs, the
+  paper) where it needs no deferred track.
+- **Later (deferred):** the Linux daemon swarm-routingd and the vertical
+  slice on it (phase 2); the new protocols POSANT, BeeSensor and Q-Swarm
+  (fidelity sheets may continue, no code); swarm-web-ui; and the other
+  simulators: CORE/EMANE and Shadow on swarm-routingd, OMNeT++ through
+  swarm-adapter-omnet (decision 24), after ns-3 and Linux parity.
+
+The whole plan, phase by phase: [ROADMAP.md](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md).
 
 ## Getting Started
 
