@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -191,6 +192,48 @@ type Alert struct {
 	// a code-scanning rule's security_severity_level), not a rule's plain
 	// error/warning/note or the medium default
 	Security bool
+	// Where: the most recent instance of a code-scanning alert (#788)
+	Where Location
+}
+
+// Location is a code-scanning alert's most recent instance: the file, its
+// lines and the commit it was found at (data, quoted).
+type Location struct {
+	Path       string
+	Start, End int
+	Commit     string
+}
+
+var commitRe = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+// Markdown is the location as `path:line`, linked to those lines at the
+// commit when the commit and the alert's repository are known; "" without
+// a path. Agent tokens cannot read code scanning, so the ticket carries it.
+func (a Alert) Markdown() string {
+	l := a.Where
+	if l.Path == "" {
+		return ""
+	}
+	text := fmt.Sprintf("`%s`", clip(l.Path, 200))
+	if l.Start > 0 {
+		text = fmt.Sprintf("`%s:%d`", clip(l.Path, 200), l.Start)
+	}
+	repo, _, ok := strings.Cut(a.URL, "/security/")
+	if !ok || !strings.HasPrefix(repo, "https://github.com/"+Org+"/") || !commitRe.MatchString(l.Commit) {
+		return text
+	}
+	segs := strings.Split(l.Path, "/")
+	for i, s := range segs {
+		segs[i] = strings.NewReplacer("(", "%28", ")", "%29").Replace(url.PathEscape(s))
+	}
+	link := repo + "/blob/" + l.Commit + "/" + strings.Join(segs, "/")
+	if l.Start > 0 {
+		link += fmt.Sprintf("#L%d", l.Start)
+		if l.End > l.Start {
+			link += fmt.Sprintf("-L%d", l.End)
+		}
+	}
+	return fmt.Sprintf("[%s](%s) at commit %s", text, link, l.Commit[:12])
 }
 
 // rawAlert is every listing's shape, read leniently.
@@ -218,6 +261,14 @@ type rawAlert struct {
 		} `json:"package"`
 	} `json:"dependency"`
 	SecretType string `json:"secret_type_display_name"`
+	Instance   struct {
+		Commit   string `json:"commit_sha"`
+		Location struct {
+			Path  string `json:"path"`
+			Start int    `json:"start_line"`
+			End   int    `json:"end_line"`
+		} `json:"location"`
+	} `json:"most_recent_instance"`
 }
 
 func normSeverity(s string) string {
@@ -247,6 +298,8 @@ func (r rawAlert) alert(kind string) Alert {
 		if a.Severity == "" {
 			a.Severity = "medium"
 		}
+		l := r.Instance.Location
+		a.Where = Location{Path: l.Path, Start: l.Start, End: l.End, Commit: r.Instance.Commit}
 		a.What = r.Rule.ID
 		if r.Rule.Description != "" {
 			a.What += ": " + r.Rule.Description
@@ -363,6 +416,9 @@ func Body(a Alert, now time.Time) string {
 	}
 	if a.What != "" {
 		lines = append(lines, "- Finding: "+clip(a.What, 300))
+	}
+	if loc := a.Markdown(); loc != "" {
+		lines = append(lines, "- Location: "+loc)
 	}
 	if a.PastSLA(now) {
 		lines = append(lines, "", fmt.Sprintf("**Past its SLA** (critical: %d days, medium or higher: %d days): this issue is P1, "+
