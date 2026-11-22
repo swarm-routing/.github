@@ -446,3 +446,87 @@ func TestPlanSeverityFirst(t *testing.T) {
 		t.Errorf("severity first: %v, %d left", b.Allow, left)
 	}
 }
+
+// withLocation adds a code-scanning alert's most recent instance (#788).
+func withLocation(a map[string]any, path string, start, end int, sha string) map[string]any {
+	a["most_recent_instance"] = map[string]any{"commit_sha": sha,
+		"location": map[string]any{"path": path, "start_line": start, "end_line": end}}
+	return a
+}
+
+// A code finding's ticket names the file and line of the alert's most recent
+// instance, linked at its commit, and the rule's short description (#788):
+// agent tokens cannot read code scanning, so a manual fix starts from here.
+func TestBodyLocation(t *testing.T) {
+	sha := strings.Repeat("ab", 20)
+	a, err := FromJSON(CodeScanning, withLocation(cs("X", 1, "CodeQL", "high", "2026-11-10T00:00:00Z"), "tools/a b.py", 12, 14, sha))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := Body(a, now)
+	for _, want := range []string{
+		"- Location: [`tools/a b.py:12`](https://github.com/swarm-routing/X/blob/" + sha + "/tools/a%20b.py#L12-L14) at commit " + sha[:12],
+		"- Finding: py/sql-injection: SQL 'query' built from (at)user input",
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("body lacks %q:\n%s", want, b)
+		}
+	}
+	// one line: no range; no commit or a malformed one: the path alone, unlinked
+	one, _ := FromJSON(CodeScanning, withLocation(cs("X", 2, "CodeQL", "high", "2026-11-10T00:00:00Z"), "a.go", 7, 7, sha))
+	if !strings.Contains(Body(one, now), "(https://github.com/swarm-routing/X/blob/"+sha+"/a.go#L7)") {
+		t.Errorf("one line:\n%s", Body(one, now))
+	}
+	bad, _ := FromJSON(CodeScanning, withLocation(cs("X", 3, "CodeQL", "high", "2026-11-10T00:00:00Z"), "a`@<b>.go", 7, 0, "main)x"))
+	if bb := Body(bad, now); !strings.Contains(bb, "- Location: `a'(at)‹b›.go:7`\n") || strings.Contains(bb, "/blob/") {
+		t.Errorf("unlinked, neutralised:\n%s", bb)
+	}
+	// no instance (a Dependabot alert, an old listing): no location line
+	if strings.Contains(Body(cs1(), now), "Location") {
+		t.Error("no location without an instance")
+	}
+}
+
+// An existing ticket gets the location on the next run through the update
+// path (the body changed), and a run after that writes nothing (#788).
+func TestSyncAddsLocationToExistingTicket(t *testing.T) {
+	sha := strings.Repeat("c", 40)
+	f := &fakeOrg{
+		repos:  []map[string]any{{"name": "X"}},
+		alerts: map[string][]map[string]any{"X code-scanning/alerts": {withLocation(cs("X", 1, "CodeQL", "high", "2026-11-10T00:00:00Z"), "src/q.py", 3, 3, sha)}},
+		status: map[string]int{"X dependabot/alerts": 404, "X secret-scanning/alerts": 404},
+		issues: map[string][]map[string]any{"X": {{"number": 5, "title": Title(cs1()), "labels": labelsOf(Labels(cs1(), now)...),
+			"body": Body(cs1(), now)}}}, // the ticket as written before #788
+	}
+	g := f.server(t)
+	res, err := Sync(g, Repo{Name: "X"}, now, false, nil)
+	if err != nil || res.Updated != 1 || res.Opened != 0 {
+		t.Fatalf("updated %d opened %d %v", res.Updated, res.Opened, err)
+	}
+	w := strings.Join(f.writes, "\n")
+	if !strings.Contains(w, "PATCH X/issues/5") || !strings.Contains(w, "src/q.py:3") {
+		t.Errorf("the location reaches the ticket:\n%s", w)
+	}
+	var body map[string]any
+	_ = json.Unmarshal([]byte(w[strings.Index(w, "{"):]), &body)
+	f.issues["X"][0]["body"] = body["body"]
+	f.writes = nil
+	if res, _ = Sync(g, Repo{Name: "X"}, now, false, nil); res.Updated != 0 || len(f.writes) != 0 {
+		t.Errorf("idempotent: %v", f.writes)
+	}
+}
+
+// The policy ticket in swarm-routing/.github is public: a public
+// repository's alert shows its location, a private one's never does (#788).
+func TestPolicyLocationMasked(t *testing.T) {
+	sha := strings.Repeat("d", 40)
+	pub, _ := FromJSON(CodeScanning, withLocation(sc("A", 1, "TokenPermissionsID", "2026-11-01T00:00:00Z"), ".github/workflows/ci.yml", 1, 1, sha))
+	priv, _ := FromJSON(CodeScanning, withLocation(sc("hidden", 2, "TokenPermissionsID", "2026-11-01T00:00:00Z"), "secret/path.yml", 9, 9, sha))
+	g := Groups([]Result{{Repo: Repo{Name: "A"}, Policy: []Alert{pub}}, {Repo: Repo{Name: "hidden", Private: true}, Policy: []Alert{priv}}})
+	var m repomask.Masker
+	b := PolicyBody(g[0], &m, now)
+	if !strings.Contains(b, "[`.github/workflows/ci.yml:1`](https://github.com/swarm-routing/A/blob/"+sha+"/.github/workflows/ci.yml#L1)") ||
+		strings.Contains(b, "secret/path") || strings.Contains(b, "hidden") || !strings.Contains(b, "| private repository 1 | #2 | - |") {
+		t.Errorf("policy body:\n%s", b)
+	}
+}

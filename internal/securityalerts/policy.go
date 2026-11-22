@@ -122,18 +122,22 @@ func PolicyBody(g Group, m *repomask.Masker, now time.Time) string {
 	if g.What != "" {
 		lines = append(lines, "", "> "+clip(g.What, 300))
 	}
-	lines = append(lines, "", "| Repository | Alert | Open since |", "|---|---|---|")
+	lines = append(lines, "", "| Repository | Alert | Location | Open since |", "|---|---|---|---|")
 	for _, a := range g.Alerts {
 		name := m.Repo(a.Repo.Name, a.Repo.Private, Org+"/"+a.Repo.Name, a.Repo.Name)
 		link := fmt.Sprintf("[#%d](%s)", a.Alert.Number, a.Alert.URL)
+		loc := a.Alert.Markdown()
 		if a.Repo.Private {
-			link = fmt.Sprintf("#%d", a.Alert.Number)
+			link, loc = fmt.Sprintf("#%d", a.Alert.Number), "" // no private path in a public ticket (#788)
+		}
+		if loc == "" {
+			loc = "-"
 		}
 		since := a.Alert.Created.UTC().Format("2006-01-02")
 		if a.Alert.PastSLA(now) {
 			since += " (past its SLA)"
 		}
-		lines = append(lines, fmt.Sprintf("| %s | %s | %s |", name, link, since))
+		lines = append(lines, fmt.Sprintf("| %s | %s | %s | %s |", name, link, strings.ReplaceAll(loc, "|", "\\|"), since))
 	}
 	lines = append(lines, "", "## Proposal", "")
 	if fix, ok := securityautofix.SettingsFix(g.Rule); ok {
