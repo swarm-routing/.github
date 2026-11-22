@@ -22,7 +22,9 @@ import (
 //
 //   - here (Home), it commits Sync's template pins onto the pull request's
 //     branch, so a Dependabot bump of .github/workflows/ moves templates/ in
-//     the same pull request;
+//     the same pull request, and SyncVersions' tools/versions.env, so a pip
+//     bump of tools/requirements/*.in moves the versions CI checks the lock
+//     against (#809); tools/versions.env is kept only here;
 //   - in every other repository, on a pull request that edits org-managed
 //     files (their first line is ManagedMarker), those edits are not the
 //     repository's to make. When it edits nothing else, it is closed with a
@@ -203,7 +205,7 @@ func (s *sweeper) home(r repo, p pull, label string) error {
 	}
 	files, modes := map[string]string{}, map[string]string{}
 	for _, e := range tree.Tree {
-		if e.Type != "blob" || (!Source(e.Path) && !Template(e.Path)) {
+		if e.Type != "blob" || (!Source(e.Path) && !Template(e.Path) && !Requirement(e.Path) && e.Path != VersionsEnv) {
 			continue
 		}
 		if len(files) >= maxFiles {
@@ -215,19 +217,39 @@ func (s *sweeper) home(r repo, p pull, label string) error {
 		}
 		files[e.Path], modes[e.Path] = text, e.Mode
 	}
-	changed, found, err := Sync(files)
+	workflows, reqs := map[string]string{}, map[string]string{}
+	for path, text := range files {
+		if Requirement(path) {
+			reqs[path] = text
+		} else if path != VersionsEnv {
+			workflows[path] = text
+		}
+	}
+	changed, found, err := Sync(workflows)
 	if err != nil {
 		return err
 	}
 	for _, f := range found {
 		fmt.Fprintf(s.out, "%s#%d: %s\n", label, p.Number, f)
 	}
+	if env, ok := files[VersionsEnv]; ok && len(reqs) > 0 {
+		text, notes, err := SyncVersions(env, reqs)
+		if err != nil {
+			return err
+		}
+		for _, n := range notes {
+			fmt.Fprintf(s.out, "%s#%d: %s\n", label, p.Number, n)
+		}
+		if len(notes) > 0 {
+			changed[VersionsEnv] = text
+		}
+	}
 	if len(changed) == 0 {
-		fmt.Fprintf(s.out, "%s#%d: templates at the workflows' pins\n", label, p.Number)
+		fmt.Fprintf(s.out, "%s#%d: templates at the workflows' pins, %s at the requirements' pins\n", label, p.Number, VersionsEnv)
 		return nil
 	}
 	paths := sorted(changed)
-	what := fmt.Sprintf("move %d template files to the workflows' pins (%s)", len(paths), strings.Join(paths, ", "))
+	what := fmt.Sprintf("move %d files to the workflows' and requirements' pins (%s)", len(paths), strings.Join(paths, ", "))
 	if !s.spend(label, p.Number, what) {
 		return nil
 	}
@@ -254,7 +276,9 @@ func (s *sweeper) home(r repo, p pull, label string) error {
 	}
 	msg := "chore(deps): move the template pins to the workflows' pins\n\n" +
 		"action-pins (swarm-routing/.github#773): every third-party `uses:` in templates/\n" +
-		"names the commit and version .github/workflows/ uses for the same action.\n\n" +
+		"names the commit and version .github/workflows/ uses for the same action, and\n" +
+		"every tools/versions.env key of a package tools/requirements/*.in pins names\n" +
+		"that pin (#809).\n\n" +
 		strings.Join(paths, "\n") + "\n"
 	if err := s.g.do("POST", "repos/"+r.FullName+"/git/commits",
 		map[string]any{"message": msg, "tree": nt.SHA, "parents": []string{p.Head.SHA}}, &nc); err != nil {

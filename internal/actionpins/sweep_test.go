@@ -166,7 +166,7 @@ func TestSweepCompletesHomePull(t *testing.T) {
 	if f.bodies[2]["sha"] != "c0ffee0000000000000000000000000000000000" || f.bodies[2]["force"] != false {
 		t.Fatalf("ref body %v", f.bodies[2])
 	}
-	if !strings.Contains(out, ".github#5: committed c0ffee000000: move 1 template files") {
+	if !strings.Contains(out, ".github#5: committed c0ffee000000: move 1 files") {
 		t.Fatalf("out:\n%s", out)
 	}
 }
@@ -180,13 +180,77 @@ func TestSweepHomeInStepAndDryRun(t *testing.T) {
 		{"path": "templates/workflows/x.yml", "mode": "100644", "type": "blob", "sha": f.blob(tpl(oldSHA, "v2.23.0"))},
 	}
 	res, out, err := run(t, f, true)
-	if err != nil || res.Committed != 1 || len(f.writes) != 0 || !strings.Contains(out, "dry run: would move 1 template files") {
+	if err != nil || res.Committed != 1 || len(f.writes) != 0 || !strings.Contains(out, "dry run: would move 1 files") {
 		t.Fatalf("dry: res %+v err %v writes %v\n%s", res, err, f.writes, out)
 	}
 	f.trees["head5"][1]["sha"] = f.blob(tpl(newSHA, "v2.24.0"))
 	res, out, err = run(t, f, false)
 	if err != nil || res.Committed != 0 || len(f.writes) != 0 || !strings.Contains(out, "templates at the workflows' pins") {
 		t.Fatalf("in step: res %+v err %v writes %v\n%s", res, err, f.writes, out)
+	}
+}
+
+const staleEnv = "# Copyright\n# the versions\nRUFF_VERSION=0.17.5\nCOVERAGE_VERSION=7.17.3\nSTATICCHECK_VERSION=2026.2.2\n"
+
+// A pip bump of tools/requirements/*.in with a stale tools/versions.env gets
+// exactly the key line changed, and nothing else (#809).
+func TestSweepSyncsVersionsEnv(t *testing.T) {
+	f := newFake()
+	f.repos = []repo{{Name: ".github", FullName: Home, DefaultBranch: "main"}}
+	f.pulls[Home] = []map[string]any{pr(804, Home, "dependabot/pip/tools/requirements/ruff-0.17.6", "head804", Bot)}
+	f.trees["head804"] = []map[string]any{
+		{"path": ".github/workflows/ci.yml", "mode": "100644", "type": "blob", "sha": f.blob(wf(newSHA, "v2.24.0"))},
+		{"path": "templates/workflows/x.yml", "mode": "100644", "type": "blob", "sha": f.blob(tpl(newSHA, "v2.24.0"))},
+		{"path": "tools/requirements/python-ci.in", "mode": "100644", "type": "blob", "sha": f.blob("# lock\nruff==0.17.6\ncoverage==7.17.3\n")},
+		{"path": "tools/requirements/ci.in", "mode": "100644", "type": "blob", "sha": f.blob("shellcheck-py==0.11.0.1\n")},
+		{"path": "tools/versions.env", "mode": "100644", "type": "blob", "sha": f.blob(staleEnv)},
+	}
+	res, out, err := run(t, f, false)
+	if err != nil || res.Committed != 1 {
+		t.Fatalf("res %+v err %v\n%s", res, err, out)
+	}
+	entries := f.bodies[0]["tree"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("tree %v", entries)
+	}
+	e := entries[0].(map[string]any)
+	want := strings.Replace(staleEnv, "RUFF_VERSION=0.17.5", "RUFF_VERSION=0.17.6", 1)
+	if e["path"] != "tools/versions.env" || e["content"] != want || e["mode"] != "100644" {
+		t.Fatalf("entry %v", e)
+	}
+	if !strings.Contains(out, "tools/versions.env: RUFF_VERSION 0.17.5 -> 0.17.6 (tools/requirements/python-ci.in)") {
+		t.Fatalf("out:\n%s", out)
+	}
+	// once committed, the next run finds nothing to do
+	f.trees["head804"][4]["sha"] = f.blob(want)
+	f.writes, f.bodies = nil, nil
+	res, out, err = run(t, f, false)
+	if err != nil || res.Committed != 0 || len(f.writes) != 0 {
+		t.Fatalf("in step: res %+v err %v writes %v\n%s", res, err, f.writes, out)
+	}
+}
+
+func TestSyncVersions(t *testing.T) {
+	text, notes, err := SyncVersions(staleEnv, map[string]string{
+		"tools/requirements/python-ci.in": "ruff==0.17.6\ncoverage==7.18.0  # a comment\n# ruff==9.9.9\nunpinned>=1\n",
+	})
+	want := strings.NewReplacer("RUFF_VERSION=0.17.5", "RUFF_VERSION=0.17.6", "COVERAGE_VERSION=7.17.3", "COVERAGE_VERSION=7.18.0").Replace(staleEnv)
+	if err != nil || text != want || len(notes) != 2 {
+		t.Fatalf("text %q notes %v err %v", text, notes, err)
+	}
+	if text, notes, err := SyncVersions(staleEnv, map[string]string{"a.in": "ruff==0.17.5\n"}); err != nil || text != staleEnv || notes != nil {
+		t.Fatalf("in step: %q %v %v", text, notes, err)
+	}
+	if _, _, err := SyncVersions(staleEnv, map[string]string{"a.in": "ruff==1\n", "b.in": "ruff==2\n"}); err == nil {
+		t.Fatal("two inputs disagreeing on ruff: no error")
+	}
+	for path, want := range map[string]bool{
+		"tools/requirements/ci.in": true, "tools/requirements/ci.txt": false,
+		"tools/requirements/x/y.in": false, "requirements/ci.in": false,
+	} {
+		if Requirement(path) != want {
+			t.Errorf("Requirement(%q) != %v", path, want)
+		}
 	}
 }
 
