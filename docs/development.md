@@ -21,7 +21,7 @@ contract); how issues and pull requests work is
 | Linux or macOS, `git`, `bash` | any recent | everything |
 | Python | 3.11 or newer (`tomllib`) | every tool (standard library only) |
 | PyYAML | any recent | parsing the issue forms (the "Forms, labels, style parse" check) |
-| ruff | `RUFF_VERSION` in [`tools/versions.env`](../tools/versions.env) (0.17.1) | Python lint and format |
+| ruff | `RUFF_VERSION` in [`tools/versions.env`](../tools/versions.env) (0.17.5) | Python lint and format |
 | Go | go.mod's `toolchain` version (1.27.4), as `GOTOOLCHAIN=local` in CI | the Go tools (`cmd/`, `internal/`) and the go-ci fixtures |
 | staticcheck, govulncheck | `STATICCHECK_VERSION`, `GOVULNCHECK_VERSION` in `tools/versions.env` | the Go checks of reusable-go-ci.yml |
 | Docker | any recent | only to build the `ci-tools` image locally |
