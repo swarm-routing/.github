@@ -230,4 +230,14 @@ func TestMainStalled(t *testing.T) {
 	if code != 1 || !strings.Contains(out.String(), "issue: opened #90\n") || errb.String() != "backstop: 1 row(s) stalled\n" || len(f.dispatches) != 1 {
 		t.Errorf("stalled: %d %q %q", code, out.String(), errb.String())
 	}
+	// a dry run (the image's smoke, a pull request) reports it and exits 0
+	g := &titledGitHub{}
+	srv2 := httptest.NewServer(g)
+	defer srv2.Close()
+	out.Reset()
+	errb.Reset()
+	code = Main([]string{"--config", "t.toml", "--dry-run", "--now", now.Format(time.RFC3339)}, tok, srv2.Client(), srv2.URL, &out, &errb)
+	if code != 0 || !strings.Contains(out.String(), ": stalled: ") || errb.String() != "backstop: 1 row(s) stalled\n" || len(g.dispatches) != 0 {
+		t.Errorf("dry run, stalled: %d %q %q", code, out.String(), errb.String())
+	}
 }

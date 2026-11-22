@@ -221,7 +221,7 @@ func TestRepositoryTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries, err := Load(data)
-	if err != nil || len(entries) != 4 {
+	if err != nil || len(entries) != 7 {
 		t.Fatalf("%v %d", err, len(entries))
 	}
 }

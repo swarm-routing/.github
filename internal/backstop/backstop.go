@@ -492,7 +492,8 @@ var agoRe = regexp.MustCompile(`the last ended [^)]*`)
 
 // Main is the command: backstop [--config FILE] [--issue] [--dry-run] [--now RFC3339].
 // GH_TOKEN (needs Actions: write on each repository to dispatch; read to check;
-// with --issue, Issues: write here). It exits 1 when a row failed or is stalled.
+// with --issue, Issues: write here). It exits 1 when a row failed, or is
+// stalled outside a dry run.
 func Main(args []string, getenv func(string) string, client *http.Client, api string, stdout, stderr io.Writer) int {
 	config, dry, keep, nowS := ".github/backstop.toml", false, false, ""
 	for i := 0; i < len(args); i++ {
@@ -558,9 +559,13 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 			fmt.Fprintln(stdout, line)
 		}
 	}
+	// a dry run reports a stalled row and still exits 0: it is a read (the
+	// image's smoke, a pull request's check), not the alarm
 	if len(stalled) > 0 {
 		fmt.Fprintf(stderr, "backstop: %d row(s) stalled\n", len(stalled))
-		code = 1
+		if !dry {
+			code = 1
+		}
 	}
 	return code
 }
