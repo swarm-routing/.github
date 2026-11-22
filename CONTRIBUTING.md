@@ -509,6 +509,28 @@ defaults in `templates/agents/agent-defaults.md`).
 - `Closes #N` in a PR body closes the issue on merge; write `Part of #N` while
   acceptance criteria remain open.
 
+### Tests
+
+The test policy of every org repository (a repository's own CONTRIBUTING may
+add to it, never take away):
+
+- **A change that adds or changes behaviour carries a test**, in the same PR:
+  a `feat` adds the test that shows the new behaviour; a `fix` starts with a
+  reproducing test that fails before the fix and passes after it; a
+  `refactor` or `perf` keeps the existing tests passing before and after
+  (AntHocNet golden rule 7, the org's Working defaults). A protocol's
+  `core/` logic is tested in `core/test/`, a Python tool by its `--self-test`
+  or `test_*.py`, a Go tool by `go test`, a workflow by its self-test
+  workflow.
+- **Changes with no behaviour need none**: docs, comments, CI settings, a
+  release bump. Say so in the PR's Verification ("no behaviour change").
+- **The PR template's checklist line** asks for it, and a reviewer (CodeRabbit
+  included) asks for the test when it is missing.
+- **Never a test written for a number.** A test checks behaviour someone
+  relies on. bestpractices.dev's `tests_are_added` is read from the merged
+  `feat`/`fix` PRs (OpenSSF Best Practices below); it follows this policy, it
+  does not replace it (#635).
+
 ## Dependencies
 
 How one org repository builds on another's code (swarm-routing/ns3-swarm-core#134,
@@ -1902,6 +1924,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | C++ coverage (gcovr), report-only. With `coverage-branch-filter: true`, the branches gcov adds for exception edges and those gcovr's heuristic judges unreachable are not counted (`--exclude-throw-branches --exclude-unreachable-branches`; decision of 2026-11-15, #425), so the Codecov and SonarQube Cloud condition coverage is closer to the conditions a test can take (a heuristic, not proof that each remaining branch is reachable) | `reusable-ns3-ci.yml` `coverage` | off; the branch filter off unless the caller sets `coverage-branch-filter: true` (ns3-swarm-core does) |
 | SonarQube Cloud CI analysis (compile database + gcovr coverage of the repo's own modules) | `reusable-ns3-ci.yml` `sonar` + the org secret `SONAR_TOKEN`; the repo's `sonar-project.properties` (org-sync seed). A repo with Python passes `sonar-python-coverage: python-coverage` and makes the CI job `needs:` its `reusable-python-ci.yml` job in the same workflow, so the one analysis imports coverage.py's report too (SonarQube Cloud keeps one analysis per branch) | off; skipped on fork PRs and while the project is on Automatic Analysis |
 | Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed). It uploads the `coverage` artifact, so the CI job needs `coverage` or `sonar` on and the `debug` profile | off; an upload failure, or no artifact, never fails CI |
+| clang-tidy (org `.clang-tidy`: bug-finding and performance checks), findings as errors, on a protocol's `core/` sources (its tests excluded) | the repository's `core` check (`core.yml`), which sparse-checks `.clang-tidy` out of this repository as it does `.clang-format` (#635) | on in ARA, BeeAdHoc, Termite and HOPNET |
 | Container lint and scans: hadolint, Trivy config and image reports to code scanning | `ns3-containers` `container-security.yml`, `publish-images.yml` | on there |
 | ruff check + format (org `ruff.toml`) and Python coverage, report-only, child Python processes included (`patch = subprocess`, #480; a repo's own coverage config wins) | `reusable-python-ci.yml` (`measure-subprocesses: false` measures the test process only) | on in every caller |
 | OpenSSF Scorecard, report-only: score published to the OpenSSF API (badge) and SARIF to code scanning | `reusable-scorecard.yml`, called by org-sync's `.github/workflows/scorecard.yml` (weekly, on push to `main`, on demand) | on in every public repo; a private one lists the workflow in `skip` |
