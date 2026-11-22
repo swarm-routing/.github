@@ -101,7 +101,7 @@ Each tool's docstring (the top of the file) is its manual.
 Only the `ci-tools` image is built here: `docker build -f
 docker/ci-tools/Dockerfile -t ci-tools .` from the root, then
 `docker run --rm ci-tools list`. The images the reusable workflows use
-(`ghcr.io/swarm-routing/ns3-dev`) are built in swarm-routing/ns3-containers.
+(`ghcr.io/swarm-routing/ns3-dev`) are built in swarm-routing/sim-containers.
 There is no `.devcontainer/`.
 
 ## Lint and format

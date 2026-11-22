@@ -27,7 +27,7 @@ jobs:
     uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
     with:
       modules: ara=ns3
-      dependencies: swarm-core=swarm-routing/ns3-swarm-core@main
+      dependencies: swarm-core=swarm-routing/swarm-adapter-ns3@main
 ```
 
 Inputs are documented at the top of the workflow file.

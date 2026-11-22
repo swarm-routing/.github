@@ -41,7 +41,7 @@ runs in Actions and in images. This ADR records it.
    `swarm-routing/skills` procedures, `lit_search.py`,
    `check_invariants.py`) may stay Python; a skill may call a Go tool when
    the work is one a pipeline already does.
-3. **swarm-routing/ns3-tools stays Python + C++.** Its readers and statistics
+3. **swarm-routing/sim-tools stays Python + C++.** Its readers and statistics
    are a research CLI, published to PyPI, used outside the org's pipelines.
 4. **Existing Python pipelines migrate gradually, never in bulk** (#531):
    one tool per PR, each port proving **byte-identical output** with the
@@ -140,7 +140,7 @@ repository's `cmd/`:
   calls it over HTTP with the token it is given. Adding git or `gh` to the
   image is a later decision of its own, with its size and attack surface
   stated, not a side effect of a port.
-- **What is tested is what is tagged** (swarm-routing/ns3-containers golden
+- **What is tested is what is tagged** (swarm-routing/sim-containers golden
   rule 17): a change to the Go code or the image builds the image once,
   pushes it as a candidate to `ghcr.io/swarm-routing/ci-tools-dev`, checks
   that the pushed digest is the image it tested, and runs the image's tests
