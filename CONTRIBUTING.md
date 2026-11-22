@@ -252,9 +252,11 @@ repository is never added. To change what the Project shows, change the
 issue or its labels, or `plan.json` by a pull request; never edit the
 Project by hand, and never cite it as the record. It syncs hourly, and
 within minutes of an issue change that can move it (org-bot, "Automation"
-below). The pilot (Releases and
-RCAPA views on ARA, ns3-swarm-core and ns3-tools) widens to every public
-repository by a `plan.json` change.
+below). It covers every public org repository: the list is read from the
+org at each run (`repositories` in `plan.json` is empty), so a new or renamed
+repository is in the Project from its next sync, with no edit here. The
+first views are Releases and RCAPA; more views (epics, priorities, handoffs)
+are a `plan.json` change.
 
 ### RCAPA
 

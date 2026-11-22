@@ -307,7 +307,7 @@ jobs:
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:47de777a458c52a808a970ba1c2cd1a557c991c26deebde249f5ee9c95a75547  # promoted from bd03540 (#650)
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:4c57d100f9e6a745c6c7e669c92b0fc5a7441f966f2f936b1de0ffc37abb9b3d  # promoted from fcef343: has the visibility fix (#655)
         run: |
           set -o pipefail
           args=()
