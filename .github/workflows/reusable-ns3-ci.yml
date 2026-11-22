@@ -24,14 +24,14 @@ name: Reusable ns-3 CI
 #       uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@main
 #       with:
 #         modules: ara=ns3
-#         dependencies: swarm-core=swarm-routing/ns3-swarm-core@main
+#         dependencies: swarm-core=swarm-routing/swarm-adapter-ns3@main
 #         run: ara-example --seed=1
 #         ns3-versions: ${{ inputs.ns3-versions || '["latest"]' }}
 #
 # `ns3-versions` defaults to ["latest"]: the release ns-3 supports (it maintains its
 # latest only), via the `latest-<profile>` tags, so automatic CI follows ns-3
 # with no edit (CONTRIBUTING invariant 7). Older releases are on demand: their
-# images are history in ns3-containers, or built there on request.
+# images are history in sim-containers, or built there on request.
 #
 # Quality gates (all default off, so existing callers see no change; rule 10):
 #   strict-warnings  -Wall -Wextra -Wpedantic -Wshadow ... -Werror on this repo's
@@ -74,7 +74,7 @@ name: Reusable ns-3 CI
 # reusable-codecov.yml with `permissions: { contents: read, id-token: write }`;
 # it uploads the `coverage` artifact this workflow keeps (coverage.xml).
 # strict-warnings and coverage need an image whose ns3-build-contrib has the
-# options (swarm-routing/ns3-containers; the step fails clearly otherwise).
+# options (swarm-routing/sim-containers; the step fails clearly otherwise).
 #
 # Module specs are `name=path` (path relative to the caller's checkout) or a
 # bare path whose basename is the module name. The name must equal the
@@ -315,7 +315,7 @@ jobs:
             want=${opt%%:*}; flag=${opt#*:}
             if { [ "$want" = strict ] && [ "$STRICT" = true ]; } || { [ "$want" = coverage ] && [ "$COVERAGE" = true ]; }; then
               ns3-build-contrib --help | grep -q -- "$flag" || {
-                echo "::error::this image's ns3-build-contrib has no $flag (needs a current swarm-routing/ns3-containers image)"; exit 1; }
+                echo "::error::this image's ns3-build-contrib has no $flag (needs a current swarm-routing/sim-containers image)"; exit 1; }
               args+=("$flag")
             fi
           done
@@ -384,7 +384,7 @@ jobs:
         run: |
           set -euo pipefail
           # The debug and sanitized ns3-dev images carry a pinned gcovr
-          # (swarm-routing/ns3-containers#83); apt is only the fallback for an
+          # (swarm-routing/sim-containers#83); apt is only the fallback for an
           # older image. That fallback fails fast on a broken index
           # (--error-on=any: a failed fetch is otherwise only a warning and the
           # install fails later) and retries the update 3 times, 10 s then 20 s
@@ -407,7 +407,7 @@ jobs:
           sonar_args=()
           if [ "$SONAR" = true ]; then sonar_args=(--sonarqube "$src/coverage-sonar.xml"); fi
           # Without these, every call that may throw adds a branch no test can
-          # take: ns3-swarm-core counted 4303 conditions for 2247 lines (#425).
+          # take: swarm-adapter-ns3 counted 4303 conditions for 2247 lines (#425).
           branch_args=()
           if [ "$BRANCH_FILTER" = true ]; then branch_args=(--exclude-throw-branches --exclude-unreachable-branches); fi
           gcovr --root "$src" --filter "$src/" --exclude "$src/$EXCLUDE" "${sonar_args[@]}" "${branch_args[@]}" \

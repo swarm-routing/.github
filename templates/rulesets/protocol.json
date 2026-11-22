@@ -1,5 +1,5 @@
 {
-  "about": "Protocol repositories (AntHocNet, ARA, BeeAdHoc, HOPNET, Termite, ns3-swarm-core): AntHocNet's main ruleset of 2026-11-10. `code_scanning` and `code_quality` apply only where [settings] code_scanning = true; `required_status_checks` takes [settings] required_checks and is dropped when there are none.",
+  "about": "Protocol repositories (AntHocNet, ARA, BeeAdHoc, HOPNET, Termite, swarm-adapter-ns3): AntHocNet's main ruleset of 2026-11-10. `code_scanning` and `code_quality` apply only where [settings] code_scanning = true; `required_status_checks` takes [settings] required_checks and is dropped when there are none.",
   "repo": {
     "allow_squash_merge": true,
     "allow_merge_commit": false,

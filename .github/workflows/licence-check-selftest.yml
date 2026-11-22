@@ -25,4 +25,4 @@ jobs:
       dual-roots: 'cmd/ internal/ tools/'
       core-roots: ''
       exclude: '^(\.claude|\.devcontainer)/'
-      core-deps: swarm-routing/ns3-swarm-core@ff097aeb1f6237fb9796ff4713e91524fb5b4d3f:core
+      core-deps: swarm-routing/swarm-adapter-ns3@ff097aeb1f6237fb9796ff4713e91524fb5b4d3f:core

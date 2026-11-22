@@ -270,7 +270,7 @@ INSERT_AFTER = {
     # after the skills block, before the repository's own table (#277: what
     # CLAUDE.md held, so CLAUDE.md is only `@AGENTS.md`)
     ("AGENTS.md", "agent-defaults"): r"\n(?=\n?## Where to look\n)",
-    # how a protocol gets swarm-core (swarm-routing/ns3-swarm-core#134): after
+    # how a protocol gets swarm-core (swarm-routing/swarm-adapter-ns3#134): after
     # Build & verify, before the golden rules
     ("AGENTS.md", "dependencies"): r"\n(?=\n?## Golden rules)",
     # an existing CODEOWNERS keeps its rules; the org's go last (the last match wins)
@@ -397,7 +397,7 @@ PROFILE_BADGES = {
         (
             "Images signed: cosign",
             shield("images signed", "cosign", "success"),
-            "https://github.com/swarm-routing/ns3-containers/blob/main/SECURITY.md",
+            "https://github.com/swarm-routing/sim-containers/blob/main/SECURITY.md",
         ),
     ],
     "Stack": [
@@ -409,17 +409,17 @@ PROFILE_BADGES = {
         (
             "C++23",
             shield("C++", "23", "blue") + "?logo=cplusplus",
-            "https://github.com/swarm-routing/ns3-swarm-core",
+            "https://github.com/swarm-routing/swarm-adapter-ns3",
         ),
         (
             "Python 3.10+",
             "https://img.shields.io/badge/python-3.10%2B-blue?logo=python",
-            "https://github.com/swarm-routing/ns3-swarm-core",
+            "https://github.com/swarm-routing/swarm-adapter-ns3",
         ),
         (
             "Go 1.27",
             "https://img.shields.io/badge/go-1.27-blue?logo=go",
-            "https://github.com/swarm-routing/ns3-swarm-core",
+            "https://github.com/swarm-routing/swarm-adapter-ns3",
         ),
     ],
     "Open Tickets": [
@@ -533,7 +533,7 @@ def swarm_core_mode(repo_dir):
     vcpkg.json that depends on swarm-core, #489), "lock" (swarm-core.lock), "pin"
     (a commit SWARM_CORE_REF in core/CMakeLists.txt) or None. The `dependencies`
     section of AGENTS.md renders only where one holds, in the matching text, so
-    it never says what the repository cannot back (swarm-routing/ns3-swarm-core#134)."""
+    it never says what the repository cannot back (swarm-routing/swarm-adapter-ns3#134)."""
     if os.path.exists(os.path.join(repo_dir, "swarm-core.lock")):
         try:
             deps = json.loads(read(os.path.join(repo_dir, "vcpkg.json")) or "{}")
@@ -1229,7 +1229,7 @@ def badges_by_kind(cfg, repo_dir):
                 f"(https://github.com/{repo}/blob/main/docs/rcapa/README.md)"
             )
         elif b == "ns3-bugs" and os.path.exists(os.path.join(repo_dir, "docs/ns3-bugs.md")):
-            # the upstream ns-3 bug register (ns3-tools): open tickets labelled `ns3-upstream`
+            # the upstream ns-3 bug register (sim-tools): open tickets labelled `ns3-upstream`
             out[b] = (
                 f"[![ns-3 bugs](https://img.shields.io/github/issues/{repo}/ns3-upstream"
                 "?label=ns-3%20bugs&color=blue)](docs/ns3-bugs.md)"

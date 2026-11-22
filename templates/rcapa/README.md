@@ -6,7 +6,7 @@ it that another project consumes (a release pinned by a lock, PyPI, a vcpkg
 port) worked, and a later one broke. A bug or change that never reached a
 published version needs none (an ordinary `bug` issue is enough), a Docker
 image needs one only when its composition is the cause, and an upstream
-ns-3 bug is an `NS3-NNN` in swarm-routing/ns3-tools. If nothing consumes
+ns-3 bug is an `NS3-NNN` in swarm-routing/sim-tools. If nothing consumes
 this repository at a version, write here that RCAPA does not apply to its
 own changes, and why. The org's rule and its decision table are in
 [CONTRIBUTING.md, "RCAPA"](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md#rcapa)
