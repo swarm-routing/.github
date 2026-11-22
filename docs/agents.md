@@ -29,18 +29,29 @@ In the order the 2026-11-22 audit ranked them:
 
 1. **Attach only the repositories the task needs.** Each attached repository's
    agent files cost 8,000 to 13,000 tokens on every request of the session and
-   of every subagent.
-2. **Delegate single-repository work to a worker that skips the others'
+   of every subagent. In the audited session (13 repositories attached,
+   measured with `token_audit.py`), the agent files were about 114,000 of
+   the 141,050 tokens of its first request (81 %), carried on each of its
+   5,675 requests (about 2.49 billion tokens read from cache in all).
+2. **Start the session inside a repository folder.** The `swarm-routing`
+   plugin, and with it swarm-mcp, the `org-worker` agent and the skills,
+   loads only from the `.claude/settings.json` of the folder the session
+   starts in. A hosted session with several repositories that starts in
+   their parent folder (`/home/user`) reads none, so it has no swarm-mcp
+   tools and no `org-worker`, as the audited session had none. Start in the
+   repository the task is about; check that the session lists the
+   `swarm-routing` skills before relying on them.
+3. **Delegate single-repository work to a worker that skips the others'
    agent files** (`omitClaudeMd: true`; the `org-worker` agent,
    swarm-routing/skills#186), and read-only searches to the built-in Explore
    agent, which skips them too.
-3. **Search large outputs, never read them whole**: an output the harness
+4. **Search large outputs, never read them whole**: an output the harness
    saved to a file goes through `grep`, `head`, `sed -n` or a section reader
    (#286). Wait on a PR with `tools/pr-status/pr_status.py`, not by
    subscribing to its activity (below; #794).
-4. **Run the script, read its verdict** (AntHocNet ADR-0014; #286 adds the
+5. **Run the script, read its verdict** (AntHocNet ADR-0014; #286 adds the
    issue index and readers).
-5. **Keep agent files under their budget**: `check_docs.py` fails an
+6. **Keep agent files under their budget**: `check_docs.py` fails an
    AGENTS.md whose org-sync sections pass 23,200 B, and its self-test fails a
    template PR that would (#793). A template PR states its byte delta
    (`token_audit.py files` before and after).
