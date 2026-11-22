@@ -176,7 +176,7 @@ func TestSyncOpensUpdatesAdoptsCloses(t *testing.T) {
 	}
 	f.issues["X"][0]["body"] = Body(cs1(), now)
 	g := f.server(t)
-	res, err := Sync(g, Repo{Name: "X"}, now, false)
+	res, err := Sync(g, Repo{Name: "X"}, now, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestSyncOpensUpdatesAdoptsCloses(t *testing.T) {
 	f.writes = nil
 	f.issues["X"] = f.issues["X"][2:] // 5, 6 dropped; 7 still listed by this fake (closed by the run)
 	f.issues["X"] = f.issues["X"][2:]
-	res, err = Sync(g, Repo{Name: "X"}, now, true)
+	res, err = Sync(g, Repo{Name: "X"}, now, true, nil)
 	if err != nil || len(f.writes) != 0 || res.Opened != 2 {
 		t.Errorf("a dry run writes nothing: %v %v", f.writes, err)
 	}
@@ -254,7 +254,7 @@ func TestMainAndReport(t *testing.T) {
 	o := out.String()
 	if rc != 0 || strings.Contains(o, "secretproj") || !strings.Contains(o, "private repository 1: code scanning alert #4: opened") ||
 		!strings.Contains(o, "pub: secret scanning alert #1: opened") || strings.Contains(o, "old:") ||
-		!strings.Contains(o, "security-alerts: 3 repositories, 2 open alerts; opened 2, updated 0, closed 0 tickets") ||
+		!strings.Contains(o, "security-alerts: 3 repositories, 2 open alerts; opened 2, updated 0, closed 0 tickets, 0 new left for later runs") ||
 		!strings.Contains(o, "report: opened #") {
 		t.Errorf("rc %d\n%s\n%s", rc, o, errb.String())
 	}
@@ -311,5 +311,53 @@ func TestListFollowsLink(t *testing.T) {
 	got, err := list[rawAlert](GitHub{API: srv.URL, Client: srv.Client()}, "repos/x/dependabot/alerts?state=open")
 	if err != nil || len(got) != 2 || got[1].Number != 2 {
 		t.Errorf("two pages through the Link header: %v %v", got, err)
+	}
+}
+
+// A first listing of hundreds of alerts opens them over several runs: at
+// most PerRepo in a repository and Total in the run, the highest priority
+// first, then the oldest.
+func TestBudget(t *testing.T) {
+	f := &fakeOrg{
+		repos: []map[string]any{{"name": "A"}, {"name": "B"}},
+		alerts: map[string][]map[string]any{
+			"A code-scanning/alerts": {
+				cs("A", 1, "CodeQL", "low", "2026-01-01T00:00:00Z"),
+				cs("A", 2, "CodeQL", "medium", "2026-11-10T00:00:00Z"),
+				cs("A", 3, "CodeQL", "high", "2026-11-12T00:00:00Z"),
+				cs("A", 4, "CodeQL", "high", "2026-11-11T00:00:00Z"),
+			},
+			"B code-scanning/alerts": {cs("B", 1, "CodeQL", "low", "2026-11-01T00:00:00Z"), cs("B", 2, "CodeQL", "low", "2026-11-02T00:00:00Z")},
+		},
+		status: map[string]int{}, issues: map[string][]map[string]any{},
+	}
+	g := f.server(t)
+	b := &Budget{PerRepo: 2, Total: 3}
+	a, err := Sync(g, Repo{Name: "A"}, now, false, b)
+	if err != nil || a.Opened != 2 || a.Deferred != 2 || b.Total != 1 {
+		t.Fatalf("A: opened %d deferred %d left %d %v", a.Opened, a.Deferred, b.Total, err)
+	}
+	if !strings.Contains(a.Messages[0], "alert #4:") || !strings.Contains(a.Messages[1], "alert #3:") {
+		t.Errorf("the two high alerts, the older first: %v", a.Messages)
+	}
+	bb, _ := Sync(g, Repo{Name: "B"}, now, false, b)
+	if bb.Opened != 1 || bb.Deferred != 1 || b.Total != 0 || !strings.Contains(bb.Messages[0], "alert #1:") {
+		t.Errorf("B: the run's last ticket: %+v", bb)
+	}
+	// the next run opens what waited, and updates nothing it opened
+	b = &Budget{PerRepo: 2, Total: 3}
+	a, _ = Sync(g, Repo{Name: "A"}, now, false, b)
+	if a.Opened != 2 || a.Deferred != 0 || a.Updated != 0 {
+		t.Errorf("A again: %+v", a)
+	}
+	var out, errb bytes.Buffer
+	env := func(string) string { return "tok" }
+	if rc := Main([]string{"--max-new", "x"}, env, g.Client, g.API, &out, &errb); rc != 2 {
+		t.Error("--max-new needs a number")
+	}
+	out.Reset()
+	if rc := Main([]string{"--dry-run", "--max-new", "0", "--now", "2026-11-17T00:00:00Z"}, env, g.Client, g.API, &out, &errb); rc != 0 ||
+		!strings.Contains(out.String(), "would have opened 0, updated 0, closed 0 tickets, 1 new left for later runs") {
+		t.Errorf("--max-new 0: %s", out.String())
 	}
 }

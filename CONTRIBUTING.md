@@ -1151,6 +1151,11 @@ alert's repository it keeps one issue per alert:
   boundary (#621), so alert 1's ticket never stands for alert 10. An open
   `bug` issue that already names the alert, such as one the `bestpractices`
   check opened before this task, is adopted, not duplicated.
+- **Bounded:** a run opens at most 30 new tickets, at most 3 in one
+  repository, the highest priority and then the oldest first; the rest wait
+  for the next hour. The first listing found 469 open alerts, so they land
+  over a day rather than in one burst that would trip GitHub's
+  content-creation limits.
 - **Kept current:** the ticket is updated in place, and the task closes it
   with a comment once the alert is no longer open (fixed, or dismissed by
   the maintainer). It closes a ticket only when it could read that kind of

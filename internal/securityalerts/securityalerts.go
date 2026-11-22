@@ -40,6 +40,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -466,6 +467,7 @@ type Result struct {
 	Alerts   []Alert
 	Unread   []string // kinds whose listing could not be read
 	Opened   int
+	Deferred int // new alerts left for a later run (the Budget)
 	Updated  int
 	Closed   int
 	Adopted  int
@@ -473,8 +475,24 @@ type Result struct {
 	Messages []string
 }
 
-// Sync reads one repository's alerts and keeps its tickets.
-func Sync(g GitHub, r Repo, now time.Time, dry bool) (Result, error) {
+// Budget bounds the new tickets of a run: PerRepo in each repository and
+// Total over the run, so a first listing of hundreds of alerts opens them
+// over several hours, the highest priority first, without tripping GitHub's
+// content-creation limits. Updates and closes are never bounded. A nil
+// Budget is no bound.
+type Budget struct {
+	PerRepo, Total int
+}
+
+// Defaults for the command's flags.
+const (
+	DefaultPerRepo = 3
+	DefaultTotal   = 30
+)
+
+// Sync reads one repository's alerts and keeps its tickets, opening new
+// ones within b.
+func Sync(g GitHub, r Repo, now time.Time, dry bool, b *Budget) (Result, error) {
 	res := Result{Repo: r}
 	full := Org + "/" + r.Name
 	read := map[string]bool{}
@@ -515,12 +533,22 @@ func Sync(g GitHub, r Repo, now time.Time, dry bool) (Result, error) {
 		}
 	}
 	open := map[string]bool{}
-	sort.Slice(res.Alerts, func(i, j int) bool {
-		if res.Alerts[i].Kind != res.Alerts[j].Kind {
-			return res.Alerts[i].Kind < res.Alerts[j].Kind
+	// the highest priority first, then the oldest, so a bounded run opens
+	// what matters most
+	sort.SliceStable(res.Alerts, func(i, j int) bool {
+		x, y := res.Alerts[i], res.Alerts[j]
+		if px, py := x.Priority(now), y.Priority(now); px != py {
+			return px < py
 		}
-		return res.Alerts[i].Number < res.Alerts[j].Number
+		if !x.Created.Equal(y.Created) {
+			return x.Created.Before(y.Created)
+		}
+		if x.Kind != y.Kind {
+			return x.Kind < y.Kind
+		}
+		return x.Number < y.Number
 	})
+	perRepo := 0
 	for _, a := range res.Alerts {
 		open[a.URL] = true
 		title, body, labels := Title(a), Body(a, now), Labels(a, now)
@@ -535,6 +563,14 @@ func Sync(g GitHub, r Repo, now time.Time, dry bool) (Result, error) {
 			}
 		}
 		if !ok {
+			if b != nil && (perRepo >= b.PerRepo || b.Total <= 0) {
+				res.Deferred++
+				continue
+			}
+			perRepo++
+			if b != nil {
+				b.Total--
+			}
 			res.Opened++
 			msg := fmt.Sprintf("%s alert #%d: open a ticket (%s)", a.Kind, a.Number, "priority:"+a.Priority(now))
 			if !dry {
@@ -733,16 +769,20 @@ func Report(g GitHub, body string, dry bool) (string, error) {
 	return fmt.Sprintf("report: opened #%d", got.Number), nil
 }
 
-const usage = `usage: security-alerts [--repos A,B] [--report] [--dry-run] [--now RFC3339]
+const usage = `usage: security-alerts [--repos A,B] [--report] [--dry-run] [--max-new N] [--max-new-per-repo N] [--now RFC3339]
 
 Keeps one issue (label security) per open code-scanning, Dependabot and
 secret-scanning alert in every org repository (or --repos), with the org
 App's token in GH_TOKEN; --report also refreshes the summary issue in
-swarm-routing/.github. --dry-run only reads. Exit 0 done, 1 failed, 2 usage.`
+swarm-routing/.github. A run opens at most --max-new new tickets (default 30),
+at most --max-new-per-repo in one repository (default 3), the highest
+priority first; the rest wait for the next run. --dry-run only reads.
+Exit 0 done, 1 failed, 2 usage.`
 
 // Main is the command.
 func Main(args []string, getenv func(string) string, client *http.Client, api string, stdout, stderr io.Writer) int {
 	dry, report, nowS := false, false, ""
+	budget := Budget{PerRepo: DefaultPerRepo, Total: DefaultTotal}
 	var names []string
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -750,6 +790,18 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 			dry = true
 		case a == "--report":
 			report = true
+		case (a == "--max-new" || a == "--max-new-per-repo") && i+1 < len(args):
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil || n < 0 {
+				fmt.Fprintln(stderr, usage)
+				return 2
+			}
+			if a == "--max-new" {
+				budget.Total = n
+			} else {
+				budget.PerRepo = n
+			}
+			i++
 		case (a == "--repos" || a == "--now") && i+1 < len(args):
 			if a == "--repos" {
 				for _, n := range strings.Split(args[i+1], ",") {
@@ -790,11 +842,11 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 		return 1
 	}
 	var results []Result
-	failed, alerts, opened, updated, closed, unread := 0, 0, 0, 0, 0, 0
+	failed, alerts, opened, updated, closed, unread, deferred := 0, 0, 0, 0, 0, 0, 0
 	fixes := map[string]int{}
 	for _, r := range repos {
 		name := m.Repo(r.Name, r.Private, Org+"/"+r.Name, r.Name)
-		res, err := Sync(g, r, now, dry)
+		res, err := Sync(g, r, now, dry, &budget)
 		for _, msg := range res.Messages {
 			fmt.Fprintf(stdout, "%s: %s\n", name, m.Scrub(msg))
 		}
@@ -816,6 +868,7 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 		}
 		alerts += len(res.Alerts)
 		opened += res.Opened
+		deferred += res.Deferred
 		updated += res.Updated
 		closed += res.Closed
 		results = append(results, res)
@@ -824,8 +877,9 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 	if dry {
 		verb = "would have "
 	}
-	fmt.Fprintf(stdout, "security-alerts: %d repositories, %d open alerts; %sopened %d, updated %d, closed %d tickets; "+
-		"%d with an unreadable listing, %d failed\n", len(repos), alerts, verb, opened, updated, closed, unread, failed)
+	fmt.Fprintf(stdout, "security-alerts: %d repositories, %d open alerts; %sopened %d, updated %d, closed %d tickets, "+
+		"%d new left for later runs; %d with an unreadable listing, %d failed\n", len(repos), alerts, verb, opened, updated, closed,
+		deferred, unread, failed)
 	if report {
 		out, err := Report(g, ReportBody(results, fixes, &m, now), dry)
 		if err != nil {
