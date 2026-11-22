@@ -95,6 +95,7 @@ docker/ci-tools/Dockerfile the ci-tools image: golang build stage (go vet, go te
 .github/dependabot.yml     Dependabot version updates: the Dockerfile's two bases, the root module's dependencies
 .github/workflows/ci-tools-image.yml   the ci-tools image, on every PR and merge group: `changes` (any changed path in BUILD_PATHS, the push trigger's list), and the required check `ci-tools image gate` (green when no build path changed or when go, dockerfile and image all passed, #610); reusable-go-ci on the root module, `dockerfile`: hadolint + Trivy config + golang tag = toolchain, build once, candidate push to ci-tools-dev, tests on the candidate digest, Trivy image scan; main: promote the same digest to ci-tools (sha-<sha7>, latest), SBOM, cosign, provenance, cleanup of ci-tools-dev
 docs/adr/                  the org's architecture decisions (0001: record them; 0002: pipelines are Go, their image is distroless)
+docs/agents.md             the agent-tooling standard (ADR-0005): which MCP servers and plugins a session runs, the habits that save tokens, how to measure with token_audit.py
 LICENSE, LICENSE-MIT, LICENSING.md   the licence per path (LICENSING.md): the tooling MIT OR GPL-2.0-only, the docs GPL-2.0-only,
                                      CODE_OF_CONDUCT.md CC-BY-4.0, DCO verbatim copies only
 ```
