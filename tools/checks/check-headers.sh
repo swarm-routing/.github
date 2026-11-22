@@ -8,7 +8,7 @@
 #
 # With docker: the ci-tools image at the digest reusable-licence-check.yml
 # pins, so the same image CI runs (ADR-0002; whatever moves that digest moves
-# this one). The tool runs as your user, with the current directory mounted
+# this one), pulled with the org's retry when it is not local (#645). The tool runs as your user, with the current directory mounted
 # read-only at its own path, each --core-dep directory read-only at
 # /core-deps/<n>, and, in a worktree or a submodule (`.git` is a file), the git
 # directories at their own paths, so a relative `gitdir:` resolves as on the
@@ -47,6 +47,8 @@ if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
     run+=(-v "$abs:/core-deps/$n:ro")
     args+=(--core-dep "/core-deps/$n")
   done
+  # the image once, with the org's retry (#645); a local copy is used as it is
+  docker image inspect "$img" > /dev/null 2>&1 || "$org/.github/actions/pull-ci-tools/docker-retry.sh" pull "$img"
   exec "${run[@]}" "$img" check-headers "${args[@]}"
 fi
 
