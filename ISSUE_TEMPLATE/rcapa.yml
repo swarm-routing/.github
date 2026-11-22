@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        File this in **swarm-routing/ns3-tools**, which keeps the register: `docs/ns3-bugs.md` (the index) and one RCAPA per bug in `docs/ns3-rcapa/ns3-rcapa-<short-description>.md`.
+        File this in **swarm-routing/sim-tools**, which keeps the register: `docs/ns3-bugs.md` (the index) and one RCAPA per bug in `docs/ns3-rcapa/ns3-rcapa-<short-description>.md`.
         Replace `NNN` in the title with the next free `NS3-NNN` ID of the index. Every workaround in any repository (a `test/known-failures.txt` XFAIL, an ns-3 version pin, a refused arm) links this ID.
         Upstream reports (nsnam's tracker) are filed by the maintainer, under their own account; this issue holds the ready-to-file text.
         Add `priority:*` and `model:*` labels as for any other issue (an RCAPA is root cause work: usually `model:opus-5.5`).
@@ -77,8 +77,8 @@ body:
     attributes:
       label: Acceptance criteria
       value: |
-        - [ ] RCAPA doc in swarm-routing/ns3-tools `docs/ns3-rcapa/ns3-rcapa-<short-description>.md`
-        - [ ] Index row in swarm-routing/ns3-tools `docs/ns3-bugs.md`
+        - [ ] RCAPA doc in swarm-routing/sim-tools `docs/ns3-rcapa/ns3-rcapa-<short-description>.md`
+        - [ ] Index row in swarm-routing/sim-tools `docs/ns3-bugs.md`
         - [ ] 5 whys, each cited (an upstream source line, a log, a run)
         - [ ] Reproducer verified on `ns3-dev:latest` and on ns-3-dev master (commit recorded)
         - [ ] Corrective and preventive actions linked (issues or PRs, cross-repo form `swarm-routing/<repo>#N`)

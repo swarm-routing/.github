@@ -16,11 +16,11 @@
   refs the module builds on. A ref is a branch or a tag (`@vX.Y.Z`).
 - **Working against an unreleased swarm-core**: `-DSWARM_CORE_DIR=<checkout>/core`
   builds `core/` on a local checkout instead of the pin (development only).
-- **Next, from swarm-core v0.3.0** (swarm-routing/ns3-swarm-core#134): the
+- **Next, from swarm-core v0.3.0** (swarm-routing/swarm-adapter-ns3#134): the
   commit pin becomes a release lock, `swarm-core.lock` (tag, commit and the
   release tarball's SHA256, every value read from the release), fetched by
   `URL` + `URL_HASH`; the ns-3 `dependencies` name release tags and
   `canary-dependencies` names `@main`, a non-blocking leg outside PRs
   (swarm-routing/.github#411). The `protocol-review` check warns about a new
   dependency on a moving ref. Later: `find_package(swarm-core CONFIG)` from
-  an installed release, then a vcpkg registry (swarm-routing/ns3-swarm-core#135).
+  an installed release, then a vcpkg registry (swarm-routing/swarm-adapter-ns3#135).
