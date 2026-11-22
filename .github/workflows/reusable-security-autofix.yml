@@ -75,6 +75,11 @@ jobs:
         timeout-minutes: 2
         with:
           egress-policy: audit
+      - name: The ci-tools image (pulled with retries, swarm-routing/.github#645)
+        uses: swarm-routing/.github/.github/actions/pull-ci-tools@main
+        timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
+        with:
+          image: ${{ env.IMG }}
       - name: Pick a ticket
         id: pick
         timeout-minutes: 5
@@ -159,6 +164,12 @@ jobs:
             --max-turns 60
             --allowedTools "Read,Edit,Write,Glob,Grep,Bash(make:*),Bash(cmake:*),Bash(ctest:*),Bash(python3:*),Bash(go test:*),Bash(go build:*),Bash(go vet:*),Bash(cargo test:*),Bash(npm test:*),Bash(git diff:*),Bash(git status:*)"
             --disallowedTools "WebFetch,WebSearch"
+      - name: The ci-tools image (pulled with retries, swarm-routing/.github#645)
+        if: steps.key.outputs.ok == 'true'
+        uses: swarm-routing/.github/.github/actions/pull-ci-tools@main
+        timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
+        with:
+          image: ${{ env.IMG }}
       - name: Guard the change
         id: guard
         if: steps.key.outputs.ok == 'true'
@@ -242,6 +253,11 @@ jobs:
         with:
           name: security-fix
           path: ${{ runner.temp }}/fix
+      - name: The ci-tools image (pulled with retries, swarm-routing/.github#645)
+        uses: swarm-routing/.github/.github/actions/pull-ci-tools@main
+        timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
+        with:
+          image: ${{ env.IMG }}
       - name: Push the branch, open the PR, enable auto-merge
         timeout-minutes: 8
         env:
@@ -311,6 +327,11 @@ jobs:
         with:
           name: security-fix-refused
           path: ${{ runner.temp }}/why
+      - name: The ci-tools image (pulled with retries, swarm-routing/.github#645)
+        uses: swarm-routing/.github/.github/actions/pull-ci-tools@main
+        timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
+        with:
+          image: ${{ env.IMG }}
       - name: Record it on the ticket
         timeout-minutes: 5
         env:
