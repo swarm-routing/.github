@@ -5,4 +5,4 @@
 # runs on every run: block). ci.txt is the lock it installs with
 # --require-hashes (OpenSSF Scorecard Pinned-Dependencies, #716); regenerate:
 #   uv pip compile --universal --generate-hashes --no-header tools/requirements/ci.in -o tools/requirements/ci.txt
-shellcheck-py==0.10.0.1
+shellcheck-py==0.11.0.1
