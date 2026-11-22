@@ -27,9 +27,10 @@ name: Reusable dev-image cleanup
 # is deleted. A failed delete fails the job; each package's result is a line
 # of the job summary. `dry-run: true` lists what would go and deletes nothing.
 #
-# Permissions. This file declares none, so its job runs with exactly the
-# token the caller's job grants (a called workflow can only reduce it, as
-# reusable-ns3-image.yml's header explains): { contents: read, packages: write }.
+# Permissions. None at the top; the job declares the set every caller grants,
+# { contents: read, packages: write } (a called workflow can only reduce the
+# caller's grant, as reusable-ns3-image.yml's header explains, so a caller
+# must grant at least that; OpenSSF Scorecard Token-Permissions, #716).
 # The calling repository needs the package's Admin role (package settings,
 # "Manage Actions access"), which the repository whose workflow pushed the
 # package with github.token has.
@@ -62,11 +63,15 @@ on:
         type: boolean
         default: false
 
+permissions: {}
+
 jobs:
   sweep:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # No `permissions:` here on purpose: see the header (the caller's grant).
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4

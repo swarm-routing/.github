@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+#
+# The Python tools reusable-python-ci.yml installs, at the versions
+# tools/versions.env names (the workflow fails when the two differ).
+# python-ci.txt is the lock it installs with --require-hashes (OpenSSF
+# Scorecard Pinned-Dependencies, #716); regenerate it after a change here:
+#   uv pip compile --universal --generate-hashes --no-header tools/requirements/python-ci.in -o tools/requirements/python-ci.txt
+ruff==0.17.1
+coverage==7.16.2

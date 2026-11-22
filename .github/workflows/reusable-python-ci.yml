@@ -82,21 +82,40 @@ jobs:
         run: |
           set -euo pipefail
           # this repository's own file, so a pull request here tests the versions it
-          # sets; every caller reads main's, as `make doctor` does
+          # sets; every caller reads main's, as `make doctor` does. A caller reads it
+          # and the python-ci.txt lock (next step) at one commit of main, resolved
+          # once, so a version bump merging in between cannot split them (#716)
           src="$GITHUB_WORKSPACE/tools/versions.env"
-          if [ "$GITHUB_REPOSITORY" != swarm-routing/.github ] || [ ! -f "$src" ]; then
+          req="$GITHUB_WORKSPACE/tools/requirements/python-ci.txt"
+          if [ "$GITHUB_REPOSITORY" != swarm-routing/.github ] || [ ! -f "$src" ] || [ ! -f "$req" ]; then
+            sha=$(git ls-remote https://github.com/swarm-routing/.github refs/heads/main | cut -f1)
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::cannot resolve swarm-routing/.github main"; exit 1; }
             src="$RUNNER_TEMP/versions.env"
-            curl --proto =https --tlsv1.2 -fsSL --retry 3 -o "$src" https://raw.githubusercontent.com/swarm-routing/.github/main/tools/versions.env
+            req="$RUNNER_TEMP/python-ci.txt"
+            raw="https://raw.githubusercontent.com/swarm-routing/.github/$sha"
+            curl --proto =https --tlsv1.2 -fsSL --retry 3 -o "$src" "$raw/tools/versions.env"
+            curl --proto =https --tlsv1.2 -fsSL --retry 3 -o "$req" "$raw/tools/requirements/python-ci.txt"
           fi
+          echo "PYTHON_CI_LOCK=$req" >> "$GITHUB_ENV"
           # only KEY=VALUE lines reach the environment; anything else fails the job
           if grep -vE '^(#.*|[A-Z][A-Z0-9_]*=[A-Za-z0-9._-]+)?$' "$src"; then
             echo "::error::tools/versions.env has a line that is not KEY=VALUE"; exit 1
           fi
           grep -E '^[A-Z][A-Z0-9_]*=' "$src" | tee -a "$GITHUB_ENV"
-      - name: Install ruff and coverage (pinned)
+      - name: Install ruff and coverage (pinned by hash)
         timeout-minutes: 5
         run: |
-          python3 -m pip install --quiet --only-binary :all: "ruff==$RUFF_VERSION" "coverage==$COVERAGE_VERSION"
+          set -euo pipefail
+          # the hash-pinned lock of tools/requirements/python-ci.in (OpenSSF Scorecard
+          # Pinned-Dependencies, #716), read with versions.env in the step above
+          req="$PYTHON_CI_LOCK"
+          # versions.env stays the one source of the versions: the lock must pin the same
+          for pin in "ruff==$RUFF_VERSION" "coverage==$COVERAGE_VERSION"; do
+            if ! grep -qxF "$pin \\" "$req"; then
+              echo "::error::tools/requirements/python-ci.txt does not pin $pin (tools/versions.env); regenerate it"; exit 1
+            fi
+          done
+          python3 -m pip install --quiet --only-binary :all: --require-hashes -r "$req"
       - name: Org ruff.toml unless the repo has its own ruff config
         run: |
           if [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -qs '^\[tool\.ruff' pyproject.toml; then
