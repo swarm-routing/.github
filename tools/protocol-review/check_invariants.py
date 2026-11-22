@@ -38,7 +38,7 @@ adopting repo has), all keys optional:
     sim_dirs = ["ns3/"]                 # simulator code: rule 5 applies, as a WARN
     moving_refs = "warn"                # "fail" once the repo consumes releases (below)
 
-Moving dependency refs (swarm-routing/ns3-swarm-core#134, #411): an org
+Moving dependency refs (swarm-routing/swarm-adapter-ns3#134, #411): an org
 dependency added on a ref that moves instead of a release. In a CMake file, a
 `GIT_TAG` that is not a literal `vX.Y.Z` (a commit, a branch, a variable such
 as `${SWARM_CORE_REF}`) or a `GIT_REPOSITORY` of a swarm-routing repository (a
@@ -493,7 +493,7 @@ def check(repo, base="origin/main", pr_body=None):
     if any(f.startswith(".github/workflows/") for f in changed) and not (unpinned or retention):
         r.add("PASS", "rule 8: workflow actions pinned, retention within 7 days")
 
-    # moving dependency refs (swarm-routing/ns3-swarm-core#134): WARN, or FAIL by config
+    # moving dependency refs (swarm-routing/swarm-adapter-ns3#134): WARN, or FAIL by config
     moving = []
     for f in changed:
         lines = numbered.get(f, [])
@@ -865,7 +865,7 @@ def self_test():
     r = repo({}, {"README.md": "text\n"})
     expect("a docs-only diff has nothing to check", has(r, "PASS", "nothing in the diff"))
 
-    # moving dependency refs (swarm-routing/ns3-swarm-core#134): WARN, FAIL by config
+    # moving dependency refs (swarm-routing/swarm-adapter-ns3#134): WARN, FAIL by config
     fetch = (
         "FetchContent_Declare(swarm_core_src\n"
         "  GIT_REPOSITORY https://github.com/swarm-routing/ns3-swarm-core.git\n"

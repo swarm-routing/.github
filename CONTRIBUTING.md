@@ -1378,8 +1378,8 @@ lines of the repository's own after the end marker, stay the repository's
   | Work | DOI | Key |
   |---|---|---|
   | AntHocNet (org release) | https://doi.org/10.5281/zenodo.20981979 | `AHN` |
-  | ns3-swarm-core (org release) | https://doi.org/10.5281/zenodo.24138628 | `SwarmCore` |
-  | ns3-tools (org release) | https://doi.org/10.5281/zenodo.24136068 | `ns3tools` |
+  | swarm-adapter-ns3 (org release) | https://doi.org/10.5281/zenodo.24138628 | `SwarmCore` |
+  | sim-tools (org release) | https://doi.org/10.5281/zenodo.24136068 | `ns3tools` |
   | Riley & Henderson 2010, the ns-3 paper | https://doi.org/10.1007/978-3-642-12331-3_2 | `RH10` |
   | Di Caro, Ducatelle & Gambardella 2004, AntHocNet (PPSN VIII) | https://doi.org/10.1007/978-3-540-30217-9_47 | `DDG04` |
   | Di Caro, Ducatelle & Gambardella 2005, AntHocNet (ETT) | https://doi.org/10.1002/ett.1062 | `DDG05` |
