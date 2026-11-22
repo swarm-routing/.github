@@ -1,8 +1,8 @@
 # 0005. Agent sessions use a small, measured set of MCP servers and tools
 
-- **Status:** proposed
+- **Status:** accepted (the maintainer, 2026-11-22: "Accept ADR-0005"); amended 2026-11-22 (swarm-mcp's own repository, below)
 - **Date:** 2026-11-22
-- **Issue:** #141 (children #793, #794, swarm-routing/skills#186); swarm-routing/skills#175, swarm-routing/skills#185
+- **Issue:** #141 (children #793, #794, swarm-routing/skills#186); swarm-routing/skills#175, swarm-routing/skills#185; #672
 
 ## Context
 
@@ -60,7 +60,7 @@ deferred.
 
 | Tool | What it gives | Token effect | Fit and cost here |
 |---|---|---|---|
-| `swarm-mcp` (swarm-routing/skills#185) | the org scripts' verdicts (fidelity, invariants, release readiness, locks) as read-only tools | unmeasured; same principle as script-first skills (AntHocNet ADR-0014): the model reads a summary, not raw files | org code, reviewed under the skills trust boundary; stdio, no account, no token of its own |
+| `swarm-mcp` (swarm-routing/skills#185; [swarm-routing/swarm-mcp](https://github.com/swarm-routing/swarm-mcp) since the amendment) | the org scripts' verdicts (fidelity, invariants, release readiness, locks) as read-only tools | unmeasured; same principle as script-first skills (AntHocNet ADR-0014): the model reads a summary, not raw files | org code, reviewed under the skills trust boundary; stdio, no account, no token of its own |
 | GitHub's MCP server | issues, PRs, checks, logs | the hosted sessions already have it; read-only mode and toolsets narrow it for local use | first-party; REST semantics; schemas deferred |
 | Claude Code LSP plugins (`clangd-lsp`, `gopls-lsp`, `pyright-lsp`, official marketplace) | diagnostics after each edit, an `LSP` tool for definitions and references instead of text search | unmeasured (swarm-routing/skills#175 measures it); saves compile round trips on C++ | **not started in cloud sessions** (Claude Code docs, "Code intelligence plugins"), where most org agent work runs; clangd needs a `compile_commands.json` for the tree it reads |
 | clangd over MCP (mcp-language-server, clangd-mcp-server) | the same, as MCP tools | unmeasured | third-party, one maintainer each; superseded by the official LSP plugin where that runs |
@@ -92,7 +92,9 @@ Claude Code features that cut tokens with no new code (Claude Code docs,
 
 1. **Standard (every session that can run it):**
    - `swarm-mcp`, once swarm-routing/skills#185 ships it, bundled in the
-     `swarm-routing` plugin (a plugin `.mcp.json`), so the committed
+     `swarm-routing` plugin (a plugin `.mcp.json` that runs the release of
+     [swarm-routing/swarm-mcp](https://github.com/swarm-routing/swarm-mcp)
+     the plugin pins; see the amendment), so the committed
      `.claude/settings.json` that enables the plugin enables it; nothing to
      configure per repository.
    - GitHub's MCP server where the host provides it (hosted sessions do); in a
@@ -135,6 +137,33 @@ Claude Code features that cut tokens with no new code (Claude Code docs,
 
 The standard is summarised for agents in [`docs/agents.md`](../agents.md),
 which the org-managed "Session habits" section of every AGENTS.md links.
+
+## Amendment (2026-11-22): swarm-mcp in its own repository
+
+The maintainer, 2026-11-22, on #672: "configure the MCP repo out of skills
+https://github.com/swarm-routing/swarm-mcp — Skills and MCP repo need to work
+together — update the org profile and site to have these two as our AI
+repos".
+
+- **swarm-routing/skills** holds the procedures (the skills) and ships the
+  Claude Code plugin `swarm-routing` and the plain Agent Skills.
+- **[swarm-routing/swarm-mcp](https://github.com/swarm-routing/swarm-mcp)**
+  holds the MCP server: the local, read-only stdio server over the org
+  scripts' verdicts that swarm-routing/skills#185 started in
+  `tools/swarm-mcp/` (skills ADR-0002). It is versioned and released on its
+  own, under the same review rules as the plugin (Decision 4: local, stdio,
+  no account, nothing sent but to the model).
+- **The plugin pins it.** The plugin's `.mcp.json` runs one swarm-mcp
+  release (or commit) named in the skills repository, moved by a reviewed PR
+  like any other pin; a skills release never picks up an unreviewed
+  swarm-mcp change. How the plugin fetches and starts the pinned server is
+  decided in the skills and swarm-mcp repositories when the code moves.
+- The two are the org's AI repositories: the org profile and ROADMAP list
+  them together, as a labelled group of layer 4 (infrastructure and
+  tooling).
+
+Decision 1 is otherwise unchanged: a session gets swarm-mcp by enabling the
+plugin, with nothing to configure per repository.
 
 ## Consequences
 

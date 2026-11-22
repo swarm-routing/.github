@@ -13,4 +13,4 @@ applies to every repository unless it says otherwise.
 | [0002](0002-pipelines-are-go.md) | Pipelines are written in Go; their image is distroless |
 | [0003](0003-rcapa-for-ns3-bugs-and-released-regressions.md) | An RCAPA for every ns-3 bug and every regression in a published library |
 | [0004](0004-callers-pin-the-org-workflows-by-commit.md) | Callers pin the org's reusable workflows and actions by commit |
-| [0005](0005-the-mcp-and-agent-tooling-standard.md) | Agent sessions use a small, measured set of MCP servers and tools |
+| [0005](0005-the-mcp-and-agent-tooling-standard.md) | Agent sessions use a small, measured set of MCP servers and tools (accepted 2026-11-22; amended the same day: swarm-mcp lives in swarm-routing/swarm-mcp, pinned by the plugin) |

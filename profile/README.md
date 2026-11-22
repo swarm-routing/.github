@@ -109,7 +109,17 @@ no release yet, no SonarQube Cloud project, or no coverage upload.
 | [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) | *deferred*: the web workbench: offline replay of simulation run bundles with paired-delta charts, then a local control plane to launch runs in sim-containers | — | — | — |
 | [ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report) | The bridge to ns-3's GitLab: a mirror ticket per upstream ns-3 bug report, GitLab notes and state mirrored every 6 h, reports and replies sent only after the maintainer approves | — | — | — |
 | [.github](https://github.com/swarm-routing/.github) | Org-wide defaults: CONTRIBUTING, labels, issue forms, the reusable CI and release workflows, org-sync templates and the bots that keep every repository current | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_.github&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_.github) | — |
-| [skills](https://github.com/swarm-routing/skills) | The org's agent skills: one Claude Code plugin and plain Agent Skills for any agent, each a procedure over a script | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_skills&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_skills) | — |
+
+#### AI
+
+The org's two AI repositories, part of layer 4 (ROADMAP decision 26,
+[ADR-0005](https://github.com/swarm-routing/.github/blob/main/docs/adr/0005-the-mcp-and-agent-tooling-standard.md)):
+the skills and their Claude Code plugin, and the MCP server the plugin pins.
+
+| Repository | What it is | Release | Quality gate | Coverage |
+|---|---|---|---|---|
+| [skills](https://github.com/swarm-routing/skills) | The org's agent skills: one Claude Code plugin and plain Agent Skills for any agent, each a procedure over a script; the plugin bundles swarm-mcp at a pinned release | — | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_skills&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_skills) | — |
+| [swarm-mcp](https://github.com/swarm-routing/swarm-mcp) | The org's MCP server: a local, read-only stdio server that returns the org scripts' verdicts (fidelity, invariants, release readiness, locks) as tools; versioned and released on its own. Created 2026-11-22, empty: the code is still in skills' `tools/swarm-mcp/` | — | — | — |
 
 ## Roadmap: now and later
 

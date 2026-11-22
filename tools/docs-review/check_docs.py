@@ -771,6 +771,7 @@ ORG_REPOS = (
     "ns3-tools",
     "papers",
     "skills",
+    "swarm-mcp",
     "swarm-routing.github.io",
     "vcpkg-registry",
     "ns3-upstream-report",
@@ -1143,7 +1144,10 @@ def self_test():
     # every org repository, the ones created on 2026-11-22 included, names another repository's path
     expect(
         "org repos",
-        all(FOREIGN.search(f"see {r}") for r in ("swarm-adapter-omnet", "swarm-core", "sim-tools")),
+        all(
+            FOREIGN.search(f"see {r}")
+            for r in ("swarm-adapter-omnet", "swarm-core", "sim-tools", "swarm-mcp")
+        ),
     )
 
     agents_ok = "# AGENTS.md\n\n" + "".join(f"## {h}\n\ntext\n\n" for h in AGENTS_HEADINGS)

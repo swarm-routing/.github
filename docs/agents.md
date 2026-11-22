@@ -9,7 +9,7 @@ short form. Every repository's AGENTS.md links it from "Session habits".
 
 | Server | Status | How it reaches a session |
 |---|---|---|
-| `swarm-mcp` (read-only verdicts of the org scripts; swarm-routing/skills#185) | standard, once released | bundled in the `swarm-routing` plugin, which every repository's committed `.claude/settings.json` enables |
+| `swarm-mcp` (read-only verdicts of the org scripts; its own repository, [swarm-routing/swarm-mcp](https://github.com/swarm-routing/swarm-mcp), released on its own; swarm-routing/skills#185) | standard, once released | bundled in the `swarm-routing` plugin (swarm-routing/skills), which pins a swarm-mcp release and which every repository's committed `.claude/settings.json` enables |
 | GitHub's MCP server | standard where the host provides it (hosted sessions) | the host; in a local session, GitHub's own server with `--read-only` unless the task writes, or the `gh` CLI |
 | `clangd-lsp`, `gopls-lsp`, `pyright-lsp` (Claude Code's official LSP plugins) | optional, local terminal sessions only (cloud sessions do not start language servers); swarm-routing/skills#175 measures them | a person installs the plugin and the language server; never a committed setting |
 | Obsidian or any notes vault, Serena, third-party clangd bridges, code-graph indexes, repo packers, hosted MCP endpoints | ruled out (ADR-0005, Decision 3) | — |
