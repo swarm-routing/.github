@@ -23,7 +23,9 @@ name: ci-tools image
 #             ci-tools:latest by a registry copy (no rebuild; the copy's
 #             digest must equal the candidate's), a CycloneDX SBOM (Trivy),
 #             a keyless cosign signature, build provenance and SBOM
-#             attestations, then `cosign verify`
+#             attestations, then `cosign verify`; last, it dispatches
+#             org-bot's `ci-tools-digest`, which moves every pin in the org
+#             to this digest by pull request (#533): no pin is bumped by hand
 #   cleanup   main only: ci-tools-dev candidates older than 2 days that no
 #             committed file pins (reusable-dev-image-cleanup.yml)
 #
@@ -38,8 +40,8 @@ name: ci-tools image
 #
 # Permissions: read by default; the image job adds packages: write (push the
 # candidate) and pull-requests: read (branch-sweep's dry run), the promote job
-# packages: write, id-token: write (keyless signing, attestations) and
-# attestations: write.
+# packages: write, id-token: write (keyless signing, attestations),
+# attestations: write and actions: write (the org-bot dispatch).
 #
 # The required check is `ci-tools image gate` (#610): a required check runs on
 # every pull request and merge group, with no `paths:` filter (CONTRIBUTING
@@ -268,6 +270,10 @@ jobs:
           grep -qx security-alerts list.txt
           grep -qx labels list.txt
           grep -qx project-sync list.txt
+          grep -qx ci-tools-digest list.txt
+          # ci-tools-digest: its usage, no network (#533)
+          rc=0; docker run --rm "$img" ci-tools-digest 2> /dev/null || rc=$?
+          [ "$rc" = 2 ] || { echo "::error::ci-tools-digest with no --digest: exit $rc, want 2"; exit 1; }
           grep -qx os-refresh list.txt
           rc=0; docker run --rm "$img" nope 2> /dev/null || rc=$?
           [ "$rc" = 2 ] || { echo "::error::an unknown tool must exit 2, got $rc"; exit 1; }
@@ -366,6 +372,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      actions: write  # dispatch org-bot's ci-tools-digest (#533)
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
@@ -438,6 +445,15 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "$REF" > /dev/null
           echo "signature verified for \`$REF\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Move the org's pins to this digest (org-bot ci-tools-digest)
+        # A workflow_dispatch made with GITHUB_TOKEN starts a run (the one
+        # event besides repository_dispatch that does). org-bot resolves
+        # ci-tools:latest, verifies its signature and opens the pin PRs
+        # (#533); its daily run is the backstop if this dispatch is lost.
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run org-bot.yml --repo "$GITHUB_REPOSITORY" --ref main -f task=ci-tools-digest
 
   cleanup:
     needs: promote

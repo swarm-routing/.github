@@ -93,6 +93,13 @@ run-name: >-
 #   one pull request moves every pin; in every other repository it closes a
 #   Dependabot pull request that edits only org-managed files and asks one
 #   that also edits its own to rebase once the org-sync refresh landed.
+# - ci-tools-digest (after each ci-tools image promote, which dispatches it;
+#   daily with `all`; #533): the Go tool `ci-tools-digest`
+#   (cmd/ci-tools-digest, run from the promoted image itself: `ci-tools:latest`
+#   resolved to its digest and its signature verified) moves every
+#   `ghcr.io/swarm-routing/ci-tools@sha256` pin in every public repository's
+#   workflows to that digest, only forward, one pull request per repository
+#   on org-bot/ci-tools-digest with auto-merge on; no digest is typed.
 # - fan-out in bounded batches (#505): epics, org-sync and bestpractices open
 #   at most 4 new PRs at a time, then wait (2 min, then while the org holds
 #   more than 10 queued runs, 30 min in all) before the next 4; what the run
@@ -146,7 +153,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep, release-sync, project-sync, security-alerts, security-report, ticket-audit, action-pins]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep, release-sync, project-sync, security-alerts, security-report, ticket-audit, action-pins, ci-tools-digest]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -214,7 +221,7 @@ jobs:
           monday=false
           if [ "$(date -u +%u)" = 1 ]; then monday=true; fi
           case "$TASK" in
-            branch-sweep|release-sync|project-sync|security-alerts|security-report|ticket-audit|action-pins) refresh=false ;;
+            branch-sweep|release-sync|project-sync|security-alerts|security-report|ticket-audit|action-pins|ci-tools-digest) refresh=false ;;
             *) refresh=true ;;
           esac
           tools=""
@@ -225,6 +232,10 @@ jobs:
           case "$TASK" in hourly|release-aftercare|release-sync) tools="$tools release-sync" ;; esac
           case "$TASK" in all|hourly|project-sync) tools="$tools project-sync" ;; esac
           case "$TASK" in all|hourly|action-pins) tools="$tools action-pins" ;; esac
+          # ci-tools-digest: after each promote (its dispatch), the daily run and a dispatch of all, never a push's all
+          if [ "$TASK" = ci-tools-digest ] || { [ "$TASK" = all ] && [ "$EVENT" != push ]; }; then
+            tools="$tools ci-tools-digest"
+          fi
           # security-alerts: hourly, the daily run, and a dispatch of security-alerts or security-report
           if [ "$TASK" = hourly ] || [ "$TASK" = security-alerts ] || [ "$TASK" = security-report ] \
              || { [ "$TASK" = all ] && [ "$scheduled" = true ]; }; then
@@ -557,6 +568,95 @@ jobs:
             echo "### org-bot action-pins ($TASK)"
             echo
             echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; action-pins: $OUTCOME"
+            echo
+            printf '%s\n' '```'
+            cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
+            printf '%s\n' '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci-tools-digest:
+    needs: plan
+    if: contains(format(' {0} ', needs.plan.outputs.tools), ' ci-tools-digest ')
+    runs-on: ubuntu-24.04
+    concurrency:
+      # every run moves every pin to the latest image: a pending one replaced loses nothing
+      group: ${{ inputs.dry-run && format('org-bot-dry-run-{0}-ci-tools-digest', github.run_id) || 'org-bot-ci-tools-digest' }}
+      cancel-in-progress: false
+    timeout-minutes: 20
+    env:
+      TASK: ${{ needs.plan.outputs.task }}
+      REPOS: ${{ inputs.repos }}
+      DRY_RUN: ${{ inputs.dry-run }}
+      IMAGE: ghcr.io/swarm-routing/ci-tools
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        timeout-minutes: 3
+      - name: The promoted image (ci-tools:latest by digest, its signature verified)
+        id: image
+        # The digest every pin moves to is read from the registry, never
+        # typed (#533): the one `ci-tools:latest` names, accepted only with
+        # the keyless signature ci-tools-image.yml's promote job made on main.
+        # This job then runs the tool from that very digest, so it needs no
+        # pin of its own to move.
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for $IMAGE:latest"; exit 1; }
+          cosign verify \
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/ci-tools-image.yml@refs/heads/main" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE@$digest" > /dev/null
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "\`$IMAGE@$digest\`: signature verified" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: Bot token
+        id: bot
+        uses: ./.github/actions/bot-token
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          fallback-token: ${{ secrets.ORG_BOT_TOKEN }}
+      - name: The ci-tools pins (ci-tools-digest)
+        id: run
+        # cmd/ci-tools-digest (#533): every `ghcr.io/swarm-routing/ci-tools@sha256`
+        # pin under .github/workflows/ and .github/actions/ (here also
+        # templates/) of every public org repository moved to that digest,
+        # only forward (the images' revision labels and the compare API),
+        # one pull request per repository on org-bot/ci-tools-digest with
+        # auto-merge on; a hand PR bumping the same pin holds the repository.
+        # After each promote (ci-tools-image.yml dispatches `ci-tools-digest`),
+        # the daily run and a dispatch of `all`. Needs Contents, Pull requests
+        # and Workflows: write.
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -o pipefail
+          args=(--digest "$DIGEST")
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMAGE@$DIGEST" || exit 1  # with retries (#645)
+          docker run --rm -e GH_TOKEN "$IMAGE@$DIGEST" ci-tools-digest "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: Summary
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          {
+            echo "### org-bot ci-tools-digest ($TASK)"
+            echo
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; ci-tools-digest: $OUTCOME"
             echo
             printf '%s\n' '```'
             cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"
