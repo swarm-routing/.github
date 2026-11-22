@@ -486,8 +486,15 @@ func Derive(repoDir, slug, today string) (Answers, error) {
 		unknown("dynamic_analysis_enable_assertions", "No test run with assertions on found.")
 	}
 
+	// the attested five depend on the live alerts, which a clone does not
+	// show: the weekly check proposes them (#787)
 	for _, c := range ownerOnlyOrder {
-		unknown(c, "Only the owner can answer this.")
+		if Attested[c] {
+			unknown(c, "Proposed by the weekly bestpractices check from the maintainer's attestation ("+
+				OwnerFile+" in swarm-routing/.github) once it has read this repository's security alerts.")
+		} else {
+			unknown(c, "Only the owner can answer this.")
+		}
 	}
 	out := make(Answers, 0, len(Passing))
 	var missing []string
