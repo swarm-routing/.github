@@ -1037,7 +1037,7 @@ BIB_ROLES = ("implemented", "restates", "compared", "dataset", "tool", "backgrou
 BIB_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:.+-]*$")
 # Each released org repository's key in every docs/references.bib: CONTRIBUTING
 # "References" holds the same table (the self-test compares them).
-ORG_KEYS = {"AntHocNet": "AHN", "ns3-swarm-core": "SwarmCore", "ns3-tools": "ns3tools"}
+ORG_KEYS = {"AntHocNet": "AHN", "swarm-adapter-ns3": "SwarmCore", "sim-tools": "ns3tools"}
 
 
 def bib_author(name):
