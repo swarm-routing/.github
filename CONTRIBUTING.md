@@ -1203,8 +1203,9 @@ finding, a Dependabot alert, a leaked secret):
   `bug` issue that already names the alert, such as one the `bestpractices`
   check opened before this task, is adopted, not duplicated.
 - **Bounded:** a run reads every repository first, then opens at most 25
-  new tickets across the org (`--max-new`), the highest priority and then
-  the oldest first. The rest wait for the next hour, and the run's summary
+  new tickets across the org (`--max-new`): the highest priority first, then
+  the highest security severity (a leaked secret, critical, high, ...; a
+  quality rule with none last), then the oldest. The rest wait for the next hour, and the run's summary
   line says how many are left. The first listing found 482 open alerts, so
   they land over hours rather than in one burst that would trip GitHub's
   content-creation limits and flood everyone's notifications.

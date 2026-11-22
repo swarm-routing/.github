@@ -247,27 +247,45 @@ func SyncPolicy(g GitHub, groups []Group, tickets map[string]Issue, b *Budget, m
 type planItem struct {
 	key     string
 	prio    string
+	sev     int // security severity rank: critical 4 ... low 1, none 0
 	created time.Time
 }
 
-// Plan picks the run's new tickets: the limit highest-priority, then oldest,
-// across every repository and policy group; it returns the Budget and how
-// many new tickets wait.
+// sevRank orders a vulnerability by its security severity, so within one
+// priority the critical and high ones are ticketed first (maintainer,
+// 2026-11-22: "close all the critical and high vulnerabilities fast").
+func sevRank(a Alert) int {
+	if a.Kind == SecretScanning {
+		return 5
+	}
+	if !a.Security {
+		return 0
+	}
+	return map[string]int{"critical": 4, "high": 3, "medium": 2, "low": 1}[a.Severity]
+}
+
+// Plan picks the run's new tickets across every repository and policy group:
+// the limit highest-priority, then the highest security severity (a secret
+// first, then critical, high, ...; a quality rule last), then the oldest. It
+// returns the Budget and how many new tickets wait.
 func Plan(results []Result, groups []Group, tickets map[string]Issue, limit int, now time.Time) (*Budget, int) {
 	var items []planItem
 	for _, r := range results {
 		for _, a := range r.New {
-			items = append(items, planItem{a.URL, a.Priority(now), a.Created})
+			items = append(items, planItem{a.URL, a.Priority(now), sevRank(a), a.Created})
 		}
 	}
 	for _, g := range groups {
 		if _, ok := tickets[g.Rule]; !ok {
-			items = append(items, planItem{g.Key(), g.Priority(now), g.Oldest()})
+			items = append(items, planItem{g.Key(), g.Priority(now), 0, g.Oldest()})
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].prio != items[j].prio {
 			return items[i].prio < items[j].prio
+		}
+		if items[i].sev != items[j].sev {
+			return items[i].sev > items[j].sev
 		}
 		if !items[i].created.Equal(items[j].created) {
 			return items[i].created.Before(items[j].created)

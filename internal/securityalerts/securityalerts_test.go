@@ -426,3 +426,23 @@ func TestGroupsPriorityAndCap(t *testing.T) {
 		t.Errorf("closed checks: %s", o)
 	}
 }
+
+// Within P1, the critical and high vulnerabilities are ticketed first, then
+// by age; a quality rule with no security severity comes last (the first
+// live run gave its 24 slots to old quality alerts, #629).
+func TestPlanSeverityFirst(t *testing.T) {
+	old := now.Add(-300 * 24 * time.Hour)
+	young := now.Add(-24 * time.Hour)
+	r := Result{New: []Alert{
+		{Kind: CodeScanning, URL: "q1", Created: old, Severity: "low"},
+		{Kind: CodeScanning, URL: "q2", Created: old, Severity: "low"},
+		{Kind: CodeScanning, URL: "high", Created: young, Severity: "high", Security: true},
+		{Kind: CodeScanning, URL: "crit", Created: young, Severity: "critical", Security: true},
+		{Kind: SecretScanning, URL: "secret", Created: young},
+		{Kind: Dependabot, URL: "med", Created: old, Severity: "medium", Security: true},
+	}}
+	b, left := Plan([]Result{r}, nil, nil, 4, now)
+	if left != 2 || !b.Allow["secret"] || !b.Allow["crit"] || !b.Allow["high"] || !b.Allow["med"] || b.Allow["q1"] || b.Allow["q2"] {
+		t.Errorf("severity first: %v, %d left", b.Allow, left)
+	}
+}
