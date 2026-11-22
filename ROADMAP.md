@@ -1181,6 +1181,10 @@ Every epic of every public repository, open first. A status is derived from the 
 |------|--------|-------------------|
 | [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, 4-byte wire framing, ProtocolContractTest) & release v1.0.0 | Planned | 0 / 8 |
 
+### [swarm-mcp](https://github.com/swarm-routing/swarm-mcp)
+
+No open epic: the work here is tracked as single issues.
+
 ### [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io)
 
 | Epic | Status | Sub-issues closed |
