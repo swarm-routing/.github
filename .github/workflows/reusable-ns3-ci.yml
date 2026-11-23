@@ -572,13 +572,13 @@ jobs:
         # Report-only, like the coverage it imports: a scanner or SonarQube
         # Cloud failure must not fail the caller's CI.
         continue-on-error: true
-        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
+        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
         with:
           projectBaseDir: src
           args: -Dsonar.cfamily.compile-commands=${{ steps.sonar.outputs.compile-commands }} ${{ steps.pycov.outputs.args }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: needs.changes.outputs.build == 'true' && (inputs.coverage || inputs.sonar) && matrix.profile == 'debug' && matrix.version == fromJSON(inputs.ns3-versions)[0] && matrix.deps != 'canary'
         with:
           name: coverage
@@ -587,7 +587,7 @@ jobs:
       - name: Keep test.py output on failure
         if: failure()
         run: cp -r /opt/ns-3/testpy-output "$GITHUB_WORKSPACE/testpy-output" 2>/dev/null || true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: testpy-output-${{ matrix.version }}-${{ matrix.profile }}${{ matrix.deps == 'canary' && '-canary' || '' }}
