@@ -48,6 +48,12 @@ finding. `--bump` then writes the lock for the newest release (every value
 read from it) and moves the tag on the same pin lines, nothing else. A
 repository without a lock keeps the commit mode above.
 
+The ns-3 adapter's layout (swarm-routing/swarm-adapter-ns3#258), lock mode
+without `core/`: the root `CMakeLists.txt` reads the lock and there is no
+`core-deps`, Makefile or ns-3 dependency pin. The check reads the root
+`CMakeLists.txt` in place of `core/CMakeLists.txt`, wants no `core-deps`, and
+`--bump` writes the lock alone.
+
 vcpkg mode (#489), a lock mode for a repository whose `core/` takes swarm-core
 through vcpkg in manifest mode: `vcpkg.json` at the root depends on
 `swarm-core`. The lock stays the record of the release the ns-3 build uses
@@ -119,6 +125,9 @@ CORE_REPO = release_lock.MOVED[("SWARM_CORE", SWARM_CORE_REPO)]
 SLUG = r"swarm-routing/(?:swarm-adapter-ns3|ns3-swarm-core)"
 CORE_SLUG = r"swarm-routing/(?:swarm-core|swarm-adapter-ns3|ns3-swarm-core)"
 CMAKE = "core/CMakeLists.txt"
+# the ns-3 adapter's layout (swarm-routing/swarm-adapter-ns3#258): no core/, the
+# root CMakeLists.txt reads the lock and links swarm-core's core/ itself
+ROOT_CMAKE = "CMakeLists.txt"
 LOCK = "swarm-core.lock"
 LOCK_PREFIX = "SWARM_CORE"
 ASSET = "swarm-core-{version}.tar.gz"
@@ -367,27 +376,29 @@ def check_lock_files():
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_ASSET={asset}")
     if f"{prefix}_SHA256" not in values:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_SHA256, the hash of {asset}")
-    if not os.path.exists(CMAKE):
-        errors.append(f"{CMAKE}: missing")
+    adapter = adapter_layout()
+    cmake = ROOT_CMAKE if adapter else CMAKE
+    if not os.path.exists(cmake):
+        errors.append(f"{cmake}: missing")
     else:
-        with open(CMAKE, encoding="utf-8") as f:
+        with open(cmake, encoding="utf-8") as f:
             text = f.read()
         if vcpkg_mode():
             if not FIND_PACKAGE.search(text):
                 errors.append(
-                    f"{CMAKE}: no find_package(swarm-core CONFIG ...): with {VCPKG_MANIFEST}, "
+                    f"{cmake}: no find_package(swarm-core CONFIG ...): with {VCPKG_MANIFEST}, "
                     "core/ takes swarm-core from its vcpkg port"
                 )
             if LOCK_READ.search(text):
                 errors.append(
-                    f"{CMAKE}: reads {LOCK}; with {VCPKG_MANIFEST} swarm-core comes from vcpkg"
+                    f"{cmake}: reads {LOCK}; with {VCPKG_MANIFEST} swarm-core comes from vcpkg"
                 )
         elif not LOCK_READ.search(text):
-            errors.append(f"{CMAKE}: does not read {LOCK} (file(STRINGS ...) or file(READ ...))")
+            errors.append(f"{cmake}: does not read {LOCK} (file(STRINGS ...) or file(READ ...))")
         if HARD_RELEASE.search(text):
-            errors.append(f"{CMAKE}: names a swarm-core release itself; take it from {LOCK}")
+            errors.append(f"{cmake}: names a swarm-core release itself; take it from {LOCK}")
         if CMAKE_PIN.search(text):
-            errors.append(f"{CMAKE}: still sets a commit SWARM_CORE_REF; the lock replaces it")
+            errors.append(f"{cmake}: still sets a commit SWARM_CORE_REF; the lock replaces it")
     if os.path.exists("Makefile"):
         for n, ref in lines_matching("Makefile", MAKE_PIN):
             if ref != tag and not ref.startswith("$("):
@@ -418,9 +429,20 @@ def check_lock_files():
                 continue  # swarm-adapter-ns3's release, not swarm-core's (#691)
             if ref not in ok:
                 errors.append(f"{rel}:{n}: the ns-3 dependency names swarm-core {ref}, not {tag}")
-    if not deps:
+    if not deps and not adapter:
         errors.append(f".github/workflows: no core-deps entry for swarm-core (want @{tag}:core)")
     return prefix, values, errors
+
+
+def adapter_layout():
+    """True for the ns-3 adapter's layout: no core/CMakeLists.txt, and the root
+    CMakeLists.txt reads the lock (swarm-routing/swarm-adapter-ns3#258). Its pin is
+    the lock alone: no core-deps (it has no dual-licensed core/ of its own), no
+    Makefile or ns-3 dependency pin."""
+    if os.path.exists(CMAKE) or not os.path.exists(ROOT_CMAKE):
+        return False
+    with open(ROOT_CMAKE, encoding="utf-8") as f:
+        return LOCK_READ.search(f.read()) is not None
 
 
 def vcpkg_mode():
@@ -1332,6 +1354,44 @@ def self_test():
             and f"core-deps: {CORE_REPO}@v0.6.0:core\n" in ns3
             and "swarm-core=swarm-routing/ns3-swarm-core@v0.5.0\n" in ns3
             and golock(same)[0] == 0,
+        )
+
+        # the ns-3 adapter's layout (swarm-routing/swarm-adapter-ns3#258): the root
+        # CMakeLists.txt reads the lock, no core/, no core-deps; the lock is the pin
+        adapter = os.path.join(t, "adapter")
+        lock5 = release_lock.render(LOCK_PREFIX, CORE_REPO, "v0.5.0", ASSET, base, "# lock\n")
+        ci = "jobs:\n  ci:\n    with:\n      modules: swarm-core=.\n"
+        for p_, body in (
+            (LOCK, lock5),
+            (ROOT_CMAKE, f"file(STRINGS ${{CMAKE_CURRENT_SOURCE_DIR}}/{LOCK} x)\n"),
+            (".github/workflows/ci.yml", ci),
+        ):
+            os.makedirs(os.path.dirname(os.path.join(adapter, p_)) or adapter, exist_ok=True)
+            with open(os.path.join(adapter, p_), "w", encoding="utf-8") as f:
+                f.write(body)
+        rc, out = golock(adapter)
+        check(
+            "adapter: a consistent lock behind the newest release is only stale",
+            rc == 1
+            and "v0.6.0 is released" in out
+            and "no core-deps" not in out
+            and "core/CMakeLists.txt" not in out,
+        )
+        rc, out = golock(adapter, bump_mode=True)
+        check(
+            "adapter: --bump writes the lock alone",
+            rc == 0
+            and "in 1 file(s)" in out
+            and "SWARM_CORE_TAG=v0.6.0\n" in open(os.path.join(adapter, LOCK)).read()
+            and open(os.path.join(adapter, ".github", "workflows", "ci.yml")).read() == ci
+            and golock(adapter)[0] == 0,
+        )
+        with open(os.path.join(adapter, ROOT_CMAKE), "w", encoding="utf-8") as f:
+            f.write("project(x)\n")
+        rc, out = golock(adapter)
+        check(
+            "adapter: a root CMakeLists.txt that does not read the lock is no adapter layout",
+            rc == 1 and "core/CMakeLists.txt: missing" in out,
         )
 
     for f in failures:
