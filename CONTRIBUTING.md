@@ -1646,6 +1646,7 @@ rate limit and was archived from its tag by `zenodo.py create` on 2026-11-11
 | sim-containers | [10.5281/zenodo.24202109](https://doi.org/10.5281/zenodo.24202109) | v1.0.0 [10.5281/zenodo.24202110](https://doi.org/10.5281/zenodo.24202110) |
 | sim-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v1.1.2 [10.5281/zenodo.24262076](https://doi.org/10.5281/zenodo.24262076) |
 | swarm-adapter-ns3 | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v1.0.0 [10.5281/zenodo.24268942](https://doi.org/10.5281/zenodo.24268942) |
+| swarm-core | [10.5281/zenodo.24476619](https://doi.org/10.5281/zenodo.24476619) | v2.0.0 [10.5281/zenodo.24476620](https://doi.org/10.5281/zenodo.24476620) |
 | Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
 <!-- zenodo:archived:end -->
 
