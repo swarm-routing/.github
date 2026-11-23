@@ -27,6 +27,10 @@ DIR/<repo>/.github/):
     merge_queue = false                 # true: PRs merge through a merge queue (public repos only);
                                         # a table overrides MERGE_QUEUE's values, e.g.
                                         # { check_response_timeout_minutes = 60 }
+    merge_methods = ["squash", "merge"] # overrides the profile's merge methods (the repository's
+                                        # allow_*_merge and the main ruleset's allowed_merge_methods);
+                                        # absent: the profile's (squash only). For a one-time
+                                        # history-preserving merge, reverted after it (swarm-core#6)
     features = { has_wiki = true }      # overrides the profile's repository features
     security = { codeql_default_setup = false }   # false: leave that feature alone
     release_environment = true          # create the `release` environment here; false: strip
@@ -181,6 +185,12 @@ MERGE_QUEUE = {
     "min_entries_to_merge": 1,  # a lone PR merges without waiting for others
     "min_entries_to_merge_wait_minutes": 5,  # GitHub's default; idle while the minimum is 1
     "max_entries_to_merge": 5,  # PRs merged together in one group at most
+}
+# [settings] merge_methods -> the repository flag each one sets (REST repos API)
+MERGE_METHODS = {
+    "squash": "allow_squash_merge",
+    "merge": "allow_merge_commit",
+    "rebase": "allow_rebase_merge",
 }
 MERGE_QUEUE_ENUMS = {
     "merge_method": ("MERGE", "SQUASH", "REBASE"),
@@ -413,6 +423,21 @@ def validate(s, private=False):
                 )
         if private:
             errors.append("merge_queue on a private repository (public organization repos only)")
+    mm = s.get("merge_methods")
+    if mm is not None:
+        if (
+            not isinstance(mm, list)
+            or not mm
+            or len(set(mm)) != len(mm)
+            or not all(m in MERGE_METHODS for m in mm)
+        ):
+            errors.append(f"merge_methods is not a non-empty list of {', '.join(MERGE_METHODS)}")
+        elif not s.get("ruleset"):
+            errors.append("merge_methods without a ruleset profile")
+        elif isinstance(mq, dict) or mq is True:
+            method = {**MERGE_QUEUE, **(mq if isinstance(mq, dict) else {})}["merge_method"]
+            if isinstance(method, str) and method.lower() not in mm:
+                errors.append(f"merge_queue.merge_method {method} is not in merge_methods")
     for table, allowed in (("features", FEATURES), ("security", SECURITY)):
         t = s.get(table, {})
         if not isinstance(t, dict):
@@ -593,6 +618,8 @@ def main_ruleset(prof_rs, s):
             r["parameters"]["required_status_checks"] = [
                 {"context": c, "integration_id": ACTIONS_APP} for c in checks
             ]
+        if r["type"] == "pull_request" and s.get("merge_methods"):
+            r["parameters"]["allowed_merge_methods"] = list(s["merge_methods"])
         rules.append(r)
     mq = s.get("merge_queue")
     if mq:
@@ -621,6 +648,8 @@ def desired(s):
         return want
     prof = load_profile(s["ruleset"])
     want["repo"].update(prof["repo"])
+    if s.get("merge_methods"):
+        want["repo"].update({flag: m in s["merge_methods"] for m, flag in MERGE_METHODS.items()})
     if prof["features"] is not None:
         want["repo"].update(prof["features"])
         want["repo"].update(s.get("features", {}))
@@ -2603,6 +2632,43 @@ def self_test():
         ("private", ok_s, True, "merge_queue on a private repository"),
     ):
         check(f"merge_queue refused: {name}", any(want in e for e in validate(s, private)))
+
+    # merge_methods: a per-repository override of the profile's merge methods
+    mm_s = {**ok_s, "merge_methods": ["squash", "merge"], "merge_queue": {"merge_method": "MERGE"}}
+    check("merge_methods valid", validate(mm_s) == [])
+    mm_rs = main_ruleset(prof_rs, mm_s)
+    pr_rule = next(r for r in mm_rs["rules"] if r["type"] == "pull_request")
+    check(
+        "merge_methods in the ruleset",
+        pr_rule["parameters"]["allowed_merge_methods"] == ["squash", "merge"],
+    )
+    check(
+        "merge_methods leave the profile alone",
+        next(r for r in prof_rs["rules"] if r["type"] == "pull_request")["parameters"][
+            "allowed_merge_methods"
+        ]
+        == ["squash"],
+    )
+    mm_repo = desired(mm_s)["repo"]
+    check(
+        "merge_methods set the repository flags",
+        mm_repo["allow_squash_merge"] is True
+        and mm_repo["allow_merge_commit"] is True
+        and mm_repo["allow_rebase_merge"] is False,
+    )
+    check(
+        "no merge_methods: the profile's flags",
+        desired(ok_s)["repo"]["allow_merge_commit"] is False,
+    )
+    for name, s, want in (
+        ("not a list", {**ok_s, "merge_methods": "merge"}, "merge_methods is not"),
+        ("empty", {**ok_s, "merge_methods": []}, "merge_methods is not"),
+        ("unknown", {**ok_s, "merge_methods": ["octopus"]}, "merge_methods is not"),
+        ("duplicate", {**ok_s, "merge_methods": ["merge", "merge"]}, "merge_methods is not"),
+        ("no profile", {"merge_methods": ["merge"]}, "without a ruleset profile"),
+        ("queue method not allowed", {**ok_s, "merge_methods": ["merge"]}, "SQUASH is not in"),
+    ):
+        check(f"merge_methods refused: {name}", any(want in e for e in validate(s)))
 
     # covers(): GitHub's added defaults are ignored, a list must match exactly
     check("covers ignores added keys", covers({"a": 1}, {"a": 1, "b": 2}))
