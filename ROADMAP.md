@@ -1132,7 +1132,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#2](https://github.com/swarm-routing/sim-tools/issues/2) A protocol-agnostic comparison harness, packaged on its own | In progress | 3 / 8 |
 | [#224](https://github.com/swarm-routing/sim-tools/issues/224) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [#7](https://github.com/swarm-routing/sim-tools/issues/7) metrics 2026 — age of information, delay percentile/CDF export, energy-per-bit, route lifetime/convergence as CSV metrics | Planned | 0 / 1 |
-| [#15](https://github.com/swarm-routing/sim-tools/issues/15) Comparators: swarm, learned and secure protocols under identical conditions | Planned | 0 / 10 |
+| [#15](https://github.com/swarm-routing/sim-tools/issues/15) Comparators: swarm, learned and secure protocols under identical conditions | Planned | 0 / 13 |
 | [#34](https://github.com/swarm-routing/sim-tools/issues/34) promote AntHocNet's vendored comparator modules into ns3/arms/: aomdv, gpsr, qrouting, oracle | Planned | 0 / 2 |
 | [#43](https://github.com/swarm-routing/sim-tools/issues/43) Network substrates: the ns-3 pieces new network types need, for every arm | Planned | 0 / 11 |
 | [#227](https://github.com/swarm-routing/sim-tools/issues/227) per-protocol resource metrics: state footprint, energy, overhead and simulator cost, without disturbing results | Planned | 0 / 9 |
