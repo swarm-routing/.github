@@ -126,7 +126,8 @@ KEY = re.compile(r"^\s*([A-Za-z0-9_-]+):")
 # core/CMakeLists.txt reads the lock on a line that is not a comment
 LOCK_READ = re.compile(r"^[^#\n]*file\(\s*(STRINGS|READ)\b[^#\n]*swarm-core\.lock", re.M)
 HARD_RELEASE = re.compile(
-    r"(?:swarm-adapter-ns3|ns3-swarm-core)/releases/download/v\d|swarm-core-\d+\.\d+\.\d+\.tar"
+    r"swarm-routing/(?:swarm-core|swarm-adapter-ns3|ns3-swarm-core)/releases/download/v\d"
+    r"|swarm-core-\d+\.\d+\.\d+\.tar"
 )
 SHA = r"[0-9a-f]{40}"
 CMAKE_PIN = re.compile(rf'^\s*set\(\s*SWARM_CORE_REF\s+"({SHA})"', re.M)

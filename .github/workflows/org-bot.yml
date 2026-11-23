@@ -352,9 +352,10 @@ jobs:
           failed=0
           python3 -I tools/org-bot/org_bot.py "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
           consumers=release-lock
-          # swarm-core is released from swarm-adapter-ns3 (ns3-swarm-core until
-          # 2026-11-22, swarm-routing/.github#672)
-          case "$REPOS" in swarm-adapter-ns3|ns3-swarm-core) consumers="swarm-core-pin release-lock" ;; esac
+          # swarm-core is released from its own repository since v2.0.0
+          # (swarm-routing/.github#691), from swarm-adapter-ns3 (ns3-swarm-core
+          # until 2026-11-22, #672) up to v1.0.0
+          case "$REPOS" in swarm-core|swarm-adapter-ns3|ns3-swarm-core) consumers="swarm-core-pin release-lock" ;; esac
           for task in $consumers; do
             python3 -I tools/org-bot/org_bot.py run --task "$task" | tee -a "$RUNNER_TEMP/org-bot.txt" || failed=1
           done
