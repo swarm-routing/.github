@@ -206,41 +206,41 @@ line = 373
 decision = "falsepositive"
 reason = "FP-cli"
 
-# ---- swarm-routing/ns3-swarm-core (4)
+# ---- swarm-routing/swarm-adapter-ns3 (4; Sonar project key swarm-routing_ns3-swarm-core until the 2026-11-22 rename, #672)
 
 [[issue]]
-project = "swarm-routing_ns3-swarm-core"
+project = "swarm-routing_swarm-adapter-ns3"
 key = "AaHd1Si4C7n5zOm-Rrrp"
 rule = "pythonsecurity:S2083"
 file = "tools/checks/check-api-surface.py"
-line = 693
+line = 739
 decision = "falsepositive"
 reason = "FP-stub"
 
 [[issue]]
-project = "swarm-routing_ns3-swarm-core"
+project = "swarm-routing_swarm-adapter-ns3"
 key = "AaHd1Si4C7n5zOm-Rrrr"
 rule = "pythonsecurity:S8707"
 file = "tools/checks/check-api-surface.py"
-line = 794
+line = 843
 decision = "falsepositive"
 reason = "FP-cli"
 
 [[issue]]
-project = "swarm-routing_ns3-swarm-core"
+project = "swarm-routing_swarm-adapter-ns3"
 key = "AaHd1Si4C7n5zOm-Rrrq"
 rule = "pythonsecurity:S8707"
 file = "tools/checks/check-api-surface.py"
-line = 799
+line = 848
 decision = "falsepositive"
 reason = "FP-cli"
 
 [[issue]]
-project = "swarm-routing_ns3-swarm-core"
+project = "swarm-routing_swarm-adapter-ns3"
 key = "AaHd1Si4C7n5zOm-Rrrs"
 rule = "pythonsecurity:S8707"
 file = "tools/checks/check-api-surface.py"
-line = 803
+line = 852
 decision = "falsepositive"
 reason = "FP-cli"
 
