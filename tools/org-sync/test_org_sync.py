@@ -1207,6 +1207,28 @@ check(
     and run("check", d)[0] == 0,
     "vcpkg mode (#489): the vcpkg text replaces the lock text",
 )
+# the ns-3 adapter (swarm-routing/swarm-adapter-ns3#258): a lock read by the root
+# CMakeLists.txt, no core/: the adapter text, none of a protocol's pin places
+d = fresh()
+run("init", d, "--kind", "protocol")
+write(os.path.join(d, "swarm-core.lock"), "SWARM_CORE_REPO=swarm-routing/swarm-core\n")
+write(os.path.join(d, "CMakeLists.txt"), 'file(STRINGS "swarm-core.lock" lock)\n')
+rc, out = run("check", d)
+check(rc == 1 and "AGENTS.md#dependencies" in out, "an adapter lock: the section is planned")
+run("apply", d)
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "this is the ns-3 adapter of swarm-core's ports" in agents
+    and "core/CMakeLists.txt" not in agents
+    and "core-deps` (the licence" not in agents
+    and "canary-dependencies" not in agents
+    and run("check", d)[0] == 0,
+    "the adapter layout: the adapter text, and check passes",
+)
+os.makedirs(os.path.join(d, "core"), exist_ok=True)
+write(os.path.join(d, "core/CMakeLists.txt"), "file(STRINGS ../swarm-core.lock x)\n")
+rc, out = run("check", d)
+check(rc == 1 and "AGENTS.md#dependencies" in out, "a core/ added: the protocol's lock text")
 
 # 6. The JSON item merges only the org's keys.
 p = os.path.join(d, ".claude/settings.json")

@@ -593,7 +593,9 @@ def git_slug(repo_dir):
 
 def swarm_core_mode(repo_dir):
     """How the repository gets swarm-core's core/: "vcpkg" (swarm-core.lock and a
-    vcpkg.json that depends on swarm-core, #489), "lock" (swarm-core.lock), "pin"
+    vcpkg.json that depends on swarm-core, #489), "adapter" (swarm-core.lock read by
+    the root CMakeLists.txt, no core/: the ns-3 adapter, swarm-routing/swarm-adapter-ns3#258),
+    "lock" (swarm-core.lock), "pin"
     (a commit SWARM_CORE_REF in core/CMakeLists.txt) or None. The `dependencies`
     section of AGENTS.md renders only where one holds, in the matching text, so
     it never says what the repository cannot back (swarm-routing/swarm-adapter-ns3#134)."""
@@ -604,7 +606,14 @@ def swarm_core_mode(repo_dir):
         except (ValueError, AttributeError):
             deps = []
         names = [d.get("name") if isinstance(d, dict) else d for d in deps]
-        return "vcpkg" if "swarm-core" in names else "lock"
+        if "swarm-core" in names:
+            return "vcpkg"
+        root = read(os.path.join(repo_dir, "CMakeLists.txt")) or ""
+        if not os.path.exists(os.path.join(repo_dir, "core", "CMakeLists.txt")) and re.search(
+            r"^[^#\n]*file\(\s*(?:STRINGS|READ)\b[^#\n]*swarm-core\.lock", root, re.M
+        ):
+            return "adapter"  # the ns-3 adapter: no core/, the root CMakeLists.txt reads the lock
+        return "lock"
     cmake = read(os.path.join(repo_dir, "core", "CMakeLists.txt")) or ""
     return "pin" if re.search(r"^\s*set\(\s*SWARM_CORE_REF\b", cmake, re.M) else None
 
@@ -2567,6 +2576,7 @@ RENDER_INPUTS = (
     "swarm-core.lock",
     "vcpkg.json",
     "core/CMakeLists.txt",
+    "CMakeLists.txt",
     "CHANGELOG.md",
     "CITATION.cff",
     "docs/fidelity.md",
