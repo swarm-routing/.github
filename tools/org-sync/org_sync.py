@@ -867,6 +867,10 @@ BIB_ROLES = {
     "implemented": "The work this repository implements.",
     "tool": "A tool this repository uses.",
     "dataset": "Data this repository uses.",
+    # the reverse relation: a work built on this repository (swarm-core's ns-3
+    # adapter). README lists it apart, never under "Please also cite"; CITATION.cff
+    # carries it with `keywords: ["adapter"]`, which zenodo.py makes `isRequiredBy`
+    "adapter": "A work that builds on this repository.",
 }
 BIB_TYPES = {
     "article": ("article", "journal"),
@@ -943,6 +947,8 @@ def bib_references(repo_dir):
             "year": int(year),
             "role": bib.plain(f.get("note", "")) or BIB_ROLES[role],
         }
+        if role == "adapter":
+            r["adapter"] = True
         if venue and bib.plain(f.get(venue, "")):
             r["venue"] = bib.plain(f[venue])
         if e["type"] in ("phdthesis", "mastersthesis"):
@@ -998,6 +1004,8 @@ def check_references(refs):
             sys.exit(f"{where}: needs a doi, or a url and no_doi (why it has none)")
         if r.get("doi") and not re.match(r"^10\.\d{4,9}/\S+$", r["doi"]):
             sys.exit(f"{where}: doi is the identifier (10.NNNN/...), not a resolver URL")
+        if "adapter" in r and not isinstance(r["adapter"], bool):
+            sys.exit(f"{where}: adapter is true or false (a work built on this repository)")
     return refs
 
 
@@ -1068,6 +1076,8 @@ def cff_references(refs):
             out.append(f"    url: {yq(r['url'])}")
         notes = r["role"].strip() + (f" No DOI: {no_doi(r)}." if r.get("no_doi") else "")
         out.append(f"    notes: {yq(notes)}")
+        if r.get("adapter"):
+            out.append('    keywords:\n      - "adapter"')
     return "\n".join(out) + "\n"
 
 
@@ -1143,9 +1153,14 @@ def citing_section(cfg, repo_dir):
             " once Zenodo archives its first release.",
         ]
     refs = references(cfg, repo_dir)
-    if refs:
+    cited = [r for r in refs if not r.get("adapter")]
+    if cited:
         out += ["", "Please also cite the work it builds on:", ""]
-        out += [reference_line(r) for r in refs]
+        out += [reference_line(r) for r in cited]
+    adapters = [r for r in refs if r.get("adapter")]
+    if adapters:
+        out += ["", "Works that build on it:", ""]
+        out += [reference_line(r) for r in adapters]
     if os.path.exists(os.path.join(repo_dir, "docs/fidelity.md")):
         out += [
             "",

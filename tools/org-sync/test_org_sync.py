@@ -799,6 +799,48 @@ if yaml:
 check(run("check", bo)[0] == 0, "bib only: check is clean")
 check(fidelity.bib_check(bo)[0] == [], "bib only: fidelity.py bib check agrees with the render")
 
+# the `adapter` role: a work built on this repository (swarm-core's ns-3 adapter).
+# README lists it apart, never as work it builds on; CITATION.cff marks it, and
+# its DOI is never taken for the repository's own
+ad = fresh()
+run("init", ad, "--kind", "protocol")
+edit(ad, ".github/org-sync.toml", 'kind = "protocol"\n', 'kind = "protocol"\ncitation = true\n')
+ADAPTER = r"""@software{SwarmCore,
+  author    = {Joppi, Daniel Henrique},
+  title     = {swarm-adapter-ns3},
+  publisher = {Zenodo},
+  year      = {2026},
+  doi       = {10.5281/zenodo.24138628},
+  note      = {Its ns-3 adapter.},
+  keywords  = {adapter},
+}
+"""
+write(os.path.join(ad, "docs/references.bib"), seed + ADAPTER)
+run("apply", ad)
+run("reseed", "CITATION.cff", ad)
+rr = read(os.path.join(ad, "README.md"))
+cff = read(os.path.join(ad, "CITATION.cff"))
+check(
+    "Please also cite" not in rr
+    and "Works that build on it:\n\n- D. H. Joppi, *swarm-adapter-ns3*, 2026, "
+    "[doi:10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628). Its ns-3 adapter.\n"
+    in rr,
+    "adapter role: README lists it under its own heading, not as work it builds on",
+)
+check(
+    '    notes: "Its ns-3 adapter."\n    keywords:\n      - "adapter"\n' in cff
+    and zenodo.concept_from(cff) is None
+    and run("check", ad)[0] == 0
+    and fidelity.bib_check(ad)[0] == [],
+    "adapter role: CITATION.cff marks it, it is not the repository's DOI, checks pass",
+)
+if yaml:
+    check(
+        yaml.safe_load(cff)["references"][0]["keywords"] == ["adapter"]
+        and zenodo.cff_related(yaml.safe_load(cff))[0]["relation"] == "isRequiredBy",
+        "adapter role: Zenodo gets isRequiredBy",
+    )
+
 # citation-refs (#307): only CITATION.cff's references: block, from the bib
 rc, out = run("citation-refs", bo, "--check")
 check(rc == 0 and "up to date" in out, "citation-refs --check: a reseeded CITATION.cff is current")

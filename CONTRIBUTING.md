@@ -1553,7 +1553,15 @@ lines of the repository's own after the end marker, stay the repository's
 
 - **Roles.** An entry's `keywords` hold its roles: `implemented` (the work the
   repository implements), `restates`, `compared`, `dataset`, `tool`,
-  `background`.
+  `background`, `adapter`. `adapter` is the reverse relation: a work built on
+  this repository (swarm-core lists its ns-3 adapter, swarm-adapter-ns3). Its
+  entry renders in the README under "Works that build on it", never under
+  "Please also cite the work it builds on", and in `CITATION.cff` with
+  `keywords: ["adapter"]` (in `[[references]]`: `adapter = true`). The
+  release tool reads the repository's own DOI from the top of `CITATION.cff`
+  only, never from `references:`, and gives Zenodo the entry as
+  `isRequiredBy`, where every other org work cited by Zenodo DOI is
+  `requires`.
 - **DOI links first.** An entry gives its `doi`, and a reference to it is
   shown as its `https://doi.org/` link; a `url` only for a work that has no
   DOI. Never the repository's own DOI (CITATION.cff carries it), and only
