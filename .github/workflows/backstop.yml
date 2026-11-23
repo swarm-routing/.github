@@ -57,7 +57,7 @@ jobs:
       contents: read
     env:
       # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md)
-      IMG: ghcr.io/swarm-routing/ci-tools@sha256:69ed34afec4dc24a3f1fb6ef54382182afcb8ae505f4ef6c81796203d3c3ccd8  # promoted from 4f2c654
+      IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
