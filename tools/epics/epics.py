@@ -4,7 +4,7 @@
 """List the org's epics where people and agents look for work.
 
 Usage:
-  epics.py fetch [--out FILE] [--repos A,B]       the data, as JSON (stdout by default)
+  epics.py fetch [--out FILE] [--repos A,B] [--no-epics]  the data, as JSON (stdout by default)
   epics.py readme [REPO_DIR] [--repo NAME] [--check]  this repo's README section
   epics.py roadmap FILE [--check]                  every public repo's epics (ROADMAP.md)
   epics.py profile FILE [--check]                  the open epics (profile/README.md)
@@ -12,7 +12,9 @@ Usage:
   epics.py --self-test
 
 Every command but fetch and --self-test takes `--data FILE` to use saved data
-instead of the GitHub API. `--repos A,B` reads only those repositories. Without
+instead of the GitHub API. `fetch --no-epics` lists the repositories only (the
+same filter, empty `epics` lists, no epic-issue call), for a run that reads no
+epic data. `--repos A,B` reads only those repositories. Without
 it the org's repositories are listed through `orgs/swarm-routing/repos`; where
 that is forbidden (HTTP 403, as in a Claude Code cloud session, which is bound
 to its repositories), the list falls back to the repositories named in this
@@ -148,16 +150,20 @@ def listing_of(names, roadmap=ROADMAP):
     return [gh_api(f"repos/{ORG}/{n}") for n in names]
 
 
-def fetch(names=None, roadmap=ROADMAP):
+def fetch(names=None, roadmap=ROADMAP, with_epics=True):
     """Every public, non-archived repo of the org, or only `names` (still
-    dropping private ones); see listing_of for where the list comes from."""
+    dropping private ones); see listing_of for where the list comes from.
+    `with_epics=False` is the repository-only mode: the same filter and
+    JSON, empty `epics` lists, and no epic-issue API call (#71)."""
     listing = listing_of(names, roadmap)
     repos = []
     for r in listing:
         if r["private"] or r["archived"] or r["fork"]:
             continue
-        issues = gh_pages(f"repos/{ORG}/{r['name']}/issues?labels=epic&state=all")
-        epics = [epic_of(i) for i in issues if "pull_request" not in i]
+        epics = []
+        if with_epics:
+            issues = gh_pages(f"repos/{ORG}/{r['name']}/issues?labels=epic&state=all")
+            epics = [epic_of(i) for i in issues if "pull_request" not in i]
         repos.append({"name": r["name"], "url": r["html_url"], "epics": epics})
     repos.sort(key=lambda r: (r["name"] != ".github", r["name"].lower()))
     return {"org": ORG, "repos": repos}
@@ -449,6 +455,26 @@ def fallback_test(ok, data):
             ok(got == [".github", "x", "y"], "403 falls back to the ROADMAP list")
             ok(f"repos/{ORG}/.github" in calls, "fallback reads each repository")
             ok(names(fetch(["y"], roadmap=roadmap)) == ["y"], "--repos wins")
+            # repository-only mode (#71): same repositories, no epic-issue call
+            gh_api, calls[:] = fake(False), []
+            full = fetch(roadmap=roadmap)
+            ok(any("/issues?" in c for c in calls), "the full fetch reads epic issues")
+            gh_api, calls[:] = fake(False), []
+            bare = fetch(roadmap=roadmap, with_epics=False)
+            ok(not any("/issues" in c for c in calls), "--no-epics makes no epic-issue call")
+            ok(names(bare) == names(full) == ["x", "y"], "--no-epics keeps the repository filter")
+            ok(all(r["epics"] == [] for r in bare["repos"]), "--no-epics writes empty epics lists")
+            ok(
+                [{k: v for k, v in r.items() if k != "epics"} for r in bare["repos"]]
+                == [{k: v for k, v in r.items() if k != "epics"} for r in full["repos"]],
+                "--no-epics writes the same JSON shape",
+            )
+            gh_api, calls[:] = fake(True), []
+            ok(
+                names(fetch(roadmap=roadmap, with_epics=False)) == [".github", "x", "y"]
+                and not any("/issues" in c for c in calls),
+                "--no-epics also falls back to the ROADMAP list",
+            )
             try:
                 fetch(roadmap=os.path.join(d, "none.md"))
                 ok(False, "403 with no ROADMAP list accepted")
@@ -533,6 +559,7 @@ def main(argv=None):
     repos.add_argument("--repos", type=lambda v: [n for n in v.split(",") if n])
     f = sub.add_parser("fetch", parents=[repos])
     f.add_argument("--out")
+    f.add_argument("--no-epics", action="store_true")
     for name in ("readme", "roadmap", "profile", "check-all"):
         p = sub.add_parser(name, parents=[repos])
         p.add_argument("--data")
@@ -548,7 +575,8 @@ def main(argv=None):
     if args.self_test:
         return self_test()
     if args.cmd == "fetch":
-        text = json.dumps(fetch(args.repos), indent=1, sort_keys=True) + "\n"
+        data = fetch(args.repos, with_epics=not args.no_epics)
+        text = json.dumps(data, indent=1, sort_keys=True) + "\n"
         if args.out:
             with open(args.out, "w", encoding="utf-8") as fh:
                 fh.write(text)

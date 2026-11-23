@@ -1210,13 +1210,16 @@ def run(args, gh=None, clone_url=None):
     # .github's ROADMAP and profile list them all, so a run limited by --repos
     # must not regenerate them from part of the data (it would delete the other
     # repositories' sections). org-sync reads no epic data, so an org-sync-only
-    # run fetches just the repositories it touches.
+    # run fetches just the repositories it touches, and reads no epic issue
+    # (`--no-epics`, #71).
     if args.data:
         shutil.copy(args.data, data)
     else:
         fetch = [sys.executable, "-I", EPICS, "fetch", "--out", data]
-        if args.repos and "epics" not in tasks:
-            fetch += ["--repos", args.repos]
+        if "epics" not in tasks:
+            fetch += ["--no-epics"]
+            if args.repos:
+                fetch += ["--repos", args.repos]
         # epics.py says on stderr where the repository list came from (the org
         # listing, or ROADMAP.md#epics where that listing is forbidden, #175)
         source = sh(fetch, env=gh.env).stderr.strip()
@@ -1751,6 +1754,11 @@ def self_test():
     check(
         "org-sync-only fetch is limited to its repositories",
         len(fetches) == 2 and fetches[1][-2:] == ["--repos", "beta"],
+    )
+    # #71: only a run without the epics task skips the epic issues
+    check("a run with epics fetches every epic", fetches and "--no-epics" not in fetches[0])
+    check(
+        "an org-sync-only run reads no epic issue", len(fetches) == 2 and "--no-epics" in fetches[1]
     )
     # a stale bot branch of that name (its PR closed by hand, unrelated history) is overwritten
     git_dir = os.path.join(remotes, ORG, "alpha.git")
