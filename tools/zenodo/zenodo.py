@@ -45,9 +45,11 @@ AntHocNet's v2.6.1 was):
   concept:
   - the files are GitHub's source zip of the tag, as the integration archives it;
   - the metadata is the previous version's, updated from the tag's
-    CITATION.cff (title, abstract, authors, keywords), with the tag as
-    `version`, the release's date, and the github.com/OWNER/NAME/tree/TAG link,
-    so the new version names where the code lives now.
+    CITATION.cff (title, abstract, authors, keywords, and a `requires`
+    related identifier for each org work its `references:` cite by Zenodo DOI),
+    with the tag as `version`, the release's date, and the
+    github.com/OWNER/NAME/tree/TAG link, so the new version names where the
+    code lives now.
   A record of another concept is refused. A failed run leaves a draft that the
   next run reuses. Publishing makes a DOI permanent: there is no undo.
   --dry-run reads only and needs no token.
@@ -400,7 +402,8 @@ def classify(releases, versions, now, grace_hours):
 
 
 def cff_overlay(meta, cff_text):
-    """Title, abstract, authors and keywords from CITATION.cff onto Zenodo metadata."""
+    """Title, abstract, authors, keywords and the related org works (cff_related)
+    from CITATION.cff onto Zenodo metadata."""
     try:
         import yaml
     except ImportError:
@@ -428,7 +431,54 @@ def cff_overlay(meta, cff_text):
         creators.append(c)
     if creators:
         meta["creators"] = creators
+    related = cff_related(cff)
+    if related:
+        have = {r["identifier"] for r in related}
+        kept = [
+            r
+            for r in meta.get("related_identifiers", [])
+            if bare_doi(r.get("identifier", "")) not in have
+        ]
+        meta["related_identifiers"] = kept + related
+        return meta, (
+            "metadata from CITATION.cff (title, abstract, authors, keywords, "
+            f"{len(related)} related org work(s))"
+        )
     return meta, "metadata from CITATION.cff (title, abstract, authors, keywords)"
+
+
+ZENODO_DOI = re.compile(r"^10\.5281/zenodo\.\d+$")
+
+
+def bare_doi(identifier):
+    """A DOI as `10.x/y`, lowercase, from itself or a doi.org link."""
+    text = str(identifier).strip().lower()
+    return re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)", "", text)
+
+
+def cff_related(cff):
+    """Zenodo related identifiers for the org works CITATION.cff cites: each
+    `references:` entry whose DOI is a Zenodo DOI (an org release's concept,
+    CONTRIBUTING "References") becomes `requires` that DOI. Other references
+    (papers, books) are cited, not required software, and stay out; an entry
+    already on the record with the same identifier is replaced, never another
+    one (a link added on Zenodo by hand stays)."""
+    out = []
+    for r in cff.get("references") or []:
+        if not isinstance(r, dict):
+            continue
+        doi = bare_doi(r.get("doi") or "")
+        if not ZENODO_DOI.match(doi) or doi in {o["identifier"] for o in out}:
+            continue
+        out.append(
+            {
+                "identifier": doi,
+                "relation": "requires",
+                "resource_type": "dataset" if r.get("type") == "data" else "software",
+                "scheme": "doi",
+            }
+        )
+    return out
 
 
 def is_github_url(url):
@@ -1109,7 +1159,14 @@ BIB_ROLES = ("implemented", "restates", "compared", "dataset", "tool", "backgrou
 BIB_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:.+-]*$")
 # Each released org repository's key in every docs/references.bib: CONTRIBUTING
 # "References" holds the same table (the self-test compares them).
-ORG_KEYS = {"AntHocNet": "AHN", "swarm-adapter-ns3": "SwarmCore", "sim-tools": "ns3tools"}
+# swarm-adapter-ns3 keeps `SwarmCore` (its key since it was ns3-swarm-core, cited
+# under it across the org); swarm-core's own repository is `SwarmCorePorts`.
+ORG_KEYS = {
+    "AntHocNet": "AHN",
+    "swarm-adapter-ns3": "SwarmCore",
+    "swarm-core": "SwarmCorePorts",
+    "sim-tools": "ns3tools",
+}
 
 
 def bib_author(name):
@@ -1894,6 +1951,49 @@ def self_test():
     check(
         "only a github.com host is replaced",
         ids == ["https://github.com/org/R/tree/v1.0.0", hostile[0], hostile[1]],
+    )
+    # CITATION.cff's references to org works (Zenodo DOIs) become `requires` related
+    # identifiers; papers stay out; a link on the record for the same DOI is replaced,
+    # any other kept (swarm-routing/swarm-adapter-ns3#233)
+    refs_cff = CFF + (
+        "references:\n"
+        '  - type: software\n    title: "swarm-core"\n    doi: "10.5281/zenodo.24476619"\n'
+        '  - type: conference-paper\n    title: "AntHocNet"\n    doi: "10.1007/978-3-540-30217-9_47"\n'
+        '  - type: data\n    title: "cells"\n    doi: "10.5281/ZENODO.7"\n'
+    )
+    old = {
+        "related_identifiers": [
+            {"identifier": "https://doi.org/10.5281/zenodo.24476619", "relation": "cites"},
+            {"identifier": "10.1/hand-added", "relation": "isDocumentedBy", "scheme": "doi"},
+        ]
+    }
+    m, note = cff_overlay(old, refs_cff)
+    check(
+        "cff references to org works: requires, papers out, the same DOI replaced",
+        m["related_identifiers"]
+        == [
+            {"identifier": "10.1/hand-added", "relation": "isDocumentedBy", "scheme": "doi"},
+            {
+                "identifier": "10.5281/zenodo.24476619",
+                "relation": "requires",
+                "resource_type": "software",
+                "scheme": "doi",
+            },
+            {
+                "identifier": "10.5281/zenodo.7",
+                "relation": "requires",
+                "resource_type": "dataset",
+                "scheme": "doi",
+            },
+        ]
+        and "2 related org work(s)" in note
+        and concept_from(refs_cff) == "100",
+    )
+    m = first_metadata("org/R", "v1.0.0", "2026-11-23", refs_cff + "license: MIT\n")
+    check(
+        "a first concept carries the related org works too",
+        [r["identifier"] for r in m["related_identifiers"]]
+        == ["https://github.com/org/R/tree/v1.0.0", "10.5281/zenodo.24476619", "10.5281/zenodo.7"],
     )
     check(
         "inherited file removed",
