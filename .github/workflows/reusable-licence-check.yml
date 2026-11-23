@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 8
     env:
       # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md); sha-bd03540
-      IMG: ghcr.io/swarm-routing/ci-tools@sha256:47de777a458c52a808a970ba1c2cd1a557c991c26deebde249f5ee9c95a75547
+      IMG: ghcr.io/swarm-routing/ci-tools@sha256:69ed34afec4dc24a3f1fb6ef54382182afcb8ae505f4ef6c81796203d3c3ccd8
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
@@ -86,7 +86,7 @@ jobs:
       # minutes on 2026-11-17 (04:53-04:58Z, with no login in this job): the org's
       # one retry, three more tries before the gate fails (#578, #645)
       - name: The ci-tools image (pulled with retries)
-        uses: swarm-routing/.github/.github/actions/pull-ci-tools@786502bd1a15a9b179678a09393e3b7592242b88 # main@2026-11-22
+        uses: swarm-routing/.github/.github/actions/pull-ci-tools@c4d93afc5ba09c001d18fc553aab3e4065117cbe # main@2026-11-23
         timeout-minutes: 3  # about 15 MB, and up to 90 s of retries
         with:
           image: ${{ env.IMG }}

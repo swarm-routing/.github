@@ -57,7 +57,7 @@ jobs:
       contents: read
     env:
       # the ci-tools image by digest (docs/adr/0002-pipelines-are-go.md)
-      IMG: ghcr.io/swarm-routing/ci-tools@sha256:0e4d79c0abf94c909b1250702ef5bf77dce698fd8480a8a4d841b604b53929c9  # promoted from 29c9ad4: dry-run exit code (#750), the alarm reads the latest end (#751)
+      IMG: ghcr.io/swarm-routing/ci-tools@sha256:69ed34afec4dc24a3f1fb6ef54382182afcb8ae505f4ef6c81796203d3c3ccd8  # promoted from 4f2c654
     steps:
       - name: Harden the runner (audit egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
