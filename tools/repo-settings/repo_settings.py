@@ -428,8 +428,8 @@ def validate(s, private=False):
         if (
             not isinstance(mm, list)
             or not mm
+            or not all(isinstance(m, str) and m in MERGE_METHODS for m in mm)
             or len(set(mm)) != len(mm)
-            or not all(m in MERGE_METHODS for m in mm)
         ):
             errors.append(f"merge_methods is not a non-empty list of {', '.join(MERGE_METHODS)}")
         elif not s.get("ruleset"):
@@ -2664,6 +2664,7 @@ def self_test():
         ("not a list", {**ok_s, "merge_methods": "merge"}, "merge_methods is not"),
         ("empty", {**ok_s, "merge_methods": []}, "merge_methods is not"),
         ("unknown", {**ok_s, "merge_methods": ["octopus"]}, "merge_methods is not"),
+        ("unhashable", {**ok_s, "merge_methods": [["merge"]]}, "merge_methods is not"),
         ("duplicate", {**ok_s, "merge_methods": ["merge", "merge"]}, "merge_methods is not"),
         ("no profile", {"merge_methods": ["merge"]}, "without a ruleset profile"),
         ("queue method not allowed", {**ok_s, "merge_methods": ["merge"]}, "SQUASH is not in"),
