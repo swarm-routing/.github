@@ -152,7 +152,7 @@ jobs:
         if: steps.key.outputs.ok == 'true'
         continue-on-error: true
         timeout-minutes: 35
-        uses: anthropics/claude-code-action@cc98b3ae241b0fcfb6a42a2690751afffecb4452 # v1.0.278
+        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f # v1.0.284
         with:
           anthropic_api_key: ${{ secrets.anthropic-api-key }}
           github_token: ${{ github.token }}
@@ -203,7 +203,7 @@ jobs:
           echo "::warning::no fix for code scanning alert #$ALERT: see the guard output above"
       - name: Hand on the change
         if: steps.guard.outputs.result == 'accepted'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
           name: security-fix
@@ -212,7 +212,7 @@ jobs:
           if-no-files-found: error
       - name: Hand on why
         if: steps.guard.outputs.result == 'refused'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
           name: security-fix-refused
