@@ -1638,7 +1638,7 @@ rate limit and was archived from its tag by `zenodo.py create` on 2026-11-11
 <!-- zenodo:archived:begin (zenodo.py table --write; never edit by hand) -->
 | Repository | Concept DOI | Newest version |
 |---|---|---|
-| AntHocNet | [10.5281/zenodo.20981979](https://doi.org/10.5281/zenodo.20981979) | v2.7.0 [10.5281/zenodo.24213888](https://doi.org/10.5281/zenodo.24213888) |
+| AntHocNet | [10.5281/zenodo.20981979](https://doi.org/10.5281/zenodo.20981979) | v2.8.0 [10.5281/zenodo.24466958](https://doi.org/10.5281/zenodo.24466958) |
 | ARA | [10.5281/zenodo.24125198](https://doi.org/10.5281/zenodo.24125198) | v0.2.1 [10.5281/zenodo.24269622](https://doi.org/10.5281/zenodo.24269622) |
 | BeeAdHoc | [10.5281/zenodo.24124821](https://doi.org/10.5281/zenodo.24124821) | v0.2.1 [10.5281/zenodo.24269446](https://doi.org/10.5281/zenodo.24269446) |
 | benchmarks | [10.5281/zenodo.24145189](https://doi.org/10.5281/zenodo.24145189) | v0.1.0 [10.5281/zenodo.24145190](https://doi.org/10.5281/zenodo.24145190) |
