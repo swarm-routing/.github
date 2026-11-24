@@ -103,9 +103,10 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             bump: only a PR the maintainer asked for is rebuilt; never while a
             run of that workflow is queued or running; never with a guessed
             increment (a PR whose body records none is left to a person).
-  `release` runs both release tasks and release-lock (org-bot.yml, hourly,
-  and for one repository on its `org-release` repository_dispatch, #479); `hourly`
-  runs those and org-sync (the hourly schedule, so a deferred refresh lands, #505); `all`
+  `release` runs both release tasks, zenodo and release-lock (org-bot.yml, for
+  one repository on its `org-release` repository_dispatch, #479, so a new
+  release's DOI PR opens at once, not at the daily `all` run); `hourly` runs
+  the release tasks, release-lock and org-sync (the hourly schedule, so a deferred refresh lands,#505); `all`
   runs epics, org-sync, zenodo, swarm-core-pin, release-lock and bestpractices.
 
   org-sync and swarm-core-pin never leave two PRs that each fail the other's
@@ -1195,7 +1196,9 @@ def run(args, gh=None, clone_url=None):
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
     groups = {
         "all": ["epics", "org-sync", "zenodo", "swarm-core-pin", "release-lock", "bestpractices"],
-        "release": ["release-rebuild", "release-aftercare", "release-lock"],
+        # an org-release dispatch runs it for the released repository: zenodo
+        # there too, so its DOI PR opens at once, not at the daily `all` run
+        "release": ["release-rebuild", "release-aftercare", "zenodo", "release-lock"],
         # the hourly run: the release tasks, and org-sync, so a refresh the
         # throttle deferred lands within the hour (#505)
         "hourly": ["release-rebuild", "release-aftercare", "release-lock", "org-sync"],
@@ -2704,6 +2707,22 @@ def self_test():
         and f"NS3_TOOL_WHEEL_SHA256={n2['nt-0.2.0.whl']}" in got
         and shown("nu", "protocols.lock") == protocols
         and gh.auto_merged() == ["PR_42"],
+    )
+    # an org-release dispatch runs `release` for the released repository alone:
+    # its zenodo DOI PR opens then, not at the next daily `all` run
+    records.clear()
+    globals()["sh"] = zenodo_sh("")
+    try:
+        zgh = RouteGitHub({f"repos/{ORG}/gamma/releases?per_page=20": []})
+        go(zgh, task="release", repos="gamma", data=zdata)
+    finally:
+        globals()["sh"] = real_sh
+    zpost = [c for c in zgh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    check(
+        "release: the released repository's zenodo record runs, one DOI PR",
+        len(records) == 1
+        and records[0][-5:-2] == ["--repo", f"{ORG}/gamma", "--checkout"]
+        and [p[2]["title"] for p in zpost] == ["docs: record the zenodo concept doi (org-bot)"],
     )
     bot_pr = {
         "number": 42,

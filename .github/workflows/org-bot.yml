@@ -111,7 +111,8 @@ run-name: >-
 # AntHocNet's release.yml) send repository_dispatch `org-release` with
 # {repository, tag} once it is published; this workflow then runs `release`
 # for that repository (its aftercare, without waiting for an hourly slot
-# GitHub may skip, as it did 12:57-16:30 UTC on 2026-11-15) and
+# GitHub may skip, as it did 12:57-16:30 UTC on 2026-11-15, and its zenodo
+# record, whose DOI PR otherwise waited for the daily run) and
 # `release-lock` (plus `swarm-core-pin` for a swarm-core release) in every
 # repository, so the consumers' locks move at once. The hourly run is the
 # backstop: Zenodo may mint the DOI after the event, and the next hour records it. One PR per repository and task; the same change is never
