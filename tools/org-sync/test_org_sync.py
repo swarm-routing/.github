@@ -140,6 +140,38 @@ check(
     and "target: 80%" in read(os.path.join(da, ".codecov.yml")),
     "a protocol repo is seeded with sonar-project.properties and .codecov.yml",
 )
+# the class documentation (#883): the Doxyfile seed and the org's api-docs workflow
+da_api = read(os.path.join(da, ".github/workflows/api-docs.yml"))
+check(
+    'PROJECT_NAME           = "ARA"' in read(os.path.join(da, "docs/api/Doxyfile"))
+    and "reusable-doxygen.yml@" in da_api
+    and 'doxyfile: "docs/api/Doxyfile"' in da_api
+    and "@DOXYFILE@" not in da_api,
+    "a protocol repo is seeded with docs/api/Doxyfile and gets api-docs.yml building it",
+)
+dx = fresh()
+run("init", dx, "--kind", "protocol", "--dual", "core/")
+# a top-level key: before the file's first table
+write(
+    os.path.join(dx, ".github/org-sync.toml"),
+    '\ndoxyfile = "api/Doxyfile"\n' + read(os.path.join(dx, ".github/org-sync.toml")),
+)
+os.makedirs(os.path.join(dx, "api"), exist_ok=True)
+write(os.path.join(dx, "api/Doxyfile"), 'PROJECT_NAME = "own"\n')
+run("apply", dx)
+check(
+    read(os.path.join(dx, "api/Doxyfile")) == 'PROJECT_NAME = "own"\n'
+    and 'doxyfile: "api/Doxyfile"' in read(os.path.join(dx, ".github/workflows/api-docs.yml")),
+    "doxyfile names an own Doxyfile (AntHocNet's api/Doxyfile): kept, and the workflow builds it",
+)
+for bad in ('"../Doxyfile"', '"/etc/Doxyfile"', '"a b"', "3"):
+    edit(dx, ".github/org-sync.toml", "\ndoxyfile = ", f"\ndoxyfile = {bad}\n# was ")
+    try:
+        refused = "doxyfile must be" in str(run("check", dx))
+    except SystemExit as e:
+        refused = "doxyfile must be" in str(e.code)
+    check(refused, f"doxyfile = {bad} is refused")
+    edit(dx, ".github/org-sync.toml", f"\ndoxyfile = {bad}\n# was ", "\ndoxyfile = ")
 os.makedirs(os.path.join(da, ".github/workflows"), exist_ok=True)
 with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
     f.write("    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main\n")

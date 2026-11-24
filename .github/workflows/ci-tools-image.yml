@@ -351,7 +351,7 @@ jobs:
           # checkout, which must pass (the Python twin it was compared with is gone, #578)
           [ "$(docker run --rm "$img" check-headers --self-test)" = "self-test: PASS" ] \
             || { echo "::error::check-headers --self-test"; exit 1; }
-          # ns3-ci-selftest.yml's fixture is an ns-3 module: GPL-2.0-only, as ci.yml lists it (#877)
+          # ns3-ci-selftest.yml's fixture is an ns-3 module: GPL-2.0-only (LICENSING.md), as ci.yml lists it
           fx=tools/checks/fixtures/ns3-ci/protocol-hello
           docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' \
             --gpl-only "$fx/model/protocol-hello.h" --gpl-only "$fx/model/protocol-hello.cc" \

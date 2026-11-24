@@ -11,7 +11,7 @@ Org-wide defaults for every `swarm-routing` repository: the profile page,
 default issue forms and PR template, the label taxonomy, the C++ style, and the
 reusable workflows other repos call (`reusable-ns3-ci.yml`, `reusable-ns3-image.yml`,
 `reusable-release.yml`, `reusable-benchmark-cell.yml`, `reusable-python-ci.yml`,
-`reusable-go-ci.yml`, `sync-labels.yml`). Pipelines (code a workflow runs) are
+`reusable-go-ci.yml`, `reusable-doxygen.yml`, `sync-labels.yml`). Pipelines (code a workflow runs) are
 written in Go, skill scripts stay Python ([ADR-0002](docs/adr/0002-pipelines-are-go.md),
 CONTRIBUTING § Languages; the existing Python tools move one at a time, #531).
 Files here only take effect from `main` (GitHub reads community defaults from
@@ -329,6 +329,7 @@ changing what the row names.
 | Publish a C++ core as a vcpkg port, or consume one from outside the org | swarm-routing/vcpkg-registry; `reusable-release.yml` input `vcpkg-ports`; CONTRIBUTING "Dependencies" |
 | Cut a release of any org repository, or change how releases are made | `.github/workflows/reusable-release.yml` |
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
+| Build a C++ repository's class documentation (Doxygen) | `reusable-doxygen.yml`, `templates/workflows/api-docs.yml`, `templates/api/Doxyfile.in` |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
 | Choose a language, or write a Go pipeline tool and its CI | `docs/adr/0002-pipelines-are-go.md`, CONTRIBUTING § Languages, `reusable-go-ci.yml`; migration epic #531 |
 | Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `docker run --user … -v …:ro ghcr.io/swarm-routing/ci-tools@sha256:… <tool>` in a `run:` step, never `uses: docker://` (ADR-0002) |

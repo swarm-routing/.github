@@ -1,0 +1,138 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Reusable Doxygen
+
+# The class documentation of a C++ repository (swarm-routing/.github#881,
+# #883): Doxygen runs the repository's Doxyfile (org-sync seeds
+# docs/api/Doxyfile in every C++ kind; `doxyfile` in .github/org-sync.toml
+# names another, as AntHocNet's api/Doxyfile) and the HTML is uploaded as an
+# artifact, its warnings counted in the job summary. The site
+# (swarm-routing/swarm-routing.github.io) builds the same Doxyfile at each
+# project's locked commit and publishes it at /<Project>/api/, as AntHocNet's;
+# this job proves the Doxyfile builds on every PR, so the site's build never
+# meets a broken one first.
+#
+# The Doxyfile is the repository's; the job overrides only where the output
+# goes (OUTPUT_DIRECTORY, HTML_OUTPUT, WARN_LOGFILE, GENERATE_HTML), so a
+# local `doxygen docs/api/Doxyfile` writes what CI writes. PROJECT_VERSION is
+# in the environment (VERSION's first line, else `git describe`), for a
+# Doxyfile's `PROJECT_NUMBER = $(PROJECT_VERSION)`.
+#
+# Caller (org-sync writes it as .github/workflows/api-docs.yml):
+#
+#   on:
+#     pull_request:
+#     push:
+#       branches: [main]
+#   permissions:
+#     contents: read
+#   jobs:
+#     doxygen:
+#       uses: swarm-routing/.github/.github/workflows/reusable-doxygen.yml@main
+#       with:
+#         doxyfile: docs/api/Doxyfile
+on:
+  workflow_call:
+    inputs:
+      doxyfile:
+        description: "The Doxyfile, relative to the repository root"
+        type: string
+        default: docs/api/Doxyfile
+      artifact:
+        description: "The name of the uploaded HTML artifact (kept 7 days)"
+        type: string
+        default: api-docs
+      max-warnings:
+        description: "Fail when Doxygen warns more than this; -1 (default): report only"
+        type: number
+        default: -1
+    outputs:
+      warnings:
+        description: "The number of Doxygen warnings"
+        value: ${{ jobs.doxygen.outputs.warnings }}
+
+permissions:
+  contents: read
+
+jobs:
+  doxygen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      warnings: ${{ steps.run.outputs.warnings }}
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        timeout-minutes: 2  # its download and start take seconds (#164)
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # git describe, where there is no VERSION file
+          persist-credentials: false
+      - name: Install Doxygen
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          # fails fast on a broken index (--error-on=any) and retries the
+          # update 3 times, 10 s then 20 s apart: a mirror outage is the usual
+          # cause of a red run (org rule 8)
+          for delay in 10 20 0; do
+            timeout 300 sudo apt-get update -qq --error-on=any && break
+            [ "$delay" -gt 0 ] || exit 1
+            echo "apt-get update failed; retrying in $delay s" >&2; sleep "$delay"
+          done
+          timeout 300 sudo apt-get install -y -qq --no-install-recommends doxygen > /dev/null
+          echo "doxygen $(doxygen --version)"
+      - name: Doxygen
+        id: run
+        env:
+          DOXYFILE: ${{ inputs.doxyfile }}
+          MAX: ${{ inputs.max-warnings }}
+          ARTIFACT: ${{ inputs.artifact }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "$DOXYFILE" ]; then
+            echo "::error::no $DOXYFILE: org-sync seeds docs/api/Doxyfile in every C++ repository (\`doxyfile\` in .github/org-sync.toml names another)"
+            exit 1
+          fi
+          out="$RUNNER_TEMP/api"
+          rm -rf "$out" && mkdir -p "$out"
+          if [ -f VERSION ]; then
+            PROJECT_VERSION=$(head -n1 VERSION)
+          else
+            PROJECT_VERSION=$(git describe --tags --always 2> /dev/null || echo dev)
+          fi
+          export PROJECT_VERSION
+          # the repository's Doxyfile, then the output settings (the last
+          # assignment of a tag wins)
+          {
+            cat "$DOXYFILE"
+            printf '\nOUTPUT_DIRECTORY = %s\nHTML_OUTPUT = html\nGENERATE_HTML = YES\nWARN_LOGFILE = %s\n' \
+              "$out" "$out/warnings.log"
+          } | doxygen - > /dev/null
+          [ -f "$out/html/index.html" ] || { echo "::error::Doxygen wrote no html/index.html"; exit 1; }
+          warnings=$(grep -c 'warning:' "$out/warnings.log" || true)
+          pages=$(find "$out/html" -name '*.html' | wc -l)
+          echo "warnings=$warnings" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Doxygen: $DOXYFILE, version $PROJECT_VERSION"
+            echo
+            echo "$pages HTML pages, $warnings warning(s); the HTML is the \`$ARTIFACT\` artifact."
+            if [ "$warnings" -gt 0 ]; then
+              echo
+              echo '```'
+              grep 'warning:' "$out/warnings.log" | sed "s|$GITHUB_WORKSPACE/||" | head -50
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "doxygen: $pages pages, $warnings warning(s)"
+          if [ "$MAX" -ge 0 ] && [ "$warnings" -gt "$MAX" ]; then
+            echo "::error::$warnings Doxygen warnings, more than max-warnings $MAX"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact }}
+          path: ${{ runner.temp }}/api/html
+          retention-days: 7

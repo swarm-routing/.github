@@ -24,6 +24,10 @@ CONTRIBUTING "Cutting a release" is the procedure; this checks its steps.
     `pyproject.toml`) exists, with `tag_format = "v$version"`;
   - `make dist` exists, unless the caller passes its own `build:` or an own
     release.yml assembles its assets into `dist/` (AntHocNet);
+  - a repository that ships C++ (a `core/` CMake project, or an ns-3 module:
+    a CMakeLists.txt calling `build_lib(`) sets `vcpkg-ports` in its caller
+    (an own release.yml: a live line naming vcpkg), so every C++ release has
+    its port (swarm-routing/.github#881); nothing for one without C++;
   - the version: --version, else what the bump would produce (`cz bump
     --get-next`, with --increment; 0.1.0 for a first release), a WARN when
     Commitizen is not installed or nothing bumps;
@@ -108,6 +112,8 @@ COMMENT = re.compile(r"(?:^|\s)#.*$")  # a YAML comment, to the end of the line
 # an own release.yml builds its assets when a live (uncommented) line names dist/ as a path
 OWN_DIST = re.compile(r"(?:^|\s)\"?(?:\./)?dist/?\"?(?=\s|$)", re.M)
 WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
+BUILD_LIB = re.compile(r"^\s*build_lib\s*\(", re.M)  # an ns-3 module's CMakeLists.txt
+VCPKG = re.compile(r"\bvcpkg\b|port_bump")
 KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):(.*)$")  # the value is stripped after the match
 SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
 NOT_SHIPPED = re.compile(
@@ -586,6 +592,50 @@ def next_version(repo_dir, wd, increment, from_config, r, run=subprocess.run):
     return None
 
 
+def cpp_shipped(repo_dir):
+    """What C++ the repository ships: `core/` (a CMake project) and the ns-3
+    module directories (a CMakeLists.txt calling build_lib), relative paths."""
+    found = []
+    if os.path.isfile(os.path.join(repo_dir, "core", "CMakeLists.txt")):
+        found.append("core/")
+    for root, dirs, files in os.walk(repo_dir):
+        rel = os.path.relpath(root, repo_dir)
+        dirs[:] = sorted(
+            x
+            for x in dirs
+            if not x.startswith(".")
+            and not x.startswith("build")
+            and x not in ("third_party", "vendor", "node_modules")
+            and not (rel == "." and x == "core")
+        )
+        if "CMakeLists.txt" in files and BUILD_LIB.search(
+            read(os.path.join(root, "CMakeLists.txt")) or ""
+        ):
+            found.append("./" if rel == "." else rel + "/")
+    return found
+
+
+def vcpkg_check(repo_dir, callers, inputs, own_live, r):
+    """A repository shipping C++ releases a vcpkg port (swarm-routing/.github#881, #882)."""
+    shipped = cpp_shipped(repo_dir)
+    if not shipped:
+        return
+    what = ", ".join(shipped[:5]) + (" …" if len(shipped) > 5 else "")
+    ports = inputs.get("vcpkg-ports", "").split()
+    if callers and ports:
+        r.add("OK", f"vcpkg: C++ ({what}) released as port(s) {' '.join(ports)}")
+    elif own_live is not None and not callers and VCPKG.search(own_live):
+        r.add("OK", f"vcpkg: C++ ({what}); the own release.yml has a vcpkg step")
+    else:
+        r.add(
+            "FAIL",
+            f"vcpkg: the repository ships C++ ({what}) but its release sets no `vcpkg-ports`: "
+            f"add the port to {REGISTRY} (templates/<port>/) and `vcpkg-ports: <port>` under "
+            "the caller's `with:` (an ns-3 module's port waits on the registry's ns3 port; "
+            "swarm-routing/.github#881)",
+        )
+
+
 def ready(repo_dir, repo, version, gh, increment=None, run=subprocess.run):
     r = Report()
     flows = local_workflows(repo_dir)
@@ -660,6 +710,7 @@ def ready(repo_dir, repo, version, gh, increment=None, run=subprocess.run):
         r.add("OK", "build: the own release.yml builds its assets into dist/")
     else:
         r.add("FAIL", "build: no `dist:` target in the Makefile and no build: input in the caller")
+    vcpkg_check(repo_dir, callers, inputs, own_live if own else None, r)
     if not version and cz is not None and "_error" not in cz:
         from_config = inputs.get("first-release-from-config", "") in ("true", "True")
         version = next_version(repo_dir, wd, increment, from_config, r, run)
@@ -1118,6 +1169,56 @@ def self_test():
         expect(
             "ready: ./dist/ is the same path as dist/",
             has(rep, "OK", "build: the own release.yml builds its assets into dist/"),
+        )
+        expect(
+            "ready: no C++, no vcpkg line (#882)",
+            not any(m.startswith("vcpkg:") for _, m in rep.lines),
+        )
+        os.makedirs(os.path.join(d, "core"))
+        with open(os.path.join(d, "core", "CMakeLists.txt"), "w", encoding="utf-8") as fh:
+            fh.write("project(r-core CXX)\n")
+        with open(os.path.join(d, ".github/workflows/release.yml"), "a", encoding="utf-8") as fh:
+            fh.write("      # vcpkg: tools/port_bump.py, later\n")
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: a core/ CMake project whose own release.yml names vcpkg only in a comment fails",
+            has(rep, "FAIL", "vcpkg: the repository ships C++ (core/)"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "a", encoding="utf-8") as fh:
+            fh.write("      - run: python3 registry/tools/port_bump.py bump --port r-core\n")
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: an own release.yml with a vcpkg step passes (AntHocNet)",
+            has(rep, "OK", "own release.yml has a vcpkg step"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(caller)
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: a core/ caller with vcpkg-ports passes",
+            has(rep, "OK", "vcpkg: C++ (core/) released as port(s) swarm-core"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(caller.replace("vcpkg-ports: swarm-core", "vcpkg-ports: ''"))
+        for mod, text in (
+            ("ns3", "build_lib(\n  LIBNAME r\n  SOURCE_FILES model/r.cc\n)\n"),
+            ("build/ns3", "build_lib(LIBNAME stale)\n"),
+            ("docs", "# build_lib( in a comment\n"),
+        ):
+            os.makedirs(os.path.join(d, mod), exist_ok=True)
+            with open(os.path.join(d, mod, "CMakeLists.txt"), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: an empty vcpkg-ports fails, naming core/ and the ns-3 module, not build/",
+            has(rep, "FAIL", "ships C++ (core/, ns3/) but its release sets no `vcpkg-ports`")
+            and rep.failed(),
+        )
+        os.remove(os.path.join(d, "core", "CMakeLists.txt"))
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: an ns-3 module alone fails without vcpkg-ports",
+            has(rep, "FAIL", "ships C++ (ns3/)"),
         )
     flow = (
         "jobs:\n"

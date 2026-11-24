@@ -64,6 +64,8 @@ adapter of its ports. Three repositories were renamed that day:
 `ns3-swarm-core` is now swarm-adapter-ns3, `ns3-containers` is sim-containers
 and `ns3-tools` is sim-tools. A repository marked *deferred* is planned for later,
 not scheduled (ROADMAP decision 23): it starts when the maintainer re-plans it.
+Since 2026-11-24 the deferred repositories may set up and build a tested
+skeleton; releases still wait for the maintainer.
 
 Every badge below is live: the latest release, each repository's SonarQube
 Cloud quality gate and its Codecov line coverage on `main` (report-only,
@@ -93,9 +95,9 @@ no release yet, no SonarQube Cloud project, or no coverage upload.
 | [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | Honeybee routing (Wedde & Farooq, 2005), as the PG 460 Linux module specifies it: `core/` and ns-3 module in progress (Phase 4) | [![Release](https://img.shields.io/github/v/release/swarm-routing/BeeAdHoc?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/BeeAdHoc/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_BeeAdHoc&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_BeeAdHoc) | [![codecov](https://codecov.io/gh/swarm-routing/BeeAdHoc/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/BeeAdHoc/tree/main) |
 | [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005): `core/` and ns-3 module in progress (Phase 5) | [![Release](https://img.shields.io/github/v/release/swarm-routing/Termite?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/Termite/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_Termite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_Termite) | [![codecov](https://codecov.io/gh/swarm-routing/Termite/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/Termite/tree/main) |
 | [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007), the one published result benchmarked against AntHocNet: `core/` and ns-3 module in progress | [![Release](https://img.shields.io/github/v/release/swarm-routing/HOPNET?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/HOPNET/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_HOPNET&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_HOPNET) | [![codecov](https://codecov.io/gh/swarm-routing/HOPNET/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/HOPNET/tree/main) |
-| [POSANT](https://github.com/swarm-routing/POSANT) | *deferred*: position-based ant colony routing for geographic and 3D networks (UAV swarms, FANETs), on swarm-core's location port; fidelity sheet only | — | — | — |
-| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | *deferred*: honeybee-inspired, energy-aware convergecast routing for wireless sensor networks; fidelity sheet only | — | — | — |
-| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | *deferred*: Q-routing with energy-aware updates and Boltzmann next-hop selection, a learned comparator for the swarm protocols; fidelity sheet only | — | — | — |
+| [POSANT](https://github.com/swarm-routing/POSANT) | *deferred*: position-based ant colony routing for geographic and 3D networks (UAV swarms, FANETs), on swarm-core's location port; setup and skeleton, protocol logic after its reviewed fidelity sheet | — | — | — |
+| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | *deferred*: honeybee-inspired, energy-aware convergecast routing for wireless sensor networks; setup and skeleton, protocol logic after its reviewed fidelity sheet | — | — | — |
+| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | *deferred*: Q-routing with energy-aware updates and Boltzmann next-hop selection, a learned comparator for the swarm protocols; setup and skeleton, protocol logic after its reviewed fidelity sheet | — | — | — |
 
 ### 4. Infrastructure and tooling
 
@@ -132,10 +134,16 @@ Every deferred item keeps its epic and its plan; none starts by itself.
   the release train and the ns-3 work, and phase 4 (agent tooling, docs, the
   paper) where it needs no deferred track.
 - **Later (deferred):** the Linux daemon swarm-routingd and the vertical
-  slice on it (phase 2); the new protocols POSANT, BeeSensor and Q-Swarm
-  (fidelity sheets may continue, no code); swarm-web-ui; and the other
-  simulators: CORE/EMANE and Shadow on swarm-routingd, OMNeT++ through
-  swarm-adapter-omnet (decision 24), after ns-3 and Linux parity.
+  slice on it (phase 2); the new protocols POSANT, BeeSensor and Q-Swarm;
+  swarm-web-ui; and the other simulators: CORE/EMANE and Shadow on
+  swarm-routingd, OMNeT++ through swarm-adapter-omnet (decision 24), after
+  ns-3 and Linux parity.
+- **Lifted on 2026-11-24** (decision 23 as amended): POSANT, BeeSensor,
+  Q-Swarm, swarm-adapter-omnet, swarm-routingd and swarm-web-ui set up their
+  templates, CI and release workflow and build a tested skeleton. A new
+  protocol writes its logic once its fidelity sheet is reviewed; where the
+  paper is not open, that first version is a v0 built from public sources,
+  its anchor gate open. No release without the maintainer's word.
 
 The whole plan, phase by phase: [ROADMAP.md](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md).
 
@@ -198,6 +206,7 @@ lists them in the order that matters.
 | [.github](https://github.com/swarm-routing/.github) | [#467](https://github.com/swarm-routing/.github/issues/467) release automation, less duplication, correctness guards (2026-11 improvement round) | In progress | 11 / 23 |
 | [.github](https://github.com/swarm-routing/.github) | [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | In progress | 2 / 2 |
 | [.github](https://github.com/swarm-routing/.github) | [#672](https://github.com/swarm-routing/.github/issues/672) Swarm-Routing Architecture & Migration Roadmap (Hexagonal Multi-Runtime) | In progress | 3 / 17 |
+| [.github](https://github.com/swarm-routing/.github) | [#881](https://github.com/swarm-routing/.github/issues/881) every c++ release on vcpkg, with class docs and install guides per simulator; set up the new repositories | In progress | 2 / 9 |
 | [.github](https://github.com/swarm-routing/.github) | [#35](https://github.com/swarm-routing/.github/issues/35) code quality across the org — order of work and maintainer decisions | Planned | no sub-issues yet |
 | [.github](https://github.com/swarm-routing/.github) | [#48](https://github.com/swarm-routing/.github/issues/48) Other simulators: container and tooling repos for OMNeT++/INET and Veins (deferred; ns-3 first) | Planned | 0 / 2 |
 | [.github](https://github.com/swarm-routing/.github) | [#216](https://github.com/swarm-routing/.github/issues/216) every public repository releases and is archived on zenodo: sim-containers, benchmarks, skills, the site and .github too | Planned | 0 / 5 |
@@ -220,13 +229,16 @@ lists them in the order that matters.
 | [ARA](https://github.com/swarm-routing/ARA) | [#173](https://github.com/swarm-routing/ARA/issues/173) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | [#3](https://github.com/swarm-routing/BeeAdHoc/issues/3) BeeAdHoc as a standalone hexagonal protocol (Phase 4) | In progress | 5 / 7 |
 | [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | [#150](https://github.com/swarm-routing/BeeAdHoc/issues/150) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
-| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | [#3](https://github.com/swarm-routing/BeeSensor/issues/3) Bootstrap BeeSensor protocol on swarm-core (ConvergecastScorer, fidelity, WSN battery-drain benchmarks) | Planned | 0 / 1 |
+| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | [#3](https://github.com/swarm-routing/BeeSensor/issues/3) Bootstrap BeeSensor protocol on swarm-core (ConvergecastScorer, fidelity, WSN battery-drain benchmarks) | Planned | 0 / 2 |
+| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | [#40](https://github.com/swarm-routing/BeeSensor/issues/40) core/: BeeSensor's simulator-free C++ core on swarm-core (package beesensor-core) | Planned | 0 / 1 |
 | [benchmarks](https://github.com/swarm-routing/benchmarks) | [#145](https://github.com/swarm-routing/benchmarks/issues/145) Unified telemetry schema, cross-runtime parity runs, and UAV/WSN scenario profiles | Planned | no sub-issues yet |
 | [HOPNET](https://github.com/swarm-routing/HOPNET) | [#3](https://github.com/swarm-routing/HOPNET/issues/3) HOPNET as a standalone hexagonal protocol (scheduled after Termite) | In progress | 2 / 3 |
 | [HOPNET](https://github.com/swarm-routing/HOPNET) | [#149](https://github.com/swarm-routing/HOPNET/issues/149) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report) | [#2](https://github.com/swarm-routing/ns3-upstream-report/issues/2) zero-manual upstream reporting: draft, verify, publish, track, reply, maintain, release | Planned | 0 / 1 |
-| [POSANT](https://github.com/swarm-routing/POSANT) | [#3](https://github.com/swarm-routing/POSANT/issues/3) Bootstrap POSANT protocol on swarm-core (DirectionalZoning 2D/3D, fidelity, 3D UAV benchmarks) | Planned | 0 / 1 |
-| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | [#3](https://github.com/swarm-routing/Q-Swarm/issues/3) Bootstrap Q-Swarm protocol on swarm-core (QEnergyUpdater, fidelity, contract tests) | Planned | 0 / 1 |
+| [POSANT](https://github.com/swarm-routing/POSANT) | [#3](https://github.com/swarm-routing/POSANT/issues/3) Bootstrap POSANT protocol on swarm-core (DirectionalZoning 2D/3D, fidelity, 3D UAV benchmarks) | Planned | 0 / 2 |
+| [POSANT](https://github.com/swarm-routing/POSANT) | [#37](https://github.com/swarm-routing/POSANT/issues/37) core/: POSANT's simulator-agnostic protocol on swarm-core, from the reviewed fidelity sheet | Planned | 0 / 1 |
+| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | [#3](https://github.com/swarm-routing/Q-Swarm/issues/3) Bootstrap Q-Swarm protocol on swarm-core (QEnergyUpdater, fidelity, contract tests) | Planned | 0 / 2 |
+| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | [#38](https://github.com/swarm-routing/Q-Swarm/issues/38) core/: Q-Swarm's simulator-free core, written from the reviewed fidelity sheet | Planned | 0 / 1 |
 | [sim-containers](https://github.com/swarm-routing/sim-containers) | [#19](https://github.com/swarm-routing/sim-containers/issues/19) OS and compiler coverage — the platforms ns-3 supports and researchers use | In progress | 2 / 6 |
 | [sim-containers](https://github.com/swarm-routing/sim-containers) | [#36](https://github.com/swarm-routing/sim-containers/issues/36) image test pipeline — every image built is tested by digest (security, structure, unit, profile, integration, regression, downstream) before any tag moves | In progress | 5 / 9 |
 | [sim-containers](https://github.com/swarm-routing/sim-containers) | [#172](https://github.com/swarm-routing/sim-containers/issues/172) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 1 |
@@ -246,16 +258,16 @@ lists them in the order that matters.
 | [skills](https://github.com/swarm-routing/skills) | [#9](https://github.com/swarm-routing/skills/issues/9) Protocol-development and org-ops skills: fidelity sheets, invariant review, module scaffolds, anchors, handoffs | In progress | 3 / 13 |
 | [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) | [#177](https://github.com/swarm-routing/swarm-adapter-ns3/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) | [#228](https://github.com/swarm-routing/swarm-adapter-ns3/issues/228) Post-rename stabilization & v2.0.0 migration to swarm-core PUBLIC dependency | In progress | 1 / 5 |
-| [swarm-adapter-ns3](https://github.com/swarm-routing/swarm-adapter-ns3) | [#82](https://github.com/swarm-routing/swarm-adapter-ns3/issues/82) swarm-core 3.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
-| [swarm-adapter-omnet](https://github.com/swarm-routing/swarm-adapter-omnet) | [#2](https://github.com/swarm-routing/swarm-adapter-omnet/issues/2) OMNeT++/INET adapter of swarm-core's ports (deferred: decisions 23, 24) | Planned | no sub-issues yet |
-| [swarm-core](https://github.com/swarm-routing/swarm-core) | [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 2 / 9 |
+| [swarm-adapter-omnet](https://github.com/swarm-routing/swarm-adapter-omnet) | [#2](https://github.com/swarm-routing/swarm-adapter-omnet/issues/2) OMNeT++/INET adapter of swarm-core's ports (deferred: decisions 23, 24) | Planned | 0 / 6 |
+| [swarm-core](https://github.com/swarm-routing/swarm-core) | [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 6 / 10 |
+| [swarm-core](https://github.com/swarm-routing/swarm-core) | [#62](https://github.com/swarm-routing/swarm-core/issues/62) swarm-core 3.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
 | [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io) | [#3](https://github.com/swarm-routing/swarm-routing.github.io/issues/3) Colony Arena: the one org site, built from the protocol repos | In progress | 5 / 7 |
 | [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io) | [#92](https://github.com/swarm-routing/swarm-routing.github.io/issues/92) Colony Arena for researchers: a game that is good to play and leads to evidence | In progress | 1 / 19 |
 | [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io) | [#120](https://github.com/swarm-routing/swarm-routing.github.io/issues/120) release sync: every org release reaches the site, by a bot PR when it is mechanical and by a ticket an agent works with a skill when it is not | In progress | 4 / 5 |
 | [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io) | [#165](https://github.com/swarm-routing/swarm-routing.github.io/issues/165) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io) | [#21](https://github.com/swarm-routing/swarm-routing.github.io/issues/21) Campaign mode: one chapter per network type, with a game UI | Planned | 0 / 2 |
 | [swarm-routing.github.io](https://github.com/swarm-routing/swarm-routing.github.io) | [#27](https://github.com/swarm-routing/swarm-routing.github.io/issues/27) Colony Arena polish: navigation, SEO, usability, search | Planned | 0 / 10 |
-| [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) | [#3](https://github.com/swarm-routing/swarm-routingd/issues/3) Bootstrap swarm-routingd Linux daemon (epoll reactor, RtNetlinkSync, TUN, swarm-core ports) | Planned | 0 / 5 |
+| [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) | [#3](https://github.com/swarm-routing/swarm-routingd/issues/3) Bootstrap swarm-routingd Linux daemon (epoll reactor, RtNetlinkSync, TUN, swarm-core ports) | Planned | 0 / 9 |
 | [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) | [#1](https://github.com/swarm-routing/swarm-web-ui/issues/1) swarm-web-ui MVP — Offline Replay & Benchmark Explorer | In progress | 1 / 10 |
 | [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui) | [#2](https://github.com/swarm-routing/swarm-web-ui/issues/2) Local & Remote Execution Control Plane (swarm-web-ui/daemon) | Planned | 0 / 8 |
 | [Termite](https://github.com/swarm-routing/Termite) | [#3](https://github.com/swarm-routing/Termite/issues/3) Termite as a standalone hexagonal protocol (Phase 5) | In progress | 1 / 4 |
