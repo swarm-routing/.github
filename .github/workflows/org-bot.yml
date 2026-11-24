@@ -293,7 +293,7 @@ jobs:
         if: env.TASK == 'all' || env.TASK == 'bestpractices'
         timeout-minutes: 3
         env:
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
         run: |
           set -euo pipefail
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG"  # with retries (#645)
@@ -422,7 +422,7 @@ jobs:
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
         run: |
           set -o pipefail
           args=()
@@ -487,7 +487,7 @@ jobs:
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
         run: |
           set -o pipefail
           args=()
@@ -552,7 +552,7 @@ jobs:
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
         run: |
           set -o pipefail
           args=(sweep)
@@ -708,7 +708,7 @@ jobs:
         timeout-minutes: 30
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
         run: |
           set -o pipefail
           args=()
@@ -778,7 +778,7 @@ jobs:
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
         run: |
           set -o pipefail
           # at most 25 new tickets a run, the highest priority and the oldest first;
@@ -848,7 +848,7 @@ jobs:
         timeout-minutes: 20
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
-          IMG: ghcr.io/swarm-routing/ci-tools@sha256:5d999adf7dbb47e52e725c0549cbc54c53354ed24289e758a9311dde986a4a4e  # promoted from 8971dec
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
         run: |
           set -o pipefail
           args=()
