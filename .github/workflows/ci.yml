@@ -32,7 +32,10 @@ jobs:
           # the Go gate through the local launcher, as `make headers` runs it (#578)
           tools/checks/check-headers.sh --self-test
           python3 -I tools/checks/check-dco.py --self-test
-          tools/checks/check-headers.sh --dual '' .
+          # ns3-ci-selftest.yml's fixture is an ns-3 module: GPL-2.0-only (LICENSING.md)
+          fx=tools/checks/fixtures/ns3-ci/protocol-hello
+          tools/checks/check-headers.sh --dual '' --gpl-only "$fx/model/protocol-hello.h" \
+            --gpl-only "$fx/model/protocol-hello.cc" --gpl-only "$fx/test/protocol-hello-test-suite.cc" .
           for f in LICENSE LICENSE-MIT LICENSING.md; do test -f "$f"; done
       - name: swarm-core pin self-test (tools/checks)
         run: python3 -I tools/checks/check-swarm-core-pin.py --self-test
