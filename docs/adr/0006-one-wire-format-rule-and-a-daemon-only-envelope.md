@@ -153,10 +153,11 @@ a deployment may change.
   parity check that compares bytes subtracts them, and a pcap from the daemon
   needs the envelope stripped before an ns-3 tool reads it.
 - The `protocol_id` table is one more registry to keep; swarm-core owns it.
-- If the maintainer chooses option A instead, items 4 and 5 change: every
-  protocol codec writes the envelope, every protocol bumps its wire version
-  in its next release, every overhead number is re-run, and each protocol's
-  `docs/wire-format.md` gains the 4 bytes. Option C drops items 2, 3, 6 and 7
+- If the maintainer chooses option A instead, items 1, 2, 4 and 5 change:
+  every protocol codec writes the envelope, every protocol bumps its wire
+  version in its next release, so the wrapped message keeps its layout but
+  not its bytes (its version byte changes), every overhead number is re-run,
+  and each protocol's `docs/wire-format.md` gains the 4 bytes. Option C drops items 2, 3, 6 and 7
   and swarm-routing/swarm-core#52 closes as not planned.
 - The protocol chores (swarm-routing/AntHocNet#1117, swarm-routing/ARA#220,
   swarm-routing/BeeAdHoc#198, swarm-routing/Termite#185,
