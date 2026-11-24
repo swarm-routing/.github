@@ -1922,6 +1922,29 @@ check(
     "config.yml and a repository-only form are left alone",
 )
 
+# #748: `backstop_tick = MINUTE` manages backstop-tick.yml with the hourly cron
+# at that minute; without the key it is not managed, a bad minute is refused
+tick = os.path.join(d6, ".github/workflows/backstop-tick.yml")
+check(not os.path.exists(tick), "without backstop_tick no tick workflow")
+edit(d6, ".github/org-sync.toml", "forms = true", "forms = true\nbackstop_tick = 33")
+run("apply", d6)
+body = read(tick) or ""
+check(
+    "- cron: '33 * * * *'" in body
+    and "@MINUTE@" not in body
+    and "-f event_type=backstop-tick" in body
+    and run("check", d6)[0] == 0,
+    "backstop_tick renders the tick at its minute and check is clean",
+)
+edit(d6, ".github/org-sync.toml", "backstop_tick = 33", "backstop_tick = 13")
+rc, out = run("check", d6)
+check(rc == 1 and ".github/workflows/backstop-tick.yml" in out, "a changed minute is drift")
+for bad in ("0", "60", "true", '"13"'):
+    edit(d6, ".github/org-sync.toml", "backstop_tick = 13", f"backstop_tick = {bad}")
+    rc, _, _ = run_err("plan", d6)
+    check("backstop_tick must be" in str(rc), f"backstop_tick = {bad} is refused")
+    edit(d6, ".github/org-sync.toml", f"backstop_tick = {bad}", "backstop_tick = 13")
+
 # profile (#415): the org profile's badge table between its markers, the rest untouched
 dp = tempfile.mkdtemp()
 os.makedirs(os.path.join(dp, "profile"))

@@ -15,15 +15,19 @@
 # found by its run-name (`org-bot <task> (schedule)`, cancelled runs not
 # counted); `scheduled = "true"` makes the dispatch run as the schedule would.
 # The hourly row's alarm keeps `[backstop] scheduled runs stalled` open while
-# no scheduled hourly run completed for 3 hours. backstop.yml also runs when an
-# org-bot run completes, so org-bot's own frequent runs are the clock.
+# no scheduled hourly run completed for 2 hours (3 until 2026-11-24, when the
+# backstop-tick made an hourly clock that does not depend on this repository's
+# scheduler: maintainer decision on #748). backstop.yml runs on its own cron,
+# when an org-bot run completes, and on each `backstop-tick` sent hourly by a
+# few active repositories at their own minutes (the 2026-11-23 count found a
+# 4 h 07 min gap while dispatch traffic was quiet and no cron fired).
 
 [[entry]]
 repo = "swarm-routing/.github"
 workflow = "org-bot.yml"   # cron '23 * * * *'
 title = "org-bot hourly (schedule)"
 period = "1h"
-alarm = "3h"
+alarm = "2h"
 inputs = { task = "hourly", scheduled = "true" }
 
 [[entry]]

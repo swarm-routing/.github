@@ -81,6 +81,14 @@ With the opt-in each org form (every `ISSUE_TEMPLATE/*.yml` here but
 `config.yml`) is a whole file there; `config.yml` and the repository's own
 forms stay its own, and a changed org form is drift (#318).
 
+The backstop tick (`backstop_tick = MINUTE`, an integer 1-59): a few active
+repositories carry `.github/workflows/backstop-tick.yml`, an hourly cron at
+that minute that sends repository_dispatch `backstop-tick` to
+swarm-routing/.github, whose backstop.yml then dispatches what is overdue
+(#748). Each repository takes its own minute, away from the ones
+swarm-routing/.github's own workflows use, so one dropped schedule leaves the
+others. Without the key the file is not managed.
+
 A `[settings]` table holds the repository's GitHub settings (description,
 homepage, topics, ruleset profile, required checks, and overrides of the
 profile's features, security features and release environment), which
@@ -798,6 +806,11 @@ def load_config(repo_dir, slug=None):
         )
     if not isinstance(cfg.get("zenodo", True), bool):
         sys.exit(f"org-sync: {CONFIG}: zenodo must be true or false (false: no Zenodo archive)")
+    tick = cfg.get("backstop_tick")
+    if tick is not None and (type(tick) is not int or not 1 <= tick <= 59):
+        sys.exit(
+            f"org-sync: {CONFIG}: backstop_tick must be the minute of the hourly tick, 1 to 59"
+        )
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
     # the commit every reference to this repository names: the lock's (apply may move it)
@@ -1824,6 +1837,12 @@ def items(cfg):
         # opt-in: citation metadata for a repository that releases (Zenodo, cite badge)
         out.append(("seed", "CITATION.cff", "CITATION.cff.in", None))
         out.append(("section", "README.md", None, "citing"))
+    if cfg.get("backstop_tick"):
+        # opt-in: an hourly tick of swarm-routing/.github's backstop, at the
+        # repository's own minute (#748)
+        out.append(
+            ("file", ".github/workflows/backstop-tick.yml", "workflows/backstop-tick.yml", None)
+        )
     if cfg.get("forms"):
         # opt-in for a repository with its own .github/ISSUE_TEMPLATE/, which
         # hides the org's default forms: each org form is a whole file there;
@@ -2005,6 +2024,8 @@ def render(cfg, repo_dir, item, v=None):
             want = render_dependabot(repo_dir)
         else:
             want = want.format_map(v or values(cfg))
+    if path == ".github/workflows/backstop-tick.yml":
+        want = want.replace("@MINUTE@", str(cfg["backstop_tick"]))  # #748
     if kind == "file" and path.startswith(".github/workflows/"):
         want = pin_refs(want, cfg.get("pin"))  # #716
     return want
