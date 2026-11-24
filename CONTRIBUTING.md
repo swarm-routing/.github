@@ -129,7 +129,7 @@ is the long form.
    (`reusable-ns3-ci.yml`'s default). Older ns-3 releases run only on demand:
    a manual `workflow_dispatch` that passes `ns3-versions` (a JSON list such as
    `["3.48"]`), on images
-   `ns3-containers` publishes once (history) or builds on request. A
+   `sim-containers` publishes once (history) or builds on request. A
    published number pins a versioned `-<sha7>` image instead, never `latest`.
    **C++ follows the same release**: every org `core/` and module targets the
    C++ standard of the ns-3 release we support, ns-3's own
@@ -1109,7 +1109,7 @@ takes the template on request). Text a
 repository owns outside the markers is likewise edited in that repository.
 
 A repository with its own `.github/ISSUE_TEMPLATE/` (a form of its own, as
-ns3-containers' *Image request*) loses the org's default forms: GitHub uses
+sim-containers' *Image request*) loses the org's default forms: GitHub uses
 the repository's folder instead. It sets `forms = true` in its
 `.github/org-sync.toml`, and every org form here (`ISSUE_TEMPLATE/*.yml` but
 `config.yml`) becomes a whole file there, so a form change here reaches it
@@ -1709,7 +1709,7 @@ dispatches it on its own initiative. SemVer meaning: a minor for new features
 (in `benchmarks`, new runs), a patch for fixes and docs, a major for a
 breaking change (an API, wire-format, manifest or marker schema change). The
 first release of every repository is `v0.1.0`, unless the maintainer decides
-it is `v1.0.0` (ns3-containers, 2026-11-13: dispatched with `increment:
+it is `v1.0.0` (sim-containers, 2026-11-13: dispatched with `increment:
 MAJOR`, below), or a repository already published versions before its first
 tag: then its caller passes `first-release-from-config: true` and the first
 tag continues that numbering (swarm-routing/skills, whose `plugin.json` was
@@ -2121,7 +2121,7 @@ caller. Order of adoption and the decisions behind them: #35.
 | SonarQube Cloud CI analysis (compile database + gcovr coverage of the repo's own modules) | `reusable-ns3-ci.yml` `sonar` + the org secret `SONAR_TOKEN`; the repo's `sonar-project.properties` (org-sync seed). A repo with Python passes `sonar-python-coverage: python-coverage` and makes the CI job `needs:` its `reusable-python-ci.yml` job in the same workflow, so the one analysis imports coverage.py's report too (SonarQube Cloud keeps one analysis per branch) | off; skipped on fork PRs and while the project is on Automatic Analysis |
 | Codecov upload of that coverage, report-only (PR comment, badge) | `reusable-codecov.yml` in a job `needs: ci` with `id-token: write` (GitHub OIDC; no Codecov token is stored); the repo's `.codecov.yml` (org-sync seed). It uploads the `coverage` artifact, so the CI job needs `coverage` or `sonar` on and the `debug` profile | off; an upload failure, or no artifact, never fails CI |
 | clang-tidy (org `.clang-tidy`: bug-finding and performance checks), findings as errors, on a protocol's `core/` sources (its tests excluded) | the repository's `core` check (`core.yml`), which sparse-checks `.clang-tidy` out of this repository as it does `.clang-format` (#635) | on in ARA, BeeAdHoc, Termite and HOPNET |
-| Container lint and scans: hadolint, Trivy config and image reports to code scanning | `ns3-containers` `container-security.yml`, `publish-images.yml` | on there |
+| Container lint and scans: hadolint, Trivy config and image reports to code scanning | `sim-containers` `container-security.yml`, `publish-images.yml` | on there |
 | ruff check + format (org `ruff.toml`) and Python coverage, report-only, child Python processes included (`patch = subprocess`, #480; a repo's own coverage config wins) | `reusable-python-ci.yml` (`measure-subprocesses: false` measures the test process only) | on in every caller |
 | OpenSSF Scorecard, report-only: score published to the OpenSSF API (badge) and SARIF to code scanning | `reusable-scorecard.yml`, called by org-sync's `.github/workflows/scorecard.yml` (weekly, on push to `main`, on demand) | on in every public repo; a private one lists the workflow in `skip` |
 

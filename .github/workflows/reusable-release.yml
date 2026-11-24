@@ -108,7 +108,7 @@ name: Reusable release
 #    In a dry run with `downstream-consumers` (a consumer list in the caller's
 #    repository, #482), the `downstream` job builds and tests those consumers
 #    on an ns3-dev image against this commit (tools/downstream/downstream.sh,
-#    the script ns3-containers' image canary runs), report-only. Before the
+#    the script sim-containers' image canary runs), report-only. Before the
 #    build, a dry run's preflight (release_check.py `preflight`) fails when the
 #    list does not name this repository by its current name, or the PyPI
 #    project the caller publishes to names another repository.
@@ -1149,7 +1149,7 @@ jobs:
 
   # Before a library ships (#482): in a dry run, its main consumers are built
   # and tested against this commit on an ns3-dev image, by the same script as
-  # ns3-containers' image canary (swarm-routing/.github tools/downstream/,
+  # sim-containers' image canary (swarm-routing/.github tools/downstream/,
   # fetched from main as this workflow's actions are). The caller's checkout
   # stands in for the release: the consumer list's `downstream-self` line is
   # a copy of it (DOWNSTREAM_LOCAL), and each consumer's stage points at it

@@ -32,9 +32,9 @@ is no longer in the package (left by an earlier sweep whose second delete
 failed). The signatures of a kept image are kept.
 
 It never touches an untagged version (the children and attestations of tagged
-images, swarm-routing/ns3-containers#36), a package whose name does not end in
+images, swarm-routing/sim-containers#36), a package whose name does not end in
 `-dev`, or `ns3-dev`, which keeps the frozen official base images (epic #370,
-constraint 2; ns3-containers sweeps its own candidates by their tag pattern).
+constraint 2; sim-containers sweeps its own candidates by their tag pattern).
 It fails closed: if any repository or pull request cannot be read, nothing is
 deleted. A failed delete exits 1, except GHCR's refusal to delete a last
 version; a version already gone counts as deleted. Each GitHub call is retried

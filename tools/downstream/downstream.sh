@@ -6,7 +6,7 @@
 # on one ns3-dev image, each in its own fresh container. One code path for
 # two callers (swarm-routing/.github#482):
 #
-# - ns3-containers' image canary (its test/downstream.sh, ns3-containers#44):
+# - sim-containers' image canary (its test/downstream.sh, sim-containers#44):
 #   every org module on the candidate image before `latest-*` moves;
 # - reusable-release.yml's `downstream-consumers` (a library's release dry
 #   run): the library's main consumers built against the candidate, the

@@ -175,7 +175,7 @@ line = 918
 decision = "falsepositive"
 reason = "FP-cli"
 
-# ---- swarm-routing/ns3-containers (3)
+# ---- swarm-routing/sim-containers (3; its SonarQube Cloud key is still the old slug, swarm-routing/.github#690)
 
 [[issue]]
 project = "swarm-routing_ns3-containers"
