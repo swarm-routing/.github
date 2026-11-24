@@ -1259,6 +1259,28 @@ check(
     and run("check", d)[0] == 0,
     "vcpkg mode (#489): the vcpkg text replaces the lock text",
 )
+# vcpkg mode with the adapter's own lock beside swarm-core.lock (AntHocNet,
+# swarm-routing/AntHocNet#1218): the ns-3 module comes from swarm-adapter-ns3.lock
+d = fresh()
+run("init", d, "--kind", "protocol")
+write(os.path.join(d, "swarm-core.lock"), "SWARM_CORE_REPO=swarm-routing/swarm-core\n")
+write(os.path.join(d, "vcpkg.json"), '{"dependencies": ["swarm-core"]}\n')
+os.makedirs(os.path.join(d, "core"), exist_ok=True)
+write(os.path.join(d, "core/CMakeLists.txt"), "find_package(swarm-core CONFIG REQUIRED)\n")
+write(os.path.join(d, "swarm-adapter-ns3.lock"), "ADAPTER_REPO=swarm-routing/swarm-adapter-ns3\n")
+run("apply", d)
+agents = read(os.path.join(d, "AGENTS.md"))
+check(
+    "through vcpkg in manifest mode" in agents
+    and "`swarm-adapter-ns3.lock` (prefix `ADAPTER_`) names" in agents
+    and "vcpkg has no ns-3 port, so the ns-3 build\n  keeps the release tag" not in agents
+    and "own ns-3 CI (it does not call" in agents
+    and run("check", d)[0] == 0,
+    "vcpkg and the adapter's lock: the two-lock text, and check passes",
+)
+os.remove(os.path.join(d, "swarm-adapter-ns3.lock"))
+rc, out = run("check", d)
+check(rc == 1 and "AGENTS.md#dependencies" in out, "the adapter's lock removed: the vcpkg text")
 # the ns-3 adapter (swarm-routing/swarm-adapter-ns3#258): a lock read by the root
 # CMakeLists.txt, no core/: the adapter text, none of a protocol's pin places
 d = fresh()

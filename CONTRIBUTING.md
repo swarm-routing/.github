@@ -663,12 +663,14 @@ A consumer names a **release** of its dependency, never a moving ref:
   fail, set in the PR that switches a repository to its lock. A moving ref
   belongs in `canary-dependencies:`.
 - The org-managed AGENTS.md section `dependencies` (`templates/agents/dependencies-lock.md`,
-  `dependencies-pin.md`, `dependencies-vcpkg.md`, `dependencies-adapter.md`)
-  states which a repository uses; org-sync picks the text by the presence of
-  `swarm-core.lock` and of a root `vcpkg.json` depending on `swarm-core`
-  (vcpkg mode, below), and takes the adapter text where the root
-  `CMakeLists.txt` reads the lock and there is no `core/` (swarm-adapter-ns3's
-  layout, swarm-routing/swarm-adapter-ns3#258).
+  `dependencies-pin.md`, `dependencies-vcpkg.md`, `dependencies-adapter.md`,
+  `dependencies-vcpkg-adapter-lock.md`) states which a repository uses;
+  org-sync picks the text by the presence of `swarm-core.lock` and of a root
+  `vcpkg.json` depending on `swarm-core` (vcpkg mode, below), takes the
+  adapter text where the root `CMakeLists.txt` reads the lock and there is no
+  `core/` (swarm-adapter-ns3's layout, swarm-routing/swarm-adapter-ns3#258), and
+  the two-lock text in vcpkg mode with a root `swarm-adapter-ns3.lock` beside
+  `swarm-core.lock` (AntHocNet, swarm-routing/AntHocNet#1218).
 
 ### Bumping
 

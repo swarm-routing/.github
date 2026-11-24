@@ -592,8 +592,10 @@ def git_slug(repo_dir):
 
 
 def swarm_core_mode(repo_dir):
-    """How the repository gets swarm-core's core/: "vcpkg" (swarm-core.lock and a
-    vcpkg.json that depends on swarm-core, #489), "adapter" (swarm-core.lock read by
+    """How the repository gets swarm-core's core/: "vcpkg-adapter-lock" (vcpkg mode
+    with the adapter's own swarm-adapter-ns3.lock beside swarm-core.lock, the
+    ns-3 module's release: AntHocNet, swarm-routing/AntHocNet#1218), "vcpkg"
+    (swarm-core.lock and a vcpkg.json that depends on swarm-core, #489), "adapter" (swarm-core.lock read by
     the root CMakeLists.txt, no core/: the ns-3 adapter, swarm-routing/swarm-adapter-ns3#258),
     "lock" (swarm-core.lock), "pin"
     (a commit SWARM_CORE_REF in core/CMakeLists.txt) or None. The `dependencies`
@@ -607,7 +609,8 @@ def swarm_core_mode(repo_dir):
             deps = []
         names = [d.get("name") if isinstance(d, dict) else d for d in deps]
         if "swarm-core" in names:
-            return "vcpkg"
+            adapter_lock = os.path.join(repo_dir, "swarm-adapter-ns3.lock")
+            return "vcpkg-adapter-lock" if os.path.exists(adapter_lock) else "vcpkg"
         root = read(os.path.join(repo_dir, "CMakeLists.txt")) or ""
         if not os.path.exists(os.path.join(repo_dir, "core", "CMakeLists.txt")) and re.search(
             r"^[^#\n]*file\(\s*(?:STRINGS|READ)\b[^#\n]*swarm-core\.lock", root, re.M
@@ -2592,6 +2595,7 @@ def git(repo_dir, *args, binary=False):
 # rendered with them too, or its drift is misjudged as the change's own (#586)
 RENDER_INPUTS = (
     "swarm-core.lock",
+    "swarm-adapter-ns3.lock",
     "vcpkg.json",
     "core/CMakeLists.txt",
     "CMakeLists.txt",
