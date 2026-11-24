@@ -1357,8 +1357,9 @@ The daily `zenodo` workflow here (`tools/zenodo/zenodo.py`) is the check behind
 it:
 - it lists every such repository's releases against every version of its concept;
 - it archives a release still missing after 12 hours as a new version, with
-  that tag's `CITATION.cff` metadata (title, abstract, authors, keywords) and
-  its `github.com/swarm-routing/<repo>/tree/<tag>` link;
+  that tag's `CITATION.cff` metadata (title, abstract, authors, keywords, and
+  a `requires` related identifier for each org work its `references:` cite by
+  Zenodo DOI) and its `github.com/swarm-routing/<repo>/tree/<tag>` link;
 - it never adds a release older than the newest archived one, since that would
   become the concept's newest version. The run fails and opens an issue
   instead.
@@ -1592,6 +1593,7 @@ lines of the repository's own after the end marker, stay the repository's
   |---|---|---|
   | AntHocNet (org release) | https://doi.org/10.5281/zenodo.20981979 | `AHN` |
   | swarm-adapter-ns3 (org release) | https://doi.org/10.5281/zenodo.24138628 | `SwarmCore` |
+  | swarm-core (org release) | https://doi.org/10.5281/zenodo.24476619 | `SwarmCorePorts` |
   | sim-tools (org release) | https://doi.org/10.5281/zenodo.24136068 | `ns3tools` |
   | Riley & Henderson 2010, the ns-3 paper | https://doi.org/10.1007/978-3-642-12331-3_2 | `RH10` |
   | Di Caro, Ducatelle & Gambardella 2004, AntHocNet (PPSN VIII) | https://doi.org/10.1007/978-3-540-30217-9_47 | `DDG04` |
