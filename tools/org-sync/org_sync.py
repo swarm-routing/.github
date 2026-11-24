@@ -921,7 +921,10 @@ def bib_references(repo_dir):
         return None
     refs = []
     for e in entries:
-        role = next((r for r in bib.roles(e) if r in BIB_ROLES), None)
+        roles = bib.roles(e)
+        # `adapter` wins in any keyword order: a work built on this repository is
+        # never also work it builds on
+        role = "adapter" if "adapter" in roles else next((r for r in roles if r in BIB_ROLES), None)
         if role is None:
             continue
         f, where = e["fields"], f"org-sync: {BIB}: line {e['line']}: {e['key']}"

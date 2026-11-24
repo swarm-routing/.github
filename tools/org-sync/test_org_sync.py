@@ -840,6 +840,16 @@ if yaml:
         and zenodo.cff_related(yaml.safe_load(cff))[0]["relation"] == "isRequiredBy",
         "adapter role: Zenodo gets isRequiredBy",
     )
+write(
+    os.path.join(ad, "docs/references.bib"),
+    seed + ADAPTER.replace("keywords  = {adapter}", "keywords  = {tool, adapter}"),
+)
+run("apply", ad)
+check(
+    "Please also cite" not in read(os.path.join(ad, "README.md"))
+    and "Works that build on it:" in read(os.path.join(ad, "README.md")),
+    "adapter role: it wins after another role in keywords",
+)
 
 # citation-refs (#307): only CITATION.cff's references: block, from the bib
 rc, out = run("citation-refs", bo, "--check")
