@@ -76,7 +76,7 @@ only runtime whose numbers are published, which is the cost AntHocNet
 ADR-0006 refused, for a benefit (several protocols on one socket) that ns-3
 never has: each ns-3 protocol binds its own socket, one build per run.
 
-**B. The envelope only on the daemon's socket (recommended).** The protocol
+**B. The envelope only on the daemon's socket (chosen).** The protocol
 messages stay byte-for-byte as they are on every runtime. swarm-routingd, and
 whatever runs its binary (CORE/EMANE, Shadow, the Raspberry Pi testbed #325),
 wraps each protocol message in the envelope when it sends on its UDP socket
