@@ -59,7 +59,10 @@ is the long form.
    its own licence and lands only with its provenance recorded.
 2. **POD wire messages.** Control headers are simulator-independent POD structs
    with bounds-checked little-endian readers/writers, a leading version byte, and
-   deterministic roundtrip + fuzz tests.
+   deterministic roundtrip + fuzz tests. The shared 4-byte envelope
+   (swarm-core, [ADR-0006](docs/adr/0006-one-wire-format-rule-and-a-daemon-only-envelope.md))
+   only wraps a protocol message on swarm-routingd's socket, never replaces its
+   version byte, and is never on the wire in ns-3.
 3. **No module named `core`.** It collides with ns-3's `src/core`; the shared
    module is `swarm-core` (`#include "ns3/swarm-core-module.h"`).
    `ns3-build-contrib` refuses the name. **Every protocol builds on

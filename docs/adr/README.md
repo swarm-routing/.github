@@ -14,3 +14,4 @@ applies to every repository unless it says otherwise.
 | [0003](0003-rcapa-for-ns3-bugs-and-released-regressions.md) | An RCAPA for every ns-3 bug and every regression in a published library |
 | [0004](0004-callers-pin-the-org-workflows-by-commit.md) | Callers pin the org's reusable workflows and actions by commit |
 | [0005](0005-the-mcp-and-agent-tooling-standard.md) | Agent sessions use a small, measured set of MCP servers and tools (accepted 2026-11-22; amended the same day: swarm-mcp moves to swarm-routing/swarm-mcp, which the plugin will pin) |
+| [0006](0006-one-wire-format-rule-and-a-daemon-only-envelope.md) | Keep one version byte per protocol message; put a shared envelope only on the daemon's socket (proposed, #689) |
