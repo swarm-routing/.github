@@ -1,7 +1,7 @@
 # 0006. Keep one version byte per protocol message; put a shared envelope only on the daemon's socket
 
-- **Status:** proposed (the choice in "Options" is the maintainer's; the
-  recommendation is option B)
+- **Status:** accepted (option B and the reading of decision 2 in item 5, by
+  the maintainer on 2026-11-24)
 - **Date:** 2026-11-24
 - **Issue:** #689 (part of #672, Phase 1; maintainer decision 2 of 2026-11-22);
   swarm-routing/swarm-core#52, swarm-routing/swarm-core#3
@@ -91,7 +91,7 @@ stray traffic on a port is rejected only by a 1-in-256 version byte match and
 then the protocol's bounds checks, and a dissector keys on port numbers that
 a deployment may change.
 
-## Decision (proposed: option B)
+## Decision: option B
 
 1. **The rule that stands, unchanged.** Every protocol message starts with
    its protocol's own version byte, read first and rejected in O(1) on
@@ -128,7 +128,7 @@ a deployment may change.
    option B no protocol's bytes change, and golden rule 3 bumps a version on
    a changed field or unit. This reads decision 2's "adopting it bumps every
    protocol's wire version" as applying to option A, where the codecs change;
-   the maintainer confirms that reading when accepting this ADR. No protocol
+   the maintainer confirmed that reading on 2026-11-24. No protocol
    release carries a wire change for it, a protocol's `1.0.0` wire freeze is
    unaffected, and no recorded benchmark is re-run. swarm-core gains the
    envelope as an addition (a minor release under `docs/api-policy.md`).
@@ -153,12 +153,9 @@ a deployment may change.
   parity check that compares bytes subtracts them, and a pcap from the daemon
   needs the envelope stripped before an ns-3 tool reads it.
 - The `protocol_id` table is one more registry to keep; swarm-core owns it.
-- If the maintainer chooses option A instead, items 1, 2, 4 and 5 change:
-  every protocol codec writes the envelope, every protocol bumps its wire
-  version in its next release, so the wrapped message keeps its layout but
-  not its bytes (its version byte changes), every overhead number is re-run,
-  and each protocol's `docs/wire-format.md` gains the 4 bytes. Option C drops items 2, 3, 6 and 7
-  and swarm-routing/swarm-core#52 closes as not planned.
+- Moving the envelope into ns-3 later (option A) needs a new ADR that
+  supersedes this one: every protocol codec would write it, every protocol
+  would bump its wire version, and every overhead number would be re-run.
 - The protocol chores (swarm-routing/AntHocNet#1117, swarm-routing/ARA#220,
   swarm-routing/BeeAdHoc#198, swarm-routing/Termite#185,
   swarm-routing/HOPNET#188) lose their "adopt the 4-byte header" item under B
