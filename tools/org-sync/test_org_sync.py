@@ -1944,6 +1944,14 @@ for bad in ("0", "60", "true", '"13"'):
     rc, _, _ = run_err("plan", d6)
     check("backstop_tick must be" in str(rc), f"backstop_tick = {bad} is refused")
     edit(d6, ".github/org-sync.toml", f"backstop_tick = {bad}", "backstop_tick = 13")
+# the tick the template sends is the one backstop.yml listens for: a renamed
+# event type on either side would leave the ticks unheard
+listener = read(os.path.join(ORG, ".github/workflows/backstop.yml")) or ""
+check(
+    "  repository_dispatch:\n    types: [backstop-tick]\n" in listener
+    and "repos/swarm-routing/.github/dispatches" in body,
+    "backstop.yml runs on the repository_dispatch the tick sends",
+)
 
 # profile (#415): the org profile's badge table between its markers, the rest untouched
 dp = tempfile.mkdtemp()

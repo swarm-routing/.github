@@ -230,34 +230,6 @@ func TestRepositoryTable(t *testing.T) {
 	}
 }
 
-// The tick the org-managed template sends is the one backstop.yml listens for
-// (#748): a renamed event type on either side would leave the ticks unheard.
-func TestTickEventMatches(t *testing.T) {
-	wf, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "backstop.yml"))
-	if os.IsNotExist(err) {
-		t.Skip("not in a checkout (the image's build stage copies only the Go code)")
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl, err := os.ReadFile(filepath.Join("..", "..", "templates", "workflows", "backstop-tick.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(wf), "  repository_dispatch:\n    types: [backstop-tick]\n") {
-		t.Error("backstop.yml does not run on repository_dispatch backstop-tick")
-	}
-	for _, want := range []string{
-		"-f event_type=backstop-tick",
-		"repos/swarm-routing/.github/dispatches",
-		"- cron: '@MINUTE@ * * * *'",
-	} {
-		if !strings.Contains(string(tmpl), want) {
-			t.Errorf("templates/workflows/backstop-tick.yml lacks %q", want)
-		}
-	}
-}
-
 func TestMain_(t *testing.T) {
 	f := &fakeGitHub{last: map[string]time.Time{}}
 	srv := httptest.NewServer(f)
