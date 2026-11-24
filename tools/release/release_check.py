@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: MIT OR GPL-2.0-only
 """Before and after a release: is the repository ready to bump, and did everything follow?
 
-    release_check.py ready REPO_DIR [--repo OWNER/NAME] [--version X.Y.Z]
+    release_check.py ready REPO_DIR [--repo OWNER/NAME] [--version X.Y.Z | --increment SIZE]
+    release_check.py preflight REPO_DIR [--repo OWNER/NAME] [--downstream-consumers LIST]
     release_check.py after OWNER/NAME --tag vX.Y.Z [--org ORG] [--repos A,B]
     release_check.py ladder REPO_DIR --version X.Y.Z
     release_check.py --self-test
@@ -23,9 +24,13 @@ CONTRIBUTING "Cutting a release" is the procedure; this checks its steps.
     `pyproject.toml`) exists, with `tag_format = "v$version"`;
   - `make dist` exists, unless the caller passes its own `build:` or an own
     release.yml assembles its assets into `dist/` (AntHocNet);
-  - with --version, `docs/roadmap.md` has a row for vX.Y.Z (the ladder gate,
-    as `ladder`); without a ladder, the org ROADMAP's release train applies
-    (a WARN);
+  - the version: --version, else what the bump would produce (`cz bump
+    --get-next`, with --increment; 0.1.0 for a first release), a WARN when
+    Commitizen is not installed or nothing bumps;
+  - `docs/roadmap.md` has a row for that version (the ladder gate, as
+    `ladder`); without a ladder, the org ROADMAP's release train applies (a
+    WARN);
+  - the `preflight` checks below;
   - with --repo and --version, no open issue is labelled `release:vX.Y.Z`;
   - with --repo, an open `bot/release` PR behind `main` (dispatch `bump`
     again; never update or push that branch by hand).
@@ -34,6 +39,22 @@ CONTRIBUTING "Cutting a release" is the procedure; this checks its steps.
 `docs/roadmap.md` has no row for vX.Y.Z, WARN when the repository keeps no
 ladder. reusable-release.yml's bump and dry-run run it on the bumped version
 before anything is built or proposed (swarm-routing/.github#430).
+
+`preflight` (also run by reusable-release.yml's dry run before the build;
+the sim-tools v1.1.3 dry runs, after the rename ns3-tools -> sim-tools):
+  - the repository's current name from the GitHub API (it follows renames),
+    a WARN when --repo or the checkout's origin still names the old one;
+  - with `downstream-consumers` (the caller's input, or the option), the list
+    parses and names this repository (`downstream-self`, default its current
+    name) as a consumer: tools/downstream/downstream.sh `--check` with the
+    checkout as DOWNSTREAM_LOCAL, the dry run's own call;
+  - where the release workflow publishes to PyPI, the pyproject [project]
+    name on PyPI and TestPyPI: not there yet (a NEXT: its pending publisher),
+    or its GitHub URLs (PyPI's project_urls, the pyproject's own) name this
+    repository; an old name of it is a WARN (the trusted publisher likely
+    names it too: `invalid-publisher`), another repository a FAIL. PyPI does
+    not expose the publisher, so a NEXT line names its settings page.
+  Only a definite mismatch fails; what cannot be read is a WARN.
 
 `after` (once the bump PR merged), through `gh api` and public URLs:
   - the GitHub release of the tag is published with SHA256SUMS and the
@@ -283,7 +304,284 @@ def ladder(repo_dir, version, r=None):
     return r
 
 
-def ready(repo_dir, repo, version, gh):
+PYPI_INDEXES = (("PyPI", "https://pypi.org"), ("TestPyPI", "https://test.pypi.org"))
+GITHUB_REPO_URL = re.compile(
+    r"github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?(?=[/#?\s\"')]|$)"
+)
+REMOTE = re.compile(r"[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+QUOTED = re.compile(r"'([A-Za-z0-9_.-]+)'")
+TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def downstream_sh():
+    """tools/downstream/downstream.sh: next to this file (a runner's temp
+    directory, where reusable-release.yml copies both), or in its checkout."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in (
+        os.path.join(here, "downstream.sh"),
+        os.path.join(TOOLS, "downstream", "downstream.sh"),
+    ):
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def pyproject_name(text_at, wd=""):
+    """The [project] name of the first pyproject.toml found (the working
+    directory's, python/, the root); text_at(path) returns a file's text or None."""
+    paths = [f"{wd}/pyproject.toml"] if wd else []
+    for path in dict.fromkeys(paths + ["python/pyproject.toml", "pyproject.toml"]):
+        text = text_at(path)
+        if text:
+            try:
+                data = tomllib.loads(text)
+            except tomllib.TOMLDecodeError:
+                continue
+            name = data.get("project", {}).get("name")
+            if name:
+                return name, path, data.get("project", {}).get("urls") or {}
+    return None, None, {}
+
+
+def publishes_pypi(text):
+    """A workflow that publishes to PyPI: a live (uncommented) line names it."""
+    return bool(re.search(r"(?i)pypi", "\n".join(COMMENT.sub("", ln) for ln in text.splitlines())))
+
+
+def origin_repo(repo_dir):
+    """OWNER/NAME of the checkout's origin remote, or None."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo_dir, "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    m = REMOTE.search(out.stdout.strip()) if out.returncode == 0 else None
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+
+def resolve(gh, repo):
+    """The repository's full_name as the GitHub API has it now (a renamed one
+    redirects to its new name), None for a 404; raises RuntimeError when unreadable."""
+    data = gh.get(f"repos/{repo}")
+    return data.get("full_name") if isinstance(data, dict) else None
+
+
+def current_repo(repo_dir, repo, gh, r):
+    """The repository's current OWNER/NAME (the GitHub API follows renames), or
+    the given one when the API cannot be read (a WARN)."""
+    given = repo or origin_repo(repo_dir)
+    if not given:
+        r.add("WARN", "repository: pass --repo OWNER/NAME (no origin remote to read it from)")
+        return None
+    try:
+        now = resolve(gh, given)
+    except RuntimeError as e:
+        r.add(
+            "WARN",
+            f"repository: cannot read {given} from the GitHub API ({str(e)[:120]}); "
+            "its name is taken as given",
+        )
+        return given
+    if not now:
+        r.add("FAIL", f"repository: {given} does not exist on GitHub")
+        return given
+    if now.lower() != given.lower():
+        r.add(
+            "WARN",
+            f"repository: {given} was renamed {now}; the checks below use {now} (move the "
+            "remote, and every file naming the old name, to it)",
+        )
+    else:
+        r.add("OK", f"repository: {now}")
+    return now
+
+
+def downstream_check(repo_dir, list_path, self_name, r, script=None):
+    """The consumer list parses and names this repository (reusable-release.yml's
+    downstream job: DOWNSTREAM_LOCAL=<self>=<checkout>, downstream.sh)."""
+    if "${{" in list_path or (self_name and "${{" in self_name):
+        r.add("WARN", f"downstream: {list_path} is an expression; check the list by hand")
+        return
+    path = os.path.join(repo_dir, list_path)
+    if not os.path.isfile(path):
+        r.add("FAIL", f"downstream: downstream-consumers names {list_path}, no such file")
+        return
+    script = script or downstream_sh()
+    if not script:
+        r.add("WARN", "downstream: tools/downstream/downstream.sh not found; the list is unchecked")
+        return
+    env = dict(os.environ, DOWNSTREAM_LOCAL=f"{self_name}={os.path.abspath(repo_dir)}")
+    if not self_name:
+        env.pop("DOWNSTREAM_LOCAL")
+    out = subprocess.run(["bash", script, "--check", path], capture_output=True, text=True, env=env)
+    if out.returncode:
+        why = (out.stderr.strip().splitlines() or ["no output"])[-1]
+        hint = (
+            f" (the dry run passes DOWNSTREAM_LOCAL={self_name}=<checkout>: a line named "
+            f"`{self_name}`, the repository's current name, or the caller's `downstream-self`)"
+            if "is not a consumer" in why
+            else ""
+        )
+        r.add("FAIL", f"downstream: {list_path}: {why}{hint}")
+    elif not self_name:
+        r.add(
+            "WARN",
+            f"downstream: {list_path} parses; this repository's name is unknown, "
+            "so its own line is unchecked",
+        )
+    else:
+        count = (out.stdout.strip().splitlines() or [""])[-1]
+        r.add("OK", f"downstream: {count}, `{self_name}` (this repository) among them")
+
+
+def url_repos(urls):
+    """{OWNER/NAME} of the GitHub repositories a set of URLs names."""
+    out = set()
+    for u in urls:
+        for m in GITHUB_REPO_URL.finditer(u or ""):
+            out.add(f"{m.group(1)}/{m.group(2)}")
+    return out
+
+
+def repo_urls_check(where, urls, full_name, gh, r):
+    """The GitHub URLs `where` holds name full_name: an old name of it is a WARN
+    (a rename), another repository a FAIL, an unreadable one a WARN."""
+    others = sorted(x for x in url_repos(urls) if x.lower() != full_name.lower())
+    if not others and url_repos(urls):
+        r.add("OK", f"{where} names {full_name}")
+    for x in others:
+        try:
+            now = resolve(gh, x)
+        except RuntimeError as e:
+            r.add("WARN", f"{where} names {x}, unreadable on GitHub ({str(e)[:80]})")
+            continue
+        if now and now.lower() == full_name.lower():
+            r.add(
+                "WARN",
+                f"{where} names {x}, this repository's old name (now {full_name}): a "
+                "trusted publisher made for it fails with `invalid-publisher`",
+            )
+        elif now:
+            r.add("FAIL", f"{where} names {x}, another repository than {full_name}")
+        else:
+            r.add("WARN", f"{where} names {x}, which does not exist on GitHub")
+
+
+def pypi_check(repo_dir, callers, inputs, full_name, gh, r):
+    """Where the release publishes to PyPI: the project, its repository URLs, and
+    the trusted publisher a person confirms (PyPI's JSON API does not show it)."""
+    flows = [(n, t) for n, t in callers if publishes_pypi(t)]
+    if not flows:
+        return
+    wd = inputs.get("working-directory", "").strip("./")
+    name, path, urls = pyproject_name(lambda p: read(os.path.join(repo_dir, p)), wd)
+    if not name:
+        r.add("WARN", "pypi: the release workflow names PyPI, but no pyproject [project] name")
+        return
+    flow, text = flows[0]
+    envs = sorted(
+        {
+            e
+            for ln in text.splitlines()
+            if "environment:" in COMMENT.sub("", ln)
+            for e in QUOTED.findall(ln) or [ln.split("environment:", 1)[1].strip()]
+        }
+    )
+    where = f"repository {full_name or '?'}, workflow {flow}" + (
+        f", environment {' or '.join(envs)}" if envs else ""
+    )
+    if full_name and urls:
+        repo_urls_check(f"pypi: {path} [project.urls]", urls.values(), full_name, gh, r)
+    indexes = [ix for ix in PYPI_INDEXES if ix[0] == "PyPI" or "test.pypi.org" in text]
+    for label, base in indexes:
+        try:
+            data = gh.url(f"{base}/pypi/{name}/json")
+        except (OSError, ValueError) as e:
+            r.add("WARN", f"pypi: cannot read {name} on {label} ({str(e)[:80]})")
+            continue
+        if data is None:
+            r.add(
+                "NEXT",
+                f"pypi: {name} is not on {label} yet: before the first upload the maintainer "
+                f"adds a pending publisher at {base}/manage/account/publishing/ ({where})",
+            )
+            continue
+        info = data.get("info") or {}
+        pyurls = list((info.get("project_urls") or {}).values()) + [info.get("home_page") or ""]
+        if full_name and url_repos(pyurls):
+            repo_urls_check(f"pypi: {label}'s {name} project_urls", pyurls, full_name, gh, r)
+        else:
+            r.add("OK", f"pypi: {name} is on {label} (no GitHub URL in its metadata to compare)")
+        r.add(
+            "NEXT",
+            f"pypi: confirm {label}'s trusted publisher for {name} names {where} at "
+            f"{base}/manage/project/{name}/settings/publishing/ ({label}'s API does not show it; "
+            "a renamed repository needs a new one)",
+        )
+
+
+def preflight(repo_dir, repo, gh, consumers=None, self_name=None, r=None):
+    """The repository's name, its downstream list's own line and its PyPI project."""
+    r = r or Report()
+    flows = local_workflows(repo_dir)
+    callers = caller_workflows(flows) or [(n, t) for n, t in flows if n == "release.yml"]
+    inputs = {}
+    for _, t in callers:
+        inputs.update(with_inputs(t))
+    full_name = current_repo(repo_dir, repo, gh, r)
+    consumers = consumers or inputs.get("downstream-consumers")
+    if consumers:
+        self_name = (
+            self_name
+            or inputs.get("downstream-self")
+            or (full_name.split("/", 1)[1] if full_name else None)
+        )
+        downstream_check(repo_dir, consumers, self_name, r)
+    pypi_check(repo_dir, callers, inputs, full_name, gh, r)
+    return r
+
+
+def next_version(repo_dir, wd, increment, from_config, r, run=subprocess.run):
+    """What the bump would produce: 0.1.0 for a first release (as
+    reusable-release.yml), else Commitizen's `cz bump --get-next`; None (a WARN)
+    when Commitizen is missing or nothing bumps."""
+    tags = run(["git", "-C", repo_dir, "tag", "--list", "v[0-9]*"], capture_output=True, text=True)
+    if (
+        tags.returncode == 0
+        and not tags.stdout.strip()
+        and not from_config
+        and increment != "MAJOR"
+    ):
+        r.add(
+            "OK", "version: 0.1.0 (no v* tag: the first release; a clone without tags: fetch them)"
+        )
+        return "0.1.0"
+    cmd = ["cz", "bump", "--get-next", "--yes"] + (["--increment", increment] if increment else [])
+    try:
+        out = run(cmd, cwd=os.path.join(repo_dir, wd), capture_output=True, text=True)
+    except OSError:
+        r.add(
+            "WARN",
+            "version: Commitizen is not installed (pip install commitizen); pass "
+            "--version X.Y.Z to check the ladder row",
+        )
+        return None
+    ver = out.stdout.strip().splitlines()[-1] if out.returncode == 0 and out.stdout.strip() else ""
+    if re.fullmatch(r"\d+\.\d+\.\d+", ver):
+        r.add("OK", f"version: {ver}, what the bump would produce ({' '.join(cmd)})")
+        return ver
+    r.add(
+        "WARN",
+        f"version: `{' '.join(cmd)}` exited {out.returncode} (21: nothing that bumps since the "
+        "last tag, and a dry run stops there); pass --increment or --version",
+    )
+    return None
+
+
+def ready(repo_dir, repo, version, gh, increment=None, run=subprocess.run):
     r = Report()
     flows = local_workflows(repo_dir)
     callers = caller_workflows(flows)
@@ -357,7 +655,11 @@ def ready(repo_dir, repo, version, gh):
         r.add("OK", "build: the own release.yml builds its assets into dist/")
     else:
         r.add("FAIL", "build: no `dist:` target in the Makefile and no build: input in the caller")
+    if not version and cz is not None and "_error" not in cz:
+        from_config = inputs.get("first-release-from-config", "") in ("true", "True")
+        version = next_version(repo_dir, wd, increment, from_config, r, run)
     ladder(repo_dir, version, r)
+    preflight(repo_dir, repo, gh, r=r)
     if repo and version:
         label = f"release:v{version}"
         listed = gh.get_all(f"repos/{repo}/issues?state=open&labels={label}")
@@ -573,15 +875,8 @@ def after(repo, tag, org, gh, consumers=None, roadmap=ROADMAP):
                     "release's vcpkg job, or tools/port_bump.py bump by hand (registry README)",
                 )
     if any(re.search(r"(?i)pypi", t) for _, t in callers):
-        project = None
         wd = inputs.get("working-directory", "").strip("./")
-        paths = [f"{wd}/pyproject.toml"] if wd else []
-        for path in dict.fromkeys(paths + ["python/pyproject.toml", "pyproject.toml"]):
-            text = contents_text(gh, repo, path, ref=tag)
-            if text:
-                project = tomllib.loads(text).get("project", {}).get("name")
-                if project:
-                    break
+        project = pyproject_name(lambda p: contents_text(gh, repo, p, ref=tag), wd)[0]
         if not project:
             r.add("WARN", "pypi: the release workflow names PyPI, but no pyproject [project] name")
         elif gh.url(f"https://pypi.org/pypi/{project}/{version}/json"):
@@ -1091,6 +1386,180 @@ def self_test():
     rep = quiet(after, "o/r", "v9.9.9", "o", FakeGh({}))
     expect("after: no release fails", has(rep, "FAIL", "no published GitHub release v9.9.9"))
 
+    # --- the preflight: the sim-tools v1.1.3 dry runs (ns3-tools renamed sim-tools) ---
+    class Run:
+        """subprocess.run for next_version: `git tag` lists tags, `cz` answers or is missing."""
+
+        def __init__(self, tags, cz=None, rc=0):
+            self.tags, self.cz, self.rc, self.calls = tags, cz, rc, []
+
+        def __call__(self, cmd, **kw):
+            self.calls.append(cmd)
+            if cmd[0] == "git":
+                return subprocess.CompletedProcess(cmd, 0, self.tags, "")
+            if self.cz is None:
+                raise FileNotFoundError("cz")
+            return subprocess.CompletedProcess(cmd, self.rc, self.cz, "")
+
+    r = Report()
+    fake = Run("v1.1.2\n", "1.1.3\n")
+    v = quiet(next_version, ".", "", "PATCH", False, r, fake)
+    expect(
+        "next_version: cz bump --get-next with the increment",
+        v == "1.1.3" and fake.calls[-1][-2:] == ["--increment", "PATCH"],
+    )
+    r = Report()
+    expect(
+        "next_version: no v* tag is 0.1.0",
+        quiet(next_version, ".", "", None, False, r, Run("")) == "0.1.0",
+    )
+    r = Report()
+    expect(
+        "next_version: no v* tag, MAJOR asks Commitizen",
+        quiet(next_version, ".", "", "MAJOR", False, r, Run("", "1.0.0\n")) == "1.0.0",
+    )
+    r = Report()
+    expect(
+        "next_version: nothing that bumps (exit 21) warns, no version",
+        quiet(next_version, ".", "", None, False, r, Run("v1.0.0\n", "", 21)) is None
+        and has(r, "WARN", "exited 21"),
+    )
+    r = Report()
+    expect(
+        "next_version: no Commitizen warns, never fails",
+        quiet(next_version, ".", "", None, False, r, Run("v1.0.0\n")) is None
+        and has(r, "WARN", "not installed")
+        and not r.failed(),
+    )
+
+    renamed = {
+        "repos/swarm-routing/ns3-tools": {"full_name": "swarm-routing/sim-tools"},
+        "repos/swarm-routing/sim-tools": {"full_name": "swarm-routing/sim-tools"},
+        "repos/someone/else": {"full_name": "someone/else"},
+    }
+    consumers = (
+        "{} | swarm-routing/sim-tools@main | 3.42+ | routing-bench={}/ns3/routing-bench | | |\n"
+        "AntHocNet | swarm-routing/AntHocNet@main | 3.36+ | anthocnet=AntHocNet/ns3 | | |\n"
+    )
+    pypi_job = (
+        "  pypi:\n    needs: release\n"
+        "    environment: ${{ x == 'release' && 'release' || 'dry-run' }}\n"
+        "    steps:\n      - uses: pypa/gh-action-pypi-publish@0 # v1\n"
+        "        with:\n          repository-url: ${{ x && 'https://upload.pypi.org/legacy/'"
+        " || 'https://test.pypi.org/legacy/' }}\n"
+    )
+    project = '[project]\nname = "swarm-sim-tools"\n'
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, ".github", "workflows"))
+        os.makedirs(os.path.join(d, "python"))
+        files = {
+            ".github/workflows/release.yml": caller
+            + "      downstream-consumers: .github/downstream.txt\n"
+            + pypi_job,
+            ".github/downstream.txt": consumers.format("ns3-tools", "ns3-tools"),
+            "python/pyproject.toml": project,
+        }
+        for p, t in files.items():
+            with open(os.path.join(d, p), "w", encoding="utf-8") as fh:
+                fh.write(t)
+        gh = FakeGh(renamed)
+        rep = quiet(preflight, d, "swarm-routing/ns3-tools", gh)
+        expect(
+            "preflight: a renamed repository is named by its current name",
+            has(rep, "WARN", "swarm-routing/ns3-tools was renamed swarm-routing/sim-tools"),
+        )
+        expect(
+            "preflight: a consumer list without the current name fails (sim-tools v1.1.3)",
+            has(rep, "FAIL", "'sim-tools' is not a consumer")
+            and has(rep, "FAIL", "a line named `sim-tools`"),
+        )
+        expect(
+            "preflight: a project not on PyPI or TestPyPI is a pending-publisher NEXT",
+            has(rep, "NEXT", "swarm-sim-tools is not on PyPI yet")
+            and has(rep, "NEXT", "https://test.pypi.org/manage/account/publishing/")
+            and has(rep, "NEXT", "workflow release.yml, environment dry-run or release"),
+        )
+        with open(os.path.join(d, ".github/downstream.txt"), "w", encoding="utf-8") as fh:
+            fh.write(consumers.format("sim-tools", "sim-tools"))
+        pypi = {
+            "https://pypi.org/pypi/swarm-sim-tools/json": {
+                "info": {"project_urls": {"Source": "https://github.com/swarm-routing/ns3-tools"}}
+            },
+            "https://test.pypi.org/pypi/swarm-sim-tools/json": {
+                "info": {"project_urls": {"Source": "https://github.com/swarm-routing/sim-tools"}}
+            },
+        }
+        rep = quiet(preflight, d, "swarm-routing/sim-tools", FakeGh(renamed, pypi))
+        expect(
+            "preflight: the list names the repository by its current name",
+            has(rep, "OK", "downstream: downstream.txt: 2 consumers, `sim-tools`"),
+        )
+        expect(
+            "preflight: PyPI's project_urls naming the old name warn (invalid-publisher)",
+            has(rep, "WARN", "names swarm-routing/ns3-tools, this repository's old name"),
+        )
+        expect(
+            "preflight: TestPyPI's project_urls naming the repository pass",
+            has(rep, "OK", "TestPyPI's swarm-sim-tools project_urls names swarm-routing/sim-tools"),
+        )
+        expect(
+            "preflight: the trusted publisher is a NEXT with its settings page",
+            has(
+                rep, "NEXT", "https://pypi.org/manage/project/swarm-sim-tools/settings/publishing/"
+            ),
+        )
+        expect("preflight: nothing definite, no FAIL", not rep.failed())
+        pypi["https://pypi.org/pypi/swarm-sim-tools/json"]["info"]["project_urls"] = {
+            "Home": "https://github.com/someone/else"
+        }
+        rep = quiet(preflight, d, "swarm-routing/sim-tools", FakeGh(renamed, pypi))
+        expect(
+            "preflight: a PyPI project of another repository fails",
+            has(rep, "FAIL", "names someone/else, another repository"),
+        )
+
+        class Unreadable(FakeGh):
+            def get(self, path):
+                raise RuntimeError("HTTP 403")
+
+        rep = quiet(preflight, d, "swarm-routing/sim-tools", Unreadable({}, {}))
+        expect(
+            "preflight: an unreadable GitHub API warns and keeps the given name",
+            has(rep, "WARN", "cannot read swarm-routing/sim-tools")
+            and has(rep, "OK", "`sim-tools` (this repository)")
+            and not rep.failed(),
+        )
+        rep = quiet(preflight, d, "swarm-routing/sim-tools", gh, "nope.txt")
+        expect(
+            "preflight: a missing consumer list fails", has(rep, "FAIL", "nope.txt, no such file")
+        )
+        rep = quiet(preflight, d, "swarm-routing/sim-tools", gh, None, "AntHocNet")
+        expect(
+            "preflight: downstream-self names the repository's line",
+            has(rep, "OK", "`AntHocNet` (this repository)"),
+        )
+        os.makedirs(os.path.join(d, "docs"))
+        with open(os.path.join(d, "docs/roadmap.md"), "w", encoding="utf-8") as fh:
+            fh.write("| v1.1.2 | shipped |\n| v1.2.0 | planned |\n")
+        with open(os.path.join(d, ".cz.toml"), "w", encoding="utf-8") as fh:
+            fh.write(cz)
+        with open(os.path.join(d, "Makefile"), "w", encoding="utf-8") as fh:
+            fh.write("dist:\n\ttrue\n")
+        rep = quiet(ready, d, None, None, gh, "PATCH", Run("v1.1.2\n", "1.1.3\n"))
+        expect(
+            "ready: the bump's version, with no ladder row, fails before a dispatch (v1.1.3)",
+            has(rep, "OK", "version: 1.1.3") and has(rep, "FAIL", "no row for v1.1.3"),
+        )
+        expect(
+            "ready: runs the preflight (no --repo, no origin: a WARN)",
+            has(rep, "WARN", "pass --repo") and has(rep, "WARN", "its own line is unchecked"),
+        )
+    expect(
+        "url_repos: owner/name from URLs, .git and paths dropped",
+        url_repos(["https://github.com/o/r.git", "https://github.com/o/s/issues", None])
+        == {"o/r", "o/s"},
+    )
+
     if fails:
         print(f"release_check: {len(fails)} failed")
         sys.exit(1)
@@ -1107,7 +1576,19 @@ def main(argv=None):
     p = sub.add_parser("ready", help="before a dry-run or a bump")
     p.add_argument("repo_dir")
     p.add_argument("--repo", help="OWNER/NAME, for the issue scope and the bump PR")
-    p.add_argument("--version", help="the version the dry-run computed, X.Y.Z")
+    p.add_argument(
+        "--version", help="X.Y.Z (default: what the bump would produce, cz bump --get-next)"
+    )
+    p.add_argument(
+        "--increment", choices=["PATCH", "MINOR", "MAJOR"], help="the bump's forced size"
+    )
+    p = sub.add_parser(
+        "preflight", help="the repository's name, its downstream line, its PyPI project"
+    )
+    p.add_argument("repo_dir")
+    p.add_argument("--repo", help="OWNER/NAME (default: the checkout's origin)")
+    p.add_argument("--downstream-consumers", help="the consumer list (default: the caller's input)")
+    p.add_argument("--downstream-self", help="its line for this repository (default: its name)")
     p = sub.add_parser("ladder", help="the ladder gate alone: the version's docs/roadmap.md row")
     p.add_argument("repo_dir")
     p.add_argument("--version", required=True, help="X.Y.Z (a leading v is dropped)")
@@ -1126,7 +1607,9 @@ def main(argv=None):
         if a.cmd == "ladder":
             rep = ladder(a.repo_dir, a.version.lstrip("v"))
         elif a.cmd == "ready":
-            rep = ready(a.repo_dir, a.repo, (a.version or "").lstrip("v") or None, gh)
+            rep = ready(a.repo_dir, a.repo, (a.version or "").lstrip("v") or None, gh, a.increment)
+        elif a.cmd == "preflight":
+            rep = preflight(a.repo_dir, a.repo, gh, a.downstream_consumers, a.downstream_self)
         else:
             if not re.fullmatch(r"v\d+\.\d+\.\d+", a.tag):
                 ap.error(f"--tag {a.tag}: not vX.Y.Z")

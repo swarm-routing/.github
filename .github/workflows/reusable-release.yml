@@ -108,7 +108,10 @@ name: Reusable release
 #    In a dry run with `downstream-consumers` (a consumer list in the caller's
 #    repository, #482), the `downstream` job builds and tests those consumers
 #    on an ns3-dev image against this commit (tools/downstream/downstream.sh,
-#    the script ns3-containers' image canary runs), report-only.
+#    the script ns3-containers' image canary runs), report-only. Before the
+#    build, a dry run's preflight (release_check.py `preflight`) fails when the
+#    list does not name this repository by its current name, or the PyPI
+#    project the caller publishes to names another repository.
 #    The last job, `notify-org` (`notify-org`, default true, #479), sends the
 #    same event to swarm-routing/.github once publish succeeded and the zenodo
 #    and vcpkg jobs ended: org-bot.yml then runs the release aftercare for this
@@ -519,7 +522,8 @@ jobs:
           cz version
 
       # The org's release tools (tools/release/: release_check.py for the
-      # ladder gate, release_notes.py for the notes), this repository's at
+      # ladder gate and the preflight, release_notes.py for the notes;
+      # tools/downstream/downstream.sh, the preflight's list check), this repository's at
       # main, read into the runner's temp directory (never into the caller's
       # checkout, which the build and the SBOM read); when the caller is this
       # repository (release-selftest.yml), its own checkout's.
@@ -527,12 +531,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for t in release_check.py release_notes.py; do
+          for t in release/release_check.py release/release_notes.py downstream/downstream.sh; do
             if [ "$GITHUB_REPOSITORY" = swarm-routing/.github ]; then
-              cp "tools/release/$t" "$RUNNER_TEMP/$t"
+              cp "tools/$t" "$RUNNER_TEMP/${t#*/}"
             else
               gh api -H 'Accept: application/vnd.github.raw' \
-                "repos/swarm-routing/.github/contents/tools/release/${t}?ref=main" > "$RUNNER_TEMP/$t"
+                "repos/swarm-routing/.github/contents/tools/${t}?ref=main" > "$RUNNER_TEMP/${t#*/}"
             fi
           done
 
@@ -727,6 +731,29 @@ jobs:
           if grep -q '^WARN' "$RUNNER_TEMP/ladder.txt"; then
             echo "::warning::$(sed -n 's/^WARN *//p' "$RUNNER_TEMP/ladder.txt" | head -1)"
           fi
+
+      # The preflight (release_check.py `preflight`, the sim-tools v1.1.3 dry
+      # runs): the repository's current name (the API follows renames), the
+      # downstream list's own line (the downstream job's DOWNSTREAM_LOCAL), and
+      # the PyPI project the caller publishes to. A dry run only, before the
+      # build: a definite mismatch fails it here instead of in the downstream
+      # or pypi job; what cannot be read, and the trusted publisher PyPI does
+      # not show, are warnings.
+      - name: Preflight (the repository's name, its downstream line, its PyPI project)
+        if: ${{ needs.route.outputs.mode == 'dry-run' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIST: ${{ inputs.downstream-consumers }}
+          SELF: ${{ inputs.downstream-self || github.event.repository.name }}
+        run: |
+          set -o pipefail   # the checker's exit 1 must survive the tee
+          args=(preflight . --repo "$GITHUB_REPOSITORY")
+          if [ -n "$LIST" ]; then args+=(--downstream-consumers "$LIST" --downstream-self "$SELF"); fi
+          if ! python3 -I "$RUNNER_TEMP/release_check.py" "${args[@]}" | tee "$RUNNER_TEMP/preflight.txt"; then
+            echo "::error::$(sed -n 's/^FAIL *//p' "$RUNNER_TEMP/preflight.txt" | head -1)"
+            exit 1
+          fi
+          sed -n 's/^\(WARN\|NEXT\) *\(.*\)/::warning::\2/p' "$RUNNER_TEMP/preflight.txt"
 
       - name: Build the assets (the caller's command)
         if: ${{ needs.route.outputs.mode != 'bump' }}
