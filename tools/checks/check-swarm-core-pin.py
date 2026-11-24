@@ -95,7 +95,8 @@ ns-3 CI its tag, a benchmark cell its commit), read from the adapter's tags,
 never typed. A line on another ref is a stale finding while such a release
 exists, and `--bump` moves it there, with the lock or alone (the lock already
 current); while none ships it, the line stays and only `main` outside
-`canary-dependencies:` is refused.
+`canary-dependencies:` is refused. The bump also moves a `main` line, the
+canary's, still on the old name to `swarm-adapter-ns3@main`, its ref kept.
 
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
   check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--registry URL_OR_PATH]
@@ -518,13 +519,19 @@ def adapter_stale(base, core_tag):
     ]
 
 
-def move_adapter(a_tag, a_commit):
+def move_adapter(a_tag, a_commit, rename=True):
     """Rewrite each release-pinning ns-3 dependency line (ns3_pins) to
-    swarm-adapter-ns3 at `a_tag`, a benchmark cell's at `a_commit`; the files
-    changed."""
+    swarm-adapter-ns3 at `a_tag`, a benchmark cell's at `a_commit` (none while
+    `a_tag` is None), and, with `rename` (the lock past the move, #691), each
+    `@main` line, a canary's, still on the old name swarm-routing/ns3-swarm-core
+    (#672) to swarm-adapter-ns3@main; the files changed."""
     changed = []
-    if not a_tag:
-        return changed
+
+    def dep(d, want):
+        if d.group(1) == "main":
+            return f"swarm-core={SWARM_CORE_REPO}@main" if rename else d.group(0)
+        return f"swarm-core={SWARM_CORE_REPO}@{want}" if want else d.group(0)
+
     for path in sorted(glob.glob(".github/workflows/*.y*ml")):
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
@@ -534,16 +541,9 @@ def move_adapter(a_tag, a_commit):
             m = KEY.match(line)
             if m:
                 key = m.group(1)
-            if key != "canary-dependencies":
-                line = NS3_DEP.sub(
-                    lambda d: (
-                        d.group(0)
-                        if d.group(1) == "main"
-                        else f"swarm-core={SWARM_CORE_REPO}@{want}"
-                    ),
-                    line,
-                )
-            new.append(line)
+            # a canary keeps its ref; only its `main` line changes, by name
+            pin = None if key == "canary-dependencies" or not a_tag else want
+            new.append(NS3_DEP.sub(lambda d: dep(d, pin), line))
         if new != lines:
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.writelines(new)
@@ -785,9 +785,17 @@ def bump_lock(releases, registry=REGISTRY):
         print(f"FAIL {e}")
         return 1
     if not lock_moves:
-        changed = move_adapter(a_tag, a_commit)
+        changed = move_adapter(a_tag, a_commit, core_repo == CORE_REPO)
         if not changed:
             print(f"swarm-core pin (lock): current, {LOCK} names {tag}, the newest release")
+            return 0
+        if not a_tag:
+            print(
+                f"swarm-core pin (lock): the ns-3 canary moves to {SWARM_CORE_REPO}@main, "
+                f"its name since 2026-11-22, in {len(changed)} file(s)"
+            )
+            for c in changed:
+                print(f"  {c}")
             return 0
         print(
             f"swarm-core pin (lock): the ns-3 dependency moves to {SWARM_CORE_REPO} {a_tag}, "
@@ -856,7 +864,8 @@ def bump_lock(releases, registry=REGISTRY):
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.writelines(new)
             changed.append(path)
-    changed += [p for p in move_adapter(a_tag, a_commit) if p not in changed]
+    on_adapter = move_adapter(a_tag, a_commit, core_repo == CORE_REPO)
+    changed += [p for p in on_adapter if p not in changed]
     low = None if moving else release_lock.version_key(tag)
     between = sorted(
         (
@@ -1445,7 +1454,8 @@ def self_test():
             and f"core-deps: {CORE_REPO}@v0.1.0:core\n" in licence
             and f"core-deps: {CORE_REPO}@v0.1.0:core\n" in ns3
             and "swarm-core=swarm-routing/ns3-swarm-core@v0.5.0\n" in ns3
-            and "swarm-core=swarm-routing/ns3-swarm-core@main\n" in ns3
+            and "swarm-core=swarm-routing/swarm-adapter-ns3@main\n" in ns3
+            and "ns3-swarm-core@main" not in ns3
             and open(bench_path, encoding="utf-8").read() == bench_before
             and "SWARM_CORE_REF ?= v0.1.0\n" in make
             and f"https://github.com/{CORE_REPO} $(SWARM_CORE_REF)" in make
@@ -1584,7 +1594,7 @@ def self_test():
             rc == 0
             and f"pin-target: {a9}" in out
             and "swarm-core=swarm-routing/swarm-adapter-ns3@v0.9.0\n" in ns3_moved
-            and "swarm-core=swarm-routing/ns3-swarm-core@main\n" in ns3_moved
+            and "swarm-core=swarm-routing/swarm-adapter-ns3@main\n" in ns3_moved
             and f"core-deps: {CORE_REPO}@v0.6.0:core\n" in ns3_moved
             and f"swarm-core=swarm-routing/swarm-adapter-ns3@{a9}\n" in bench
             and bench_before != bench
@@ -1609,6 +1619,24 @@ def self_test():
             and f"swarm-core=swarm-routing/swarm-adapter-ns3@{a11}\n" in open(bench_path).read()
             and f"pin-target: {a11}" in out
             and golock(same)[0] == 0,
+        )
+        # the canary on swarm-core's old repository name (#672), every release
+        # line current: --bump moves the slug alone, `main` kept
+        with open(ns3_path, "w", encoding="utf-8") as f:
+            f.write(
+                ns3_moved.replace(
+                    "swarm-core=swarm-routing/swarm-adapter-ns3@main\n",
+                    "swarm-core=swarm-routing/ns3-swarm-core@main\n",
+                )
+            )
+        rc, out = golock(same, bump_mode=True)
+        check(
+            "adapter dep: --bump moves a canary on the old name to swarm-adapter-ns3@main",
+            rc == 0
+            and open(ns3_path, encoding="utf-8").read() == ns3_moved
+            and ".github/workflows/ns3.yml" in out
+            and "None" not in out
+            and "current" in golock(same, bump_mode=True)[1],
         )
 
     for f in failures:
