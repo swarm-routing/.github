@@ -92,6 +92,18 @@ name: Reusable ns-3 CI
 # of a dependency will need work here. Coverage, Sonar and their artifacts stay
 # on the pinned legs. Add a `schedule:` to the caller's `on:` so the canary
 # runs while the caller's own `main` is quiet.
+#
+# Protocol image (default off, rule 10): `protocol-image: true` builds in
+# ghcr.io/swarm-routing/ns3-protocol-dev:<version>-<profile> (sim-containers'
+# docker/protocol/Dockerfile: ns3-dev with swarm-core and routing-bench
+# prebuilt at their newest releases, recorded in /opt/ns-3/.swarm-modules.env),
+# so a leg compiles only this repo's module. Each `dependencies` entry is still
+# cloned; one whose name, commit and subdirectory equal a prebuilt module's is
+# passed by its image path (Ninja finds it up to date), any other is built
+# from source over it, exactly as on ns3-dev (a notice says so), so the
+# canary leg's `@main` refs stay correct. The image has debug and sanitized
+# only, and older ns-3 releases only where built on demand: pass it with the
+# automatic legs, e.g. `protocol-image: ${{ inputs.ns3-versions == '' }}`.
 on:
   workflow_call:
     inputs:
@@ -111,6 +123,10 @@ on:
         description: "JSON list of ns-3 versions (image tags); `latest` = the release ns-3 supports"
         type: string
         default: '["latest"]'
+      protocol-image:
+        description: "Build in ghcr.io/swarm-routing/ns3-protocol-dev (ns3-dev with swarm-core and routing-bench prebuilt at their newest releases; debug and sanitized only) instead of ns3-dev: a `dependencies` entry at the commit the image holds is used prebuilt, any other is built from source as before. Default false: ns3-dev, unchanged"
+        type: boolean
+        default: false
       profiles:
         description: "JSON list of image profiles: debug, sanitized, optimized"
         type: string
@@ -254,7 +270,8 @@ jobs:
         include: ${{ fromJSON((inputs.canary-dependencies != '' && contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)) && format('[{{"version":{0},"profile":"debug","deps":"canary"}}]', toJSON(fromJSON(inputs.ns3-versions)[0])) || '[]') }}
     container:
       # empty on a docs-only change: the leg runs on the bare runner, no image pulled
-      image: ${{ needs.changes.outputs.build == 'true' && format('ghcr.io/swarm-routing/ns3-dev:{0}-{1}', matrix.version, matrix.profile) || '' }}
+      # protocol-image: ns3-protocol-dev, tagged <version>-<profile> as ns3-dev is
+      image: ${{ needs.changes.outputs.build == 'true' && format('ghcr.io/swarm-routing/{0}:{1}-{2}', inputs.protocol-image && 'ns3-protocol-dev' || 'ns3-dev', matrix.version, matrix.profile) || '' }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -284,6 +301,7 @@ jobs:
         env:
           DEPS: ${{ matrix.deps == 'canary' && inputs.canary-dependencies || inputs.dependencies }}
           TOKEN: ${{ github.token }}
+          PROTOCOL_IMAGE: ${{ inputs.protocol-image }}
         run: |
           set -euo pipefail
           : > "$RUNNER_TEMP/dep-specs"
@@ -295,8 +313,30 @@ jobs:
             dest="$GITHUB_WORKSPACE/deps/$name"
             git clone --quiet --depth 1 --branch "$ref" \
               "https://x-access-token:${TOKEN}@github.com/${repo}.git" "$dest"
-            echo "$name=$dest${sub:+/$sub}" >> "$RUNNER_TEMP/dep-specs"
-            echo "dependency $name: $repo@$ref ($(git -C "$dest" rev-parse --short HEAD))"
+            commit=$(git -C "$dest" rev-parse HEAD)
+            # protocol-image: the image's prebuilt module of this name, used
+            # by its image path when it is this commit (and subdirectory);
+            # Ninja then finds it up to date. Any other commit is built from
+            # source over it, as on ns3-dev.
+            prebuilt=""
+            if [ "$PROTOCOL_IMAGE" = true ] && [ -f /opt/ns-3/.swarm-modules.env ]; then
+              # shellcheck source=/dev/null
+              prebuilt=$(. /opt/ns-3/.swarm-modules.env; printf '%s\n' "${SWARM_PREBUILT:-}" | while read -r pspec pcommit ppath; do
+                pref=${pspec#*@}; psub=""; case "$pref" in *:*) psub=${pref#*:} ;; esac
+                if [ "${pspec%%=*}" = "$name" ] && [ "$pcommit" = "$commit" ] && [ "$psub" = "$sub" ]; then echo "$ppath"; fi
+              done)
+            fi
+            if [ -n "$prebuilt" ]; then
+              echo "$name=$prebuilt" >> "$RUNNER_TEMP/dep-specs"
+              echo "dependency $name: $repo@$ref (${commit::7}), prebuilt in the image at $prebuilt"
+              echo "- \`$name\`: $repo@$ref (${commit::7}) prebuilt in the image" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "$name=$dest${sub:+/$sub}" >> "$RUNNER_TEMP/dep-specs"
+              echo "dependency $name: $repo@$ref (${commit::7})"
+              if [ "$PROTOCOL_IMAGE" = true ]; then
+                echo "::notice::dependency $name $repo@$ref (${commit::7}) is not the image's prebuilt one: built from source"
+              fi
+            fi
           done <<< "$DEPS"
       - name: Build + test
         if: needs.changes.outputs.build == 'true'
