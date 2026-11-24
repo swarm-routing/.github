@@ -253,7 +253,9 @@ TASKS = {
         "`tools/checks/check-swarm-core-pin.py --bump`: the old commit or tag becomes the "
         "new one on the pin lines only (`SWARM_CORE_REF` in `core/CMakeLists.txt` and the "
         "`Makefile`, or the lock written from the release, every value read from it; the "
-        "workflows' `core-deps` and ns-3 dependency lines); recorded results, docs and "
+        "workflows' `core-deps` and ns-3 dependency lines, the latter on the "
+        "swarm-adapter-ns3 release that ships the lock's swarm-core release, #691); "
+        "recorded results, docs and "
         "campaign plans are never touched (#407). This repository's core tests and ns-3 "
         "suite run on this PR; when swarm-core moves again before it merges, the bot "
         "updates this PR in place.",
