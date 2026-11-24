@@ -78,7 +78,13 @@ mode.
 swarm-core's `core/` lives in swarm-routing/swarm-adapter-ns3, named
 swarm-routing/ns3-swarm-core until 2026-11-22 (swarm-routing/.github#672): the
 old name still counts on every pin line and in the lock, and a bump writes the
-new name on the lines it moves.
+new name on the lines it moves. Its releases after v1.0.0 come from
+swarm-routing/swarm-core (#691): a lock on swarm-adapter-ns3 counts swarm-core's
+first release as newer whatever its version (`release_lock.MOVED`), and the bump
+moves the lock, `core-deps` and the Makefile's fetch of `$(SWARM_CORE_REF)` to
+swarm-routing/swarm-core. The ns-3 dependency keeps naming swarm-adapter-ns3:
+once the lock is on swarm-core, it follows the adapter's own releases and is
+only refused on `main` outside `canary-dependencies:`.
 
 Usage (the protocol repository's root as cwd; it reads no path from its arguments):
   check-swarm-core-pin.py [--swarm-core URL_OR_PATH] [--releases URL] [--registry URL_OR_PATH]
@@ -108,7 +114,10 @@ import release_lock  # noqa: E402
 SWARM_CORE = "https://github.com/swarm-routing/swarm-adapter-ns3.git"
 SWARM_CORE_REPO = "swarm-routing/swarm-adapter-ns3"
 LEGACY_REPO = "swarm-routing/ns3-swarm-core"  # its name until 2026-11-22 (#672)
+# swarm-core's own repository, where its releases come from after v1.0.0 (#691)
+CORE_REPO = release_lock.MOVED[("SWARM_CORE", SWARM_CORE_REPO)]
 SLUG = r"swarm-routing/(?:swarm-adapter-ns3|ns3-swarm-core)"
+CORE_SLUG = r"swarm-routing/(?:swarm-core|swarm-adapter-ns3|ns3-swarm-core)"
 CMAKE = "core/CMakeLists.txt"
 LOCK = "swarm-core.lock"
 LOCK_PREFIX = "SWARM_CORE"
@@ -117,13 +126,17 @@ KEY = re.compile(r"^\s*([A-Za-z0-9_-]+):")
 # core/CMakeLists.txt reads the lock on a line that is not a comment
 LOCK_READ = re.compile(r"^[^#\n]*file\(\s*(STRINGS|READ)\b[^#\n]*swarm-core\.lock", re.M)
 HARD_RELEASE = re.compile(
-    r"(?:swarm-adapter-ns3|ns3-swarm-core)/releases/download/v\d|swarm-core-\d+\.\d+\.\d+\.tar"
+    r"swarm-routing/(?:swarm-core|swarm-adapter-ns3|ns3-swarm-core)/releases/download/v\d"
+    r"|swarm-core-\d+\.\d+\.\d+\.tar"
 )
 SHA = r"[0-9a-f]{40}"
 CMAKE_PIN = re.compile(rf'^\s*set\(\s*SWARM_CORE_REF\s+"({SHA})"', re.M)
 MAKE_PIN = re.compile(r"^\s*SWARM_CORE_REF\s*[?:]?=\s*(\S+)", re.M)
-CORE_DEP = re.compile(SLUG + r"@([^\s:'\"]+):")
+CORE_DEP = re.compile(CORE_SLUG + r"@([^\s:'\"]+):")
+CORE_DEP_REPO = re.compile(r"(" + CORE_SLUG + r")@[^\s:'\"]+:")
 NS3_DEP = re.compile(r"swarm-core=" + SLUG + r"@([^\s:'\"]+)")
+# the Makefile's fetch of swarm-core's core/ at the lock's tag (`make headers`)
+MAKE_FETCH = re.compile(r"github\.com/(" + SLUG + r")(?:\.git)?(?=\s+\$\(SWARM_CORE_REF\))")
 # vcpkg mode (#489)
 REGISTRY = "https://github.com/swarm-routing/vcpkg-registry"
 VCPKG_MANIFEST = "vcpkg.json"
@@ -341,8 +354,12 @@ def check_lock_files():
     except (release_lock.LockError, OSError) as e:
         return None, None, [str(e)]
     errors = []
-    if prefix != LOCK_PREFIX or release_lock.canonical(values[f"{prefix}_REPO"]) != SWARM_CORE_REPO:
-        errors.append(f"{LOCK}: want {LOCK_PREFIX}_REPO={SWARM_CORE_REPO}")
+    repo = release_lock.canonical(values[f"{prefix}_REPO"])
+    if prefix != LOCK_PREFIX or repo not in (SWARM_CORE_REPO, CORE_REPO):
+        errors.append(f"{LOCK}: want {LOCK_PREFIX}_REPO={CORE_REPO}")
+    # past the move (#691) the ns-3 dependency names swarm-adapter-ns3's own
+    # releases, no longer the lock's tag
+    moved = repo == CORE_REPO
     tag, version = values[f"{prefix}_TAG"], values[f"{prefix}_VERSION"]
     commit = values[f"{prefix}_COMMIT"]
     asset = ASSET.format(version=version)
@@ -375,6 +392,9 @@ def check_lock_files():
         for n, ref in lines_matching("Makefile", MAKE_PIN):
             if ref != tag and not ref.startswith("$("):
                 errors.append(f"Makefile:{n}: SWARM_CORE_REF is {ref}, not {tag}")
+        if moved:
+            for n, slug in lines_matching("Makefile", MAKE_FETCH):
+                errors.append(f"Makefile:{n}: fetches SWARM_CORE_REF from {slug}, not {repo}")
     deps = 0
     for path in sorted(glob.glob(".github/workflows/*.y*ml")):
         rel = path.replace(os.sep, "/")
@@ -382,6 +402,9 @@ def check_lock_files():
             deps += 1
             if ref not in (tag, commit):
                 errors.append(f"{rel}:{n}: core-deps names swarm-core {ref}, not {tag}")
+        for n, slug in lines_matching(path, CORE_DEP_REPO):
+            if release_lock.canonical(slug) != repo:
+                errors.append(f"{rel}:{n}: core-deps names {slug}, {LOCK} {repo}")
         with open(path, encoding="utf-8") as f:
             # a benchmark cell's build mode checks out a 40-hex commit (#409), so
             # it takes the commit the tag names; reusable-ns3-ci.yml clones with
@@ -391,6 +414,8 @@ def check_lock_files():
             ok = (commit,) if bench else (tag,)
             if key == "canary-dependencies":
                 ok += ("main",)
+            if moved and (ref != "main" or key == "canary-dependencies"):
+                continue  # swarm-adapter-ns3's release, not swarm-core's (#691)
             if ref not in ok:
                 errors.append(f"{rel}:{n}: the ns-3 dependency names swarm-core {ref}, not {tag}")
     if not deps:
@@ -529,12 +554,16 @@ def retag(line, patterns, old, new):
     return line
 
 
-def reslug(old_line, new_line):
+def reslug(old_line, new_line, to=SWARM_CORE_REPO, force=False):
     """A pin line the bump moved, with swarm-core's old repository name (#672)
-    replaced by its new one; a line the bump left is returned as it is."""
-    if new_line == old_line:
+    replaced by its new one, `to` (swarm-core's own repository once its releases
+    moved there, #691); a line the bump left is returned as it is, unless
+    `force`."""
+    if new_line == old_line and not force:
         return new_line
-    return new_line.replace(LEGACY_REPO + "@", SWARM_CORE_REPO + "@")
+    for old in (LEGACY_REPO, SWARM_CORE_REPO):
+        new_line = new_line.replace(old + "@", to + "@")
+    return new_line
 
 
 def run_lock(releases, registry=REGISTRY, stale_mode="fail"):
@@ -547,15 +576,15 @@ def run_lock(releases, registry=REGISTRY, stale_mode="fail"):
     if values:
         try:
             errors += release_lock.verify(prefix, values, releases)
-            newest, _ = release_lock.latest(
-                releases, release_lock.canonical(values[f"{prefix}_REPO"])
-            )
+            repo = values[f"{prefix}_REPO"]
+            new_repo, newest, _ = release_lock.next_release(releases, prefix, repo)
         except release_lock.LockError as e:
             errors.append(str(e))
         tag = values[f"{prefix}_TAG"]
-        if newest and release_lock.version_key(newest) > release_lock.version_key(tag):
+        if newest and release_lock.is_newer(repo, tag, new_repo, newest):
+            where = "" if new_repo == release_lock.canonical(repo) else f" from {new_repo}"
             stale.append(
-                f"swarm-core {newest} is released; {LOCK} names {tag}: bump the lock and "
+                f"swarm-core {newest} is released{where}; {LOCK} names {tag}: bump the lock and "
                 f"every pin place to {newest} (org-bot's swarm-core-pin task opens that PR)"
             )
     stale_failed = judge_stale(stale, stale_mode)
@@ -594,13 +623,13 @@ def bump_lock(releases, registry=REGISTRY):
         return 1
     repo, tag = release_lock.canonical(values[f"{prefix}_REPO"]), values[f"{prefix}_TAG"]
     try:
-        newest, commit = release_lock.latest(releases, repo)
-        if not newest or release_lock.version_key(newest) <= release_lock.version_key(tag):
+        new_repo, newest, commit = release_lock.next_release(releases, prefix, repo)
+        if not newest or not release_lock.is_newer(repo, tag, new_repo, newest):
             print(f"swarm-core pin (lock): current, {LOCK} names {tag}, the newest release")
             return 0
         with open(LOCK, encoding="utf-8") as f:
             header = "".join(line for line in f if line.lstrip().startswith("#"))
-        text = release_lock.render(prefix, repo, newest, ASSET, releases, header)
+        text = release_lock.render(prefix, new_repo, newest, ASSET, releases, header)
     except release_lock.LockError as e:
         print(f"FAIL {e}")
         return 1
@@ -636,36 +665,52 @@ def bump_lock(releases, registry=REGISTRY):
         write_json(VCPKG_MANIFEST, manifest)
         write_json(VCPKG_CONFIG, config)
         changed += [VCPKG_MANIFEST, VCPKG_CONFIG]
+    moving = new_repo != repo  # to swarm-core's own repository (#691)
     for path, patterns in pin_places():
+        if new_repo == CORE_REPO and path != "Makefile":
+            # core-deps follow swarm-core; the ns-3 dependency names
+            # swarm-adapter-ns3, which has no such release, on every bump
+            # from the move on
+            patterns = [CORE_DEP]
         with open(path, encoding="utf-8", newline="") as f:
             lines = f.readlines()
         old_commit = values[f"{prefix}_COMMIT"]
         new = [
-            reslug(line, retag(retag(line, patterns, tag, newest), patterns, old_commit, commit))
+            reslug(
+                line,
+                retag(retag(line, patterns, tag, newest), patterns, old_commit, commit),
+                new_repo,
+                # moving: every core-deps line changes repository, even one
+                # whose tag or commit the successor's release shares
+                force=moving and CORE_DEP.search(line) is not None,
+            )
             for line in lines
         ]
+        if moving and path == "Makefile":
+            new = [MAKE_FETCH.sub(f"github.com/{new_repo}", line) for line in new]
         if new != lines:
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.writelines(new)
             changed.append(path)
+    low = None if moving else release_lock.version_key(tag)
     between = sorted(
         (
             t
-            for t in release_lock.tags(releases, repo)
+            for t in release_lock.tags(releases, new_repo)
             if release_lock.version_key(t)
-            and release_lock.version_key(tag)
-            < release_lock.version_key(t)
-            <= release_lock.version_key(newest)
+            and (low is None or low < release_lock.version_key(t))
+            and release_lock.version_key(t) <= release_lock.version_key(newest)
         ),
         key=release_lock.version_key,
     )
-    print(f"swarm-core pin (lock): bumped {tag} -> {newest} in {len(changed)} file(s)")
+    where = f" (from {repo} to {new_repo})" if moving else ""
+    print(f"swarm-core pin (lock): bumped {tag} -> {newest}{where} in {len(changed)} file(s)")
     print(f"pin-target: {commit}")
     for c in changed:
         print(f"  {c}")
     print("swarm-core releases since the lock (their notes: the release pages):")
     for t in between:
-        print(f"  {t}: https://github.com/{repo}/releases/tag/{t}")
+        print(f"  {t}: https://github.com/{new_repo}/releases/tag/{t}")
     return 0
 
 
@@ -898,6 +943,7 @@ def self_test():
         base = "file://" + rel
         env = dict(os.environ)
         new_commit = release_lock.fixture_repo(rel, SWARM_CORE_REPO, env)
+        core_commit = release_lock.fixture_repo(rel, CORE_REPO, env)  # no release yet (#691)
         release_lock.make_release(
             rel, SWARM_CORE_REPO, "v0.3.0", {"swarm-core-0.3.0.tar.gz": b"three"}, env
         )
@@ -1188,6 +1234,105 @@ def self_test():
         )
         rc, out = govcpkg(ok)
         check("vcpkg: …after which the check passes", rc == 0)
+
+        # swarm-core releases from its own repository (#691): its first release
+        # counts as newer than swarm-adapter-ns3's last whatever its version; the
+        # bump moves the lock, core-deps and the Makefile's fetch there, and
+        # leaves the ns-3 dependency, which names swarm-adapter-ns3's module
+        moved = locked("moved", "v0.5.0")
+        mk = os.path.join(moved, "Makefile")
+        with open(mk, "a", encoding="utf-8") as f:
+            f.write(
+                "\tgit fetch -q --depth 1 https://github.com/swarm-routing/ns3-swarm-core "
+                "$(SWARM_CORE_REF)\n"
+            )
+        rc, out = golock(moved)
+        check("moved: no swarm-core release yet, the adapter's lock is current", rc == 0)
+        core_commit("two")
+        release_lock.make_release(
+            rel, CORE_REPO, "v0.1.0", {"swarm-core-0.1.0.tar.gz": b"own"}, env
+        )
+        rc, out = golock(moved)
+        check(
+            "moved: the first swarm-core release is newer than swarm-adapter-ns3's last",
+            rc == 1 and f"swarm-core v0.1.0 is released from {CORE_REPO}" in out,
+        )
+        ns3_path = os.path.join(moved, ".github", "workflows", "ns3.yml")
+        bench_path = os.path.join(moved, ".github", "workflows", "bench.yml")
+        ns3_before = open(ns3_path, encoding="utf-8").read()
+        bench_before = open(bench_path, encoding="utf-8").read()
+        rc, out = golock(moved, bump_mode=True)
+        lock_text = open(os.path.join(moved, LOCK), encoding="utf-8").read()
+        ns3 = open(ns3_path, encoding="utf-8").read()
+        licence = open(
+            os.path.join(moved, ".github", "workflows", "licence.yml"), encoding="utf-8"
+        ).read()
+        make = open(mk, encoding="utf-8").read()
+        check(
+            "moved: --bump writes swarm-core's lock, core-deps and Makefile, not the ns-3 dep",
+            rc == 0
+            and f"from {SWARM_CORE_REPO} to {CORE_REPO}" in out
+            and f"SWARM_CORE_REPO={CORE_REPO}\n" in lock_text
+            and "SWARM_CORE_TAG=v0.1.0\n" in lock_text
+            and f"core-deps: {CORE_REPO}@v0.1.0:core\n" in licence
+            and f"core-deps: {CORE_REPO}@v0.1.0:core\n" in ns3
+            and "swarm-core=swarm-routing/ns3-swarm-core@v0.5.0\n" in ns3
+            and "swarm-core=swarm-routing/ns3-swarm-core@main\n" in ns3
+            and open(bench_path, encoding="utf-8").read() == bench_before
+            and "SWARM_CORE_REF ?= v0.1.0\n" in make
+            and f"https://github.com/{CORE_REPO} $(SWARM_CORE_REF)" in make
+            and f"v0.1.0: https://github.com/{CORE_REPO}/releases/tag/v0.1.0" in out
+            and ns3_before != ns3,
+        )
+        rc, out = golock(moved)
+        check("moved: …after which the check passes", rc == 0)
+        with open(ns3_path, "w", encoding="utf-8") as f:
+            f.write(
+                ns3.replace(
+                    f"{CORE_REPO}@v0.1.0:core", "swarm-routing/swarm-adapter-ns3@v0.1.0:core"
+                )
+            )
+        with open(mk, "w", encoding="utf-8") as f:
+            f.write(make.replace(CORE_REPO, SWARM_CORE_REPO))
+        rc, out = golock(moved)
+        check(
+            "moved: core-deps or the Makefile's fetch on swarm-adapter-ns3 are refused",
+            rc == 1
+            and f"core-deps names swarm-routing/swarm-adapter-ns3, {LOCK} {CORE_REPO}" in out
+            and f"Makefile:2: fetches SWARM_CORE_REF from {SWARM_CORE_REPO}" in out,
+        )
+        # the successor's release on the lock's own tag: core-deps on that tag
+        # change repository all the same
+        same = locked("moved-same", "v0.5.0")
+        core_commit("three")
+        release_lock.make_release(
+            rel, CORE_REPO, "v0.5.0", {"swarm-core-0.5.0.tar.gz": b"own five"}, env
+        )
+        rc, out = golock(same, bump_mode=True)
+        ns3_path = os.path.join(same, ".github", "workflows", "ns3.yml")
+        ns3 = open(ns3_path, encoding="utf-8").read()
+        check(
+            "moved: a successor release on the same tag still moves core-deps",
+            rc == 0
+            and f"core-deps: {CORE_REPO}@v0.5.0:core\n" in ns3
+            and "swarm-core=swarm-routing/ns3-swarm-core@v0.5.0\n" in ns3
+            and golock(same)[0] == 0,
+        )
+        # a later bump, swarm-core to swarm-core: the ns-3 dependency naming the
+        # adapter at the old swarm-core tag stays on the adapter
+        core_commit("four")
+        release_lock.make_release(
+            rel, CORE_REPO, "v0.6.0", {"swarm-core-0.6.0.tar.gz": b"own six"}, env
+        )
+        rc, out = golock(same, bump_mode=True)
+        ns3 = open(ns3_path, encoding="utf-8").read()
+        check(
+            "moved: a later bump leaves the adapter's ns-3 dependency on the same tag",
+            rc == 0
+            and f"core-deps: {CORE_REPO}@v0.6.0:core\n" in ns3
+            and "swarm-core=swarm-routing/ns3-swarm-core@v0.5.0\n" in ns3
+            and golock(same)[0] == 0,
+        )
 
     for f in failures:
         print(f"FAIL: {f}")

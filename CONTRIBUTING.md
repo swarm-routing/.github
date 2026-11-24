@@ -569,7 +569,8 @@ add to it, never take away):
 
 How one org repository builds on another's code (swarm-routing/swarm-adapter-ns3#134,
 maintainer decision 2026-11-14). Every protocol's `core/` builds on swarm-core's
-`core/`, and its ns-3 module on swarm-core and ns3-tools' `routing-bench`.
+`core/` (swarm-routing/swarm-core), and its ns-3 module on swarm-adapter-ns3
+and ns3-tools' `routing-bench`.
 
 ### A release lock, not a commit pin
 
@@ -585,6 +586,18 @@ A consumer names a **release** of its dependency, never a moving ref:
   `DOWNLOAD_EXTRACT_TIMESTAMP FALSE` (CMake 3.24+), so a wrong or replaced
   tarball fails the configure step. `make dist` ships the lock with the
   release asset.
+- **Where swarm-core releases.** swarm-core releases from its own repository,
+  swarm-routing/swarm-core, since v2.0.0 (swarm-routing/swarm-core#10,
+  #691); swarm-routing/swarm-adapter-ns3 keeps the releases up to `v1.0.0`
+  and releases the ns-3 module. A lock with `SWARM_CORE_REPO` on
+  swarm-adapter-ns3 (or its old name, ns3-swarm-core) counts any
+  swarm-core release as newer, whatever its version (`release_lock.py`
+  `MOVED`), so the bump moves it across and no lock goes back. That bump
+  writes `SWARM_CORE_REPO=swarm-routing/swarm-core` and moves `core-deps`
+  and the Makefile's include-check fetch to swarm-routing/swarm-core; the
+  ns-3 CI's and a benchmark cell's `dependencies: swarm-core=…` keep naming
+  swarm-adapter-ns3, whose own release they follow from then on (the check
+  only refuses `@main` outside `canary-dependencies:`).
 - **Where the release is named.** The `Makefile` (`SWARM_CORE_REF`, the include
   check's fetch) and the ns-3 CI's `dependencies:` name the lock's tag
   (`reusable-ns3-ci.yml` clones with `git clone --branch`, which takes a tag,
@@ -669,9 +682,9 @@ python3 -I ../.github/tools/checks/check-swarm-core-pin.py --bump   # what org-b
 python3 -I ../.github/tools/checks/release_lock.py latest swarm-core.lock      # locked vs newest release
 python3 -I ../.github/tools/checks/release_lock.py bump ns3-tools.lock        # what release-lock would write (--write writes it)
 # write a lock for the newest release (a switch PR; a bump keeps the lock's header comment)
-tag=$(gh api repos/swarm-routing/swarm-adapter-ns3/releases/latest --jq .tag_name)
+tag=$(gh api repos/swarm-routing/swarm-core/releases/latest --jq .tag_name)
 python3 -I ../.github/tools/checks/release_lock.py render --prefix SWARM_CORE \
-    --repo swarm-routing/swarm-adapter-ns3 --tag "$tag" --asset 'swarm-core-{version}.tar.gz' \
+    --repo swarm-routing/swarm-core --tag "$tag" --asset 'swarm-core-{version}.tar.gz' \
     > swarm-core.lock.new && mv swarm-core.lock.new swarm-core.lock
 ```
 

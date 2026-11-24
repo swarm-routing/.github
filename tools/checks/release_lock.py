@@ -31,7 +31,11 @@ release no longer has under that name (renamed or dropped) is refused, for a
 person to bump with the consumer's code that names it. A lock naming a
 repository by its name before the 2026-11-22 renames (`RENAMED`,
 swarm-routing/.github#672) still verifies, read from the new name, and a bump
-writes the new name. Nothing
+writes the new name. A lock whose releases continue in another repository
+(`MOVED`: swarm-core's, from swarm-routing/swarm-adapter-ns3 to
+swarm-routing/swarm-core, swarm-routing/.github#691) moves there with `latest`
+and `bump` once the successor has a release, which counts as newer whatever
+its version, so a lock never goes back across the move. Nothing
 here clones a repository or reads a token. Stdlib only, one summary line per
 result (AntHocNet ADR-0014).
 
@@ -74,9 +78,40 @@ RENAMED = {
 }
 
 
+# a lock whose releases continue in another repository (swarm-routing/.github#691):
+# swarm-core released from swarm-routing/swarm-adapter-ns3 up to v1.0.0, from its
+# own repository since. Keyed by the lock's prefix too: swarm-adapter-ns3 keeps
+# releasing its ns-3 module, which a SWARM_CORE lock does not follow.
+MOVED = {("SWARM_CORE", "swarm-routing/swarm-adapter-ns3"): "swarm-routing/swarm-core"}
+
+
 def canonical(repo):
     """The repository's current name (`RENAMED`), or `repo` itself."""
     return RENAMED.get(repo, repo)
+
+
+def next_release(base, prefix, repo):
+    """(repo, tag, commit) of the newest published release a lock with `prefix` on
+    `repo` can move to: its successor's (`MOVED`) once that has one, which counts
+    as newer than any release of the old repository (a lock never goes back across
+    the move), else `repo`'s own; (repo, None, None) when there is none."""
+    repo = canonical(repo)
+    later = MOVED.get((prefix, repo))
+    if later:
+        tag, commit = latest(base, later)
+        if tag:
+            return later, tag, commit
+    tag, commit = latest(base, repo)
+    return repo, tag, commit
+
+
+def is_newer(repo, tag, new_repo, new_tag):
+    """True when `new_repo`'s `new_tag` is past the lock's `repo` `tag`: a release
+    of another repository is (`next_release` only returns a successor's), else the
+    higher version."""
+    if canonical(new_repo) != canonical(repo):
+        return True
+    return version_key(new_tag) > version_key(tag)
 
 
 class LockError(Exception):
@@ -290,20 +325,21 @@ def bump(text, base=GITHUB, name="lock"):
     order and every other line stay; LockError when an asset cannot be followed."""
     prefix, values = parse_text(text, name)
     repo, tag = canonical(values[f"{prefix}_REPO"]), values[f"{prefix}_TAG"]
-    newest, commit = latest(base, repo)
+    new_repo, newest, commit = next_release(base, prefix, repo)
     if newest is None:
         raise LockError(f"{name}: {repo} has no published release")
-    if version_key(newest) <= version_key(tag):
+    if not is_newer(repo, tag, new_repo, newest):
         return None, tag, tag, values[f"{prefix}_COMMIT"]
     old_ver, new_ver = tag[1:], newest[1:]
-    old_sums, new_sums = sha256sums(base, repo, tag), sha256sums(base, repo, newest)
+    old_sums, new_sums = sha256sums(base, repo, tag), sha256sums(base, new_repo, newest)
     if old_sums is None:
         raise LockError(f"{name}: {repo} release {tag} has no SHA256SUMS asset")
     by_hash = {}
     for a, h in old_sums.items():
         by_hash.setdefault(h, []).append(a)
     new = {
-        f"{prefix}_REPO": repo,  # a renamed repository's new name (#672)
+        # a renamed repository's new name (#672), or its successor's (#691)
+        f"{prefix}_REPO": new_repo,
         f"{prefix}_TAG": newest,
         f"{prefix}_COMMIT": commit,
         f"{prefix}_VERSION": new_ver,
@@ -326,7 +362,7 @@ def bump(text, base=GITHUB, name="lock"):
         moved = old.replace(old_ver, new_ver)
         if moved not in new_sums:
             raise LockError(
-                f"{name}: {repo} {newest} has no {moved} ({k}, {old} in {tag}): the asset "
+                f"{name}: {new_repo} {newest} has no {moved} ({k}, {old} in {tag}): the asset "
                 "was renamed or dropped; bump this lock by hand, with the code that names it"
             )
         new[k] = new_sums[moved]
@@ -564,6 +600,38 @@ def self_test():
             f"NT_REPO={new_name}\n" in out and newest == "v1.1.0" and f"NT_COMMIT={r2}" in out,
         )
 
+        # swarm-core's releases moved to their own repository (#691): a SWARM_CORE
+        # lock on swarm-adapter-ns3 v1.0.0, under its old name, moves to the first
+        # swarm-core release even when its version is lower; another prefix stays
+        adapter, core = "swarm-routing/swarm-adapter-ns3", "swarm-routing/swarm-core"
+        fixture_repo(t, adapter, env)
+        a1, _ = make_release(t, adapter, "v1.0.0", {"swarm-core-1.0.0.tar.gz": b"v1"}, env)
+        more_core = fixture_repo(t, core, env)
+        v1 = render("SWARM_CORE", adapter, "v1.0.0", "swarm-core-{version}.tar.gz", base)
+        v1 = v1.replace(f"_REPO={adapter}", "_REPO=swarm-routing/ns3-swarm-core")
+        check(
+            "moved: no successor release yet, the lock is current",
+            bump(v1, base)[0] is None
+            and next_release(base, "SWARM_CORE", adapter) == (adapter, "v1.0.0", a1),
+        )
+        more_core("two")
+        k1, _ = make_release(t, core, "v0.9.0", {"swarm-core-0.9.0.tar.gz": b"v09"}, env)
+        out, old, newest, ncommit = bump(v1, base)
+        check(
+            "moved: the first swarm-core release is newer than swarm-adapter-ns3 v1.0.0",
+            out is not None
+            and (old, newest, ncommit) == ("v1.0.0", "v0.9.0", k1)
+            and f"SWARM_CORE_REPO={core}\n" in out
+            and "SWARM_CORE_ASSET=swarm-core-0.9.0.tar.gz\n" in out
+            and verify(*parse_text(out), base) == [],
+        )
+        check("moved: then current, never back", bump(out, base)[0] is None)
+        other = v1.replace("SWARM_CORE_", "ADAPTER_")
+        check(
+            "moved: a lock with another prefix keeps its repository",
+            bump(other, base)[0] is None and is_newer(adapter, "v1.0.0", core, "v0.1.0"),
+        )
+
     for f in failures:
         print(f"FAIL: {f}")
     print(f"release_lock.py self-test: {'ok' if not failures else f'{len(failures)} failed'}")
@@ -623,13 +691,14 @@ def main(argv=None):
                 + ("verifies" if not problems else f"{len(problems)} problem(s)")
             )
             return 1 if problems else 0
-        newest, commit = latest(a.base, repo)
+        new_repo, newest, commit = next_release(a.base, prefix, repo)
         if newest is None:
             print(f"{a.lock}: {repo} has no published release")
             return 1
-        newer = version_key(newest) > version_key(tag)
+        newer = is_newer(repo, tag, new_repo, newest)
+        where = "" if new_repo == repo else f" in {new_repo}"
         print(
-            f"{a.lock}: {repo} locked {tag}, newest release {newest} ({commit[:7]})"
+            f"{a.lock}: {repo} locked {tag}, newest release {newest}{where} ({commit[:7]})"
             + (": a newer release exists" if newer else ": current")
         )
         return 0

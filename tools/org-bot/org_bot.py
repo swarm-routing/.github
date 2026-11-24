@@ -2201,6 +2201,8 @@ def self_test():
     rel = os.path.join(work, "releases")
     sc_repo = "swarm-routing/swarm-adapter-ns3"
     sc_more = release_lock.fixture_repo(rel, sc_repo, env)
+    # swarm-core's own repository, which the lock moves to once it has a release (#691)
+    release_lock.fixture_repo(rel, release_lock.MOVED[("SWARM_CORE", sc_repo)], env)
     release_lock.make_release(rel, sc_repo, "v0.3.0", {"swarm-core-0.3.0.tar.gz": b"3"}, env)
     rbase = "file://" + rel
 
