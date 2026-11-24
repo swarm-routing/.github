@@ -498,7 +498,9 @@ def pypi_check(repo_dir, callers, inputs, full_name, gh, r):
     )
     if full_name and urls:
         repo_urls_check(f"pypi: {path} [project.urls]", urls.values(), full_name, gh, r)
-    indexes = [ix for ix in PYPI_INDEXES if ix[0] == "PyPI" or "test.pypi.org" in text]
+    # TestPyPI too when the workflow uploads there (its legacy upload URL)
+    testpypi = bool(re.search(r"https://test\.pypi\.org/legacy/?", text))
+    indexes = [ix for ix in PYPI_INDEXES if ix[0] == "PyPI" or testpypi]
     for label, base in indexes:
         try:
             data = gh.url(f"{base}/pypi/{name}/json")
