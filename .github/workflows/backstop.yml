@@ -10,7 +10,7 @@ name: backstop
 # (6h), maintain (24h) and rotate (168h), with `mode: scheduled`, because GitHub has
 # fired no schedule there (swarm-routing/ns3-upstream-report#33); and org-bot.yml's
 # hourly, three-hourly and daily tasks here, a row each found by run-name, with a
-# 3-hour alarm on the hourly one kept as an issue by --issue (#748). Once a native
+# 2-hour alarm on the hourly one kept as an issue by --issue (#748). Once a native
 # schedule runs, its runs make the backstop skip that row.
 #
 # Token: the org App's installation token (.github/actions/bot-token), which may
@@ -25,12 +25,23 @@ name: backstop
 # that a newer one replaced in this group would mark org-bot's run cancelled,
 # and the backstop does not count a cancelled run. A row within its period
 # dispatches nothing, so most of these runs only read.
+#
+# On a tick from another repository, too (#748): org-bot's runs stop when
+# dispatch traffic is quiet (no run 06:27-09:34 UTC on 2026-11-23, a 4 h 07 min
+# gap in the hourly task), so a few active repositories run the org-managed
+# backstop-tick.yml (templates/workflows/, opted in by `backstop_tick = MINUTE`
+# in their .github/org-sync.toml), an hourly cron at each one's own minute that
+# sends repository_dispatch `backstop-tick` here. GitHub drops each
+# repository's schedules independently. The payload (the sender's name) is not
+# read: a tick only starts this run from main's code.
 on:
   schedule:
     - cron: '7 * * * *'
   workflow_run:
     workflows: [org-bot]
     types: [completed]
+  repository_dispatch:
+    types: [backstop-tick]
   workflow_dispatch:
     inputs:
       dry-run:

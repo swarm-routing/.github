@@ -224,6 +224,10 @@ func TestRepositoryTable(t *testing.T) {
 	if err != nil || len(entries) != 8 {
 		t.Fatalf("%v %d", err, len(entries))
 	}
+	// the hourly task's alarm is 2 h (#748: the backstop-tick keeps an hourly clock)
+	if e := entries[0]; e.Title != "org-bot hourly (schedule)" || e.alarm != 2*time.Hour {
+		t.Errorf("the hourly row: %q alarm %v", e.Title, e.alarm)
+	}
 }
 
 func TestMain_(t *testing.T) {
