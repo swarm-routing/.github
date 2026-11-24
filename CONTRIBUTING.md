@@ -596,8 +596,14 @@ A consumer names a **release** of its dependency, never a moving ref:
   writes `SWARM_CORE_REPO=swarm-routing/swarm-core` and moves `core-deps`
   and the Makefile's include-check fetch to swarm-routing/swarm-core; the
   ns-3 CI's and a benchmark cell's `dependencies: swarm-core=…` keep naming
-  swarm-adapter-ns3, whose own release they follow from then on (the check
-  only refuses `@main` outside `canary-dependencies:`).
+  swarm-adapter-ns3: from then on, its newest release whose own
+  `swarm-core.lock` names the protocol's swarm-core release (adapter `v2.0.0`
+  for swarm-core `v2.0.0`; the ns-3 CI takes its tag, a benchmark cell its
+  commit, both read from the adapter's tags). `swarm-core / pin` reports a
+  line on another ref as stale once such an adapter release exists, and
+  org-bot's `swarm-core-pin` bump moves it, with the lock or alone; while no
+  adapter release ships the lock's swarm-core, the line stays and only
+  `@main` outside `canary-dependencies:` is refused.
 - **Where the release is named.** The `Makefile` (`SWARM_CORE_REF`, the include
   check's fetch) and the ns-3 CI's `dependencies:` name the lock's tag
   (`reusable-ns3-ci.yml` clones with `git clone --branch`, which takes a tag,
