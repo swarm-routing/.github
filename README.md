@@ -74,6 +74,7 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
 | [#674](https://github.com/swarm-routing/.github/issues/674) Multi-Simulator & Unified Web UI Plan (sim-tools, swarm-web-ui) | Planned | 0 / 2 |
+| [#881](https://github.com/swarm-routing/.github/issues/881) every c++ release on vcpkg, with class docs and install guides per simulator; set up the new repositories | Planned | 0 / 6 |
 
 <details><summary>Closed: 5 epics</summary>
 

@@ -980,6 +980,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
 | [#674](https://github.com/swarm-routing/.github/issues/674) Multi-Simulator & Unified Web UI Plan (sim-tools, swarm-web-ui) | Planned | 0 / 2 |
+| [#881](https://github.com/swarm-routing/.github/issues/881) every c++ release on vcpkg, with class docs and install guides per simulator; set up the new repositories | Planned | 0 / 6 |
 
 <details><summary>Closed: 5 epics</summary>
 
@@ -1064,7 +1065,8 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/BeeSensor/issues/3) Bootstrap BeeSensor protocol on swarm-core (ConvergecastScorer, fidelity, WSN battery-drain benchmarks) | Planned | 0 / 1 |
+| [#3](https://github.com/swarm-routing/BeeSensor/issues/3) Bootstrap BeeSensor protocol on swarm-core (ConvergecastScorer, fidelity, WSN battery-drain benchmarks) | Planned | 0 / 2 |
+| [#40](https://github.com/swarm-routing/BeeSensor/issues/40) core/: BeeSensor's simulator-free C++ core on swarm-core (package beesensor-core) | Planned | 0 / 1 |
 
 ### [benchmarks](https://github.com/swarm-routing/benchmarks)
 
@@ -1097,13 +1099,15 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/POSANT/issues/3) Bootstrap POSANT protocol on swarm-core (DirectionalZoning 2D/3D, fidelity, 3D UAV benchmarks) | Planned | 0 / 1 |
+| [#3](https://github.com/swarm-routing/POSANT/issues/3) Bootstrap POSANT protocol on swarm-core (DirectionalZoning 2D/3D, fidelity, 3D UAV benchmarks) | Planned | 0 / 2 |
+| [#37](https://github.com/swarm-routing/POSANT/issues/37) core/: POSANT's simulator-agnostic protocol on swarm-core, from the reviewed fidelity sheet | Planned | 0 / 1 |
 
 ### [Q-Swarm](https://github.com/swarm-routing/Q-Swarm)
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/Q-Swarm/issues/3) Bootstrap Q-Swarm protocol on swarm-core (QEnergyUpdater, fidelity, contract tests) | Planned | 0 / 1 |
+| [#3](https://github.com/swarm-routing/Q-Swarm/issues/3) Bootstrap Q-Swarm protocol on swarm-core (QEnergyUpdater, fidelity, contract tests) | Planned | 0 / 2 |
+| [#38](https://github.com/swarm-routing/Q-Swarm/issues/38) core/: Q-Swarm's simulator-free core, written from the reviewed fidelity sheet | Planned | 0 / 1 |
 
 ### [sim-containers](https://github.com/swarm-routing/sim-containers)
 
@@ -1173,13 +1177,13 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#2](https://github.com/swarm-routing/swarm-adapter-omnet/issues/2) OMNeT++/INET adapter of swarm-core's ports (deferred: decisions 23, 24) | Planned | no sub-issues yet |
+| [#2](https://github.com/swarm-routing/swarm-adapter-omnet/issues/2) OMNeT++/INET adapter of swarm-core's ports (deferred: decisions 23, 24) | Planned | 0 / 6 |
 
 ### [swarm-core](https://github.com/swarm-routing/swarm-core)
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 3 / 10 |
+| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 6 / 10 |
 | [#62](https://github.com/swarm-routing/swarm-core/issues/62) swarm-core 3.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
 
 ### [swarm-mcp](https://github.com/swarm-routing/swarm-mcp)
@@ -1201,7 +1205,7 @@ No open epic: the work here is tracked as single issues.
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/swarm-routingd/issues/3) Bootstrap swarm-routingd Linux daemon (epoll reactor, RtNetlinkSync, TUN, swarm-core ports) | Planned | 0 / 5 |
+| [#3](https://github.com/swarm-routing/swarm-routingd/issues/3) Bootstrap swarm-routingd Linux daemon (epoll reactor, RtNetlinkSync, TUN, swarm-core ports) | Planned | 0 / 9 |
 
 ### [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui)
 
