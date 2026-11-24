@@ -1759,7 +1759,10 @@ actor), so the bump goes through a PR and the tag follows the merge
    (`docs/roadmap.md`), a bump or dry-run whose version has no row there
    fails before anything is proposed (`release_check.py ladder`, the same
    check `ready` makes); add the version and its exit criteria in a PR
-   first. A repository with no ladder gets a warning. If
+   first. A repository with no ladder gets a warning. A dry run then runs
+   `release_check.py preflight` before the build: a `downstream-consumers`
+   list that does not name the repository by its current name, or a PyPI
+   project whose URLs name another repository, fails it there. If
    `main` moves before the merge, `bump` runs again on the new tip: org-bot's
    `release-rebuild` task (hourly) dispatches the caller with mode `bump` and
    the `increment` the PR was opened with (the PR body's `release-increment`
@@ -1862,9 +1865,18 @@ actor), so the bump goes through a PR and the tag follows the merge
 
 Two read-only checks bracket these steps (`tools/release/release_check.py`,
 the `release` skill of swarm-routing/skills): `ready <checkout> --repo
-<owner>/<repo> --version X.Y.Z` before the dry-run or the bump (the caller,
-the Commitizen config, `make dist`, the version's row in `docs/roadmap.md`,
-no open `release:vX.Y.Z` issue, a `bot/release` PR behind `main`), and
+<owner>/<repo> [--version X.Y.Z | --increment SIZE]` before the dry-run or
+the bump (the caller, the Commitizen config, `make dist`, the version's row
+in `docs/roadmap.md`, the version being `--version` or else what the bump
+would produce, `cz bump --get-next`; the repository's current name from the
+GitHub API, which follows renames; the `downstream-consumers` list naming the
+repository by that name; where the release publishes to PyPI, the project on
+PyPI and TestPyPI, a pending publisher to add when it is not there yet, its
+URLs naming no other or old repository, and the trusted publisher to confirm
+on its settings page, which PyPI's API does not show; no open
+`release:vX.Y.Z` issue, a `bot/release` PR behind `main`; the sim-tools
+v1.1.3 dry runs failed on the ladder row, the list and the publisher after a
+rename), and
 `after <owner>/<repo> --tag vX.Y.Z` once the bump PR merged (the release and
 its provenance, its notes not empty, the site's `[release-sync]` issue, each consumer's lock or
 org-bot's bump PR, the vcpkg port, PyPI, the ladder marked shipped). Neither
