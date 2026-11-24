@@ -35,8 +35,13 @@ writes the new name. A lock whose releases continue in another repository
 (`MOVED`: swarm-core's, from swarm-routing/swarm-adapter-ns3 to
 swarm-routing/swarm-core, swarm-routing/.github#691) moves there with `latest`
 and `bump` once the successor has a release, which counts as newer whatever
-its version, so a lock never goes back across the move. Nothing
-here clones a repository or reads a token. Stdlib only, one summary line per
+its version, so a lock never goes back across the move. A lock on
+swarm-adapter-ns3 with `swarm-core.lock` beside it (AntHocNet's
+`swarm-adapter-ns3.lock`, swarm-routing/AntHocNet#1218) does not take the newest
+release: `bump` moves it to the adapter release whose own `swarm-core.lock` names
+the repository's swarm-core tag (check-swarm-core-pin.py's `adapter_for`, which
+fetches each adapter tag shallow), and holds it while none does. Nothing
+else here fetches a repository, and nothing reads a token. Stdlib only, one summary line per
 result (AntHocNet ADR-0014).
 
 Usage:
@@ -83,6 +88,7 @@ RENAMED = {
 # own repository since. Keyed by the lock's prefix too: swarm-adapter-ns3 keeps
 # releasing its ns-3 module, which a SWARM_CORE lock does not follow.
 MOVED = {("SWARM_CORE", "swarm-routing/swarm-adapter-ns3"): "swarm-routing/swarm-core"}
+ADAPTER = "swarm-routing/swarm-adapter-ns3"
 
 
 def canonical(repo):
@@ -319,17 +325,25 @@ def render(prefix, repo, tag, asset_template, base=GITHUB, header=""):
     return header + "\n".join(lines) + "\n"
 
 
-def bump(text, base=GITHUB, name="lock"):
+def bump(text, base=GITHUB, name="lock", target=None):
     """(new text, old tag, new tag, new commit) moving the lock `text` to the newest
-    release, or (None, old tag, old tag, old commit) when it is current. Comments, key
+    release, or to `target`, a tag of the lock's own repository (adapter_target),
+    or (None, old tag, old tag, old commit) when it is current. Comments, key
     order and every other line stay; LockError when an asset cannot be followed."""
     prefix, values = parse_text(text, name)
     repo, tag = canonical(values[f"{prefix}_REPO"]), values[f"{prefix}_TAG"]
-    new_repo, newest, commit = next_release(base, prefix, repo)
-    if newest is None:
-        raise LockError(f"{name}: {repo} has no published release")
-    if not is_newer(repo, tag, new_repo, newest):
-        return None, tag, tag, values[f"{prefix}_COMMIT"]
+    if target:
+        new_repo, newest, commit = repo, target, tags(base, repo).get(target)
+        if commit is None:
+            raise LockError(f"{name}: {repo} has no tag {target}")
+        if target == tag and repo == values[f"{prefix}_REPO"]:
+            return None, tag, tag, values[f"{prefix}_COMMIT"]
+    else:
+        new_repo, newest, commit = next_release(base, prefix, repo)
+        if newest is None:
+            raise LockError(f"{name}: {repo} has no published release")
+        if not is_newer(repo, tag, new_repo, newest):
+            return None, tag, tag, values[f"{prefix}_COMMIT"]
     old_ver, new_ver = tag[1:], newest[1:]
     old_sums, new_sums = sha256sums(base, repo, tag), sha256sums(base, new_repo, newest)
     if old_sums is None:
@@ -381,6 +395,31 @@ def bump(text, base=GITHUB, name="lock"):
     if problems:
         raise LockError(f"{name}: the bumped lock does not verify: {'; '.join(problems)}")
     return out, tag, newest, commit
+
+
+def adapter_target(full, prefix, values, base=GITHUB):
+    """For a lock on swarm-adapter-ns3 with swarm-core.lock beside it (AntHocNet's
+    `swarm-adapter-ns3.lock`, swarm-routing/AntHocNet#1218): (True, tag) of the
+    adapter release whose own swarm-core.lock names the same swarm-core release
+    (check-swarm-core-pin.py's adapter_for, the ns-3 dependency's rule), tag None
+    while none ships it; (False, None) for any other lock, which takes the newest
+    release. Read from the adapter's tags, never typed."""
+    core_lock = os.path.join(os.path.dirname(full), "swarm-core.lock")
+    if canonical(values[f"{prefix}_REPO"]) != ADAPTER or not os.path.isfile(core_lock):
+        return False, None
+    import importlib.util
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location(
+        "check_swarm_core_pin", os.path.join(here, "check-swarm-core-pin.py")
+    )
+    pin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pin)
+    with open(core_lock, encoding="utf-8") as f:
+        p, v = parse_text(f.read(), "swarm-core.lock")
+    if canonical(v[f"{p}_REPO"]) != pin.CORE_REPO:
+        return False, None  # swarm-core not yet on its own repository (#691)
+    return True, pin.adapter_for(base, v[f"{p}_TAG"])[0]
 
 
 # --- self-test: a file:// tree with a git repository and release assets ------------
@@ -632,6 +671,74 @@ def self_test():
             bump(other, base)[0] is None and is_newer(adapter, "v1.0.0", core, "v0.1.0"),
         )
 
+        # an adapter lock beside swarm-core.lock (AntHocNet, swarm-routing/AntHocNet#1218)
+        # moves to the adapter release built on the locked swarm-core release, not
+        # the newest adapter release
+        import contextlib
+        import io
+
+        a_git = os.path.join(t, adapter + ".git")
+
+        def adapter_release(tag, core_tag):
+            with open(os.path.join(a_git, "swarm-core.lock"), "w", encoding="utf-8") as f:
+                f.write(render("SWARM_CORE", core, core_tag, "swarm-core-{version}.tar.gz", base))
+            with open(os.path.join(a_git, "f.txt"), "a") as f:
+                f.write(tag + "\n")
+            subprocess.run(["git", "-C", a_git, "add", "-A"], check=True, env=env)
+            subprocess.run(["git", "-C", a_git, "commit", "-q", "-m", tag], check=True, env=env)
+            v = tag[1:]
+            return make_release(t, adapter, tag, {f"swarm-core-{v}.tar.gz": tag.encode()}, env)[0]
+
+        more_core("three")
+        make_release(t, core, "v0.9.1", {"swarm-core-0.9.1.tar.gz": b"v091"}, env)
+        a11 = adapter_release("v1.1.0", "v0.9.0")
+        adapter_release("v1.2.0", "v0.9.1")
+        consumer = os.path.join(t, "consumer")
+        os.makedirs(consumer)
+        a_lock = render("ADAPTER", adapter, "v1.0.0", "swarm-core-{version}.tar.gz", base)
+        for name_, text_ in (
+            ("swarm-core.lock", out),  # swarm-core v0.9.0, from the moved check above
+            ("swarm-adapter-ns3.lock", a_lock),
+        ):
+            with open(os.path.join(consumer, name_), "w", encoding="utf-8") as f:
+                f.write(text_)
+
+        def run_bump():
+            here, buf = os.getcwd(), io.StringIO()
+            os.chdir(consumer)
+            try:
+                with contextlib.redirect_stdout(buf):
+                    rc = main(["bump", "swarm-adapter-ns3.lock", "--write", "--base", base])
+            finally:
+                os.chdir(here)
+            with open(os.path.join(consumer, "swarm-adapter-ns3.lock"), encoding="utf-8") as f:
+                return rc, buf.getvalue(), f.read()
+
+        rc, said, got = run_bump()
+        check(
+            "adapter lock: follows swarm-core.lock's tag, not the newest adapter release",
+            rc == 0
+            and "ADAPTER_TAG=v1.1.0\n" in got
+            and f"ADAPTER_COMMIT={a11}\n" in got
+            and "lock-target: swarm-adapter-ns3.lock@v1.1.0" in said,
+        )
+        check("adapter lock: then current", "current" in run_bump()[1])
+        more_core("four")
+        make_release(t, core, "v0.9.2", {"swarm-core-0.9.2.tar.gz": b"v092"}, env)
+        with open(os.path.join(consumer, "swarm-core.lock"), "w", encoding="utf-8") as f:
+            f.write(render("SWARM_CORE", core, "v0.9.2", "swarm-core-{version}.tar.gz", base))
+        rc, said, got = run_bump()
+        check(
+            "adapter lock: no adapter release ships swarm-core's tag, the lock is held",
+            rc == 0 and "held" in said and "ADAPTER_TAG=v1.1.0\n" in got,
+        )
+        os.remove(os.path.join(consumer, "swarm-core.lock"))
+        rc, said, got = run_bump()
+        check(
+            "adapter lock: without swarm-core.lock, the newest release",
+            rc == 0 and "ADAPTER_TAG=v1.2.0\n" in got,
+        )
+
     for f in failures:
         print(f"FAIL: {f}")
     print(f"release_lock.py self-test: {'ok' if not failures else f'{len(failures)} failed'}")
@@ -664,8 +771,15 @@ def main(argv=None):
         prefix, values = parse(a.lock)
         if a.cmd == "bump":
             full = lock_path(a.lock)
+            follows, target = adapter_target(full, prefix, values, a.base)
+            if follows and not target:
+                print(
+                    f"{a.lock}: {values[f'{prefix}_REPO']} {values[f'{prefix}_TAG']}: held, "
+                    "no adapter release ships swarm-core.lock's swarm-core release"
+                )
+                return 0
             with open(full, encoding="utf-8") as f:
-                out, old, newest, commit = bump(f.read(), a.base, os.path.basename(full))
+                out, old, newest, commit = bump(f.read(), a.base, os.path.basename(full), target)
             if out is None:
                 print(f"{a.lock}: {values[f'{prefix}_REPO']} {old}: current")
                 return 0
