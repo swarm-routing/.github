@@ -1050,7 +1050,7 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/ARA/issues/3) ARA as a standalone hexagonal protocol (Phase 3) | In progress | 3 / 6 |
+| [#3](https://github.com/swarm-routing/ARA/issues/3) ARA as a standalone hexagonal protocol (Phase 3) | In progress | 4 / 6 |
 | [#173](https://github.com/swarm-routing/ARA/issues/173) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 
 ### [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc)
@@ -1179,7 +1179,7 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, 4-byte wire framing, ProtocolContractTest) & release v1.0.0 | In progress | 2 / 9 |
+| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 2 / 9 |
 
 ### [swarm-mcp](https://github.com/swarm-routing/swarm-mcp)
 
