@@ -103,8 +103,9 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             bump: only a PR the maintainer asked for is rebuilt; never while a
             run of that workflow is queued or running; never with a guessed
             increment (a PR whose body records none is left to a person).
-  `release` runs both release tasks and release-lock (org-bot.yml, hourly,
-  and for one repository on its `org-release` repository_dispatch, #479); `hourly`
+  `release` runs both release tasks, release-lock and zenodo (org-bot.yml, for
+  one repository on its `org-release` repository_dispatch, #479: a first
+  release's concept DOI is recorded then, the daily run staying the backstop); `hourly`
   runs those and org-sync (the hourly schedule, so a deferred refresh lands, #505); `all`
   runs epics, org-sync, zenodo, swarm-core-pin, release-lock and bestpractices.
 
@@ -1197,7 +1198,9 @@ def run(args, gh=None, clone_url=None):
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
     groups = {
         "all": ["epics", "org-sync", "zenodo", "swarm-core-pin", "release-lock", "bestpractices"],
-        "release": ["release-rebuild", "release-aftercare", "release-lock"],
+        # zenodo too: a first release's concept DOI is recorded on its own
+        # dispatch, not a day later by the daily run (2026-11-23, swarm-core v2.0.0)
+        "release": ["release-rebuild", "release-aftercare", "release-lock", "zenodo"],
         # the hourly run: the release tasks, and org-sync, so a refresh the
         # throttle deferred lands within the hour (#505)
         "hourly": ["release-rebuild", "release-aftercare", "release-lock", "org-sync"],
@@ -2689,6 +2692,18 @@ def self_test():
     nt_more("two")
     _, n2 = release_lock.make_release(
         rel, nt_repo, "v0.2.0", {"routing-bench-0.2.0.tar.gz": b"rb2", "nt-0.2.0.whl": b"w2"}, env
+    )
+    # the `release` group (a release's org-release dispatch) records the concept too
+    records.clear()
+    globals()["sh"] = zenodo_sh("")
+    try:
+        routes = {f"repos/{ORG}/{n}/releases?per_page=20": [] for n in ("alpha", "gamma")}
+        res, out = go(RouteGitHub(routes), task="release", repos="gamma", data=zdata)
+    finally:
+        globals()["sh"] = real_sh
+    check(
+        "zenodo: the release group records a new concept on the release's dispatch",
+        len(records) == 1 and any(r[0] == "gamma" and r[1] == "zenodo" for r in res),
     )
     gh = RouteGitHub({f"repos/{ORG}/nu/releases?per_page=20": []}, merge_queue=True)
     res, out = go(gh, task="release", data=ndata)  # the hourly group carries release-lock
