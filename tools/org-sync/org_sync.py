@@ -1844,6 +1844,11 @@ def items(cfg):
         # reusable ns-3 CI's `sonar` input; the repository's own once written.
         # `[quality] sonar = false`: the repo has no SonarQube Cloud project.
         out.append(("seed", ".codecov.yml", "quality/codecov.yml", None))
+        # the install guide (#881, #884): a seed the repository fills in; its
+        # known-bugs table is generated from sim-tools' ns-3 bug register by
+        # cmd/ns3-bugs, so it is the org's, refreshed
+        out.append(("seed", "docs/install.md", "install/install.md.in", None))
+        out.append(("section", "docs/install.md", "install/known-bugs.md", "known-bugs"))
         if cfg.get("quality", {}).get("sonar", True):
             out.append(
                 ("seed", "sonar-project.properties", "quality/sonar-project.properties.in", None)
