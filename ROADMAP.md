@@ -59,10 +59,37 @@ plan it later, and also the new simulators and Linux support."
 
 A deferred item keeps its epic and its plan text below, marked *deferred*.
 Its trigger is the same for all of them: **the maintainer re-plans it**; no
-date, release or result starts one by itself. Until then a new protocol may
-continue its fidelity sheet but writes no code, and a deferred epic's children
-carry no `release:*` label. Decisions 1–22 stay the rules that apply when a
-deferred item starts. Two pieces stay scheduled because the sim-tools `v1.2.0`
+date, release or result starts one by itself. Until then a deferred epic's
+children carry no `release:*` label. Decisions 1–22 stay the rules that apply
+when a deferred item starts.
+
+**Lifted for setup and skeletons (2026-11-24,
+[#881](https://github.com/swarm-routing/.github/issues/881#issuecomment-7147054971)).**
+In POSANT, BeeSensor, Q-Swarm, swarm-adapter-omnet, swarm-routingd and
+swarm-web-ui the maintainer re-planned the setup: the org templates, CI,
+`release.yml` (with `vcpkg-ports` where C++ ships), CITATION.cff,
+`docs/roadmap.md`, `docs/install.md` and a building, tested skeleton are
+allowed now. A protocol repository writes no protocol logic until its
+`docs/fidelity.md` has been reviewed (golden rule 6, each repository's
+"fidelity sheet before code" rule). Cutting a release and `release:*`
+labels are not covered: each release still needs the maintainer's word. The
+rest of the deferred work (phase 2's vertical slice, the new simulators and
+the .github#674 track) stays deferred.
+
+**Public-source v0 protocols (2026-11-24,
+[#881](https://github.com/swarm-routing/.github/issues/881#issuecomment-7147077907)).**
+A protocol whose paper has no open copy in hand (POSANT, Q-Swarm, and
+BeeSensor if its paper is not open) fills `docs/fidelity.md` from public
+sources: the abstract and publisher page, open preprints, theses, surveys,
+later papers and public reference implementations. Every row names its
+source by DOI link or public URL and how it was read (`paper`, `secondary:
+<source>` or `repo choice`); nothing is cited from memory. Once that sheet
+is reviewed, `core/` may implement it. The version is labelled v0, built from
+secondary sources, in the README, `docs/fidelity.md` and its first release
+notes, which list the rows that wait on the paper; when the paper is in
+hand those rows are re-checked and each deviation recorded. The three gates
+are unchanged (golden rule 6): the anchor stays open until the paper is in
+hand, and no benchmark claims paper fidelity. Two pieces stay scheduled because the sim-tools `v1.2.0`
 scope needs them: [sim-tools#128](https://github.com/swarm-routing/sim-tools/issues/128)
 (`--failures`, labelled `release:v1.2.0`, a sub-issue of the deferred
 sim-tools#277), and the ns-3 rung of
@@ -215,6 +242,17 @@ first set, the review's question number in brackets):
     and plan, marked deferred; its trigger is the maintainer re-planning it;
     decisions 1–22 are the rules that apply when it starts. sim-tools#128 and
     .github#268's ns-3 rung stay scheduled for sim-tools `v1.2.0`.
+    **Amended on 2026-11-24** (the maintainer, recorded on
+    [#881](https://github.com/swarm-routing/.github/issues/881)): lifted
+    for setup and building, tested skeletons in POSANT, BeeSensor, Q-Swarm,
+    swarm-adapter-omnet, swarm-routingd and swarm-web-ui (templates, CI,
+    `release.yml`, CITATION.cff, `docs/roadmap.md`, `docs/install.md`);
+    protocol logic still waits for the repository's reviewed fidelity sheet,
+    and releases and `release:*` labels are not covered. A protocol without
+    an open paper gets its first version built from public sources: each
+    fidelity row marked by its source (`paper`, `secondary: <source>`, `repo
+    choice`), the version labelled v0, and the anchor gate left open until
+    the paper is in hand ([Now and Later](#architecture-and-migration-decided-2026-11-22)).
 24. **Every in-process simulator gets its own adapter repository**,
     `swarm-adapter-<sim>`. This amends decision 20 (no longer "only after
     parity") and the part of decision 4 that put per-simulator code in
@@ -363,8 +401,11 @@ swarm-core's first release from its own repository and the contract tests
 ### Migration phase 3b: new protocols and runtimes (deferred)
 
 > **Deferred on 2026-11-22** (decision 23): planned later, not scheduled; it
-> starts when the maintainer re-plans it, under decisions 1–22 and 24. The
-> new protocols may continue their fidelity sheets; no `core/` code.
+> starts when the maintainer re-plans it, under decisions 1–22 and 24.
+> Re-planned in part on 2026-11-24 (decision 23 as amended, #881): the new
+> protocols set up and build a tested skeleton now, write protocol logic
+> once their fidelity sheet is reviewed (a v0 from public sources where the
+> paper is not open), and cut no release without the maintainer's word.
 
 POSANT, BeeSensor and Q-Swarm write `core/` after their fidelity sheets and
 swarm-core's first release
@@ -422,7 +463,7 @@ results wait for phase 2 and 3b.
 - **No wire-format change before its ADR** (decision 2), and no envelope that replaces a protocol's own version byte.
 - **No release without the maintainer's word** (decision 3), and no DOI typed: each is read from Zenodo.
 - **No `ns3-tools` repository** (decision 4); sim-tools keeps the orchestration and statistics, and an in-process simulator's adapter code goes to its own `swarm-adapter-<sim>` repository (CORE/EMANE and Shadow get none), none created before the maintainer re-plans the simulator track (decisions 23 and 24).
-- **Nothing deferred starts by itself** (decision 23): no code for POSANT, BeeSensor or Q-Swarm, no swarm-routingd, swarm-web-ui or new-simulator work, and no `release:*` label on a deferred epic's children, until the maintainer re-plans it.
+- **Nothing deferred starts by itself** (decision 23): no protocol logic for POSANT, BeeSensor or Q-Swarm before its fidelity sheet is reviewed, no swarm-routingd, swarm-web-ui, swarm-adapter-omnet or new-simulator work beyond setup and a building, tested skeleton (amended 2026-11-24, #881), and no release or `release:*` label on a deferred epic's children, until the maintainer re-plans it.
 - **No second Pages site and no routing logic or hand-made numbers in a UI** (decision 5; site golden rules 10–12).
 - **No OMNeT++ or Shadow before ns-3 and Linux parity, no EMANE image before the first parity run** (decision 8).
 - **Off-ns-3 results stay qualitative**: published numbers come from ns-3 only, and parity is judged on named scenes (decision 14).
@@ -798,8 +839,8 @@ recorded in the `benchmarks` global suite).
 | HOPNET | [docs/roadmap.md](https://github.com/swarm-routing/HOPNET/blob/main/docs/roadmap.md) | `v0.2.0` "gated" (`v0.1.0` released 2026-11-11), after Termite's |
 | swarm-core (its own repository, from phase 1) | none yet (to continue swarm-adapter-ns3's) | the first release from [swarm-core](https://github.com/swarm-routing/swarm-core), *proposed*, on the maintainer's word (decision 3 of 2026-11-22): `v1.1.0` if additive, `v2.0.0` if a frozen name changes, never a second `v1.0.0`, since that is already swarm-adapter-ns3's tag and the vcpkg port's version (decision 11) |
 | swarm-adapter-ns3 (the `ns3-swarm-core` row above, renamed 2026-11-22) | [docs/roadmap.md](https://github.com/swarm-routing/swarm-adapter-ns3/blob/main/docs/roadmap.md) | `v2.0.0` *proposed*: the ns-3 module on swarm-core's release as a `PUBLIC` dependency (swarm-adapter-ns3#231), keeping its concept DOI, on the maintainer's word; the host contract is no longer its 2.0.0 but swarm-core's next major (decision 12) |
-| POSANT, BeeSensor, Q-Swarm | none yet | *deferred* (decision 23): a first `v0.1.0`, *proposed*, after `core/`, once the maintainer re-plans them (decision 1: fidelity sheets only until swarm-core's first release from its repository) |
-| swarm-routingd, swarm-web-ui | none yet | *deferred* (decision 23): a first release, *proposed*, after migration phase 2 (swarm-routingd) and the replay epic (swarm-web-ui) |
+| POSANT, BeeSensor, Q-Swarm | none yet | *deferred* (decision 23): a first `v0.1.0`, *proposed*, after `core/`, on the maintainer's word; setup, `release.yml` and a tested skeleton allowed since 2026-11-24, protocol logic after the reviewed fidelity sheet, a v0 from public sources where the paper is not open (decision 23 as amended, #881) |
+| swarm-routingd, swarm-web-ui | none yet | *deferred* (decision 23): a first release, *proposed*, after migration phase 2 (swarm-routingd) and the replay epic (swarm-web-ui), on the maintainer's word; setup, `release.yml` and a tested skeleton allowed since 2026-11-24 (#881) |
 
 **No version ladder** for the repositories whose output is not a versioned
 artifact; their milestones are tied to the waves below and written here only:
@@ -946,7 +987,7 @@ These lines come after the 1.0.0 releases (wave E). Each is a theme, not a date.
 
 A 2.0 here is a theme name. A repository bumps its major version only for a breaking change, and an additive security arm is a minor release in the repository that ships it.
 
-The **Later** row's other simulators now follow decision 8 of 2026-11-22 (OMNeT++ and Shadow after ns-3 and Linux parity, the CORE/EMANE image after the first parity run; [Architecture and migration](#architecture-and-migration-decided-2026-11-22)); the remaining swarm protocols' verdicts stay with .github#54, where POSANT, BeeSensor and Q-Swarm now have repositories. Both are deferred by decision 23 until the maintainer re-plans them, an in-process simulator through its own `swarm-adapter-<sim>` repository, CORE/EMANE and Shadow through swarm-routingd (decision 24).
+The **Later** row's other simulators now follow decision 8 of 2026-11-22 (OMNeT++ and Shadow after ns-3 and Linux parity, the CORE/EMANE image after the first parity run; [Architecture and migration](#architecture-and-migration-decided-2026-11-22)); the remaining swarm protocols' verdicts stay with .github#54, where POSANT, BeeSensor and Q-Swarm now have repositories. Both are deferred by decision 23 until the maintainer re-plans them (since 2026-11-24 the three new protocols and swarm-adapter-omnet may set up and build a tested skeleton, #881), an in-process simulator through its own `swarm-adapter-<sim>` repository, CORE/EMANE and Shadow through swarm-routingd (decision 24).
 
 ## Epics
 
@@ -1241,9 +1282,9 @@ variants (secure, trust-aware) live with the protocol they extend.
 | BeeAdHoc (Wedde & Farooq 2005) | [swarm-routing/BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | 4 | fidelity sheet merged; `core/` (BeeAdHoc#37) and the ns-3 module (BeeAdHoc#48) on `main`; `v0.1.0` released 2026-11-11 (ungated); the gated `v0.2.0` released 2026-11-16 with the anchor's [written infeasibility verdict](https://github.com/swarm-routing/BeeAdHoc/blob/main/docs/benchmarks/v0.2.0-anchor.md) (the anchor missed); `v0.2.1` released 2026-11-16 on swarm-core `v1.0.0` |
 | Termite (Roth & Wicker 2003/2005) | [swarm-routing/Termite](https://github.com/swarm-routing/Termite) | 5 | fidelity sheet merged, anchor-miss pre-registration accepted; `core/` started (Termite#28) and the ns-3 module (Termite#37) on `main`, delivering nothing until route discovery lands (Termite#6); `v0.1.0` released 2026-11-11 (ungated); epic [Termite#3](https://github.com/swarm-routing/Termite/issues/3) |
 | HOPNET (Wang 2007) | [swarm-routing/HOPNET](https://github.com/swarm-routing/HOPNET) | 5+, after Termite | fidelity sheet merged; `core/` (HOPNET#25, HOPNET#5) and the ns-3 module (HOPNET#85) on `main`; `v0.1.0` released 2026-11-11 (ungated); the anchor is a [written infeasibility verdict](https://github.com/swarm-routing/HOPNET/blob/main/docs/anchor-verdict.md) (2026-11-14); epic [HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3), scheduled after Termite (maintainer decision 2026-11-10) |
-| POSANT (position-based ant routing; ICWMC 2007, [10.1109/icwmc.2007.68](https://doi.org/10.1109/icwmc.2007.68); journal version [10.4304/jnw.3.4.31-41](https://doi.org/10.4304/jnw.3.4.31-41)) | [swarm-routing/POSANT](https://github.com/swarm-routing/POSANT) | migration 3b, *proposed*, *deferred* | created 2026-11-21; deferred by decision 23 (the maintainer re-plans it); fidelity sheet only until swarm-core's first release from its repository (decision 1 of 2026-11-22); the reference version is decided in its fidelity sheet, the 2008 journal version primary if it specifies more (decision 18); epic [POSANT#3](https://github.com/swarm-routing/POSANT/issues/3) |
-| BeeSensor (bee-inspired WSN routing) | [swarm-routing/BeeSensor](https://github.com/swarm-routing/BeeSensor) | migration 3b, *proposed*, *deferred* | created 2026-11-21; deferred by decision 23 (the maintainer re-plans it); in scope since 2026-11-22 (decision 18), reversing .github#54's record: a many-to-one WSN convergecast family (sim-tools#55), not the ruled-out duty-cycled mesh, the reversal recorded on .github#54 and .github#275; fidelity sheet only until swarm-core's first release; epic [BeeSensor#3](https://github.com/swarm-routing/BeeSensor/issues/3) |
-| Q-Swarm (pheromone tables with on-node Q-learning) | [swarm-routing/Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | migration 3b, *proposed*, *deferred* | created 2026-11-21; deferred by decision 23 (the maintainer re-plans it), fidelity sheet only; a protocol, benchmarked against the `qrouting` comparator in sim-tools (decision 6); it names the paper it reproduces, or moves under .github#252 with the gates of .github#264 if there is none (decision 18); epic [Q-Swarm#3](https://github.com/swarm-routing/Q-Swarm/issues/3) |
+| POSANT (position-based ant routing; ICWMC 2007, [10.1109/icwmc.2007.68](https://doi.org/10.1109/icwmc.2007.68); journal version [10.4304/jnw.3.4.31-41](https://doi.org/10.4304/jnw.3.4.31-41)) | [swarm-routing/POSANT](https://github.com/swarm-routing/POSANT) | migration 3b, *proposed*, *deferred* | created 2026-11-21; deferred by decision 23, lifted on 2026-11-24 for setup and a building, tested skeleton (#881); protocol logic after its reviewed fidelity sheet, a v0 from public sources while the paper is not open (POSANT#24; #881); the reference version is decided in its fidelity sheet, the 2008 journal version primary if it specifies more (decision 18); epic [POSANT#3](https://github.com/swarm-routing/POSANT/issues/3) |
+| BeeSensor (bee-inspired WSN routing) | [swarm-routing/BeeSensor](https://github.com/swarm-routing/BeeSensor) | migration 3b, *proposed*, *deferred* | created 2026-11-21; deferred by decision 23, lifted on 2026-11-24 for setup and a building, tested skeleton (#881); in scope since 2026-11-22 (decision 18), reversing .github#54's record: a many-to-one WSN convergecast family (sim-tools#55), not the ruled-out duty-cycled mesh, the reversal recorded on .github#54 and .github#275; protocol logic after its reviewed fidelity sheet, a v0 from public sources if its paper is not open (#881); epic [BeeSensor#3](https://github.com/swarm-routing/BeeSensor/issues/3) |
+| Q-Swarm (pheromone tables with on-node Q-learning) | [swarm-routing/Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | migration 3b, *proposed*, *deferred* | created 2026-11-21; deferred by decision 23, lifted on 2026-11-24 for setup and a building, tested skeleton (#881); protocol logic after its reviewed fidelity sheet, a v0 from public sources while the paper is not open (Q-Swarm#23; #881); a protocol, benchmarked against the `qrouting` comparator in sim-tools (decision 6); it names the paper it reproduces, or moves under .github#252 with the gates of .github#264 if there is none (decision 18); epic [Q-Swarm#3](https://github.com/swarm-routing/Q-Swarm/issues/3) |
 
 Not planned as repositories: AntNet (wired networks, AntHocNet's ancestor), and
 the swarm-based variants above (BeeSec/BeeAIS in BeeAdHoc#9; trust-weighted ACO

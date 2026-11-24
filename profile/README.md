@@ -64,6 +64,8 @@ adapter of its ports. Three repositories were renamed that day:
 `ns3-swarm-core` is now swarm-adapter-ns3, `ns3-containers` is sim-containers
 and `ns3-tools` is sim-tools. A repository marked *deferred* is planned for later,
 not scheduled (ROADMAP decision 23): it starts when the maintainer re-plans it.
+Since 2026-11-24 the deferred repositories may set up and build a tested
+skeleton; releases still wait for the maintainer.
 
 Every badge below is live: the latest release, each repository's SonarQube
 Cloud quality gate and its Codecov line coverage on `main` (report-only,
@@ -93,9 +95,9 @@ no release yet, no SonarQube Cloud project, or no coverage upload.
 | [BeeAdHoc](https://github.com/swarm-routing/BeeAdHoc) | Honeybee routing (Wedde & Farooq, 2005), as the PG 460 Linux module specifies it: `core/` and ns-3 module in progress (Phase 4) | [![Release](https://img.shields.io/github/v/release/swarm-routing/BeeAdHoc?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/BeeAdHoc/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_BeeAdHoc&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_BeeAdHoc) | [![codecov](https://codecov.io/gh/swarm-routing/BeeAdHoc/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/BeeAdHoc/tree/main) |
 | [Termite](https://github.com/swarm-routing/Termite) | Stigmergic routing in data packets, no control ants (Roth & Wicker, 2003/2005): `core/` and ns-3 module in progress (Phase 5) | [![Release](https://img.shields.io/github/v/release/swarm-routing/Termite?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/Termite/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_Termite&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_Termite) | [![codecov](https://codecov.io/gh/swarm-routing/Termite/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/Termite/tree/main) |
 | [HOPNET](https://github.com/swarm-routing/HOPNET) | Ant routing over zones (Wang, 2007), the one published result benchmarked against AntHocNet: `core/` and ns-3 module in progress | [![Release](https://img.shields.io/github/v/release/swarm-routing/HOPNET?sort=semver&label=&cacheSeconds=1800)](https://github.com/swarm-routing/HOPNET/releases) | [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=swarm-routing_HOPNET&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=swarm-routing_HOPNET) | [![codecov](https://codecov.io/gh/swarm-routing/HOPNET/branch/main/graph/badge.svg)](https://codecov.io/gh/swarm-routing/HOPNET/tree/main) |
-| [POSANT](https://github.com/swarm-routing/POSANT) | *deferred*: position-based ant colony routing for geographic and 3D networks (UAV swarms, FANETs), on swarm-core's location port; fidelity sheet only | — | — | — |
-| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | *deferred*: honeybee-inspired, energy-aware convergecast routing for wireless sensor networks; fidelity sheet only | — | — | — |
-| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | *deferred*: Q-routing with energy-aware updates and Boltzmann next-hop selection, a learned comparator for the swarm protocols; fidelity sheet only | — | — | — |
+| [POSANT](https://github.com/swarm-routing/POSANT) | *deferred*: position-based ant colony routing for geographic and 3D networks (UAV swarms, FANETs), on swarm-core's location port; setup and skeleton, protocol logic after its reviewed fidelity sheet | — | — | — |
+| [BeeSensor](https://github.com/swarm-routing/BeeSensor) | *deferred*: honeybee-inspired, energy-aware convergecast routing for wireless sensor networks; setup and skeleton, protocol logic after its reviewed fidelity sheet | — | — | — |
+| [Q-Swarm](https://github.com/swarm-routing/Q-Swarm) | *deferred*: Q-routing with energy-aware updates and Boltzmann next-hop selection, a learned comparator for the swarm protocols; setup and skeleton, protocol logic after its reviewed fidelity sheet | — | — | — |
 
 ### 4. Infrastructure and tooling
 
@@ -132,10 +134,16 @@ Every deferred item keeps its epic and its plan; none starts by itself.
   the release train and the ns-3 work, and phase 4 (agent tooling, docs, the
   paper) where it needs no deferred track.
 - **Later (deferred):** the Linux daemon swarm-routingd and the vertical
-  slice on it (phase 2); the new protocols POSANT, BeeSensor and Q-Swarm
-  (fidelity sheets may continue, no code); swarm-web-ui; and the other
-  simulators: CORE/EMANE and Shadow on swarm-routingd, OMNeT++ through
-  swarm-adapter-omnet (decision 24), after ns-3 and Linux parity.
+  slice on it (phase 2); the new protocols POSANT, BeeSensor and Q-Swarm;
+  swarm-web-ui; and the other simulators: CORE/EMANE and Shadow on
+  swarm-routingd, OMNeT++ through swarm-adapter-omnet (decision 24), after
+  ns-3 and Linux parity.
+- **Lifted on 2026-11-24** (decision 23 as amended): POSANT, BeeSensor,
+  Q-Swarm, swarm-adapter-omnet, swarm-routingd and swarm-web-ui set up their
+  templates, CI and release workflow and build a tested skeleton. A new
+  protocol writes its logic once its fidelity sheet is reviewed; where the
+  paper is not open, that first version is a v0 built from public sources,
+  its anchor gate open. No release without the maintainer's word.
 
 The whole plan, phase by phase: [ROADMAP.md](https://github.com/swarm-routing/.github/blob/main/ROADMAP.md).
 
