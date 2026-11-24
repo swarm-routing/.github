@@ -104,8 +104,11 @@ name: Reusable ns-3 image
 #     cells:
 #       needs: image   # needs.image.outputs.image = ghcr.io/...@sha256:... (one profile)
 #
-# A campaign with an AODV-family arm passes `ns3-version: '3.48'` until
-# ns-3.49's AODV livelock is fixed (sim-containers#35, AntHocNet#843).
+# A campaign with an AODV-family arm runs on the default (`latest`, ns-3.49)
+# only with the arm installed behind sim-tools' ICMP error guard (routing-bench
+# v1.1.3+, `IcmpErrorGuardHelper`): ns-3.49's stock AODV livelocks without it
+# (NS3-001, sim-tools docs/ns3-bugs.md; AntHocNet#843, sim-containers#254).
+# A published campaign keeps the `ns3-version` it ran on.
 #
 # `stage` (optional): a command run with bash in the caller's checkout
 # (`$GITHUB_WORKSPACE/src`) after its dependencies are cloned and before the
