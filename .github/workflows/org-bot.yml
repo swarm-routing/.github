@@ -52,6 +52,11 @@ run-name: >-
 #   or an own release.yml's `vcpkg` job `PORT:`) while the registry's baseline
 #   lacks the version and no open registry PR carries it keeps a
 #   `[vcpkg] <repo> <tag>: port not bumped` issue open here, closed once bumped.
+# - ns3-bugs (daily, with `all`; #884): in .github only, the install guide's
+#   known-bugs table (templates/install/known-bugs.md) regenerated from
+#   swarm-routing/sim-tools docs/ns3-bugs.md by the Go tool `ns3-bugs`
+#   (cmd/ns3-bugs, copied out of the ci-tools image by digest; skipped while
+#   the pinned image lacks it), one PR when it changes; org-sync then carries it.
 # - bestpractices (daily, with `all`): `.bestpractices.json` regenerated in every
 #   public repository by the Go tool `bestpractices answers --write`
 #   (cmd/bestpractices; its binary copied out of the ci-tools image by digest,
@@ -159,7 +164,7 @@ on:
       task:
         description: 'What to refresh'
         type: choice
-        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, branch-sweep, release-sync, project-sync, security-alerts, security-report, ticket-audit, action-pins, ci-tools-digest]
+        options: [all, epics, org-sync, zenodo, swarm-core-pin, release-lock, release, hourly, release-rebuild, release-aftercare, bestpractices, ns3-bugs, branch-sweep, release-sync, project-sync, security-alerts, security-report, ticket-audit, action-pins, ci-tools-digest]
         default: all
       repos:
         description: 'Comma-separated repository names (default: every public repo)'
@@ -322,8 +327,8 @@ jobs:
           persist-credentials: false
       - name: Self-test
         run: python3 -I tools/org-bot/org_bot.py --self-test
-      - name: The bestpractices tool (the ci-tools image's binary, by digest)
-        if: env.TASK == 'all' || env.TASK == 'bestpractices'
+      - name: The bestpractices and ns3-bugs tools (the ci-tools image's binaries, by digest)
+        if: env.TASK == 'all' || env.TASK == 'bestpractices' || env.TASK == 'ns3-bugs'
         timeout-minutes: 3
         env:
           IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
@@ -332,6 +337,13 @@ jobs:
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG"  # with retries (#645)
           id=$(docker create "$IMG")
           docker cp "$id:/usr/local/bin/bestpractices" "$RUNNER_TEMP/bestpractices"
+          # ns3-bugs (#884): the install guide's known-bugs table; an image
+          # from before cmd/ns3-bugs lacks it, and the task then skips
+          if docker cp "$id:/usr/local/bin/ns3-bugs" "$RUNNER_TEMP/ns3-bugs" 2> /dev/null; then
+            echo "ORG_BOT_NS3BUGS=$RUNNER_TEMP/ns3-bugs" >> "$GITHUB_ENV"
+          else
+            echo "::notice::the pinned ci-tools image has no ns3-bugs yet; the ns3-bugs task skips"
+          fi
           docker rm "$id" > /dev/null
           "$RUNNER_TEMP/bestpractices" --help > /dev/null
           echo "ORG_BOT_BESTPRACTICES=$RUNNER_TEMP/bestpractices" >> "$GITHUB_ENV"

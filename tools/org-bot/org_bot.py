@@ -4,11 +4,11 @@
 """Open the refresh PRs that keep every org repository in step with this one.
 
 Usage:
-  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-lock|release-rebuild|release-aftercare|bestpractices|release|hourly|all]
+  org_bot.py run [--task epics|org-sync|zenodo|swarm-core-pin|release-lock|release-rebuild|release-aftercare|bestpractices|ns3-bugs|release|hourly|all]
                  [--repos A,B] [--dry-run]
   org_bot.py --self-test
 
-Seven tasks, each a generator or check this repository already has, run on a fresh clone
+Eight tasks, each a generator or check this repository already has, run on a fresh clone
 of each public repository (listed by `epics.py fetch`: the org listing, or
 ROADMAP.md#epics where that listing is forbidden; the run prints which):
 
@@ -93,6 +93,14 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             and for one repository on its `bestpractices` repository_dispatch,
             sent by that repository's org-managed bestpractices-evidence.yml when
             a push to main touches the files the answers read.
+  ns3-bugs  in .github only (#884): templates/install/known-bugs.md, the
+            install guide's known-bugs section, regenerated from
+            swarm-routing/sim-tools docs/ns3-bugs.md by the Go tool `ns3-bugs
+            REGISTER --write` (cmd/ns3-bugs, the ci-tools image's binary,
+            ORG_BOT_NS3BUGS; skipped while the image lacks it), the register
+            read from ORG_BOT_NS3_REGISTER (sim-tools main). A PR when the
+            table changes; org-sync's refresh PRs then carry it to each C++
+            repository. Daily (`all`).
   release-rebuild  no clone, the API only (#430): a repository whose open
             `bot/release` PR is behind its base gets its release caller (the
             workflow that calls reusable-release.yml) dispatched with mode
@@ -107,7 +115,7 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
   one repository on its `org-release` repository_dispatch, #479: a first
   release's concept DOI is recorded then, the daily run staying the backstop); `hourly`
   runs those and org-sync (the hourly schedule, so a deferred refresh lands, #505); `all`
-  runs epics, org-sync, zenodo, swarm-core-pin, release-lock and bestpractices.
+  runs epics, org-sync, zenodo, swarm-core-pin, release-lock, bestpractices and ns3-bugs.
 
   org-sync and swarm-core-pin never leave two PRs that each fail the other's
   required check (#429: on 2026-11-14 every protocol repository held a pin
@@ -182,6 +190,7 @@ import tempfile
 import time
 import re
 import urllib.parse
+import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EPICS = os.path.join(ROOT, "tools", "epics", "epics.py")
@@ -192,6 +201,16 @@ LOCK_TOOL = os.path.join(ROOT, "tools", "checks", "release_lock.py")
 RELEASE_CHECK = os.path.join(ROOT, "tools", "release", "release_check.py")
 # the Go tool's binary (cmd/bestpractices), copied out of the ci-tools image by org-bot.yml
 BESTPRACTICES = os.environ.get("ORG_BOT_BESTPRACTICES", "bestpractices")
+# the Go tool's binary (cmd/ns3-bugs), copied out of the ci-tools image by org-bot.yml;
+# empty where that image does not ship it yet (the task then skips, #884)
+NS3BUGS = os.environ.get("ORG_BOT_NS3BUGS", "")
+# the ns-3 bug register the install guide's known-bugs table is generated from (#884;
+# a local path in the self-test)
+NS3_REGISTER = os.environ.get(
+    "ORG_BOT_NS3_REGISTER",
+    "https://raw.githubusercontent.com/swarm-routing/sim-tools/main/docs/ns3-bugs.md",
+)
+KNOWN_BUGS = os.path.join("templates", "install", "known-bugs.md")
 SITE = (
     "swarm-routing.github.io"  # the site repository, where each release's [release-sync] issue is
 )
@@ -291,6 +310,13 @@ TASKS = {
         "merges, the weekly `bestpractices` check puts the proposal link for what "
         "bestpractices.dev lacks in the repository's `[bestpractices]` issue: the "
         "maintainer opens it, reviews and presses Save (the site has no write API).",
+    },
+    "ns3-bugs": {
+        "title": "docs(templates): refresh the known ns-3 bugs table (org-bot)",
+        "what": "swarm-routing/sim-tools `docs/ns3-bugs.md`, the ns-3 bug register, changed. "
+        "`templates/install/known-bugs.md` is regenerated from it by `cmd/ns3-bugs` (never "
+        "typed, #884); once this merges, org-bot's org-sync refresh PRs carry the table into "
+        "each C++ repository's `docs/install.md`.",
     },
     "zenodo": {
         "title": "docs: record the zenodo concept doi (org-bot)",
@@ -667,6 +693,30 @@ def generate(task, repo, clone, data, out, skip=None):
         sh(["git", "-C", clone, "add", "-N", ".bestpractices.json"])
         # its stderr: the file written, then the count by status
         out.append(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "")
+        return out
+    elif task == "ns3-bugs":
+        target = os.path.join(clone, KNOWN_BUGS)
+        if repo != ".github" or not os.path.exists(target):
+            return None
+        if not NS3BUGS:
+            print(f"{repo} ns3-bugs: skipped, no ns3-bugs binary (the ci-tools image lacks it)")
+            return None
+        with tempfile.TemporaryDirectory() as tmp:
+            register = NS3_REGISTER
+            if "://" in register:
+                local = os.path.join(tmp, "ns3-bugs.md")
+                try:
+                    with urllib.request.urlopen(register, timeout=60) as resp:
+                        data_ = resp.read()
+                except OSError as e:
+                    raise Failure(f"ns3-bugs: cannot read {register}: {e}") from e
+                with open(local, "wb") as fh:
+                    fh.write(data_)
+                register = local
+            r = sh([NS3BUGS, register, "--write", target], check=False)
+        if r.returncode:
+            raise Failure(f"ns3-bugs: {r.stderr.strip() or r.stdout.strip()}")
+        out.append(r.stdout.strip())
         return out
     elif task == "zenodo":
         if not os.path.exists(os.path.join(clone, "CITATION.cff")):
@@ -1197,7 +1247,15 @@ def run(args, gh=None, clone_url=None):
     gh = gh or GitHub(token)
     clone_url = clone_url or "https://github.com/{org}/{repo}.git"
     groups = {
-        "all": ["epics", "org-sync", "zenodo", "swarm-core-pin", "release-lock", "bestpractices"],
+        "all": [
+            "epics",
+            "org-sync",
+            "zenodo",
+            "swarm-core-pin",
+            "release-lock",
+            "bestpractices",
+            "ns3-bugs",
+        ],
         # zenodo too: a first release's concept DOI is recorded on its own
         # dispatch, not a day later by the daily run (2026-11-23, swarm-core v2.0.0)
         "release": ["release-rebuild", "release-aftercare", "release-lock", "zenodo"],
@@ -1331,6 +1389,7 @@ def main(argv=None):
             "release-rebuild",
             "release-aftercare",
             "bestpractices",
+            "ns3-bugs",
             "release",
             "hourly",
             "all",
@@ -1816,6 +1875,54 @@ def self_test():
             re.search(r"bot-token@[0-9a-f]{40} # main", fh.read()) is not None
             and any("update    .github/workflows/reusable-x.yml" in n for n in notes),
         )
+    # ns3-bugs (#884): in .github only, the Go tool (a fake here) writes the table
+    # from the register; no binary skips; a failing tool fails the repository
+    global NS3BUGS, NS3_REGISTER
+    real_nb, real_reg = NS3BUGS, NS3_REGISTER
+    os.makedirs(os.path.join(dotgithub, "templates", "install"))
+    with open(os.path.join(dotgithub, KNOWN_BUGS), "w") as fh:
+        fh.write("old table\n")
+    NS3_REGISTER = os.path.join(work, "ns3-bugs.md")
+    with open(NS3_REGISTER, "w") as fh:
+        fh.write("| ID | ns-3 versions |\n")
+    fake_nb = os.path.join(work, "fake-ns3-bugs")
+    with open(fake_nb, "w") as fh:
+        fh.write(
+            "#!/bin/sh\n"
+            '[ "$2" = --write ] || exit 2\n'
+            '[ -n "$NB_FAIL" ] && { echo "ns3-bugs: lost a column" >&2; exit 2; }\n'
+            'grep -q "ns-3 versions" "$1" || exit 2\n'
+            'echo "new table" > "$3"\n'
+            'echo "ns3-bugs: wrote $3: 3 bug(s), 2 fixed upstream"\n'
+        )
+    os.chmod(fake_nb, 0o700)
+    try:
+        NS3BUGS = ""
+        skipped = generate("ns3-bugs", ".github", dotgithub, data, [])
+        NS3BUGS = fake_nb
+        other = generate("ns3-bugs", "gamma", dotgithub, data, [])
+        notes = generate("ns3-bugs", ".github", dotgithub, data, [])
+        with open(os.path.join(dotgithub, KNOWN_BUGS)) as fh:
+            table = fh.read()
+        check(
+            "ns3-bugs: .github's table regenerated from the register, none elsewhere, "
+            "skipped without the binary",
+            skipped is None
+            and other is None
+            and table == "new table\n"
+            and any("3 bug(s), 2 fixed upstream" in n for n in notes),
+        )
+        os.environ["NB_FAIL"] = "1"
+        try:
+            generate("ns3-bugs", ".github", dotgithub, data, [])
+            refused = None
+        except Failure as e:
+            refused = str(e)
+        finally:
+            os.environ.pop("NB_FAIL", None)
+        check("ns3-bugs: a failing tool fails", refused and "lost a column" in refused)
+    finally:
+        NS3BUGS, NS3_REGISTER = real_nb, real_reg
     # org-sync notes list the seeds that differ, for information, and leave them alone
     adopted = os.path.join(work, "adopted")
     os.makedirs(adopted)
