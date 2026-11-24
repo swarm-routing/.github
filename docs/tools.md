@@ -70,7 +70,7 @@ SUPPORT.md                      the org default support policy: issues for bugs,
                            reusable-review-gate.yml (#294), review-gate.yml (this repository's own, from the PR's head),
                            reusable-security-autofix.yml (#629: the fix for the `security` tickets the hourly security-alerts task keeps; `pick`, no AI, the workflow token: `security-autofix pick` posts policy proposals and hands one code-scanning ticket to the agent; `fix`: `anthropics/claude-code-action` pinned by commit with `templates/security-autofix/prompt.md` from main, `contents: read` and `security-events: read`, a checkout without credentials, only the model key, a green skip without it, its diff through `security-autofix guard`; `pr`, no AI: the guard again on main, a new `claude/security-fix-code-scanning-<n>` branch with the bot's token, the PR naming the ticket, auto-merge; `failed`, no AI: the no-fix comment on the ticket), security-autofix.yml (this repository's copy of the org-managed caller),
                            sync-labels.yml, labels.yml (labels.json on every org repository, private ones included, on a push that changes it, daily (so a new repository gets the taxonomy within a day; backstopped by backstop.yml) and on demand: cmd/labels from the ci-tools image by digest with the org App's token; a PR that changes it runs a read-only dry run; #570), epics.yml, ai-files-review.yml, zenodo.yml, sonar-triage.yml, bestpractices.yml, org-bot.yml, epics-refresh.yml (an issue change that can move an epic list, sent by each repository's epics-changed.yml or seen here, waits five minutes in a job that a newer event cancels, then runs org-bot's `epics` task; hourly for a sub-issue added or removed, #572), backstop.yml, repo-settings.yml, scorecard.yml, ci.yml, ns3-image-selftest.yml, release-selftest.yml,
-                           benchmark-cell-selftest.yml, setup-vcpkg-selftest.yml, docs-only-selftest.yml (.github/actions/changes on its own PR: the default says 'false', a match-all pattern 'true', an empty one 'false'; its default equals reusable-ns3-ci.yml's, #581), python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480, and every one of two `source` items, #530;
+                           benchmark-cell-selftest.yml, ns3-ci-selftest.yml (reusable-ns3-ci.yml on tools/checks/fixtures/ns3-ci/protocol-hello, a module on swarm-core and routing-bench: on ns3-dev as every caller today, with `protocol-image: true` on debug and sanitized with the dependencies the image holds, and with one dependency a release behind it, built from source over the prebuilt one), setup-vcpkg-selftest.yml, docs-only-selftest.yml (.github/actions/changes on its own PR: the default says 'false', a match-all pattern 'true', an empty one 'false'; its default equals reusable-ns3-ci.yml's, #581), python-ci-selftest.yml (reusable-python-ci.yml measures a child process, #480, and every one of two `source` items, #530;
                            its fixtures: tools/checks/fixtures/python-ci/, python-ci-lib/),
                            reusable-go-ci.yml (a Go module's build, gofmt, vet, staticcheck, govulncheck, race tests and coverage; docs/adr/0002-pipelines-are-go.md)
                            and go-ci-selftest.yml (its fixtures: tools/checks/fixtures/go-ci/good, which passes, and bad, which fails gofmt, vet, staticcheck and test),
@@ -199,9 +199,11 @@ clang-format-18 --style=file:.clang-format --dump-config >/dev/null
 ## Validating a change to a reusable workflow
 
 
-A change to `reusable-ns3-ci.yml` is validated by running its step scripts in
-an `ns3-dev` image against `swarm-routing/sim-containers`' `test/fixtures/`
-module (see that repo's AGENTS.md), then by a caller repo's PR (a change to
+A change to `reusable-ns3-ci.yml` runs `ns3-ci-selftest.yml` on its PR (the
+fixture module on ns3-dev, on ns3-protocol-dev with `protocol-image: true`,
+and with a dependency the image does not hold), and is validated by running
+its step scripts in an `ns3-dev` image against `swarm-routing/sim-containers`'
+`test/fixtures/` module (see that repo's AGENTS.md), then by a caller repo's PR (a change to
 the dependency canary, `canary-dependencies` (#411), also by a
 `workflow_dispatch` of that caller's branch, since the canary leg never runs
 on a PR: the PR run must show no `canary` leg, the dispatch one, non-blocking;

@@ -9,6 +9,7 @@
 | `.github/workflows/` | the reusable workflows and this repo's CI | `MIT OR GPL-2.0-only` |
 | `.github/actions/` | the composite actions this repo's and other repositories' workflows use (the bot token, setup-vcpkg, the docs-only test) | `MIT OR GPL-2.0-only` |
 | `tools/` | the licence-header checker and other org CI scripts | `MIT OR GPL-2.0-only` |
+| `tools/checks/fixtures/ns3-ci/` | the ns-3 contrib module `ns3-ci-selftest.yml` builds (its `.h`/`.cc` listed with `--gpl-only`) | `GPL-2.0-only` |
 | `cmd/`, `internal/`, `go.mod`, `docker/` | the org's Go pipeline tools and the `ci-tools` image that ships them (ADR-0002) | `MIT OR GPL-2.0-only` |
 | `templates/` | what `tools/org-sync` renders into each repo (AGENTS.md/CLAUDE.md sections, SECURITY, ADR, Makefile, README) | `MIT OR GPL-2.0-only` |
 | `.clang-format`, `.hadolint.yaml` | the org C++ style; the hadolint settings of the `ci-tools` Dockerfile | `MIT OR GPL-2.0-only` |
