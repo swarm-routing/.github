@@ -76,7 +76,7 @@ func page(w http.ResponseWriter, r *http.Request, items []map[string]any) {
 	per, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
 	pg, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if per <= 0 || pg <= 0 {
-		http.Error(w, "paging", 400)
+		http.Error(w, "paging", http.StatusBadRequest)
 		return
 	}
 	lo := min((pg-1)*per, len(items))
@@ -136,7 +136,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		content(w, string(b))
 	case p == "/repos/"+Registry+"/pulls":
 		if r.URL.Query().Get("state") != "open" {
-			http.Error(w, "state", 400)
+			http.Error(w, "state", http.StatusBadRequest)
 			return
 		}
 		var out []map[string]any
@@ -146,7 +146,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		page(w, r, out)
 	case p == "/repos/"+IssueRepo+"/issues" && r.Method == "GET":
 		if r.URL.Query().Get("state") != "open" {
-			http.Error(w, "state", 400)
+			http.Error(w, "state", http.StatusBadRequest)
 			return
 		}
 		var out []map[string]any
@@ -193,7 +193,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				hit.body = b
 			}
 		default:
-			http.Error(w, "method", 405)
+			http.Error(w, "method", http.StatusMethodNotAllowed)
 			return
 		}
 		_, _ = w.Write([]byte("{}"))
@@ -215,7 +215,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(out)
 		case parts[1] == "contents/.github/workflows":
 			if r.URL.Query().Get("ref") == "" {
-				http.Error(w, "ref", 400)
+				http.Error(w, "ref", http.StatusBadRequest)
 				return
 			}
 			if x.workflows == nil {
@@ -419,7 +419,7 @@ func TestGraceDryRunAndErrors(t *testing.T) {
 	f.baseline = nil
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/baseline.json") {
-			http.Error(w, "boom", 500)
+			http.Error(w, "boom", http.StatusInternalServerError)
 			return
 		}
 		f.ServeHTTP(w, r)
