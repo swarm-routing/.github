@@ -345,7 +345,11 @@ jobs:
           # checkout, which must pass (the Python twin it was compared with is gone, #578)
           [ "$(docker run --rm "$img" check-headers --self-test)" = "self-test: PASS" ] \
             || { echo "::error::check-headers --self-test"; exit 1; }
-          docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' . \
+          # ns3-ci-selftest.yml's fixture is an ns-3 module: GPL-2.0-only (LICENSING.md), as ci.yml checks it
+          fx=tools/checks/fixtures/ns3-ci/protocol-hello
+          docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" -w /github/workspace "$img" check-headers --dual '' \
+            --gpl-only "$fx/model/protocol-hello.h" --gpl-only "$fx/model/protocol-hello.cc" \
+            --gpl-only "$fx/test/protocol-hello-test-suite.cc" . \
             || { echo "::error::check-headers on this checkout"; exit 1; }
           # nonroot, and no shell to fall back to
           user=$(docker image inspect -f '{{.Config.User}}' "$img")
