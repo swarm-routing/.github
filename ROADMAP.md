@@ -1159,12 +1159,12 @@ Every epic of every public repository, open first. A status is derived from the 
 |------|--------|-------------------|
 | [#177](https://github.com/swarm-routing/swarm-adapter-ns3/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
 | [#228](https://github.com/swarm-routing/swarm-adapter-ns3/issues/228) Post-rename stabilization & v2.0.0 migration to swarm-core PUBLIC dependency | In progress | 1 / 5 |
-| [#82](https://github.com/swarm-routing/swarm-adapter-ns3/issues/82) swarm-core 3.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
 
-<details><summary>Closed: 1 epic</summary>
+<details><summary>Closed: 2 epics</summary>
 
 | Epic | Closed |
 |------|--------|
+| [#82](https://github.com/swarm-routing/swarm-adapter-ns3/issues/82) swarm-core 3.0.0: the host contract, so a protocol core runs on any host | Dropped 2026-11-24 |
 | [#6](https://github.com/swarm-routing/swarm-adapter-ns3/issues/6) swarm-core: the shared contrib module every swarm protocol links (Phase 2) | Done 2026-11-11 |
 
 </details>
@@ -1179,7 +1179,8 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 2 / 9 |
+| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 3 / 10 |
+| [#62](https://github.com/swarm-routing/swarm-core/issues/62) swarm-core 3.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
 
 ### [swarm-mcp](https://github.com/swarm-routing/swarm-mcp)
 
