@@ -351,8 +351,10 @@ def publishes_pypi(text):
 def origin_repo(repo_dir):
     """OWNER/NAME of the checkout's origin remote, or None."""
     try:
+        # an absolute path: the directory never reads as an option
         out = subprocess.run(
-            ["git", "-C", repo_dir, "remote", "get-url", "origin"],
+            ["git", "remote", "get-url", "origin"],
+            cwd=os.path.abspath(repo_dir),
             capture_output=True,
             text=True,
         )
@@ -405,7 +407,8 @@ def downstream_check(repo_dir, list_path, self_name, r, script=None):
     if "${{" in list_path or (self_name and "${{" in self_name):
         r.add("WARN", f"downstream: {list_path} is an expression; check the list by hand")
         return
-    path = os.path.join(repo_dir, list_path)
+    # absolute: the list's path never reads as one of downstream.sh's options
+    path = os.path.abspath(os.path.join(repo_dir, list_path))
     if not os.path.isfile(path):
         r.add("FAIL", f"downstream: downstream-consumers names {list_path}, no such file")
         return
