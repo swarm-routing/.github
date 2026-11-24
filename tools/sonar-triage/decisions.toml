@@ -1045,7 +1045,7 @@ project = "swarm-routing_.github"
 key = "AaHCpQEKeDe7xtNTqKf1"
 rule = "pythonsecurity:S8705"
 file = "tools/org-bot/org_bot.py"
-line = 370
+line = 373
 decision = "falsepositive"
 reason = "FP-cli"
 
