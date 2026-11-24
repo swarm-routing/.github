@@ -459,7 +459,9 @@ def bare_doi(identifier):
 def cff_related(cff):
     """Zenodo related identifiers for the org works CITATION.cff cites: each
     `references:` entry whose DOI is a Zenodo DOI (an org release's concept,
-    CONTRIBUTING "References") becomes `requires` that DOI. Other references
+    CONTRIBUTING "References") becomes `requires` that DOI, or `isRequiredBy`
+    when its `keywords` hold `adapter` (a work built on this one: swarm-core's
+    ns-3 adapter, org-sync's `adapter` role). Other references
     (papers, books) are cited, not required software, and stay out; an entry
     already on the record with the same identifier is replaced, never another
     one (a link added on Zenodo by hand stays)."""
@@ -473,7 +475,9 @@ def cff_related(cff):
         out.append(
             {
                 "identifier": doi,
-                "relation": "requires",
+                "relation": "isRequiredBy"
+                if "adapter" in (r.get("keywords") or [])
+                else "requires",
                 "resource_type": "dataset" if r.get("type") == "data" else "software",
                 "scheme": "doi",
             }
@@ -1155,7 +1159,7 @@ def cmd_repos(args, gh):
     return found
 
 
-BIB_ROLES = ("implemented", "restates", "compared", "dataset", "tool", "background")
+BIB_ROLES = ("implemented", "restates", "compared", "dataset", "tool", "background", "adapter")
 BIB_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:.+-]*$")
 # Each released org repository's key in every docs/references.bib: CONTRIBUTING
 # "References" holds the same table (the self-test compares them).
@@ -1988,6 +1992,17 @@ def self_test():
         ]
         and "2 related org work(s)" in note
         and concept_from(refs_cff) == "100",
+    )
+    m, _ = cff_overlay(
+        {},
+        refs_cff.replace(
+            '"10.5281/zenodo.24476619"\n',
+            '"10.5281/zenodo.24476619"\n    keywords:\n      - adapter\n',
+        ),
+    )
+    check(
+        "a reference with keywords adapter (a work built on this one) is isRequiredBy",
+        [r["relation"] for r in m["related_identifiers"]] == ["isRequiredBy", "requires"],
     )
     m = first_metadata("org/R", "v1.0.0", "2026-11-23", refs_cff + "license: MIT\n")
     check(

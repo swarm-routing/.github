@@ -43,7 +43,7 @@ Stable API (other tools import this module; extend, never break):
 
 import re
 
-ROLES = ("implemented", "restates", "compared", "dataset", "tool", "background")
+ROLES = ("implemented", "restates", "compared", "dataset", "tool", "background", "adapter")
 TYPES = (
     "article",
     "inproceedings",
