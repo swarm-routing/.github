@@ -46,7 +46,12 @@ run-name: >-
 #   by digest) dispatches the site's release-sync.yml with repository and tag
 #   for a release published more than an hour ago that has no
 #   `[release-sync] <repo> <tag>` issue or no green run named for it, so no
-#   one dispatches it by hand.
+#   one dispatches it by hand. The same job runs the Go tool `vcpkg-watch`
+#   (cmd/vcpkg-watch, #880): a release published 2 hours to 14 days ago whose
+#   release workflow names a vcpkg port (reusable-release.yml's `vcpkg-ports`,
+#   or an own release.yml's `vcpkg` job `PORT:`) while the registry's baseline
+#   lacks the version and no open registry PR carries it keeps a
+#   `[vcpkg] <repo> <tag>: port not bumped` issue open here, closed once bumped.
 # - bestpractices (daily, with `all`): `.bestpractices.json` regenerated in every
 #   public repository by the Go tool `bestpractices answers --write`
 #   (cmd/bestpractices; its binary copied out of the ci-tools image by digest,
@@ -495,16 +500,49 @@ jobs:
           [ -n "$REPOS" ] && args+=(--repos "$REPOS")
           .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
           docker run --rm -e GH_TOKEN "$IMG" release-sync-watch "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
+      - name: The vcpkg port bumps (vcpkg-watch, hourly)
+        id: vcpkg
+        if: ${{ !cancelled() && steps.bot.outcome == 'success' }}
+        # cmd/vcpkg-watch from the ci-tools image by digest (#880): for the
+        # newest release of every public org repository published 2 hours to
+        # 14 days ago whose release workflow at the tag names a vcpkg port
+        # (reusable-release.yml's `vcpkg-ports`, or an own release.yml's `vcpkg`
+        # job `PORT:`, AntHocNet's), when swarm-routing/vcpkg-registry's
+        # baseline lacks the version and no open registry PR carries it, keep
+        # `[vcpkg] <repo> <tag>: port not bumped` open here (labels bug,
+        # packaging, priority:P2), updated in place, closed once bumped or once
+        # a newer release is watched. A failed `vcpkg` job turns nothing else
+        # red: the release is published (swarm-core v2.0.0). Issues: write here.
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token }}
+          IMG: ghcr.io/swarm-routing/ci-tools@sha256:0959f552c5587cd20f9d44e30dcdd39e205385765ca4233cd2df8846d64c81cf  # promoted from 734a61a
+        run: |
+          set -o pipefail
+          args=()
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          [ -n "$REPOS" ] && args+=(--repos "$REPOS")
+          .github/actions/pull-ci-tools/docker-retry.sh pull "$IMG" || exit 1  # with retries (#645)
+          # an image promoted before #880 lacks the tool: say so until the
+          # ci-tools-digest PR moves the pin above
+          listed="$(docker run --rm "$IMG" list)" || exit 1
+          if ! grep -qx vcpkg-watch <<< "$listed"; then
+            echo "::warning::vcpkg-watch is not in $IMG yet (#880): the ci-tools-digest PR brings it"
+            echo "vcpkg-watch: not in this image yet" >> "$RUNNER_TEMP/org-bot.txt"
+            exit 0
+          fi
+          docker run --rm -e GH_TOKEN "$IMG" vcpkg-watch "${args[@]}" | tee -a "$RUNNER_TEMP/org-bot.txt"
       - name: Summary
         if: always()
         env:
           EVENT: ${{ github.event_name }}
           OUTCOME: ${{ steps.run.outcome }}
+          VCPKG: ${{ steps.vcpkg.outcome }}
         run: |
           {
             echo "### org-bot release-sync ($TASK)"
             echo
-            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; release-sync: $OUTCOME"
+            echo "Event: $EVENT${DRY_RUN:+, dry run: $DRY_RUN}; release-sync: $OUTCOME; vcpkg-watch: $VCPKG"
             echo
             printf '%s\n' '```'
             cat "$RUNNER_TEMP/org-bot.txt" 2>/dev/null || echo "(no output)"

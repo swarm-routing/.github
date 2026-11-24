@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+# The shape of an own release.yml's vcpkg job (AntHocNet's): no call to the
+# reusable workflow, the port in the job's env, the registry checked out.
+name: Release
+on:
+  push:
+    branches: [main]
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo publish
+  vcpkg:
+    needs: [publish]
+    runs-on: ubuntu-24.04
+    env:
+      TAG: v2.8.0
+      PORT: anthocnet-core   # the port this release bumps
+      REGISTRY: swarm-routing/vcpkg-registry
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swarm-routing/vcpkg-registry
