@@ -1,0 +1,38 @@
+# The class documentation of {title} (swarm-routing/.github#881, #883): an
+# org-sync seed, the repository's own once written. CI builds it on every PR
+# (the org-managed .github/workflows/api-docs.yml, reusable-doxygen.yml) and
+# the site publishes it at /{title}/api/. Point INPUT at the public headers
+# (the core's include/, the ns-3 module's model/ and helper/), never at tests.
+# Locally: PROJECT_VERSION=dev doxygen docs/api/Doxyfile
+PROJECT_NAME           = "{title}"
+PROJECT_NUMBER         = $(PROJECT_VERSION)
+OUTPUT_DIRECTORY       = build/api
+CREATE_SUBDIRS         = NO
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = NO
+WARN_AS_ERROR          = NO
+WARN_LOGFILE           = build/api/warnings.log
+INPUT                  = README.md \
+                         core \
+                         ns3
+FILE_PATTERNS          = *.h *.hpp
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */test/* */tests/* */examples/* */build/*
+USE_MDFILE_AS_MAINPAGE = README.md
+SOURCE_BROWSER         = YES
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_COLORSTYLE        = TOGGLE
+GENERATE_TREEVIEW      = YES
+SEARCHENGINE           = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_PROGRAMLISTING     = NO
+HAVE_DOT               = NO

@@ -1,0 +1,30 @@
+# doxygen-selftest.yml's fixture (swarm-routing/.github#883): the org's
+# templates/api/Doxyfile.in, its INPUT pointed at this fixture's headers.
+PROJECT_NAME           = "hello"
+PROJECT_NUMBER         = $(PROJECT_VERSION)
+OUTPUT_DIRECTORY       = build/api
+CREATE_SUBDIRS         = NO
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = NO
+WARN_AS_ERROR          = NO
+WARN_LOGFILE           = build/api/warnings.log
+INPUT                  = tools/checks/fixtures/doxygen/core
+FILE_PATTERNS          = *.h *.hpp
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */test/* */tests/* */examples/* */build/*
+SOURCE_BROWSER         = YES
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_COLORSTYLE        = TOGGLE
+GENERATE_TREEVIEW      = YES
+SEARCHENGINE           = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+HAVE_DOT               = NO

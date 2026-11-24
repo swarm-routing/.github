@@ -81,6 +81,11 @@ With the opt-in each org form (every `ISSUE_TEMPLATE/*.yml` here but
 `config.yml`) is a whole file there; `config.yml` and the repository's own
 forms stay its own, and a changed org form is drift (#318).
 
+The class documentation (#881, #883): every C++ kind gets a Doxyfile seed at
+`doxyfile` (default `docs/api/Doxyfile`; AntHocNet's is `api/Doxyfile`) and
+the org's `.github/workflows/api-docs.yml`, which builds it with
+reusable-doxygen.yml on every PR.
+
 The backstop tick (`backstop_tick = MINUTE`, an integer 1-59): a few active
 repositories carry `.github/workflows/backstop-tick.yml`, an hourly cron at
 that minute that sends repository_dispatch `backstop-tick` to
@@ -810,6 +815,16 @@ def load_config(repo_dir, slug=None):
     if tick is not None and (type(tick) is not int or not 1 <= tick <= 59):
         sys.exit(
             f"org-sync: {CONFIG}: backstop_tick must be the minute of the hourly tick, 1 to 59"
+        )
+    doxyfile = cfg.setdefault("doxyfile", "docs/api/Doxyfile")
+    if (
+        not isinstance(doxyfile, str)
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*", doxyfile)
+        or ".." in doxyfile.split("/")
+    ):
+        sys.exit(
+            f"org-sync: {CONFIG}: doxyfile must be a relative path in the repository "
+            "(default docs/api/Doxyfile)"
         )
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
@@ -1837,6 +1852,11 @@ def items(cfg):
         # opt-in: citation metadata for a repository that releases (Zenodo, cite badge)
         out.append(("seed", "CITATION.cff", "CITATION.cff.in", None))
         out.append(("section", "README.md", None, "citing"))
+    if cfg["kind"] in CXX_KINDS:
+        # the class documentation (#881, #883): the Doxyfile a seed (at
+        # `doxyfile`, default docs/api/Doxyfile), the workflow that builds it the org's
+        out.append(("seed", cfg["doxyfile"], "api/Doxyfile.in", None))
+        out.append(("file", ".github/workflows/api-docs.yml", "workflows/api-docs.yml", None))
     if cfg.get("backstop_tick"):
         # opt-in: an hourly tick of swarm-routing/.github's backstop, at the
         # repository's own minute (#748)
@@ -2026,6 +2046,8 @@ def render(cfg, repo_dir, item, v=None):
             want = want.format_map(v or values(cfg))
     if path == ".github/workflows/backstop-tick.yml":
         want = want.replace("@MINUTE@", str(cfg["backstop_tick"]))  # #748
+    if path == ".github/workflows/api-docs.yml":
+        want = want.replace("@DOXYFILE@", cfg["doxyfile"])  # #883
     if kind == "file" and path.startswith(".github/workflows/"):
         want = pin_refs(want, cfg.get("pin"))  # #716
     return want

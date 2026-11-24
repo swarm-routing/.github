@@ -1,0 +1,20 @@
+# Managed by swarm-routing/.github tools/org-sync: edit templates/workflows/api-docs.yml there.
+name: api-docs
+
+# The class documentation (swarm-routing/.github#881): Doxygen on this
+# repository's Doxyfile, the HTML as the `api-docs` artifact; the site
+# publishes the same Doxyfile's output at /<Project>/api/.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  doxygen:
+    uses: swarm-routing/.github/.github/workflows/reusable-doxygen.yml@main
+    with:
+      doxyfile: "@DOXYFILE@"
