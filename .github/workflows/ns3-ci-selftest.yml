@@ -43,7 +43,7 @@ jobs:
       modules: protocol-hello=tools/checks/fixtures/ns3-ci/protocol-hello
       dependencies: |
         swarm-core=swarm-routing/swarm-adapter-ns3@v2.0.0
-        routing-bench=swarm-routing/sim-tools@v1.1.3:ns3/routing-bench
+        routing-bench=swarm-routing/sim-tools@v1.1.4:ns3/routing-bench
       profiles: '["debug"]'
       format: false
       # this repository is tooling (ci.yml: all dual), the fixture an ns-3 module
@@ -64,7 +64,7 @@ jobs:
       modules: protocol-hello=tools/checks/fixtures/ns3-ci/protocol-hello
       dependencies: |
         swarm-core=swarm-routing/swarm-adapter-ns3@v2.0.0
-        routing-bench=swarm-routing/sim-tools@v1.1.3:ns3/routing-bench
+        routing-bench=swarm-routing/sim-tools@v1.1.4:ns3/routing-bench
       protocol-image: true
       strict-warnings: true
       format: false
@@ -85,7 +85,7 @@ jobs:
       modules: protocol-hello=tools/checks/fixtures/ns3-ci/protocol-hello
       dependencies: |
         swarm-core=swarm-routing/swarm-adapter-ns3@v2.0.0
-        routing-bench=swarm-routing/sim-tools@v1.1.2:ns3/routing-bench
+        routing-bench=swarm-routing/sim-tools@v1.1.3:ns3/routing-bench
       protocol-image: true
       profiles: '["debug"]'
       format: false
