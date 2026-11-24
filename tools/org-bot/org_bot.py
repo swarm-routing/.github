@@ -598,11 +598,15 @@ def generate(task, repo, clone, data, out, skip=None):
             ]
     elif task == "swarm-core-pin":
         cmake = os.path.join(clone, "core", "CMakeLists.txt")
+        locked = os.path.exists(os.path.join(clone, SWARM_CORE_LOCK))
         if not os.path.exists(cmake):
-            return None
+            # the ns-3 adapter's layout (swarm-routing/swarm-adapter-ns3#258): no
+            # core/, the root CMakeLists.txt reads the lock
+            cmake = os.path.join(clone, "CMakeLists.txt")
+            if not locked or not os.path.exists(cmake):
+                return None
         with open(cmake) as fh:
             text = fh.read()
-        locked = os.path.exists(os.path.join(clone, SWARM_CORE_LOCK))
         if "SWARM_CORE_REF" not in text and "swarm-core.lock" not in text and not locked:
             return None  # no swarm-core pin in this repository
         r = sh(
@@ -2221,7 +2225,7 @@ def self_test():
     v3_base = vreg_port("0.3.0")
     globals()["VCPKG_REGISTRY"] = vreg
 
-    def locked_repo(name, vcpkg=False):
+    def locked_repo(name, vcpkg=False, adapter=False):
         src = os.path.join(work, "src", name)
         lock = release_lock.render(
             "SWARM_CORE", sc_repo, "v0.3.0", "swarm-core-{version}.tar.gz", rbase
@@ -2232,6 +2236,11 @@ def self_test():
             "Makefile": "SWARM_CORE_REF ?= v0.3.0\n",
             ".github/workflows/licence.yml": "  core-deps: swarm-routing/ns3-swarm-core@v0.3.0:core\n",
         }
+        if adapter:  # swarm-adapter-ns3's layout (swarm-adapter-ns3#258): no core/, no core-deps
+            files = {
+                "swarm-core.lock": lock,
+                "CMakeLists.txt": "file(STRINGS swarm-core.lock lock)\n",
+            }
         if vcpkg:  # core/ takes swarm-core through vcpkg; the lock records the ns-3 tag
             files["core/CMakeLists.txt"] = "find_package(swarm-core CONFIG REQUIRED)\n"
             files["vcpkg.json"] = json.dumps(
@@ -2306,6 +2315,18 @@ def self_test():
         and v4["swarm-core-0.4.0.tar.gz"] in lock_shown
         and "pin-target:" in post[0][2]["body"]
         and "v0.4.0" in post[0][2]["body"],
+    )
+    # the ns-3 adapter's layout: its lock gets the bump PR too, the lock alone
+    locked_repo("zeta-adapter", adapter=True)
+    adata = os.path.join(work, "adata.json")
+    with open(adata, "w") as fh:
+        json.dump({"org": ORG, "repos": [{"name": "zeta-adapter", "epics": []}]}, fh)
+    gh = FakeGitHub()
+    res, out = go(gh, task="swarm-core-pin", data=adata)
+    post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
+    check(
+        "swarm-core-pin, adapter layout: a new release gets one PR that moves the lock",
+        len(post) == 1 and "bumped v0.3.0 -> v0.4.0 in 1 file(s)" in post[0][2]["body"],
     )
     # vcpkg mode (#489): no PR until the registry's main holds the release, then one PR
     # that moves the lock, the override and the registry baseline together

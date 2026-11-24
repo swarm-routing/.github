@@ -641,7 +641,13 @@ A consumer names a **release** of its dependency, never a moving ref:
   `core/CMakeLists.txt` finds the package instead of reading the lock, that
   the `overrides` entry pins the lock's version, and that the
   `vcpkg-configuration.json` baseline is a commit on the registry's `main`
-  whose `versions/baseline.json` holds that version and port-version.
+  whose `versions/baseline.json` holds that version and port-version. In the
+  ns-3 adapter's layout (swarm-routing/swarm-adapter-ns3#258: no `core/`, the
+  root `CMakeLists.txt` reads `swarm-core.lock`) the lock is the whole pin:
+  the check reads the root `CMakeLists.txt`, wants no `core-deps`, and
+  org-bot's bump PR moves the lock alone. A repository runs the check by
+  calling `reusable-swarm-core-pin.yml` from its own workflow (not an
+  org-managed file).
 - **The moving-ref check** (`tools/protocol-review/check_invariants.py`, the
   `protocol-review` skill): on the lines a diff adds, a CMake `GIT_TAG` that is
   not a literal `vX.Y.Z`, a git `FetchContent` of a swarm-routing repository
