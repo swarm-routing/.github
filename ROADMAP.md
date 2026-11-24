@@ -1158,8 +1158,8 @@ Every epic of every public repository, open first. A status is derived from the 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
 | [#177](https://github.com/swarm-routing/swarm-adapter-ns3/issues/177) developer experience: a newcomer can build, test and contribute from the docs alone | In progress | 1 / 2 |
+| [#228](https://github.com/swarm-routing/swarm-adapter-ns3/issues/228) Post-rename stabilization & v2.0.0 migration to swarm-core PUBLIC dependency | In progress | 1 / 4 |
 | [#82](https://github.com/swarm-routing/swarm-adapter-ns3/issues/82) swarm-core 2.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
-| [#228](https://github.com/swarm-routing/swarm-adapter-ns3/issues/228) Post-rename stabilization & v2.0.0 migration to swarm-core PUBLIC dependency | Planned | 0 / 4 |
 
 <details><summary>Closed: 1 epic</summary>
 
