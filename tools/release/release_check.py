@@ -89,6 +89,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -113,6 +114,7 @@ COMMENT = re.compile(r"(?:^|\s)#.*$")  # a YAML comment, to the end of the line
 OWN_DIST = re.compile(r"(?:^|\s)\"?(?:\./)?dist/?\"?(?=\s|$)", re.M)
 WITH = re.compile(r"^[ \t]*with:[ \t]*(?:#.*)?$")
 BUILD_LIB = re.compile(r"^\s*build_lib\s*\(", re.M)  # an ns-3 module's CMakeLists.txt
+NOT_SHIPPED_DIRS = ("test", "tests", "testdata", "fixtures", "examples")
 VCPKG = re.compile(r"\bvcpkg\b|port_bump")
 KEY = re.compile(r"^[ \t]*([A-Za-z0-9_-]+):(.*)$")  # the value is stripped after the match
 SHIPPED = re.compile(r"(?i)\b(?:shipped|released)\b")
@@ -594,7 +596,8 @@ def next_version(repo_dir, wd, increment, from_config, r, run=subprocess.run):
 
 def cpp_shipped(repo_dir):
     """What C++ the repository ships: `core/` (a CMake project) and the ns-3
-    module directories (a CMakeLists.txt calling build_lib), relative paths."""
+    module directories (a CMakeLists.txt calling build_lib), relative paths.
+    C++ under test/, tests/, testdata/, fixtures/ or examples/ is not shipped."""
     found = []
     if os.path.isfile(os.path.join(repo_dir, "core", "CMakeLists.txt")):
         found.append("core/")
@@ -606,6 +609,7 @@ def cpp_shipped(repo_dir):
             if not x.startswith(".")
             and not x.startswith("build")
             and x not in ("third_party", "vendor", "node_modules")
+            and x not in NOT_SHIPPED_DIRS
             and not (rel == "." and x == "core")
         )
         if "CMakeLists.txt" in files and BUILD_LIB.search(
@@ -1219,6 +1223,24 @@ def self_test():
         expect(
             "ready: an ns-3 module alone fails without vcpkg-ports",
             has(rep, "FAIL", "ships C++ (ns3/)"),
+        )
+        shutil.rmtree(os.path.join(d, "ns3"))
+        for fx in ("test/fixtures/hello", "tests/x", "testdata/y", "examples/z", "ns3/test/t"):
+            os.makedirs(os.path.join(d, fx), exist_ok=True)
+            with open(os.path.join(d, fx, "CMakeLists.txt"), "w", encoding="utf-8") as fh:
+                fh.write("build_lib(LIBNAME fixture)\n")
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: C++ only under test/, tests/, testdata/, examples/ ships nothing (#932)",
+            not any(m.startswith("vcpkg:") for _, m in rep.lines),
+        )
+        os.makedirs(os.path.join(d, "core"), exist_ok=True)
+        with open(os.path.join(d, "core", "CMakeLists.txt"), "w", encoding="utf-8") as fh:
+            fh.write("project(r-core CXX)\n")
+        rep = quiet(ready, d, None, None, gh)
+        expect(
+            "ready: fixtures beside a core/ without vcpkg-ports still fails, naming only core/",
+            has(rep, "FAIL", "ships C++ (core/) but its release sets no `vcpkg-ports`"),
         )
     flow = (
         "jobs:\n"
