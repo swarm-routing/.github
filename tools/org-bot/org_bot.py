@@ -98,7 +98,8 @@ ROADMAP.md#epics where that listing is forbidden; the run prints which):
             swarm-routing/sim-tools docs/ns3-bugs.md by the Go tool `ns3-bugs
             REGISTER --write` (cmd/ns3-bugs, the ci-tools image's binary,
             ORG_BOT_NS3BUGS; skipped while the image lacks it), the register
-            read from ORG_BOT_NS3_REGISTER (sim-tools main). A PR when the
+            read from ORG_BOT_NS3_REGISTER (sim-tools main, through
+            api.github.com: the refresh job's egress allowlist). A PR when the
             table changes; org-sync's refresh PRs then carry it to each C++
             repository. Daily (`all`).
   release-rebuild  no clone, the API only (#430): a repository whose open
@@ -208,7 +209,9 @@ NS3BUGS = os.environ.get("ORG_BOT_NS3BUGS", "")
 # a local path in the self-test)
 NS3_REGISTER = os.environ.get(
     "ORG_BOT_NS3_REGISTER",
-    "https://raw.githubusercontent.com/swarm-routing/sim-tools/main/docs/ns3-bugs.md",
+    # through api.github.com (the refresh job's egress allowlist has it, not
+    # raw.githubusercontent.com), the file's raw bytes by the media type below
+    "https://api.github.com/repos/swarm-routing/sim-tools/contents/docs/ns3-bugs.md?ref=main",
 )
 KNOWN_BUGS = os.path.join("templates", "install", "known-bugs.md")
 SITE = (
@@ -706,7 +709,11 @@ def generate(task, repo, clone, data, out, skip=None):
             if "://" in register:
                 local = os.path.join(tmp, "ns3-bugs.md")
                 try:
-                    with urllib.request.urlopen(register, timeout=60) as resp:
+                    headers = {"Accept": "application/vnd.github.raw+json"}
+                    if os.environ.get("ORG_BOT_TOKEN"):  # the API's rate limit; public file
+                        headers["Authorization"] = f"Bearer {os.environ['ORG_BOT_TOKEN']}"
+                    req = urllib.request.Request(register, headers=headers)
+                    with urllib.request.urlopen(req, timeout=60) as resp:
                         data_ = resp.read()
                 except OSError as e:
                     raise Failure(f"ns3-bugs: cannot read {register}: {e}") from e
