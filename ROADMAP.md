@@ -1183,6 +1183,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#43](https://github.com/swarm-routing/sim-tools/issues/43) Network substrates: the ns-3 pieces new network types need, for every arm | Planned | 0 / 11 |
 | [#277](https://github.com/swarm-routing/sim-tools/issues/277) Agnostic orchestration split (sim-tools) & Scenario IR / probes.v1.jsonl adapter alignment | Planned | 0 / 1 |
 | [#279](https://github.com/swarm-routing/sim-tools/issues/279) Standardized Input & Output Contracts (Scenario IR & Probe Stream) | Planned | no sub-issues yet |
+| [#375](https://github.com/swarm-routing/sim-tools/issues/375) sim-tools layout and packages: every file classified by simulator and kind, one package per shipped group | Planned | 0 / 8 |
 
 ### [skills](https://github.com/swarm-routing/skills)
 
