@@ -969,6 +969,48 @@ of Contributing, Epics or Licence. `tools/docs-review/check_docs.py` fails
 when the guide is missing, lacks a standard section, has them out of order
 or the README does not link it.
 
+## Class documentation and install guide
+
+Every repository that ships C++ (org-sync kind `protocol` or `c-cpp`) has the
+same two user-facing documents (maintainer decision 2026-11-24, #881):
+
+- **The class documentation**, built by Doxygen from one Doxyfile:
+  `docs/api/Doxyfile` (org-sync seeds it from
+  [`templates/api/Doxyfile.in`](templates/api/Doxyfile.in); a repository
+  whose Doxyfile lives elsewhere names it with `doxyfile` in
+  `.github/org-sync.toml`, as AntHocNet's `api/Doxyfile`). The org-managed
+  `.github/workflows/api-docs.yml` builds it on every PR
+  (`reusable-doxygen.yml`, report-only: the warning count is in the job
+  summary), and the site publishes it at `/<Project>/api/`, built at the
+  release the site locks. The Doxyfile keeps the template's settings and
+  sets only what is the repository's own:
+  - `INPUT`: the public API only: the core's public headers
+    (`core/include/<name>/`), the ns-3 module's `model/` and `helper/`
+    headers, the adapter's public headers, and the main page. Never tests,
+    examples, benchmarks, build output or third-party code (a vendored
+    baseline, `aomdv`/`gpsr`): they are not this repository's API.
+  - The main page: `README.md`, or `docs/api/mainpage.md` when the README
+    is not a good API landing page (AntHocNet's `api/mainpage.md`), set as
+    `USE_MDFILE_AS_MAINPAGE` and listed first in `INPUT`.
+  - `PROJECT_NAME` is the repository's title; `PROJECT_NUMBER =
+    $(PROJECT_VERSION)`, which CI sets from `VERSION`, else the tag;
+    `GENERATE_XML = YES` (the site reads it). An own
+    `HTML_EXTRA_STYLESHEET` is allowed; no other output settings change.
+  - Every public class, function and type has a brief (`///` or `/** */`
+    with `JAVADOC_AUTOBRIEF`). The warning count only goes down, toward 0:
+    a PR that adds warnings fixes them.
+- **The install guide**, `docs/install.md`, seeded from
+  [`templates/install/install.md.in`](templates/install/install.md.in) and
+  filled in by the repository: its platforms, Linux through vcpkg in
+  manifest mode (`vcpkg.json`, `vcpkg-configuration.json`,
+  `CMakeLists.txt`), one subsection per simulator release it supports (ns-3
+  by version; OMNeT++ once swarm-adapter-omnet ships) with the required
+  and optional tools and a complete example install, and troubleshooting.
+  Its "Known simulator bugs" section is org-managed and generated from
+  swarm-routing/sim-tools `docs/ns3-bugs.md` (`cmd/ns3-bugs`, refreshed by
+  org-bot's `ns3-bugs` task); it is never typed. Every command in the
+  guide runs today, as in the developer guide.
+
 ## Outside contributions
 
 Contributions from outside the org are welcome in every public repository:

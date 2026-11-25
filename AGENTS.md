@@ -329,7 +329,7 @@ changing what the row names.
 | Publish a C++ core as a vcpkg port, or consume one from outside the org | swarm-routing/vcpkg-registry; `reusable-release.yml` input `vcpkg-ports`; CONTRIBUTING "Dependencies" |
 | Cut a release of any org repository, or change how releases are made | `.github/workflows/reusable-release.yml` |
 | Turn on SonarQube Cloud or Codecov for a C++ repo | `reusable-ns3-ci.yml` input `sonar`, `reusable-codecov.yml`, `templates/quality/` |
-| Build a C++ repository's class documentation (Doxygen) | `reusable-doxygen.yml`, `templates/workflows/api-docs.yml`, `templates/api/Doxyfile.in` |
+| Build a C++ repository's class documentation (Doxygen), or its install guide | CONTRIBUTING "Class documentation and install guide"; `reusable-doxygen.yml`, `templates/workflows/api-docs.yml`, `templates/api/Doxyfile.in`, `templates/install/` |
 | Change the Python lint/coverage or the PR-title rule | `reusable-python-ci.yml` + `ruff.toml`; `reusable-pr-title.yml` |
 | Choose a language, or write a Go pipeline tool and its CI | `docs/adr/0002-pipelines-are-go.md`, CONTRIBUTING § Languages, `reusable-go-ci.yml`; migration epic #531 |
 | Add a Go tool or run one from a workflow (the `ci-tools` image) | `cmd/<tool>/`, `internal/`, `docker/ci-tools/Dockerfile`, `ci-tools-image.yml`; `docker run --user … -v …:ro ghcr.io/swarm-routing/ci-tools@sha256:… <tool>` in a `run:` step, never `uses: docker://` (ADR-0002) |
