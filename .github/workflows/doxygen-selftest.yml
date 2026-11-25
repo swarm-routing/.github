@@ -3,9 +3,11 @@
 name: Doxygen self-test
 
 # Proves reusable-doxygen.yml from this checkout on the fixture in
-# tools/checks/fixtures/doxygen/ (#883): a documented class and one
-# undocumented member, so the run must report exactly 1 warning (within
-# max-warnings: 1) and its artifact must hold index.html and the class page.
+# tools/checks/fixtures/doxygen/ (#883): a documented class with one
+# undocumented member (hello.h) and 60 undocumented functions (many.h, more
+# than the 50 the summary lists: the case that broke its pipe on AntHocNet),
+# so the run must report exactly 61 warnings (within max-warnings: 61) and its
+# artifact must hold index.html and the class page.
 on:
   push:
     branches: [main]
@@ -23,7 +25,7 @@ jobs:
     with:
       doxyfile: tools/checks/fixtures/doxygen/Doxyfile
       artifact: api-docs-fixture
-      max-warnings: 1
+      max-warnings: 61
 
   check:
     needs: fixture
@@ -39,13 +41,13 @@ jobs:
         with:
           name: api-docs-fixture
           path: api
-      - name: One warning, the index and the class page
+      - name: 61 warnings, the index and the class page
         env:
           WARNINGS: ${{ needs.fixture.outputs.warnings }}
         run: |
           set -euo pipefail
-          [ "$WARNINGS" = 1 ] || { echo "::error::warnings=$WARNINGS, want 1 (Greeter::Undocumented)"; exit 1; }
+          [ "$WARNINGS" = 61 ] || { echo "::error::warnings=$WARNINGS, want 61 (Greeter::Undocumented, Many01..Many60)"; exit 1; }
           for f in index.html classhello_1_1Greeter.html; do
             [ -f "api/$f" ] || { echo "::error::the artifact has no $f"; ls api; exit 1; }
           done
-          echo "ok: 1 warning, index.html and the Greeter page"
+          echo "ok: 61 warnings, index.html and the Greeter page"
