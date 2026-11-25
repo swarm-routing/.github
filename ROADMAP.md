@@ -1252,7 +1252,7 @@ No open epic: the work here is tracked as single issues.
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#1](https://github.com/swarm-routing/swarm-web-ui/issues/1) swarm-web-ui MVP — Offline Replay & Benchmark Explorer | In progress | 1 / 10 |
+| [#1](https://github.com/swarm-routing/swarm-web-ui/issues/1) swarm-web-ui MVP — Offline Replay & Benchmark Explorer | In progress | 2 / 10 |
 | [#2](https://github.com/swarm-routing/swarm-web-ui/issues/2) Local & Remote Execution Control Plane (swarm-web-ui/daemon) | Planned | 0 / 8 |
 
 ### [Termite](https://github.com/swarm-routing/Termite)
