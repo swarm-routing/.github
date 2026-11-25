@@ -244,7 +244,7 @@ jobs:
         timeout-minutes: 10
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
-          GH_TOKEN: ${{ github.token }}  # backstop's, labels', branch-sweep's, release-sync-watch's and project-sync's dry runs read the API (no rate limit of an anonymous runner)
+          GH_TOKEN: ${{ github.token }}  # backstop's, labels', branch-sweep's, release-sync-watch's, vcpkg-watch's and project-sync's dry runs read the API (no rate limit of an anonymous runner)
         run: |
           set -euo pipefail
           if [ -n "$DIGEST" ]; then
@@ -266,6 +266,7 @@ jobs:
           grep -qx check-headers list.txt
           grep -qx branch-sweep list.txt
           grep -qx release-sync-watch list.txt
+          grep -qx vcpkg-watch list.txt
           grep -qx security-autofix list.txt
           grep -qx security-alerts list.txt
           grep -qx labels list.txt
@@ -321,6 +322,11 @@ jobs:
           docker run --rm -e GH_TOKEN "$img" release-sync-watch --dry-run --repos .github,AntHocNet | tee release-sync.txt
           grep -Eq '^release-sync-watch: ' release-sync.txt \
             || { echo "::error::release-sync-watch: no summary line"; exit 1; }
+          # vcpkg-watch (#880): a read-only dry run on the two release workflow kinds
+          # (swarm-core calls reusable-release.yml, AntHocNet has its own release.yml)
+          docker run --rm -e GH_TOKEN "$img" vcpkg-watch --dry-run --repos swarm-core,AntHocNet | tee vcpkg-watch.txt
+          grep -Eq '^vcpkg-watch: [0-2] recent releases, [0-2] with a port checked, [0-2] not bumped$' vcpkg-watch.txt \
+            || { echo "::error::vcpkg-watch: no summary line"; exit 1; }
           # os-refresh (swarm-routing/sim-containers#218): a dry run on the fixture report, read-only
           # as nonroot (the workflow token reads sim-containers' image runs and issues; nothing is dispatched)
           docker run --rm -e GH_TOKEN -v "$GITHUB_WORKSPACE:/github/workspace:ro" -w /github/workspace "$img" os-refresh --dry-run \
