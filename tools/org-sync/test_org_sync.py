@@ -172,6 +172,26 @@ for bad in ('"../Doxyfile"', '"/etc/Doxyfile"', '"a b"', "3"):
         refused = "doxyfile must be" in str(e.code)
     check(refused, f"doxyfile = {bad} is refused")
     edit(dx, ".github/org-sync.toml", f"\ndoxyfile = {bad}\n# was ", "\ndoxyfile = ")
+# the install guide (#884): a seed with the generated known-bugs table in its section
+ia = read(os.path.join(da, "docs/install.md"))
+kb = read(os.path.join(org_sync.TEMPLATES, "install/known-bugs.md"))
+check(
+    ia.startswith("# Install ")
+    and "github.com/swarm-routing/demo.git" in ia
+    and '"dependencies": ["<port>"]' in ia
+    and "<!-- org-sync:begin known-bugs -->\n" + kb + "<!-- org-sync:end known-bugs -->" in ia,
+    "a protocol repo is seeded with docs/install.md, the known-bugs table filled",
+)
+edit(da, "docs/install.md", "Each ID links its RCAPA", "Each ID links nothing")
+check(
+    run("check", da)[0] != 0,
+    "a hand edit of the generated known-bugs table is drift",
+)
+run("apply", da)
+check(
+    "links nothing" not in read(os.path.join(da, "docs/install.md")),
+    "apply restores the generated table",
+)
 os.makedirs(os.path.join(da, ".github/workflows"), exist_ok=True)
 with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
     f.write("    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main\n")

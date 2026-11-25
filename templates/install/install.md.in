@@ -1,0 +1,133 @@
+# Install {title}
+
+<!--
+The org's skeleton for docs/install.md (swarm-routing/.github#881, #884), an
+org-sync seed for every C++ repository: written once, then the repository's
+own. Fill every section from what actually works today (the commands CI
+runs, the release assets, the vcpkg port); never invent a command or a
+version. A section with nothing to say for this repository keeps one sentence
+saying so (an ns-3 module has no vcpkg port until the registry's `ns3` port
+lands; a core-only repository supports no simulator). The "Known simulator
+bugs" section is org-managed: generated from swarm-routing/sim-tools
+docs/ns3-bugs.md by swarm-routing/.github cmd/ns3-bugs and refreshed by
+org-bot's org-sync PRs; never edit it here. Delete this comment.
+-->
+
+What a user installs from this repository (the C++ library, the ns-3 module,
+the tools) and which of the sections below applies to which part.
+
+## Supported platforms
+
+| Part | Platform | Compiler, C++ standard | CMake | Simulator |
+|------|----------|------------------------|-------|-----------|
+| `core/` | Linux x64 (Ubuntu 24.04, as CI) | GCC 13 / Clang 18, C++20 | 3.28 | none |
+| ns-3 module | Linux x64 | as the ns-3 release | as the ns-3 release | ns-3.48, ns-3.49 |
+
+## Linux through vcpkg (manifest mode)
+
+The C++ core is published as a port in the org's registry,
+[swarm-routing/vcpkg-registry](https://github.com/swarm-routing/vcpkg-registry);
+every release opens its port PR (`vcpkg-ports` of the release workflow).
+Install vcpkg once:
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+"$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+export VCPKG_ROOT="$HOME/vcpkg"
+```
+
+Then, in your project, declare the dependency. `vcpkg.json`:
+
+```json
+{{
+  "name": "my-simulation",
+  "version": "0.1.0",
+  "dependencies": ["<port>"]
+}}
+```
+
+`vcpkg-configuration.json` takes the port from the org's registry and
+vcpkg's helper ports from the builtin one; each `baseline` is a commit of
+that registry (`git -C "$VCPKG_ROOT" rev-parse HEAD` for the builtin one,
+the registry's `main` for ours):
+
+```json
+{{
+  "default-registry": {{
+    "kind": "builtin",
+    "baseline": "<vcpkg commit>"
+  }},
+  "registries": [
+    {{
+      "kind": "git",
+      "repository": "https://github.com/swarm-routing/vcpkg-registry",
+      "baseline": "<vcpkg-registry commit>",
+      "packages": ["swarm-core", "<port>"]
+    }}
+  ]
+}}
+```
+
+`CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.28)
+project(my-simulation CXX)
+set(CMAKE_CXX_STANDARD 20)
+find_package(<port> CONFIG REQUIRED)
+add_executable(my-simulation main.cc)
+target_link_libraries(my-simulation PRIVATE <imported target>)
+```
+
+Configure with the vcpkg toolchain, which installs the manifest's ports
+first:
+
+```bash
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build build -j
+```
+
+A minimal `main.cc` that uses the library, and what it prints.
+
+## ns-3
+
+One subsection per ns-3 release this repository supports (the releases its
+CI builds on), newest first. Each is a complete example install.
+
+### ns-3.49
+
+- **Required tools**: the compiler and CMake above, Python 3, Git, Ninja or
+  Make; what ns-3 itself requires for the modules this one depends on.
+- **Optional tools**: the `ns3-dev` container image (everything preinstalled),
+  `ccache`, `gdb`, NetAnim, Python bindings; what each adds.
+- **Install**: the commands, from a clean machine to a run of the module's
+  example, with the ns-3 release tag and this repository's release tag:
+
+```bash
+git clone --branch ns-3.49 --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3
+git clone --branch v<version> --depth 1 https://github.com/{repo}.git ns-3/contrib/{module}
+cd ns-3
+./ns3 configure --enable-examples --enable-tests
+./ns3 build
+./test.py --suite={module}
+```
+
+- **Or the container**: `docker run --rm -it ghcr.io/swarm-routing/ns3-dev:3.49`
+  and the commands that build this module in it.
+- **Known bugs on this release**: the IDs from the table below that affect it,
+  and what this repository does about each.
+
+## OMNeT++
+
+Not supported yet: swarm-adapter-omnet adds it. This section gets one
+subsection per OMNeT++ release once a release of this repository supports it.
+
+## Known simulator bugs
+
+<!-- org-sync:begin known-bugs -->
+<!-- org-sync:end known-bugs -->
+
+## Troubleshooting
+
+The failures people meet installing this repository (a missing port, a
+baseline without the version, an ns-3 configure error) and their fixes.
