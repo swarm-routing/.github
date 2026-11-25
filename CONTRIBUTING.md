@@ -100,15 +100,20 @@ is the long form.
    In `block` today (#164): `repo-settings.yml` `settings`; `org-bot.yml`
    `refresh`, `branch-sweep`, `release-sync`, `action-pins`, `ci-tools-digest`,
    `project-sync`, `security-alerts`; swarm-routing/swarm-routing.github.io
-   `pages.yml` `deploy`. Each list is the union of the `host:port` lines of at
-   least three green runs of that job, and a comment above it names the runs.
-   One wildcard, by the maintainer's decision: `refresh` allows
-   `*.githubapp.com:443`, because the runner's own
-   `hosted-compute-*-prod-<region>-0N.githubapp.com` hosts rotate.
-   Still in `audit`, each for its reason on #164: org-bot
-   `ticket-audit`, the release and image jobs of `reusable-release.yml` and
-   `reusable-ns3-image.yml`, AntHocNet's `release.yml` and
-   swarm-routing/sim-containers' `publish-images.yml`.
+   `pages.yml` `deploy`; swarm-routing/sim-containers `publish-images.yml`
+   `promote`, `latest`, `discard`. Each list is the union of the `host:port`
+   lines of at least three green runs of that job, and a comment above it
+   names the runs. Two exceptions, each named in its comment: `refresh`
+   allows `*.githubapp.com:443` (the maintainer's decision: the runner's own
+   `hosted-compute-*-<region>-0N.githubapp.com` hosts rotate), and
+   sim-containers' `latest` and `discard` allow Docker Hub's second blob
+   host, seen in `promote`'s logs for the same buildx image pull.
+   Still in `audit`, each for its reason on #164 (fewer than three real
+   runs, or cached runs that hide a cold build's hosts): org-bot
+   `ticket-audit`; the jobs of `reusable-release.yml` and
+   `reusable-ns3-image.yml`; AntHocNet's `release.yml` and
+   `campaign-image.yml`; sim-containers' `publish-images.yml` `build` and
+   `publish-protocol-images.yml`.
    To update a list (a job red in `block` after a new host, a new tool or
    task): take three green runs of the job (in `audit`, or in `block` plus the
    run that failed), collect each log's `endpoint called` lines (`gh run view
