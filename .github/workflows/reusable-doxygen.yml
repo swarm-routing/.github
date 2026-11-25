@@ -122,7 +122,12 @@ jobs:
             if [ "$warnings" -gt 0 ]; then
               echo
               echo '```'
-              grep 'warning:' "$out/warnings.log" | sed "s|$GITHUB_WORKSPACE/||" | head -50
+              # the first 50, workspace path stripped, in one process: a pipe
+              # into `head -50` broke sed with EPIPE (exit 4) once a repository
+              # had more (AntHocNet's 147, #883)
+              awk -v ws="$GITHUB_WORKSPACE/" '/warning:/ && n++ < 50 {
+                while ((i = index($0, ws))) $0 = substr($0, 1, i - 1) substr($0, i + length(ws)); print
+              }' "$out/warnings.log"
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
