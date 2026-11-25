@@ -109,6 +109,9 @@ REUSABLE = re.compile(
 )
 DIST_TARGET = re.compile(r"^dist\s*:", re.M)
 INCREMENT = re.compile(r"\binputs\.increment\b")
+# a push gate (a job's or step's `if:`) that reads the push's head commit's
+# message (#943); the same expression in a step's env or run is no gate
+HEAD_GATE = re.compile(r"^\s*(?:-\s*)?if:.*\bhead_commit\.message\b")
 COMMENT = re.compile(r"(?:^|\s)#.*$")  # a YAML comment, to the end of the line
 # an own release.yml builds its assets when a live (uncommented) line names dist/ as a path
 OWN_DIST = re.compile(r"(?:^|\s)\"?(?:\./)?dist/?\"?(?=\s|$)", re.M)
@@ -686,6 +689,25 @@ def ready(repo_dir, repo, version, gh, increment=None, run=subprocess.run):
             "increment: the own release.yml never reads `inputs.increment` (a choice "
             "auto/PATCH/MINOR/MAJOR given to `cz bump --increment`; swarm-routing/.github#512)",
         )
+    # A merge queue pushes a batch at once: a gate on the head commit's
+    # message skips the release whenever the bump PR is not the batch's last
+    # (swarm-routing/sim-containers v1.1.0, swarm-routing/.github#943).
+    head_only = [
+        f".github/workflows/{n}"
+        for n, t in callers
+        if any(HEAD_GATE.search(COMMENT.sub("", ln)) for ln in t.splitlines())
+    ]
+    if head_only:
+        r.add(
+            "FAIL",
+            f"push gate: {', '.join(head_only)} gates the release on "
+            "`github.event.head_commit.message`, so a merge queue's batch with the bump PR below "
+            "its head never releases; gate on every commit of the push: "
+            "`contains(toJSON(github.event.commits.*.message), 'chore(release): bump version ')` "
+            "(swarm-routing/.github#943; a bump already merged and never released: mode publish)",
+        )
+    elif callers:
+        r.add("OK", "push gate: not on the head commit alone")
     wd = inputs.get("working-directory", "").strip("./")
     if wd:
         r.add("OK", f"working-directory: {wd} (the Commitizen config and make dist are read there)")
@@ -1063,6 +1085,51 @@ def self_test():
             and has(rep, "OK", ".cz.toml, version 0.3.0")
             and has(rep, "OK", "make dist"),
         )
+        expect(
+            "ready: a caller with no head-commit gate passes the push gate (#943)",
+            has(rep, "OK", "push gate: not on the head commit alone"),
+        )
+        gated = caller.replace(
+            "    uses:",
+            "    if: \"${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, "
+            "'chore(release): bump version ') }}\"\n    uses:",
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(gated)
+        rep = quiet(ready, d, "o/r", "0.4.0", gh)
+        expect(
+            "ready: a gate on the head commit's message fails (a batched push skips the release, #943)",
+            has(rep, "FAIL", "push gate: .github/workflows/release.yml gates the release on"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(
+                gated.replace("head_commit.message", "x").replace(
+                    "    if:", "    # head_commit.message\n    if:"
+                )
+            )
+        rep = quiet(ready, d, "o/r", "0.4.0", gh)
+        expect(
+            "ready: head_commit in a comment is no gate",
+            has(rep, "OK", "push gate: not on the head commit alone"),
+        )
+        observed = (
+            caller.replace(
+                "    uses:",
+                "    if: \"${{ github.event_name != 'push' || contains(toJSON(github.event.commits.*.message), "
+                "'chore(release): bump version ') }}\"\n    uses:",
+            )
+            + "  notify:\n    runs-on: ubuntu-24.04\n    steps:\n      - env:\n"
+            '          MSG: ${{ github.event.head_commit.message }}\n        run: echo "$MSG"\n'
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(observed)
+        rep = quiet(ready, d, "o/r", "0.4.0", gh)
+        expect(
+            "ready: a push-wide gate passes, a head_commit read outside an if: is no gate",
+            has(rep, "OK", "push gate: not on the head commit alone"),
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(caller)
         expect("ready: the ladder row v0.4.0", has(rep, "OK", "has v0.4.0"))
         expect("ready: a caller forwarding increment", has(rep, "OK", "increment"))
         expect(
