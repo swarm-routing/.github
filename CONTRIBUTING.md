@@ -98,11 +98,14 @@ is the long form.
    post-step prints one `endpoint called ip address:port <ip>:<port>, domain:
    <host>.` line per connection.
    In `block` today (#164): `repo-settings.yml` `settings`; `org-bot.yml`
-   `branch-sweep`, `release-sync`, `action-pins`, `ci-tools-digest`,
+   `refresh`, `branch-sweep`, `release-sync`, `action-pins`, `ci-tools-digest`,
    `project-sync`, `security-alerts`; swarm-routing/swarm-routing.github.io
    `pages.yml` `deploy`. Each list is the union of the `host:port` lines of at
    least three green runs of that job, and a comment above it names the runs.
-   Still in `audit`, each for its reason on #164: org-bot `refresh` and
+   One wildcard, by the maintainer's decision: `refresh` allows
+   `*.githubapp.com:443`, because the runner's own
+   `hosted-compute-*-prod-<region>-0N.githubapp.com` hosts rotate.
+   Still in `audit`, each for its reason on #164: org-bot
    `ticket-audit`, the release and image jobs of `reusable-release.yml` and
    `reusable-ns3-image.yml`, AntHocNet's `release.yml` and
    swarm-routing/sim-containers' `publish-images.yml`.
