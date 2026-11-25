@@ -1011,7 +1011,7 @@ jobs:
       # would be the caller's checkout.
       - name: Bot token
         id: bot
-        uses: swarm-routing/.github/.github/actions/bot-token@a178f47d84bab60f932bde93a03fb1b031073d8b # main@2026-11-24
+        uses: swarm-routing/.github/.github/actions/bot-token@fba9e07e50d1a8c79f7d3e2d0a3dad2b11c91e19 # main@2026-11-25
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -1239,7 +1239,7 @@ jobs:
         id: bot
         continue-on-error: true
         timeout-minutes: 2
-        uses: swarm-routing/.github/.github/actions/bot-token@a178f47d84bab60f932bde93a03fb1b031073d8b # main@2026-11-24
+        uses: swarm-routing/.github/.github/actions/bot-token@fba9e07e50d1a8c79f7d3e2d0a3dad2b11c91e19 # main@2026-11-25
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -1404,7 +1404,7 @@ jobs:
       # would be the caller's checkout.
       - name: Bot token
         id: bot
-        uses: swarm-routing/.github/.github/actions/bot-token@a178f47d84bab60f932bde93a03fb1b031073d8b # main@2026-11-24
+        uses: swarm-routing/.github/.github/actions/bot-token@fba9e07e50d1a8c79f7d3e2d0a3dad2b11c91e19 # main@2026-11-25
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
@@ -1512,7 +1512,7 @@ jobs:
       # would be the caller's checkout.
       - name: Bot token
         id: bot
-        uses: swarm-routing/.github/.github/actions/bot-token@a178f47d84bab60f932bde93a03fb1b031073d8b # main@2026-11-24
+        uses: swarm-routing/.github/.github/actions/bot-token@fba9e07e50d1a8c79f7d3e2d0a3dad2b11c91e19 # main@2026-11-25
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
