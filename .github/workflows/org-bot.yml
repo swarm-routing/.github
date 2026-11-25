@@ -284,11 +284,39 @@ jobs:
       RELEASED_TAG: ${{ github.event.client_payload.tag }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
-          egress-policy: audit
+          # the union of 19 audit runs over every task: all (45419525646,
+          # 45197617879, 45023316029, 45438712835, 45319750900, 45313489678),
+          # hourly (45312132969, 45409116765, 45475733727), swarm-core-pin
+          # (45411525355, 45185371574, 45097355090), release (45301180872,
+          # 45234136745, 45068666520, 45036014147), bestpractices (45497590049,
+          # 45497348920, 45496204638). *.githubapp.com: the runner's own
+          # hosted-compute-*-prod-<region>-0N hosts rotate (maintainer's
+          # decision, #164). How to update it: CONTRIBUTING invariant 5
+          egress-policy: block
+          allowed-endpoints: >
+            *.githubapp.com:443
+            api.github.com:443
+            broker.actions.githubusercontent.com:443
+            cafe.github.com:443
+            codeload.github.com:443
+            ghcr.io:443
+            github.com:443
+            hosted-compute-request-orchestrator-prod-eus-01.githubapp.com:443
+            hosted-compute-watchdog-prod-eus-01.githubapp.com:443
+            hosted-compute-watchdog-prod-eus-02.githubapp.com:443
+            pkg-containers.githubusercontent.com:443
+            productionresultssa12.blob.core.windows.net:443
+            productionresultssa14.blob.core.windows.net:443
+            productionresultssa18.blob.core.windows.net:443
+            productionresultssa32.blob.core.windows.net:443
+            pypi.org:443
+            release-assets.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            zenodo.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -400,11 +428,20 @@ jobs:
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
-          egress-policy: audit
+          # the union of the audit runs 45419525646, 45197617879, 45023316029;
+          # how to update it: CONTRIBUTING invariant 5 (#164)
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            codeload.github.com:443
+            ghcr.io:443
+            github.com:443
+            pkg-containers.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -464,11 +501,19 @@ jobs:
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
-          egress-policy: audit
+          # the union of the audit runs 45312132969, 45409116765, 45200250368;
+          # how to update it: CONTRIBUTING invariant 5 (#164)
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            ghcr.io:443
+            github.com:443
+            pkg-containers.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -562,11 +607,19 @@ jobs:
       REPOS: ${{ inputs.repos }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
-          egress-policy: audit
+          # the union of the audit runs 45419525646, 45312132969, 45197617879;
+          # how to update it: CONTRIBUTING invariant 5 (#164)
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            ghcr.io:443
+            github.com:443
+            pkg-containers.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -629,11 +682,24 @@ jobs:
       DRY_RUN: ${{ inputs.dry-run }}
       IMAGE: ghcr.io/swarm-routing/ci-tools
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
-          egress-policy: audit
+          # the union of the audit runs 45419525646, 45197617879, 45441664272;
+          # how to update it: CONTRIBUTING invariant 5 (#164)
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            ghcr.io:443
+            github.com:443
+            pkg-containers.githubusercontent.com:443
+            productionresultssa12.blob.core.windows.net:443
+            productionresultssa14.blob.core.windows.net:443
+            productionresultssa16.blob.core.windows.net:443
+            release-assets.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+            tuf-repo-cdn.sigstore.dev:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -716,11 +782,20 @@ jobs:
       TASK: ${{ needs.plan.outputs.task }}
       DRY_RUN: ${{ inputs.dry-run }}
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
-          egress-policy: audit
+          # the union of the audit runs 45419525646, 45312132969, 45197617879;
+          # how to update it: CONTRIBUTING invariant 5 (#164)
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            ghcr.io:443
+            github.com:443
+            pkg-containers.githubusercontent.com:443
+            productionresultssa12.blob.core.windows.net:443
+            results-receiver.actions.githubusercontent.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -784,11 +859,20 @@ jobs:
       DRY_RUN: ${{ inputs.dry-run }}
       REPORT: ${{ needs.plan.outputs.report }}
     steps:
-      - name: Harden the runner (audit egress)
+      - name: Harden the runner (block egress)
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         timeout-minutes: 2  # its download and start take seconds (#164)
         with:
-          egress-policy: audit
+          # the union of the audit runs 45419525646, 45312132969, 45197617879
+          # (the Monday report); how to update it: CONTRIBUTING invariant 5 (#164)
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            ghcr.io:443
+            github.com:443
+            pkg-containers.githubusercontent.com:443
+            productionresultssa12.blob.core.windows.net:443
+            results-receiver.actions.githubusercontent.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

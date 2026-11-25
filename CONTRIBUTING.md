@@ -94,7 +94,33 @@ is the long form.
    repo-settings, pages deploy) moves to `block` with an `allowed-endpoints`
    list copied from the insights of a green run, never guessed. The insights
    are on the StepSecurity page linked from each run's Harden-Runner step
-   (and from the job summary). A job that runs entirely in a `container:`
+   (and from the job summary); the same record is in the job log, where the
+   post-step prints one `endpoint called ip address:port <ip>:<port>, domain:
+   <host>.` line per connection.
+   In `block` today (#164): `repo-settings.yml` `settings`; `org-bot.yml`
+   `refresh`, `branch-sweep`, `release-sync`, `action-pins`, `ci-tools-digest`,
+   `project-sync`, `security-alerts`; swarm-routing/swarm-routing.github.io
+   `pages.yml` `deploy`. Each list is the union of the `host:port` lines of at
+   least three green runs of that job, and a comment above it names the runs.
+   One wildcard, by the maintainer's decision: `refresh` allows
+   `*.githubapp.com:443`, because the runner's own
+   `hosted-compute-*-prod-<region>-0N.githubapp.com` hosts rotate.
+   Still in `audit`, each for its reason on #164: org-bot
+   `ticket-audit`, the release and image jobs of `reusable-release.yml` and
+   `reusable-ns3-image.yml`, AntHocNet's `release.yml` and
+   swarm-routing/sim-containers' `publish-images.yml`.
+   To update a list (a job red in `block` after a new host, a new tool or
+   task): take three green runs of the job (in `audit`, or in `block` plus the
+   run that failed), collect each log's `endpoint called` lines (`gh run view
+   --job <id> --log | grep 'endpoint called'`; in `block` a refused call
+   shows the same line with a non-empty `status:`), add every host:port any of
+   them names, never one none of them names, and name the runs in the
+   comment. Its agent allows its own API and GitHub's
+   `*.actions.githubusercontent.com`, `codeload.github.com` and
+   `productionresultssa*.blob.core.windows.net` itself (step-security/agent
+   v0.18.1, the one v2.23.0 installs, `addImplicitEndpoints`), so a rotating
+   `run-actions-N-…` or `productionresultssaNN` host the list lacks should
+   not fail the job; the lists still name the ones seen. A job that runs entirely in a `container:`
    cannot take it on a hosted runner (it needs sudo on the VM; StepSecurity's
    limitations), so it goes without: today `reusable-ns3-ci.yml`'s `build`.
    Audit is best effort, not a guarantee (#237). Its agent registers each
@@ -113,10 +139,17 @@ is the long form.
    repositories at once and sometimes in some jobs of a run but not others:
    an outage on StepSecurity's side. So harden-runner stays, in `audit`,
    on every job: it costs seconds, and a failed registration loses only that
-   job's audit data (the sampled jobs all ran on and passed). Before a job moves
-   to `block`, check on one job that `block` still enforces its
-   `allowed-endpoints` when the API is unreachable; until then no job
-   relies on it. An insights page missing for a run is put down to an
+   job's audit data (the sampled jobs all ran on and passed). `block` does not
+   depend on that API: at the pinned v2.23.0 (`src/setup.ts`) a failed
+   registration is logged and the agent still starts with the job's
+   `allowed-endpoints`, which it enforces on the runner. It still fails open
+   in other ways: the action skips the agent when the API answers 409
+   ("Harden-Runner unavailable") or the download from github.com fails; the
+   agent reverts its firewall and exits on an error while it starts (a
+   resolution of an allowed host failing, for one: `RevertChanges` in
+   step-security/agent v0.18.1 `agent.go`); and the action does not stop the
+   job when the agent never reports started. So `block` narrows what a
+   compromised step can reach; it is no guarantee (#164). An insights page missing for a run is put down to an
    outage only when that run's job logs show `no response from monitor
    endpoint`; without that line, look into it. The same search counts it
    again.
