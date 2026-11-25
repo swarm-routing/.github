@@ -27,6 +27,7 @@ name: Reusable DCO check
 #
 #   on:
 #     pull_request:
+#     merge_group:   # the job is skipped there, which a required check accepts (#179)
 #   permissions:
 #     contents: read
 #     pull-requests: read
