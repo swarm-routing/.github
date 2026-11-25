@@ -4,7 +4,7 @@ name: ci-tools image
 
 # Builds ghcr.io/swarm-routing/ci-tools, the image the org's Go pipeline
 # tools ship in (docs/adr/0002-pipelines-are-go.md), on the rule of
-# swarm-routing/ns3-containers' golden rule 17: what is tested is what is
+# swarm-routing/sim-containers' golden rule 17: what is tested is what is
 # tagged.
 #
 #   go        reusable-go-ci.yml on the root module (cmd/, internal/)

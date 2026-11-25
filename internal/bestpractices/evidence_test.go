@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: |
-          apply ns3-containers "debug, sanitized and optimized images" ci sanitizers fuzz assert codeql sonar
+          apply sim-containers "debug, sanitized and optimized images" ci sanitizers fuzz assert codeql sonar
 `
 
 // Swarm-routing/.github#559 as it was found: a Python repository whose only
