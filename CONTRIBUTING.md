@@ -2065,7 +2065,9 @@ options and forwards `sha: ${{ inputs.sha }}`). The run refuses unless the
 commit is on `main`, is the merge of a `bot/release` PR, its message is
 `chore(release): bump version A to B`, its version files hold `B` and
 `vB` is not out yet (a tag on that very commit with no release is a failed
-publish, which the same dispatch, or "Re-run all jobs" on it, resumes); then
+publish, which a new dispatch resumes; once the release is out, only "Re-run
+all jobs" of the run that published it resumes, say after a failed zenodo
+job); then
 it builds, attests, tags and publishes that commit, with Zenodo, vcpkg and
 the notifications, exactly as its push would have. The `mode` output reads
 `release`, and the `commit` output is the commit published. An agent

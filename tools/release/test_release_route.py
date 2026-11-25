@@ -102,7 +102,9 @@ def push_event(*commits):
     }
 
 
-def run(tmp, *, event="push", payload=None, mode="", sha_in="", fake=None, github_sha=HEAD):
+def run(
+    tmp, *, event="push", payload=None, mode="", sha_in="", fake=None, github_sha=HEAD, attempt="1"
+):
     with open(os.path.join(tmp, "api.json"), "w") as f:
         json.dump(api(fake), f)
     with open(os.path.join(tmp, "event.json"), "w") as f:
@@ -125,6 +127,7 @@ def run(tmp, *, event="push", payload=None, mode="", sha_in="", fake=None, githu
         "GITHUB_EVENT_PATH": os.path.join(tmp, "event.json"),
         "GITHUB_OUTPUT": out,
         "RUNNER_TEMP": tmp,
+        "GITHUB_RUN_ATTEMPT": attempt,
     }
     # as GitHub runs a `run:` step: bash -e -o pipefail
     p = subprocess.run(
@@ -256,7 +259,21 @@ def main():
         )
         check(
             "publish: a version already released is refused",
-            rc != 0 and "exists already" in log,
+            rc != 0 and "is released already" in log,
+            log,
+        )
+
+        rc, o, log = run(
+            tmp,
+            event="workflow_dispatch",
+            mode="publish",
+            sha_in=BUMP,
+            fake={**tag, f"repos/{REPO}/releases/tags/v1.1.0": {"id": 1}},
+            attempt="2",
+        )
+        check(
+            "publish: Re-run all jobs of the run that released it resumes (a later job failed)",
+            rc == 0 and o.get("mode") == "release" and o.get("sha") == BUMP and "attempt 2" in log,
             log,
         )
 

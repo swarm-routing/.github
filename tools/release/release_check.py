@@ -109,8 +109,9 @@ REUSABLE = re.compile(
 )
 DIST_TARGET = re.compile(r"^dist\s*:", re.M)
 INCREMENT = re.compile(r"\binputs\.increment\b")
-# a push gate that reads only the push's head commit (#943)
-HEAD_GATE = re.compile(r"\bhead_commit\.message\b")
+# a push gate (a job's or step's `if:`) that reads the push's head commit's
+# message (#943); the same expression in a step's env or run is no gate
+HEAD_GATE = re.compile(r"^\s*(?:-\s*)?if:.*\bhead_commit\.message\b")
 COMMENT = re.compile(r"(?:^|\s)#.*$")  # a YAML comment, to the end of the line
 # an own release.yml builds its assets when a live (uncommented) line names dist/ as a path
 OWN_DIST = re.compile(r"(?:^|\s)\"?(?:\./)?dist/?\"?(?=\s|$)", re.M)
@@ -1109,6 +1110,22 @@ def self_test():
         rep = quiet(ready, d, "o/r", "0.4.0", gh)
         expect(
             "ready: head_commit in a comment is no gate",
+            has(rep, "OK", "push gate: not on the head commit alone"),
+        )
+        observed = (
+            caller.replace(
+                "    uses:",
+                "    if: \"${{ github.event_name != 'push' || contains(toJSON(github.event.commits.*.message), "
+                "'chore(release): bump version ') }}\"\n    uses:",
+            )
+            + "  notify:\n    runs-on: ubuntu-24.04\n    steps:\n      - env:\n"
+            '          MSG: ${{ github.event.head_commit.message }}\n        run: echo "$MSG"\n'
+        )
+        with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:
+            fh.write(observed)
+        rep = quiet(ready, d, "o/r", "0.4.0", gh)
+        expect(
+            "ready: a push-wide gate passes, a head_commit read outside an if: is no gate",
             has(rep, "OK", "push gate: not on the head commit alone"),
         )
         with open(os.path.join(d, ".github/workflows/release.yml"), "w", encoding="utf-8") as fh:

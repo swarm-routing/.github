@@ -172,7 +172,8 @@ name: Reusable release
 # route requires `sha` to be on the default branch, the merge of a
 # `bot/release` PR, a commit whose message is `chore(release): bump version
 # A to B`, and `vB` not out (a tag on that very commit with no release is a
-# failed publish, which a re-run resumes); the build then checks that the
+# failed publish, which resumes; a release already out resumes only on "Re-run
+# all jobs" of the run that published it); the build then checks that the
 # commit's version files hold B. From there it is a release (the `mode`
 # output reads `release`): build, attest, publish, zenodo, vcpkg and notify
 # run on that commit, never on the dispatched one. Dispatch it on the
@@ -525,16 +526,25 @@ jobs:
                   echo "::error::${sha}'s message '${msg1}' is not a release bump (${prefix}A to B)"; exit 1
                 fi
                 # A tag already out: nothing to publish by hand. A tag on this
-                # very commit with no release is a failed publish of this
-                # mode, which a re-run resumes (as a push release's does).
+                # very commit is a failed publish of this mode, which resumes
+                # (as a push release's does) when no release exists yet, or
+                # when this is "Re-run all jobs" of that same run (attempt > 1:
+                # the release went out and a later job, zenodo say, failed).
                 tagged="$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${ver}" 2> /dev/null \
                   | jq -r --arg t "refs/tags/v${ver}" '.[]? | select(.ref == $t) | .object.sha' || true)"
                 if [ -n "$tagged" ]; then
                   peeled="$(gh api "repos/${GITHUB_REPOSITORY}/commits/v${ver}" --jq .sha)"
-                  if [ "$peeled" != "$sha" ] || gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${ver}" > /dev/null 2>&1; then
+                  if [ "$peeled" != "$sha" ]; then
                     echo "::error::v${ver} exists already (on ${peeled}): nothing to publish"; exit 1
                   fi
-                  echo "::notice::v${ver} already tags ${sha} with no release: a re-run, publish resumes"
+                  if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${ver}" > /dev/null 2>&1; then
+                    if [ "${GITHUB_RUN_ATTEMPT:-1}" -le 1 ]; then
+                      echo "::error::v${ver} is released already (on ${sha}): nothing to publish; a failed job of the run that published it is recovered by \"Re-run all jobs\" on that run"; exit 1
+                    fi
+                    echo "::notice::v${ver} is released on ${sha}: attempt ${GITHUB_RUN_ATTEMPT} of this run, publish resumes"
+                  else
+                    echo "::notice::v${ver} already tags ${sha} with no release: a re-run, publish resumes"
+                  fi
                 fi
                 echo "::notice::mode publish: releasing the merged bump ${sha} by hand"
                 mode=release
@@ -585,9 +595,22 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.route.outputs.sha }}
           fetch-depth: 0   # the whole history and its tags, for Commitizen
           persist-credentials: false
+
+      # The release commit (#943): route's choice, which must be the run's
+      # own commit or one of its ancestors (a batched push's bump below the
+      # head, mode publish's `sha` on the default branch). Checked out from
+      # the run's history, never fetched by name.
+      - name: The release commit
+        run: |
+          if [ "$RELEASE_SHA" != "$GITHUB_SHA" ]; then
+            if ! git merge-base --is-ancestor "$RELEASE_SHA" HEAD; then
+              echo "::error::the release commit ${RELEASE_SHA} is not an ancestor of ${GITHUB_SHA}"; exit 1
+            fi
+            git -c advice.detachedHead=false checkout -q --detach "$RELEASE_SHA"
+            echo "release commit ${RELEASE_SHA} (the run's: ${GITHUB_SHA})"
+          fi
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -1096,10 +1119,14 @@ jobs:
       # It runs no code of the caller's: the merged commit's checkout (for
       # the tag) and the built files only. No persisted GITHUB_TOKEN: the
       # tag step authenticates git itself, with the token it picks.
+      # The run's commit with its history: the release commit (route, #943)
+      # is it or one of its ancestors, tagged from here, never fetched by name.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.route.outputs.sha }}
+          fetch-depth: 0
           persist-credentials: false
+      - name: The release commit is in the run's history
+        run: git merge-base --is-ancestor "$RELEASE_SHA" HEAD
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -1405,9 +1432,15 @@ jobs:
       - name: The release commit (CITATION.cff, .github/org-sync.toml)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.route.outputs.sha }}   # the commit route chose (#943)
           path: caller
+          fetch-depth: 0   # the release commit (route, #943) is in this history
           persist-credentials: false
+      - name: The release commit's files
+        env:
+          RELEASE_SHA: ${{ needs.route.outputs.sha }}
+        run: |
+          git -C caller merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          git -C caller -c advice.detachedHead=false checkout -q --detach "$RELEASE_SHA"
       # zenodo.py is this repository's, at main, as the bot-token action is:
       # a reusable workflow's `./` would be the caller's checkout.
       - name: The archiving tool (swarm-routing/.github tools/zenodo)
