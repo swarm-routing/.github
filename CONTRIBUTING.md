@@ -1859,7 +1859,18 @@ actor), so the bump goes through a PR and the tag follows the merge
    workflow, which releases only when the commit is the merge of a PR whose
    head is `<owner>/<repo>:bot/release` (`GET /repos/{repo}/commits/{sha}/pulls`)
    and its version is the one the PR's title names; any other push to `main`
-   is a no-op. Before merging, read the bump PR's `CHANGELOG.md` diff: a
+   is a no-op. It reads every commit of the push, not only its head (#943):
+   a merge queue pushes a batch at once, and a bump PR merged below another
+   PR in the batch is still released, its own commit built and tagged, never
+   the push's head (swarm-routing/sim-containers v1.1.0 was lost that way:
+   swarm-routing/sim-containers#279 landed as `fbb8cc6` under
+   swarm-routing/sim-containers#252's `04571a4`, and the caller's
+   head-commit gate skipped the run). The caller's gate must read the whole
+   push too (`contains(toJSON(github.event.commits.*.message), …)`, in the
+   caller below); `release_check.py ready` fails a gate on
+   `head_commit.message`. A bump that merged and never released is published
+   by hand with mode `publish` and `sha: <the bump commit's full SHA>`
+   ("A publish that fails, or waits", below). Before merging, read the bump PR's `CHANGELOG.md` diff: a
    version whose section would be empty (a milestone bump with no `feat`/`fix`,
    or a previous tag Commitizen cannot see) gets a hand-written paragraph or
    the regenerated entries in a commit on the bump PR first, since the
@@ -2046,6 +2057,22 @@ The re-run keeps the bump's merge commit, rebuilds, re-attests and resumes;
 a new `bump` dispatch is no substitute, since it would propose the version
 again on another commit.
 
+**A merged bump that never released** (#943: its push run was skipped, or
+saw only another commit of a batch; no tag, no release). Dispatch the
+caller's release workflow on `main` with mode `publish` and `sha:` the bump
+commit's full 40-character SHA (the caller offers `publish` among its `mode`
+options and forwards `sha: ${{ inputs.sha }}`). The run refuses unless the
+commit is on `main`, is the merge of a `bot/release` PR, its message is
+`chore(release): bump version A to B`, its version files hold `B` and
+`vB` is not out yet (a tag on that very commit with no release is a failed
+publish, which the same dispatch, or "Re-run all jobs" on it, resumes); then
+it builds, attests, tags and publishes that commit, with Zenodo, vcpkg and
+the notifications, exactly as its push would have. The `mode` output reads
+`release`, and the `commit` output is the commit published. An agent
+dispatches it only on the maintainer's instruction, as `bump`. A caller's
+`image` job still builds the run's own commit (`reusable-ns3-image.yml` has
+no ref input yet): after a manual publish, check the image's tag by hand.
+
 To adopt it, a repository adds a Commitizen config (in `pyproject.toml`, or
 `.cz.toml` as in `tools/release/fixture/`):
 
@@ -2068,10 +2095,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "dry-run: bump, build, attest and verify on the runner only; bump: open the bump PR (merging it releases)"
+        description: "dry-run: bump, build, attest and verify on the runner only; bump: open the bump PR (merging it releases); publish: release the merged bump commit `sha` that never released"
         type: choice
-        options: [dry-run, bump]
+        options: [dry-run, bump, publish]
         default: dry-run
+      sha:
+        description: "publish only: the merged bump commit's full SHA"
+        type: string
+        default: ''
   push:
     branches: [main]   # the merged bump PR releases; any other push is a no-op
 permissions:
@@ -2084,12 +2115,14 @@ concurrency:
 jobs:
   release:
     # Saves a runner on ordinary pushes; the workflow itself checks the PR.
+    # Every commit of the push, never only its head: a merge queue batches (#943).
     # Quoted: the expression holds ': ', which YAML reads as a mapping in a plain scalar.
-    if: "${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}"
+    if: "${{ github.event_name != 'push' || contains(toJSON(github.event.commits.*.message), 'chore(release): bump version ') }}"
     permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@<sha> # main@<date>  (ADR-0004)
     with:
       mode: ${{ inputs.mode }}   # empty on push: release
+      sha: ${{ inputs.sha }}     # publish only; '' on push
     secrets:
       BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
       BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
