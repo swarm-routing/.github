@@ -1,0 +1,51 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+name: Doxygen self-test
+
+# Proves reusable-doxygen.yml from this checkout on the fixture in
+# tools/checks/fixtures/doxygen/ (#883): a documented class and one
+# undocumented member, so the run must report exactly 1 warning (within
+# max-warnings: 1) and its artifact must hold index.html and the class page.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/reusable-doxygen.yml', '.github/workflows/doxygen-selftest.yml', 'tools/checks/fixtures/doxygen/**']
+  pull_request:
+    paths: ['.github/workflows/reusable-doxygen.yml', '.github/workflows/doxygen-selftest.yml', 'tools/checks/fixtures/doxygen/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    uses: ./.github/workflows/reusable-doxygen.yml
+    with:
+      doxyfile: tools/checks/fixtures/doxygen/Doxyfile
+      artifact: api-docs-fixture
+      max-warnings: 1
+
+  check:
+    needs: fixture
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner (audit egress)
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        timeout-minutes: 2
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: api-docs-fixture
+          path: api
+      - name: One warning, the index and the class page
+        env:
+          WARNINGS: ${{ needs.fixture.outputs.warnings }}
+        run: |
+          set -euo pipefail
+          [ "$WARNINGS" = 1 ] || { echo "::error::warnings=$WARNINGS, want 1 (Greeter::Undocumented)"; exit 1; }
+          for f in index.html classhello_1_1Greeter.html; do
+            [ -f "api/$f" ] || { echo "::error::the artifact has no $f"; ls api; exit 1; }
+          done
+          echo "ok: 1 warning, index.html and the Greeter page"
