@@ -78,12 +78,14 @@ func tables(text string) []table {
 	lines := strings.Split(text, "\n")
 	var out []table
 	for i := 0; i+1 < len(lines); i++ {
-		if !strings.HasPrefix(strings.TrimSpace(lines[i]), "|") || !sepRe.MatchString(strings.TrimSpace(lines[i+1])) {
+		// a header row and its delimiter row, each with a pipe (a bare `---` is a rule)
+		if !strings.Contains(lines[i], "|") || !strings.Contains(lines[i+1], "|") || !sepRe.MatchString(strings.TrimSpace(lines[i+1])) {
 			continue
 		}
 		t := table{header: cells(lines[i])}
 		k := i + 2
-		for ; k < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[k]), "|"); k++ {
+		// GFM rows need no leading pipe: a table ends at a blank line or a line with no pipe
+		for ; k < len(lines) && strings.TrimSpace(lines[k]) != "" && strings.Contains(lines[k], "|"); k++ {
 			row := map[string]string{}
 			for j, c := range cells(lines[k]) {
 				if j < len(t.header) {
@@ -268,13 +270,20 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		if string(have) != out {
-			fmt.Fprintf(stdout, "ns3-bugs: %s differs from the register (%d bug(s), %d fixed upstream): run ns3-bugs %s --write %s\n",
-				*check, len(bugs), len(fixed), reg, *check)
+			repair := fmt.Sprintf("ns3-bugs %s --write %s", reg, *check)
+			if *base != Base {
+				repair = fmt.Sprintf("ns3-bugs %s --base %s --write %s", reg, *base, *check)
+			}
+			fmt.Fprintf(stdout, "ns3-bugs: %s differs from the register (%d bug(s), %d fixed upstream): run %s\n",
+				*check, len(bugs), len(fixed), repair)
 			return 1
 		}
 		fmt.Fprintf(stdout, "ns3-bugs: %s matches the register: %d bug(s), %d fixed upstream\n", *check, len(bugs), len(fixed))
 	default:
-		io.WriteString(stdout, out)
+		if _, err := io.WriteString(stdout, out); err != nil {
+			fmt.Fprintf(stderr, "ns3-bugs: %v\n", err)
+			return 2
+		}
 	}
 	return 0
 }

@@ -5,6 +5,7 @@ package ns3bugs
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +62,49 @@ func TestWriteAndCheck(t *testing.T) {
 	}
 	if code, out, _ := run(t, "testdata/register.md", "--check", f); code != 1 || !strings.Contains(out, "differs") {
 		t.Fatalf("--check on a hand edit: exit %d, %q", code, out)
+	}
+}
+
+// GFM rows need no leading or trailing pipe: such a row is kept, never the end of the table.
+func TestRowsWithoutOuterPipes(t *testing.T) {
+	reg := strings.Replace(readFile(t, "testdata/register.md"), "| NS3-002 |", "NS3-002 |", 1)
+	p := filepath.Join(t.TempDir(), "register.md")
+	if err := os.WriteFile(p, []byte(reg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := run(t, p); code != 0 || out != readFile(t, "testdata/want.md") {
+		t.Fatalf("exit %d, stderr %q; output differs from testdata/want.md:\n%s", code, errs, out)
+	}
+}
+
+// The repair a --check mismatch names keeps the --base it was checked with.
+func TestCheckRepairKeepsBase(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "known-bugs.md")
+	const base = "https://example.org/docs/"
+	if err := os.WriteFile(f, []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := run(t, "testdata/register.md", "--base", base, "--check", f)
+	want := "run ns3-bugs testdata/register.md --base " + base + " --write " + f
+	if code != 1 || !strings.Contains(out, want) {
+		t.Fatalf("--check with --base: exit %d, %q, want %q", code, out, want)
+	}
+	if code, _, _ := run(t, "testdata/register.md", "--base", base, "--write", f); code != 0 {
+		t.Fatalf("the named repair: exit %d", code)
+	}
+	if code, out, _ := run(t, "testdata/register.md", "--base", base, "--check", f); code != 0 {
+		t.Fatalf("the same check after the repair: exit %d, %q", code, out)
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("stdout closed") }
+
+func TestStdoutError(t *testing.T) {
+	var errb bytes.Buffer
+	if code := Main([]string{"testdata/register.md"}, failingWriter{}, &errb); code != 2 || !strings.Contains(errb.String(), "stdout closed") {
+		t.Fatalf("a failing stdout: exit %d, stderr %q", code, errb.String())
 	}
 }
 
