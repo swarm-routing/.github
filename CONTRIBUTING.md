@@ -1718,7 +1718,7 @@ rate limit and was archived from its tag by `zenodo.py create` on 2026-11-11
 | ARA | [10.5281/zenodo.24125198](https://doi.org/10.5281/zenodo.24125198) | v0.2.1 [10.5281/zenodo.24269622](https://doi.org/10.5281/zenodo.24269622) |
 | BeeAdHoc | [10.5281/zenodo.24124821](https://doi.org/10.5281/zenodo.24124821) | v0.2.1 [10.5281/zenodo.24269446](https://doi.org/10.5281/zenodo.24269446) |
 | benchmarks | [10.5281/zenodo.24145189](https://doi.org/10.5281/zenodo.24145189) | v0.1.0 [10.5281/zenodo.24145190](https://doi.org/10.5281/zenodo.24145190) |
-| HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.1.0 [10.5281/zenodo.24125266](https://doi.org/10.5281/zenodo.24125266) |
+| HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.2.0 [10.5281/zenodo.24518727](https://doi.org/10.5281/zenodo.24518727) |
 | sim-containers | [10.5281/zenodo.24202109](https://doi.org/10.5281/zenodo.24202109) | v1.0.0 [10.5281/zenodo.24202110](https://doi.org/10.5281/zenodo.24202110) |
 | sim-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v1.1.4 [10.5281/zenodo.24511691](https://doi.org/10.5281/zenodo.24511691) |
 | swarm-adapter-ns3 | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v2.0.0 [10.5281/zenodo.24486580](https://doi.org/10.5281/zenodo.24486580) |
