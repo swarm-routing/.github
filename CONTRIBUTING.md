@@ -139,9 +139,14 @@ is the long form.
    job's audit data (the sampled jobs all ran on and passed). `block` does not
    depend on that API: at the pinned v2.23.0 (`src/setup.ts`) a failed
    registration is logged and the agent still starts with the job's
-   `allowed-endpoints`, which it enforces on the runner; it skips the agent,
-   failing open, only when the API answers 409 ("Harden-Runner unavailable")
-   or its download from github.com fails (#164). An insights page missing for a run is put down to an
+   `allowed-endpoints`, which it enforces on the runner. It still fails open
+   in other ways: the action skips the agent when the API answers 409
+   ("Harden-Runner unavailable") or the download from github.com fails; the
+   agent reverts its firewall and exits on an error while it starts (a
+   resolution of an allowed host failing, for one: `RevertChanges` in
+   step-security/agent v0.18.1 `agent.go`); and the action does not stop the
+   job when the agent never reports started. So `block` narrows what a
+   compromised step can reach; it is no guarantee (#164). An insights page missing for a run is put down to an
    outage only when that run's job logs show `no response from monitor
    endpoint`; without that line, look into it. The same search counts it
    again.
