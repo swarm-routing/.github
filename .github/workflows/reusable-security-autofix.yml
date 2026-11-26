@@ -55,7 +55,7 @@ on:
 permissions: {}
 
 env:
-  IMG: ghcr.io/swarm-routing/ci-tools@sha256:93d929345b8cc7861163001bf08a8217c89953b57bea658a70ebd2ebce350798  # promoted from 8e957c1
+  IMG: ghcr.io/swarm-routing/ci-tools@sha256:392b1b974e917f8ac08851e0bb9146846eeabe5b27e98cadea245e333654321d  # promoted from 12daa5b
 
 jobs:
   pick:
