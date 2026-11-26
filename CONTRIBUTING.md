@@ -222,7 +222,14 @@ repository has a "Supersedes #N" line for it. At most 20 issues a run; the
 issues at least 80% ticked and those with no checkbox are listed, not
 closed, in the `[tickets] audit` issue here, updated in place (private
 repositories only as "private repository N"). To keep a finished-looking
-issue open, add an unticked box saying what remains, or `hold`.
+issue open, add an unticked box saying what remains, or `hold`. The same run
+keeps RCAPA tickets on the record (#952): an open issue whose title starts
+`[rcapa]` but lacks `rcapa` (opened through the API, which applies no form
+labels) gets its form's labels, `rcapa`, `ns3-upstream`, `verification` and
+`ns3` for an `NS3-NNN`, else `rcapa` and `bug` (at most 20 a run, each listed
+in `[tickets] audit`); an RCAPA ticket open more than 2 days with no
+`<!-- rcapa-step: … -->` comment (`tools/rcapa/rcapa.py log`) and no pull
+request referencing it is listed there, never changed.
 
 **Epics are the public plan.** An epic (label `epic`) groups the issues that
 deliver one outcome; its children are linked as sub-issues, so its status is

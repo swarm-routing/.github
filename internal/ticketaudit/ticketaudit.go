@@ -22,6 +22,10 @@
 // checkbox, in one summary issue in swarm-routing/.github, ReportTitle,
 // updated in place. A private repository is never named or linked, in the
 // log or the report: it is "private repository N" (internal/repomask).
+//
+// RCAPA tickets (rcapa.go, #952): an open `[rcapa]` issue without `rcapa`
+// gets its form's labels; one older than 2 days with no logged step and no
+// linked PR is listed in the report, not changed.
 package ticketaudit
 
 import (
@@ -181,6 +185,9 @@ type Item struct {
 type Result struct {
 	Repos, Issues, Closed, Deferred, Failed int
 	Truncated                               []string // repositories whose closed-PR listing stopped at the page cap
+	Labelled                                []string // the [rcapa] tickets given their form's labels (rcapa.go)
+	Unrecorded                              []string // the RCAPA tickets with no logged step and no linked PR
+	UnrecordedPrivate                       int
 	Items                                   []*Item
 	Report                                  string
 }
@@ -431,6 +438,7 @@ func Run(g GitHub, names []string, now time.Time, dry bool, out io.Writer) (Resu
 				open = append(open, i)
 			}
 		}
+		a.rcapa(r, open, &res)
 		// a newer open handoff's "Supersedes #N" lines, for an older handoff of this repository
 		supersededBy := map[int]int{}
 		for _, i := range open {
@@ -503,7 +511,8 @@ func Run(g GitHub, names []string, now time.Time, dry bool, out io.Writer) (Resu
 	if res.Deferred > 0 {
 		fmt.Fprintf(out, ", %d deferred to the next run", res.Deferred)
 	}
-	fmt.Fprintf(out, "; nearly done (>= %d%% ticked) %d, no checkbox %d; %s\n", int(NearDone*100), near, none, report)
+	fmt.Fprintf(out, "; nearly done (>= %d%% ticked) %d, no checkbox %d; rcapa labelled %d, unrecorded %d; %s\n",
+		int(NearDone*100), near, none, len(res.Labelled), len(res.Unrecorded)+res.UnrecordedPrivate, report)
 	if rerr != nil {
 		return res, fmt.Errorf("the report: %v", rerr)
 	}
@@ -556,7 +565,8 @@ func ReportBody(a *auditor, res *Result) string {
 			"non-epic issue only when every acceptance-criteria box is ticked, or a merged PR says it closes the issue and " +
 			"GitHub left it open; a `handoff` only when a newer open handoff says it supersedes it. An unticked box, " +
 			"`hold`, `epic`, `security`, `rcapa`, or a `release:vX.Y.Z` not yet released keeps an issue open. " +
-			"Boxes inside `<details>` or a code fence do not count.", "",
+			"Boxes inside `<details>` or a code fence do not count. An open `[rcapa]` issue without `rcapa` gets its " +
+			"form's labels (#952).", "",
 		fmt.Sprintf("%d repositories, %d open issues.", res.Repos, res.Issues), ""}
 	section := func(title string, items []string) {
 		lines = append(lines, fmt.Sprintf("### %s (%d)", title, len(items)), "")
@@ -571,6 +581,19 @@ func ReportBody(a *auditor, res *Result) string {
 		section(fmt.Sprintf("To close next run (over %d a run)", MaxCloses), deferred)
 	}
 	section(fmt.Sprintf("Nearly done: at least %d%% of the boxes ticked", int(NearDone*100)), near)
+	section("RCAPA tickets given their form's labels this run", res.Labelled)
+	unrec := res.Unrecorded
+	if res.UnrecordedPrivate > 0 {
+		unrec = append(append([]string{}, unrec...), fmt.Sprintf("- private repositories: %d tickets", res.UnrecordedPrivate))
+	}
+	lines = append(lines, fmt.Sprintf("### RCAPA tickets with no recorded investigation (%d)", len(res.Unrecorded)+res.UnrecordedPrivate), "",
+		fmt.Sprintf("Open more than %d days, with no `rcapa-step` comment and no linked PR: log each step on the ticket "+
+			"(`tools/rcapa/rcapa.py log`; CONTRIBUTING \"RCAPA\").", int(RCAPAGrace.Hours()/24)), "")
+	if len(unrec) == 0 {
+		lines = append(lines, "(none)")
+	}
+	lines = append(lines, unrec...)
+	lines = append(lines, "")
 	lines = append(lines, fmt.Sprintf("### No checkbox (%d)", len(none)), "",
 		"These cannot be audited: give each **Acceptance criteria** checkboxes.", "")
 	if len(none) == 0 {
@@ -645,7 +668,9 @@ Closes the org's finished issues (every acceptance-criteria box ticked, or a
 merged PR says it closes the issue and GitHub left it open; a handoff a newer
 handoff supersedes), at most 20 a run, and keeps the summary issue
 "[tickets] audit" in swarm-routing/.github, with GH_TOKEN (Issues write; Pull
-requests and Contents read). --dry-run only reads. Exit 0 done, 1 failed,
+requests and Contents read). An open "[rcapa]" issue without the rcapa label
+gets its form's labels; an RCAPA ticket older than 2 days with no logged step
+and no linked PR is listed. --dry-run only reads. Exit 0 done, 1 failed,
 2 usage.`
 
 // Main is the command.
