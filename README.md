@@ -66,6 +66,7 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 | [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | In progress | 2 / 2 |
 | [#672](https://github.com/swarm-routing/.github/issues/672) Swarm-Routing Architecture & Migration Roadmap (Hexagonal Multi-Runtime) | In progress | 3 / 17 |
 | [#881](https://github.com/swarm-routing/.github/issues/881) every c++ release on vcpkg, with class docs and install guides per simulator; set up the new repositories | In progress | 7 / 9 |
+| [#970](https://github.com/swarm-routing/.github/issues/970) List the org in external indexes (MCP, plugin, ns-3, research archives) | In progress | 1 / 7 |
 | [#35](https://github.com/swarm-routing/.github/issues/35) code quality across the org — order of work and maintainer decisions | Planned | no sub-issues yet |
 | [#48](https://github.com/swarm-routing/.github/issues/48) Other simulators: container and tooling repos for OMNeT++/INET and Veins (deferred; ns-3 first) | Planned | 0 / 2 |
 | [#216](https://github.com/swarm-routing/.github/issues/216) every public repository releases and is archived on zenodo: sim-containers, benchmarks, skills, the site and .github too | Planned | 0 / 5 |
@@ -75,7 +76,6 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
 | [#674](https://github.com/swarm-routing/.github/issues/674) Multi-Simulator & Unified Web UI Plan (sim-tools, swarm-web-ui) | Planned | 0 / 2 |
-| [#970](https://github.com/swarm-routing/.github/issues/970) List the org in external indexes (MCP, plugin, ns-3, research archives) | Planned | 0 / 7 |
 | [#978](https://github.com/swarm-routing/.github/issues/978) JOSS software papers: eligibility, timeline and one paper per research package | Planned | 0 / 4 |
 
 <details><summary>Closed: 5 epics</summary>
