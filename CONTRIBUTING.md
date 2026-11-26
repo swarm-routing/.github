@@ -1588,14 +1588,23 @@ The README badges are one org-sync table, `| Group | Badges |`, a row per group
 that has a badge (#415): **Build** (`ci`, `container-security`, `hadolint`,
 `trivy`, `ghcr`, `ns3dev`), **Quality** (the `sonar-*` badges, `codecov`,
 `coderabbit`), **Release** (`release`, `doi`, `cite`, `licence`), **Trust**
-(`scorecard`, `bestpractices`, `cosign`), **Stack** (`cxx`, `ns3`, `python`) and
+(`scorecard`, `bestpractices`, `cosign`), **Indexes** (`indexes`), **Stack** (`cxx`, `ns3`, `python`) and
 **Community & docs** (`docs`, `arena`, `rcapa`, `ns3-bugs`, `claude-plugin`,
 `conventional`; no Codespaces badge, maintainer decision 2026-11-15), in that order within each row.
 `rcapa` ("open RCAPA", the repository's open issues labelled `rcapa`, linking
 its `docs/rcapa/README.md`; ADR-0003) is on in every repository; `ns3-bugs`
 ("ns-3 bugs", open issues labelled `ns3-upstream`, linking
 `docs/ns3-bugs.md`) appears only where that register exists
-(swarm-routing/sim-tools). Both are counts, in a neutral colour. A repository's `badges` list
+(swarm-routing/sim-tools). Both are counts, in a neutral colour. **Indexes**
+holds a badge for each external directory that lists or scores the
+repository, only for those its `.github/org-sync.toml` opts into with
+top-level `indexes = ["m8ven-mcp"]` (#963); a repository without the key gets
+no row. The known indexes are `INDEXES` in `tools/org-sync/org_sync.py`, each
+badge and link built from the repository's owner/name: `m8ven-mcp` (the
+[M8ven Trust Index](https://m8ven.ai) of public MCP servers). An unknown name
+fails `org_sync.py plan`, `apply` and `check`; a new index is a new `INDEXES`
+entry. OpenSSF Best Practices stays in Trust: it is a certification the
+project answers, not a listing. A repository's `badges` list
 says which appear, never their order. A badge of the repository's own (a
 coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
 `.github/org-sync.toml` (`group`, `alt`, `image`, `link`), placed after its
