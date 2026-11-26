@@ -374,17 +374,35 @@ carries the fix and AntHocNet's lock bump to it is green. If the cause turns
 out to be AntHocNet's own use of the library, the ticket says so and closes;
 the fix is an ordinary bug in AntHocNet.
 
+**The ticket comes first, and the investigation is recorded on it**
+(maintainer decision 2026-11-26, #952). The moment a bug is suspected (an
+ns-3 bug, or a regression in a published release), its RCAPA ticket is
+opened, before any investigation; a bug met during other work pauses that
+work long enough to open it. An issue opened through the API gets none of
+the form's labels, so whoever opens it that way sets them: `rcapa`,
+`ns3-upstream`, `verification` and `ns3` for ns-3 (`ISSUE_TEMPLATE/rcapa.yml`),
+`rcapa` and `bug` for a regression (`ISSUE_TEMPLATE/rcapa-regression.yml`).
+`tools/rcapa/rcapa.py open` does it: the next free ID, the form's title,
+labels and sections, read from the form. Each investigation step is posted
+on the ticket as it happens, with `rcapa.py log` (one comment with a
+`<!-- rcapa-step: <step> -->` marker): the hypothesis, the source read, each
+reproducer run with its versions or commits and result, each fix tried, the
+duplicate search. The RCAPA document and its register row are written from
+the ticket (`rcapa.py doc` drafts the timeline and evidence table).
+
 For a regression in a published library:
 
 1. **Open the ticket first**, in that library's repository, from the form
-   *Regression in a release (RCAPA)* (`ISSUE_TEMPLATE/rcapa-regression.yml`):
-   title `[rcapa] <PREFIX>-NNN <short description>`, labels `rcapa` and
-   `bug`, a priority and a model suggestion. `NNN` is the next free number in
-   that repository's `docs/rcapa/README.md`.
+   *Regression in a release (RCAPA)* (`ISSUE_TEMPLATE/rcapa-regression.yml`)
+   or `rcapa.py open --repo <repo> auto "<short description>" --kind
+   regression`: title `[rcapa] <PREFIX>-NNN <short description>`, labels
+   `rcapa` and `bug`, a priority and a model suggestion. `NNN` is the next
+   free number in that repository's `docs/rcapa/README.md` and its `[rcapa]`
+   issues.
 2. Copy `docs/rcapa/_template.md` (seeded by org-sync from
    `templates/rcapa/`) to `docs/rcapa/rcapa-<short-description>.md`
-   (lowercase, hyphens: what breaks) and add its row to
-   `docs/rcapa/README.md` in the same pull request.
+   (lowercase, hyphens: what breaks), fill it from the ticket's logged steps,
+   and add its row to `docs/rcapa/README.md` in the same pull request.
 3. References are fully qualified: `swarm-routing/<repo>#N` for the org's
    items, a link whose text is `nsnam/ns-3-dev#N` to the full GitLab URL for
    ns-3's; never a bare `#N`.
@@ -415,13 +433,18 @@ adds its row here):
 A defect in upstream ns-3 (the simulator, not our code), or an investigation
 of one, always gets an **RCAPA ticket** (root cause analysis + corrective and
 preventive actions; maintainer decision, 2026-11-16) in
-**swarm-routing/sim-tools** first, opened from the form *ns-3 bug (RCAPA)*
+**swarm-routing/sim-tools** first, the moment the bug is suspected and before
+investigating it, opened from the form *ns-3 bug (RCAPA)*
 (`ISSUE_TEMPLATE/rcapa.yml`: labels `rcapa`, `ns3-upstream`, `verification`,
 `ns3`; title
-`[rcapa] NS3-NNN ...`, the next free ID of the index). It holds the ns-3
+`[rcapa] NS3-NNN ...`, the next free ID of the index and of the `[rcapa]`
+issues) or, through the API, with `tools/rcapa/rcapa.py open --repo
+sim-tools auto "<short description>" --kind ns3`, which sets those labels (the
+API applies none of a form's; "RCAPA" above). It holds the ns-3
 versions and modules, the symptom, a reproducer (command, `ns3-dev` image tag
 and digest, seed, expected vs actual), the evidence and the workarounds in our
-repositories. The register follows the ticket:
+repositories, and each investigation step as it happens (`rcapa.py log`). The
+register follows the ticket, written from it:
 
 - `docs/ns3-bugs.md` in swarm-routing/sim-tools is the index, one row per
   `NS3-NNN`;

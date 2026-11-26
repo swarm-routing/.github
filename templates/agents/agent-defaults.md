@@ -112,10 +112,17 @@ chat, not the record.
 - Never dismiss a security alert or handle a leaked secret: both are the
   maintainer's; review `security-autofix.yml`'s PRs like any other
   (swarm-routing/.github#629; CONTRIBUTING "Security alerts").
-- An ns-3 bug, or its investigation, gets an RCAPA ticket in
-  swarm-routing/sim-tools first (`NS3-NNN`), then its doc and register row;
-  every workaround links the ID, and upstream reports go out only through
-  swarm-routing/ns3-upstream-report. A regression in a published library
-  version gets one in that library's repository (`<PREFIX>-NNN`), open until a
-  release carries the fix; the pins and `git tag --contains` decide, never
-  memory (CONTRIBUTING "RCAPA", "ns-3 bugs (RCAPA)").
+- The moment a bug is suspected, open its RCAPA ticket, before
+  investigating: an ns-3 bug in swarm-routing/sim-tools (`NS3-NNN`; labels
+  `rcapa`, `ns3-upstream`, `verification`, `ns3`), a regression in a
+  published library in that library's repository (`<PREFIX>-NNN`; `rcapa`,
+  `bug`). The API applies no form labels: open it with swarm-routing/.github
+  `tools/rcapa/rcapa.py open`, or set them yourself. A bug met during other
+  work pauses it until the ticket is open. Post each step on the ticket as
+  you go (`rcapa.py log`: hypothesis, source read, reproducer run with
+  versions/commits and result, fix tried, duplicate search); write the RCAPA
+  doc and register row from the ticket. Every workaround links the ID;
+  upstream reports go out only through swarm-routing/ns3-upstream-report; a
+  regression's ticket stays open until a release carries the fix; the pins
+  and `git tag --contains` decide, never memory (CONTRIBUTING "RCAPA", "ns-3
+  bugs (RCAPA)"; swarm-routing/.github#952).
