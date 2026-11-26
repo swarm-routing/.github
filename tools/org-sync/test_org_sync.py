@@ -192,6 +192,72 @@ check(
     "links nothing" not in read(os.path.join(da, "docs/install.md")),
     "apply restores the generated table",
 )
+# only a repository that builds on ns-3 carries the ns-3 register (#961)
+kn = read(os.path.join(org_sync.TEMPLATES, "install/known-bugs-none.md"))
+dc = fresh()
+run("init", dc, "--kind", "c-cpp", "--dual", "")
+ic = read(os.path.join(dc, "docs/install.md"))
+check(
+    "<!-- org-sync:begin known-bugs -->\n" + kn + "<!-- org-sync:end known-bugs -->" in ic
+    and "NS3-001" not in ic
+    and run("check", dc)[0] == 0,
+    "a C++ repository not on ns-3 (the OMNeT++ adapter, the daemon) gets no ns-3 register",
+)
+edit(dc, ".github/org-sync.toml", 'kind = "c-cpp"\n', 'kind = "c-cpp"\nns3 = true\n')
+check(run("check", dc)[0] != 0, "ns3 = true on a C++ repository: the register is drift until apply")
+run("apply", dc)
+check(
+    kb in read(os.path.join(dc, "docs/install.md")) and run("check", dc)[0] == 0,
+    "ns3 = true: apply fills the ns-3 register",
+)
+edit(dc, ".github/org-sync.toml", "ns3 = true", 'ns3 = "yes"')
+try:
+    refused = "ns3 must be true or false" in str(run("check", dc))
+except SystemExit as e:
+    refused = "ns3 must be true or false" in str(e.code)
+check(refused, 'ns3 = "yes" is refused')
+edit(dc, ".github/org-sync.toml", 'ns3 = "yes"', "ns3 = false")
+run("apply", dc)
+check(
+    kn in read(os.path.join(dc, "docs/install.md"))
+    and kb not in read(os.path.join(dc, "docs/install.md")),
+    "ns3 = false: apply replaces the register by the line that it does not apply",
+)
+# a block the seed gained after the repository was seeded is inserted, not a
+# conflict (#961): under its heading when the repository has it, keeping the
+# repository's own text there; else with its heading, before the seed's next one
+ia = read(os.path.join(da, "docs/install.md"))
+block = ia[ia.index("<!-- org-sync:begin known-bugs") : ia.index("<!-- org-sync:end known-bugs")]
+block += "<!-- org-sync:end known-bugs -->\n"
+own = "An OMNeT++ bug gets an RCAPA ticket first.\n"
+write(os.path.join(da, "docs/install.md"), ia.replace(block, own))
+run("apply", da)
+check(
+    read(os.path.join(da, "docs/install.md")) == ia.replace(block, block + "\n" + own)
+    and run("check", da)[0] == 0,
+    "a missing block under an existing heading is inserted there, the repository's text after it",
+)
+write(
+    os.path.join(da, "docs/install.md"),
+    ia.replace("## Known simulator bugs\n\n" + block + "\n", ""),
+)
+run("apply", da)
+check(
+    read(os.path.join(da, "docs/install.md")) == ia and run("check", da)[0] == 0,
+    "a missing block and its heading are inserted before the seed's next heading",
+)
+write(
+    os.path.join(da, "docs/install.md"),
+    ia.replace("## Known simulator bugs\n\n" + block + "\n", "").replace(
+        "## Troubleshooting", "## Help"
+    ),
+)
+run("apply", da)
+check(
+    read(os.path.join(da, "docs/install.md")).endswith("## Known simulator bugs\n\n" + block),
+    "with neither heading, the block and its heading go at the end",
+)
+write(os.path.join(da, "docs/install.md"), ia)
 os.makedirs(os.path.join(da, ".github/workflows"), exist_ok=True)
 with open(os.path.join(da, ".github/workflows/ci.yml"), "w") as f:
     f.write("    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@main\n")

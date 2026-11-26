@@ -8,8 +8,9 @@ runs, the release assets, the vcpkg port); never invent a command or a
 version. A section with nothing to say for this repository keeps one sentence
 saying so (an ns-3 module has no vcpkg port until the registry's `ns3` port
 lands; a core-only repository supports no simulator). The "Known simulator
-bugs" section is org-managed: generated from swarm-routing/sim-tools
-docs/ns3-bugs.md by swarm-routing/.github cmd/ns3-bugs and refreshed by
+bugs" block is org-managed: generated from swarm-routing/sim-tools
+docs/ns3-bugs.md by swarm-routing/.github cmd/ns3-bugs where the repository
+builds on ns-3 (else one line that it does not apply), and refreshed by
 org-bot's org-sync PRs; never edit it here. Delete this comment.
 -->
 

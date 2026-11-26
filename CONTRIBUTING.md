@@ -1046,7 +1046,11 @@ same two user-facing documents (maintainer decision 2026-11-24, #881):
   and optional tools and a complete example install, and troubleshooting.
   Its "Known simulator bugs" section is org-managed and generated from
   swarm-routing/sim-tools `docs/ns3-bugs.md` (`cmd/ns3-bugs`, refreshed by
-  org-bot's `ns3-bugs` task); it is never typed. Every command in the
+  org-bot's `ns3-bugs` task) in a repository that builds on ns-3 (every
+  protocol, and a C++ repository with `ns3 = true` in its
+  `.github/org-sync.toml`); elsewhere it is one line saying the register
+  does not apply (#961), and any simulator bugs of the repository's own go
+  after the block. It is never typed. Every command in the
   guide runs today, as in the developer guide.
 
 ## Outside contributions
