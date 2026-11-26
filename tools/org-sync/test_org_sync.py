@@ -711,6 +711,12 @@ check(
 edit(di, ".github/org-sync.toml", '["m8ven-mcp", "no-such-index"]', '"m8ven-mcp"')
 rc, _, err = run_err("plan", di)
 check(rc not in (0, None) and "indexes must be a list" in str(rc), "indexes as a string fails plan")
+edit(di, ".github/org-sync.toml", 'indexes = "m8ven-mcp"', "indexes = [{ name = 1 }]")
+rc, _, err = run_err("plan", di)
+check(
+    rc not in (0, None) and "indexes must be a list" in str(rc),
+    "a non-string index (a table) fails plan with the message, not a TypeError",
+)
 
 head = read(os.path.join(ORG, "templates", "references-header.bib"))
 seed = "% org-sync:begin bib-header\n" + head + "% org-sync:end bib-header\n"

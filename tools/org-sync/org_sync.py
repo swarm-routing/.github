@@ -846,7 +846,9 @@ def load_config(repo_dir, slug=None):
         )
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
     indexes = cfg.setdefault("indexes", [])
-    if not isinstance(indexes, list) or any(i not in INDEXES for i in indexes):
+    if not isinstance(indexes, list) or any(
+        not isinstance(i, str) or i not in INDEXES for i in indexes
+    ):
         sys.exit(
             f"org-sync: {CONFIG}: indexes must be a list of known index names "
             f"({', '.join(INDEXES)}); got {indexes!r}"
