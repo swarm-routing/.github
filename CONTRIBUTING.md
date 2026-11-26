@@ -1602,13 +1602,21 @@ a top-level table keyed by index, each the id the index issued the listing
 (never derived from owner/name, #966):
 `indexes = { m8ven-mcp = "<id>" }`, or
 `indexes = { m8ven-mcp = { id = "<id>", variant = "verified" } }` once the
-index offers a variant (#963); a repository without the key gets no row. The
-known indexes and their variants are `INDEXES` in `tools/org-sync/org_sync.py`:
-`m8ven-mcp` (the [M8ven Trust Index](https://m8ven.ai) of public MCP servers;
-badge `https://m8ven.ai/badge/mcp/<id>`, `?variant=verified` for a verified
-publisher, linking `https://m8ven.ai/mcp/<id>?s=readme`). An unknown index, an
-id outside `[a-z0-9][a-z0-9-]*` or an unknown variant fails `org_sync.py
-plan`, `apply` and `check`; a new index is a new `INDEXES` entry. OpenSSF Best Practices stays in Trust: it is a certification the
+index offers a variant (#963), or
+`indexes = { m8ven-mcp = { id = "<id>", verify_id = "<verify id>" } }` once the
+index issues the publisher a verified badge of its own (#968); a repository
+without the key gets no row. The known indexes, their variants and verified
+badges are `INDEXES` in `tools/org-sync/org_sync.py`: `m8ven-mcp` (the
+[M8ven Trust Index](https://m8ven.ai) of public MCP servers; badge
+`https://m8ven.ai/badge/mcp/<id>`, `?variant=verified` for a verified
+publisher, linking `https://m8ven.ai/mcp/<id>?s=readme`; with `verify_id`
+instead the "M8ven Verified" badge
+`https://m8ven.ai/api/agent-verify/badge?id=<verify id>`, linking
+`https://m8ven.ai/verified/verify?id=<verify id>`, exactly as M8ven issues
+them). An unknown index, an id outside `[a-z0-9][a-z0-9-]*`, an unknown
+variant, a verify id outside `[0-9a-f]{16}` or a `variant` with a `verify_id`
+fails `org_sync.py plan`, `apply` and `check`; a new index is a new `INDEXES`
+entry. OpenSSF Best Practices stays in Trust: it is a certification the
 project answers, not a listing. A repository's `badges` list
 says which appear, never their order. A badge of the repository's own (a
 coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
