@@ -725,7 +725,12 @@ A consumer names a **release** of its dependency, never a moving ref:
   ns-3 adapter's layout (swarm-routing/swarm-adapter-ns3#258: no `core/`, the
   root `CMakeLists.txt` reads `swarm-core.lock`) the lock is the whole pin:
   the check reads the root `CMakeLists.txt`, wants no `core-deps`, and
-  org-bot's bump PR moves the lock alone. A repository runs the check by
+  org-bot's bump PR moves the lock alone. A root vcpkg consumer
+  (swarm-routing/swarm-routingd, #958: no `core/`, the root `CMakeLists.txt`
+  finds the package, the root `vcpkg.json` and `vcpkg-configuration.json` pin
+  it) is checked as vcpkg mode on the root `CMakeLists.txt`, wants no
+  `core-deps`, and org-bot's bump PR moves the lock, the override and the
+  baseline. A repository runs the check by
   calling `reusable-swarm-core-pin.yml` from its own workflow (not an
   org-managed file).
 - **The moving-ref check** (`tools/protocol-review/check_invariants.py`, the
