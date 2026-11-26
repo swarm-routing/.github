@@ -112,17 +112,12 @@ chat, not the record.
 - Never dismiss a security alert or handle a leaked secret: both are the
   maintainer's; review `security-autofix.yml`'s PRs like any other
   (swarm-routing/.github#629; CONTRIBUTING "Security alerts").
-- The moment a bug is suspected, open its RCAPA ticket, before
-  investigating: an ns-3 bug in swarm-routing/sim-tools (`NS3-NNN`; labels
-  `rcapa`, `ns3-upstream`, `verification`, `ns3`), a regression in a
-  published library in that library's repository (`<PREFIX>-NNN`; `rcapa`,
-  `bug`). The API applies no form labels: open it with swarm-routing/.github
-  `tools/rcapa/rcapa.py open`, or set them yourself. A bug met during other
-  work pauses it until the ticket is open. Post each step on the ticket as
-  you go (`rcapa.py log`: hypothesis, source read, reproducer run with
-  versions/commits and result, fix tried, duplicate search); write the RCAPA
-  doc and register row from the ticket. Every workaround links the ID;
-  upstream reports go out only through swarm-routing/ns3-upstream-report; a
-  regression's ticket stays open until a release carries the fix; the pins
-  and `git tag --contains` decide, never memory (CONTRIBUTING "RCAPA", "ns-3
-  bugs (RCAPA)"; swarm-routing/.github#952).
+- A suspected bug gets its RCAPA ticket before any investigation, pausing
+  other work: ns-3 in swarm-routing/sim-tools (`NS3-NNN`; `rcapa`,
+  `ns3-upstream`, `verification`, `ns3`), a published-library regression in
+  its repository (`<PREFIX>-NNN`; `rcapa`, `bug`). The API sets no form
+  labels: open it with swarm-routing/.github `tools/rcapa/rcapa.py open`. Log
+  each step on it (`rcapa.py log`); the doc and register row come from it.
+  Workarounds link the ID; upstream reports go only through
+  swarm-routing/ns3-upstream-report; `git tag --contains` decides, never
+  memory (CONTRIBUTING "RCAPA"; swarm-routing/.github#952).
