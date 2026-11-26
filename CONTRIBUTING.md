@@ -678,6 +678,19 @@ A consumer names a **release** of its dependency, never a moving ref:
   org-bot's `swarm-core-pin` bump moves it, with the lock or alone; while no
   adapter release ships the lock's swarm-core, the line stays and only
   `@main` outside `canary-dependencies:` is refused.
+- **`core/` and `ns3/` build on one swarm-core release** (#930). A
+  protocol's `core/` takes swarm-core from its lock, its ns-3 module links
+  the swarm-core of the swarm-adapter-ns3 release its `dependencies:` names
+  (`${libswarm-core}`). So the swarm-adapter-ns3 release each ns-3 CI and
+  benchmark-cell line names (tag or commit) must carry its own
+  `swarm-core.lock` naming the protocol's lock's swarm-core tag; a line on an
+  adapter release built on another swarm-core (or on one from before the
+  move, which has no lock) fails `swarm-core / pin` on every event, a hard
+  finding, not a stale one. A new swarm-core release that no adapter release
+  ships yet holds the bump: org-bot's `swarm-core-pin` leaves the lock where
+  it is and says so (the check reports the newer release as stale only), and
+  moves the lock and the ns-3 lines together once the adapter release on it
+  is out.
 - **Where the release is named.** The `Makefile` (`SWARM_CORE_REF`, the include
   check's fetch) and the ns-3 CI's `dependencies:` name the lock's tag
   (`reusable-ns3-ci.yml` clones with `git clone --branch`, which takes a tag,
@@ -714,7 +727,8 @@ A consumer names a **release** of its dependency, never a moving ref:
   check passes: a release never turns an unrelated PR red), on `main` as a
   failure only while org-bot's bump PR is open (its branch
   `org-bot/swarm-core-pin` exists), a warning before that. A pin the files
-  disagree on, or a lock that does not verify, fails on every event
+  disagree on, a lock that does not verify, or an ns-3 line on an adapter
+  release built on another swarm-core than the lock's (#930), fails on every event
   (`--stale fail|warn|bump-pr`; a local run fails on all of it). Between
   releases nothing moves. In vcpkg mode
   (a root `vcpkg.json` depending on `swarm-core`) it also checks that
