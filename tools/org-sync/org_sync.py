@@ -865,6 +865,10 @@ def load_config(repo_dir, slug=None):
         )
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
     cfg["indexes"] = check_indexes(cfg.get("indexes", {}))
+    # whether the repository builds on ns-3 (#961): every protocol does; a
+    # C++ library, adapter or daemon only when it says so (`ns3 = true`)
+    if not isinstance(cfg.setdefault("ns3", cfg["kind"] == "protocol"), bool):
+        sys.exit(f"org-sync: {CONFIG}: ns3 must be true or false (does it build on ns-3?)")
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
     # the commit every reference to this repository names: the lock's (apply may move it)
     cfg["pin"] = read_lock(repo_dir)
@@ -1953,7 +1957,10 @@ def items(cfg):
         # known-bugs table is generated from sim-tools' ns-3 bug register by
         # cmd/ns3-bugs, so it is the org's, refreshed
         out.append(("seed", "docs/install.md", "install/install.md.in", None))
-        out.append(("section", "docs/install.md", "install/known-bugs.md", "known-bugs"))
+        # only where the repository builds on ns-3; elsewhere a line saying the
+        # register does not apply (the OMNeT++ adapter, the daemon, #961)
+        kb = "known-bugs.md" if cfg["ns3"] else "known-bugs-none.md"
+        out.append(("section", "docs/install.md", f"install/{kb}", "known-bugs"))
         if cfg.get("quality", {}).get("sonar", True):
             out.append(
                 ("seed", "sonar-project.properties", "quality/sonar-project.properties.in", None)
@@ -2055,6 +2062,38 @@ def orphans(cfg, repo_dir):
                 )
             )
     return out
+
+
+def insert_seed_block(cfg, cur, path, name, want):
+    """The text with a block a Markdown seed gained after the repository was
+    seeded (#961): under the seed's heading for it, after that heading when the
+    repository has it, else heading and block before the seed's next heading
+    (at the end when the repository lacks that one too). None when the seed has
+    no such block or the heading is not found exactly once."""
+    seed = next((i for i in items(cfg) if i[0] == "seed" and i[1] == path), None)
+    tmpl = template(seed[2]) if seed and path.endswith(".md") else None
+    begin = markers(path)[0].format(name)
+    if not tmpl or begin not in tmpl:
+        return None
+    before, _, after = tmpl.partition(begin)
+    heads = re.findall(r"^## [^{}\n]*$", before, re.M)
+    if not heads or not before.rstrip("\n").endswith(heads[-1]):
+        return None  # only a block right under its heading
+    head = heads[-1]
+    block = wrap(name, want, path) + "\n"
+    hits = list(re.finditer(rf"^{re.escape(head)}[ \t]*\n", cur, re.M))
+    if len(hits) > 1:
+        return None
+    if hits:
+        e = hits[0].end() + (cur[hits[0].end() :].startswith("\n"))
+        rest = cur[e:]
+        return cur[:e] + block + ("\n" + rest if rest.strip() else "")
+    section = f"{head}\n\n{block}"
+    nxt = re.search(r"^## [^{}\n]*$", after, re.M)
+    m = nxt and list(re.finditer(rf"^{re.escape(nxt.group(0))}[ \t]*$", cur, re.M))
+    if m and len(m) == 1:
+        return cur[: m[0].start()] + section + "\n" + cur[m[0].start() :]
+    return cur.rstrip("\n") + "\n\n" + section
 
 
 def adopt_span(text, path, name):
@@ -2238,6 +2277,8 @@ def evaluate(cfg, repo_dir, item):
             cur[: m.end()] + "\n" + wrap(name, want, path) + "\n" + cur[m.end() :],
             "inserted",
         )
+    if not span and (new := insert_seed_block(cfg, cur, path, name, want)):
+        return "adopt", new, "inserted under its heading, as the seed has it"
     if not span:
         return (
             "conflict",
