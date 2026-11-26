@@ -1022,6 +1022,8 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#324](https://github.com/swarm-routing/.github/issues/324) Emulation: the daemons on CORE/EMANE, real stacks over emulated radio links | Planned | 0 / 3 |
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
 | [#674](https://github.com/swarm-routing/.github/issues/674) Multi-Simulator & Unified Web UI Plan (sim-tools, swarm-web-ui) | Planned | 0 / 2 |
+| [#970](https://github.com/swarm-routing/.github/issues/970) List the org in external indexes (MCP, plugin, ns-3, research archives) | Planned | 0 / 7 |
+| [#978](https://github.com/swarm-routing/.github/issues/978) JOSS software papers: eligibility, timeline and one paper per research package | Planned | 0 / 4 |
 
 <details><summary>Closed: 5 epics</summary>
 
