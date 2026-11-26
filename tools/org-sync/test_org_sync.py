@@ -676,6 +676,48 @@ def run_err(*argv):
     return rc, out.getvalue(), err.getvalue()
 
 
+# indexes (#963): an Indexes row only for the indexes a repository opts into
+check(
+    "| Indexes |" not in rq and "m8ven" not in rq and "| Indexes |" not in rb,
+    "no indexes key: no Indexes row, nothing rendered",
+)
+di = fresh()
+run("init", di, "--kind", "protocol", "--dual", "core/")
+edit(
+    di,
+    ".github/org-sync.toml",
+    'kind = "protocol"\n',
+    'kind = "protocol"\nbestpractices_project = "16656"\nindexes = ["m8ven-mcp"]\n',
+)
+run("apply", di)
+ri = read(os.path.join(di, "README.md")).splitlines()
+groups = [ln.split(" | ")[0] for ln in ri if ln.startswith("| ") and " | " in ln]
+check(
+    "| Indexes | [![M8ven Score](https://m8ven.ai/badge/mcp/swarm-routing/demo)]"
+    "(https://m8ven.ai/mcp/swarm-routing/demo) |"
+    in ri
+    and groups.index("| Trust") + 1 == groups.index("| Indexes")
+    and "bestpractices.dev" in next(ln for ln in ri if ln.startswith("| Trust |"))
+    and run("check", di)[0] == 0,
+    'indexes = ["m8ven-mcp"] renders the M8ven badge for owner/name in an Indexes row after'
+    " Trust (Best Practices stays in Trust); check is clean",
+)
+edit(di, ".github/org-sync.toml", '["m8ven-mcp"]', '["m8ven-mcp", "no-such-index"]')
+rc, _, err = run_err("plan", di)
+check(
+    rc not in (0, None) and "indexes must be a list of known index names (m8ven-mcp)" in str(rc),
+    "an unknown index name fails plan, naming the known indexes",
+)
+edit(di, ".github/org-sync.toml", '["m8ven-mcp", "no-such-index"]', '"m8ven-mcp"')
+rc, _, err = run_err("plan", di)
+check(rc not in (0, None) and "indexes must be a list" in str(rc), "indexes as a string fails plan")
+edit(di, ".github/org-sync.toml", 'indexes = "m8ven-mcp"', "indexes = [{ name = 1 }]")
+rc, _, err = run_err("plan", di)
+check(
+    rc not in (0, None) and "indexes must be a list" in str(rc),
+    "a non-string index (a table) fails plan with the message, not a TypeError",
+)
+
 head = read(os.path.join(ORG, "templates", "references-header.bib"))
 seed = "% org-sync:begin bib-header\n" + head + "% org-sync:end bib-header\n"
 check(

@@ -209,6 +209,9 @@ def markers(path):
 # only when the config names a PyPI project, `pypi_project = "<name>"`: set it
 # after the project's first publish (before it, shields shows "package not
 # found").
+# `indexes` (swarm-routing/.github#963): one badge per external index that
+# lists the repository, only for the indexes the config names,
+# `indexes = ["m8ven-mcp"]` (INDEXES; an unknown name is a config error).
 # `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security,
 # maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
@@ -230,9 +233,23 @@ BASE_BADGES = [
     "arena",
     "scorecard",
     "bestpractices",
+    "indexes",
     "rcapa",
     "ns3-bugs",
 ]
+# The external indexes a repository may opt into (`indexes`): name -> (alt,
+# image, link), each a format of the repository's owner/name. The Indexes group
+# is for directories that list or score a repository from outside; OpenSSF Best
+# Practices stays in Trust (a certification the project answers, #23).
+INDEXES = {
+    # the M8ven Trust Index of public MCP servers; `?variant=verified` only once
+    # the publisher is verified there
+    "m8ven-mcp": (
+        "M8ven Score",
+        "https://m8ven.ai/badge/mcp/{repo}",
+        "https://m8ven.ai/mcp/{repo}",
+    ),
+}
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
     "c-cpp": ["cxx", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -257,7 +274,7 @@ KIND_BADGES = {
 # `[[extra_badges]]` adds a repository's own badge to a group (after its kinds):
 #
 #   [[extra_badges]]
-#   group = "quality"    # build, quality, release, trust, stack or community
+#   group = "quality"    # build, quality, release, trust, indexes, stack or community
 #   alt = "Core coverage"
 #   image = "https://img.shields.io/endpoint?url=..."
 #   link = "https://github.com/..."
@@ -266,6 +283,7 @@ BADGE_GROUPS = {
     "quality": ("Quality", [*SONAR_METRICS, "codecov", "coderabbit"]),
     "release": ("Release", ["release", "doi", "cite", "vcpkg", "pypi", "licence"]),
     "trust": ("Trust", ["scorecard", "bestpractices", "cosign"]),
+    "indexes": ("Indexes", ["indexes"]),
     "stack": ("Stack", ["cxx", "ns3", "python"]),
     "community": (
         "Community & docs",
@@ -827,6 +845,14 @@ def load_config(repo_dir, slug=None):
             "(default docs/api/Doxyfile)"
         )
     cfg["extra_badges"] = check_extra_badges(cfg.get("extra_badges", []))
+    indexes = cfg.setdefault("indexes", [])
+    if not isinstance(indexes, list) or any(
+        not isinstance(i, str) or i not in INDEXES for i in indexes
+    ):
+        sys.exit(
+            f"org-sync: {CONFIG}: indexes must be a list of known index names "
+            f"({', '.join(INDEXES)}); got {indexes!r}"
+        )
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
     # the commit every reference to this repository names: the lock's (apply may move it)
     cfg["pin"] = read_lock(repo_dir)
@@ -1489,6 +1515,13 @@ def badges_by_kind(cfg, repo_dir):
             # the project's level on bestpractices.dev (in progress, passing, ...)
             url = f"https://www.bestpractices.dev/projects/{bestpractices_project(cfg)}"
             out[b] = f"[![OpenSSF Best Practices]({url}/badge)]({url})"
+        elif b == "indexes" and cfg["indexes"]:
+            # the external indexes the repository opted into, in INDEXES order
+            out[b] = " ".join(
+                f"[![{alt}]({image.format(repo=repo)})]({link.format(repo=repo)})"
+                for name, (alt, image, link) in INDEXES.items()
+                if name in cfg["indexes"]
+            )
         elif b == "rcapa" and "docs/rcapa/README.md" not in cfg.get("skip", []):
             # open RCAPA tickets (label `rcapa`), linking the project's flow (ADR-0003);
             # an absolute link, so the badge holds before the docs/rcapa/ seed lands
