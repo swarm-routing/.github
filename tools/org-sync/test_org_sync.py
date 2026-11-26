@@ -676,7 +676,8 @@ def run_err(*argv):
     return rc, out.getvalue(), err.getvalue()
 
 
-# indexes (#963): an Indexes row only for the indexes a repository opts into
+# indexes (#963, #966): an Indexes row only for the indexes a repository opts into,
+# each by the listing id the index issued, never owner/name
 check(
     "| Indexes |" not in rq and "m8ven" not in rq and "| Indexes |" not in rb,
     "no indexes key: no Indexes row, nothing rendered",
@@ -687,36 +688,56 @@ edit(
     di,
     ".github/org-sync.toml",
     'kind = "protocol"\n',
-    'kind = "protocol"\nbestpractices_project = "16656"\nindexes = ["m8ven-mcp"]\n',
+    'kind = "protocol"\nbestpractices_project = "16656"\n'
+    'indexes = { m8ven-mcp = "swarm-routing-demo-abc123" }\n',
 )
 run("apply", di)
 ri = read(os.path.join(di, "README.md")).splitlines()
 groups = [ln.split(" | ")[0] for ln in ri if ln.startswith("| ") and " | " in ln]
 check(
-    "| Indexes | [![M8ven Score](https://m8ven.ai/badge/mcp/swarm-routing/demo)]"
-    "(https://m8ven.ai/mcp/swarm-routing/demo) |"
+    "| Indexes | [![M8ven Score](https://m8ven.ai/badge/mcp/swarm-routing-demo-abc123)]"
+    "(https://m8ven.ai/mcp/swarm-routing-demo-abc123?s=readme) |"
     in ri
+    and "m8ven.ai/badge/mcp/swarm-routing/demo" not in "".join(ri)
     and groups.index("| Trust") + 1 == groups.index("| Indexes")
     and "bestpractices.dev" in next(ln for ln in ri if ln.startswith("| Trust |"))
     and run("check", di)[0] == 0,
-    'indexes = ["m8ven-mcp"] renders the M8ven badge for owner/name in an Indexes row after'
-    " Trust (Best Practices stays in Trust); check is clean",
+    "indexes = { m8ven-mcp = <id> } renders the M8ven badge for that listing id in an Indexes"
+    " row after Trust (Best Practices stays in Trust); check is clean",
 )
-edit(di, ".github/org-sync.toml", '["m8ven-mcp"]', '["m8ven-mcp", "no-such-index"]')
-rc, _, err = run_err("plan", di)
+edit(
+    di,
+    ".github/org-sync.toml",
+    '{ m8ven-mcp = "swarm-routing-demo-abc123" }',
+    '{ m8ven-mcp = { id = "swarm-routing-demo-abc123", variant = "verified" } }',
+)
+run("apply", di)
 check(
-    rc not in (0, None) and "indexes must be a list of known index names (m8ven-mcp)" in str(rc),
-    "an unknown index name fails plan, naming the known indexes",
+    "| Indexes | [![M8ven Score](https://m8ven.ai/badge/mcp/swarm-routing-demo-abc123"
+    "?variant=verified)](https://m8ven.ai/mcp/swarm-routing-demo-abc123?s=readme) |"
+    in read(os.path.join(di, "README.md")).splitlines()
+    and run("check", di)[0] == 0,
+    'variant = "verified" adds ?variant=verified to the badge, the link unchanged; check is clean',
 )
-edit(di, ".github/org-sync.toml", '["m8ven-mcp", "no-such-index"]', '"m8ven-mcp"')
-rc, _, err = run_err("plan", di)
-check(rc not in (0, None) and "indexes must be a list" in str(rc), "indexes as a string fails plan")
-edit(di, ".github/org-sync.toml", 'indexes = "m8ven-mcp"', "indexes = [{ name = 1 }]")
-rc, _, err = run_err("plan", di)
-check(
-    rc not in (0, None) and "indexes must be a list" in str(rc),
-    "a non-string index (a table) fails plan with the message, not a TypeError",
-)
+good = 'indexes = { m8ven-mcp = { id = "swarm-routing-demo-abc123", variant = "verified" } }'
+for bad, why, msg in (
+    ('indexes = { no-such-index = "x" }', "an unknown index", "unknown index 'no-such-index'"),
+    ('indexes = { m8ven-mcp = "Bad_ID" }', "an id outside [a-z0-9-]", "got m8ven-mcp = "),
+    ('indexes = { m8ven-mcp = "-lead" }', "an id with a leading hyphen", "got m8ven-mcp = "),
+    ('indexes = { m8ven-mcp = { variant = "verified" } }', "an entry with no id", "got m8ven-mcp"),
+    (
+        'indexes = { m8ven-mcp = { id = "a", variant = "gold" } }',
+        "an unknown variant",
+        "variant must be one of verified; got 'gold'",
+    ),
+    ('indexes = { m8ven-mcp = { id = "a", extra = 1 } }', "an unknown entry key", "got m8ven-mcp"),
+    ('indexes = ["m8ven-mcp"]', "the old list form", "indexes must be a table"),
+    ("indexes = { m8ven-mcp = 7 }", "a non-string id", "got m8ven-mcp = 7"),
+):
+    edit(di, ".github/org-sync.toml", good, bad)
+    rc, _, _ = run_err("plan", di)
+    check(rc not in (0, None) and msg in str(rc), f"{why} fails plan with the config message")
+    edit(di, ".github/org-sync.toml", bad, good)
 
 head = read(os.path.join(ORG, "templates", "references-header.bib"))
 seed = "% org-sync:begin bib-header\n" + head + "% org-sync:end bib-header\n"
