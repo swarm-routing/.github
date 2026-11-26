@@ -14,7 +14,9 @@ name: Reusable swarm-core pin
 # is checked in lock mode instead: one release tag everywhere, the lock verified
 # against the release, and red only when a newer swarm-core release is out.
 # With a root vcpkg.json on swarm-core (vcpkg mode, #489), also: the override
-# pins the lock's version and the swarm-routing/vcpkg-registry baseline holds it.
+# pins the lock's version and the swarm-routing/vcpkg-registry baseline holds it;
+# a root vcpkg consumer with no core/ (swarm-routing/swarm-routingd, #958) is
+# checked the same way on its root CMakeLists.txt, with no core-deps.
 # A stale but consistent pin (a newer release; in commit mode, swarm-core main
 # moved) is not the change's own finding (#586): on pull_request and
 # merge_group it is a warning and the check passes, so a swarm-core release

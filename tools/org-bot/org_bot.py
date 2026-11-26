@@ -633,7 +633,8 @@ def generate(task, repo, clone, data, out, skip=None):
         locked = os.path.exists(os.path.join(clone, SWARM_CORE_LOCK))
         if not os.path.exists(cmake):
             # the ns-3 adapter's layout (swarm-routing/swarm-adapter-ns3#258): no
-            # core/, the root CMakeLists.txt reads the lock
+            # core/, the root CMakeLists.txt reads the lock; or a root vcpkg
+            # consumer (swarm-routing/swarm-routingd, #958), which finds the port
             cmake = os.path.join(clone, "CMakeLists.txt")
             if not locked or not os.path.exists(cmake):
                 return None
@@ -2344,7 +2345,7 @@ def self_test():
     v3_base = vreg_port("0.3.0")
     globals()["VCPKG_REGISTRY"] = vreg
 
-    def locked_repo(name, vcpkg=False, adapter=False):
+    def locked_repo(name, vcpkg=False, adapter=False, root=False):
         src = os.path.join(work, "src", name)
         lock = release_lock.render(
             "SWARM_CORE", sc_repo, "v0.3.0", "swarm-core-{version}.tar.gz", rbase
@@ -2382,6 +2383,10 @@ def self_test():
                 },
                 indent=2,
             )
+        if root:  # a root vcpkg consumer (swarm-routingd, #958): no core/, no core-deps
+            for p_ in ("core/CMakeLists.txt", "Makefile", ".github/workflows/licence.yml"):
+                files.pop(p_)
+            files["CMakeLists.txt"] = "find_package(swarm-core CONFIG REQUIRED)\n"
         for rel_, text in files.items():
             os.makedirs(os.path.dirname(os.path.join(src, rel_)), exist_ok=True)
             with open(os.path.join(src, rel_), "w") as fh:
@@ -2396,12 +2401,19 @@ def self_test():
 
     locked_repo("zeta")
     locked_repo("zeta-vcpkg", vcpkg=True)
+    locked_repo("zeta-root", vcpkg=True, root=True)
     ldata = os.path.join(work, "ldata.json")
     with open(ldata, "w") as fh:
         json.dump({"org": ORG, "repos": [{"name": "zeta", "epics": []}]}, fh)
     vdata = os.path.join(work, "vdata.json")
     with open(vdata, "w") as fh:
-        json.dump({"org": ORG, "repos": [{"name": "zeta-vcpkg", "epics": []}]}, fh)
+        json.dump(
+            {
+                "org": ORG,
+                "repos": [{"name": "zeta-vcpkg", "epics": []}, {"name": "zeta-root", "epics": []}],
+            },
+            fh,
+        )
     globals()["SWARM_CORE_RELEASES"] = rbase
     sc_more("main moves, no release")
     gh = FakeGitHub()
@@ -2454,18 +2466,19 @@ def self_test():
     check(
         "swarm-core-pin, vcpkg: a release the registry lacks yet gets no PR",
         "zeta-vcpkg swarm-core-pin: up to date" in out
+        and "zeta-root swarm-core-pin: up to date" in out
         and not [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")],
     )
     v4_base = vreg_port("0.4.0")
     gh = FakeGitHub()
     res, out = go(gh, task="swarm-core-pin", data=vdata)
 
-    def zv(path):
+    def zv(path, name="zeta-vcpkg"):
         return sh(
             [
                 "git",
                 "--git-dir",
-                os.path.join(remotes, ORG, "zeta-vcpkg.git"),
+                os.path.join(remotes, ORG, name + ".git"),
                 "show",
                 f"org-bot/swarm-core-pin:{path}",
             ],
@@ -2475,10 +2488,19 @@ def self_test():
     post = [c for c in gh.calls if c[0] == "POST" and c[1].endswith("/pulls")]
     check(
         "swarm-core-pin, vcpkg: once the registry has it, one PR moves lock, override and baseline",
-        len(post) == 1
+        len([c for c in post if "/zeta-vcpkg/" in c[1]]) == 1
         and "SWARM_CORE_TAG=v0.4.0" in zv("swarm-core.lock")
         and '"version": "0.4.0"' in zv("vcpkg.json")
         and v4_base in zv("vcpkg-configuration.json"),
+    )
+    root_post = [c for c in post if "/zeta-root/" in c[1]]
+    check(
+        "swarm-core-pin, root vcpkg (#958): one PR moves lock, override and baseline alone",
+        len(root_post) == 1
+        and "in 3 file(s)" in root_post[0][2]["body"]
+        and "SWARM_CORE_TAG=v0.4.0" in zv("swarm-core.lock", "zeta-root")
+        and '"version": "0.4.0"' in zv("vcpkg.json", "zeta-root")
+        and v4_base in zv("vcpkg-configuration.json", "zeta-root"),
     )
 
     # release-rebuild (#430): a behind bot/release PR gets its caller dispatched with mode bump

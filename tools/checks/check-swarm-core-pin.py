@@ -54,6 +54,13 @@ without `core/`: the root `CMakeLists.txt` reads the lock and there is no
 `CMakeLists.txt` in place of `core/CMakeLists.txt`, wants no `core-deps`, and
 `--bump` writes the lock alone.
 
+The root vcpkg layout (swarm-routing/swarm-routingd, #958), vcpkg mode without
+`core/`: the root `CMakeLists.txt` finds swarm-core with
+`find_package(swarm-core CONFIG ...)`, and the root `vcpkg.json` and
+`vcpkg-configuration.json` pin it; no `core-deps`, Makefile or ns-3 dependency
+pin. Everything vcpkg mode checks below holds, on the root `CMakeLists.txt`,
+and `--bump` moves the lock, the override and the baseline.
+
 vcpkg mode (#489), a lock mode for a repository whose `core/` takes swarm-core
 through vcpkg in manifest mode: `vcpkg.json` at the root depends on
 `swarm-core`. The lock stays the record of the release the ns-3 build uses
@@ -382,8 +389,8 @@ def check_lock_files():
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_ASSET={asset}")
     if f"{prefix}_SHA256" not in values:
         errors.append(f"{LOCK}: want {LOCK_PREFIX}_SHA256, the hash of {asset}")
-    adapter = adapter_layout()
-    cmake = ROOT_CMAKE if adapter else CMAKE
+    root = root_layout()
+    cmake = ROOT_CMAKE if root else CMAKE
     if not os.path.exists(cmake):
         errors.append(f"{cmake}: missing")
     else:
@@ -393,7 +400,7 @@ def check_lock_files():
             if not FIND_PACKAGE.search(text):
                 errors.append(
                     f"{cmake}: no find_package(swarm-core CONFIG ...): with {VCPKG_MANIFEST}, "
-                    "core/ takes swarm-core from its vcpkg port"
+                    "the build takes swarm-core from its vcpkg port"
                 )
             if LOCK_READ.search(text):
                 errors.append(
@@ -435,7 +442,7 @@ def check_lock_files():
                 continue  # swarm-adapter-ns3's release, not swarm-core's (#691)
             if ref not in ok:
                 errors.append(f"{rel}:{n}: the ns-3 dependency names swarm-core {ref}, not {tag}")
-    if not deps and not adapter:
+    if not deps and not root:
         errors.append(f".github/workflows: no core-deps entry for swarm-core (want @{tag}:core)")
     return prefix, values, errors
 
@@ -551,13 +558,17 @@ def move_adapter(a_tag, a_commit, rename=True):
     return changed
 
 
-def adapter_layout():
-    """True for the ns-3 adapter's layout: no core/CMakeLists.txt, and the root
-    CMakeLists.txt reads the lock (swarm-routing/swarm-adapter-ns3#258). Its pin is
-    the lock alone: no core-deps (it has no dual-licensed core/ of its own), no
-    Makefile or ns-3 dependency pin."""
+def root_layout():
+    """True when the pin lives at the root, with no core/CMakeLists.txt: the ns-3
+    adapter's layout, whose root CMakeLists.txt reads the lock
+    (swarm-routing/swarm-adapter-ns3#258), or a root vcpkg consumer
+    (swarm-routing/swarm-routingd, #958), whose root vcpkg.json depends on
+    swarm-core. Its pin is the lock (and the vcpkg files) alone: no core-deps (no
+    dual-licensed core/ of its own), no Makefile or ns-3 dependency pin."""
     if os.path.exists(CMAKE) or not os.path.exists(ROOT_CMAKE):
         return False
+    if vcpkg_mode():
+        return True
     with open(ROOT_CMAKE, encoding="utf-8") as f:
         return LOCK_READ.search(f.read()) is not None
 
@@ -1637,6 +1648,105 @@ def self_test():
             and ".github/workflows/ns3.yml" in out
             and "None" not in out
             and "current" in golock(same, bump_mode=True)[1],
+        )
+
+        # the root vcpkg layout (swarm-routing/swarm-routingd, #958): no core/, the
+        # root CMakeLists.txt finds the vcpkg port, no core-deps, no ns-3 build
+        r7 = commit(reg, port("0.7.0", 0), "0.7.0")
+
+        def rooted(name, version="0.7.0", baseline=r7, tag="v0.7.0"):
+            d = os.path.join(t, name)
+            lock = release_lock.render(LOCK_PREFIX, CORE_REPO, tag, ASSET, base, "# lock\n")
+            for p_, body in (
+                (LOCK, lock),
+                (ROOT_CMAKE, "project(d)\nfind_package(swarm-core CONFIG REQUIRED)\n"),
+                ("Makefile", "build:\n\tcmake --build build\n"),
+                (".github/workflows/build.yml", "jobs:\n  build:\n    steps: []\n"),
+            ):
+                os.makedirs(os.path.dirname(os.path.join(d, p_)) or d, exist_ok=True)
+                with open(os.path.join(d, p_), "w", encoding="utf-8") as f:
+                    f.write(body)
+            write_json(
+                os.path.join(d, VCPKG_MANIFEST),
+                {
+                    "dependencies": [PORT],
+                    "overrides": [{"name": PORT, "version": version, "port-version": 0}],
+                },
+            )
+            write_json(
+                os.path.join(d, VCPKG_CONFIG),
+                {
+                    "registries": [
+                        {
+                            "kind": "git",
+                            "repository": REGISTRY,
+                            "baseline": baseline,
+                            "packages": [PORT],
+                        }
+                    ]
+                },
+            )
+            return d
+
+        root_ok = rooted("root-ok")
+        rc, out = govcpkg(root_ok)
+        check(
+            "root vcpkg: lock, override and baseline agree, no core/ or core-deps wanted: ok",
+            rc == 0 and "agree" in out and "core/" not in out and "core-deps" not in out,
+        )
+        rc, out = govcpkg(rooted("root-version", version="0.5.0"))
+        check(
+            "root vcpkg: an override on another version than the lock",
+            rc == 1 and "the override pins swarm-core 0.5.0, swarm-core.lock names 0.7.0" in out,
+        )
+        rc, out = govcpkg(rooted("root-baseline", baseline=r5))
+        check(
+            "root vcpkg: a baseline holding another version",
+            rc == 1 and "has swarm-core 0.5.0#0, vcpkg.json overrides 0.7.0#0" in out,
+        )
+        nofind = rooted("root-nofind")
+        with open(os.path.join(nofind, ROOT_CMAKE), "w", encoding="utf-8") as f:
+            f.write("project(d)\n")
+        rc, out = govcpkg(nofind)
+        check(
+            "root vcpkg: the root CMakeLists.txt must find_package swarm-core",
+            rc == 1 and "CMakeLists.txt: no find_package(swarm-core CONFIG" in out,
+        )
+        core_commit("eight")
+        release_lock.make_release(
+            rel, CORE_REPO, "v0.8.0", {"swarm-core-0.8.0.tar.gz": b"own eight"}, env
+        )
+        rc, out = govcpkg(root_ok)
+        check(
+            "root vcpkg: a newer release makes the lock stale",
+            rc == 1 and "swarm-core v0.8.0 is released" in out,
+        )
+        before = {
+            p_: open(os.path.join(root_ok, p_)).read()
+            for p_ in (LOCK, VCPKG_MANIFEST, VCPKG_CONFIG)
+        }
+        rc, out = govcpkg(root_ok, bump_mode=True)
+        after = {p_: open(os.path.join(root_ok, p_)).read() for p_ in before}
+        check(
+            "root vcpkg: --bump waits for the registry's port, changing nothing",
+            rc == 0 and "waiting for its port PR" in out and before == after,
+        )
+        r8 = commit(reg, port("0.8.0", 0), "0.8.0")
+        build = open(os.path.join(root_ok, ".github", "workflows", "build.yml")).read()
+        rc, out = govcpkg(root_ok, bump_mode=True)
+        with open(os.path.join(root_ok, VCPKG_MANIFEST), encoding="utf-8") as f:
+            manifest = json.load(f)
+        with open(os.path.join(root_ok, VCPKG_CONFIG), encoding="utf-8") as f:
+            config = json.load(f)
+        check(
+            "root vcpkg: --bump writes the lock, the override and the baseline, nothing else",
+            rc == 0
+            and "in 3 file(s)" in out
+            and "SWARM_CORE_TAG=v0.8.0\n" in open(os.path.join(root_ok, LOCK)).read()
+            and manifest["overrides"] == [{"name": PORT, "version": "0.8.0", "port-version": 0}]
+            and config["registries"][0]["baseline"] == r8
+            and open(os.path.join(root_ok, ".github", "workflows", "build.yml")).read() == build
+            and govcpkg(root_ok)[0] == 0,
         )
 
     for f in failures:
