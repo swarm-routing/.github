@@ -31,6 +31,8 @@ type fIssue struct {
 	isPR    bool
 	reopen  time.Time // a reopened event at this time
 	state   string
+	notes   []string // comment bodies
+	xrefPR  bool     // a pull request references it (timeline)
 }
 
 type fPull struct {
@@ -164,6 +166,33 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		pageOf(w, r, out)
+	case r.Method == "GET" && len(rest) == 3 && rest[0] == "issues" && (rest[2] == "comments" || rest[2] == "timeline"):
+		n, _ := strconv.Atoi(rest[1])
+		out := []map[string]any{}
+		for _, i := range rp.issues {
+			if i.num != n {
+				continue
+			}
+			if rest[2] == "comments" {
+				for _, c := range i.notes {
+					out = append(out, map[string]any{"body": c})
+				}
+			} else if i.xrefPR {
+				out = append(out, map[string]any{"event": "cross-referenced",
+					"source": map[string]any{"issue": map[string]any{"pull_request": map[string]any{}}}})
+			}
+		}
+		pageOf(w, r, out)
+	case r.Method == "POST" && len(rest) == 3 && rest[0] == "issues" && rest[2] == "labels":
+		n, _ := strconv.Atoi(rest[1])
+		for _, i := range rp.issues {
+			if i.num == n {
+				for _, l := range f.writes[len(f.writes)-1].body["labels"].([]any) {
+					i.labels = append(i.labels, l.(string))
+				}
+			}
+		}
+		_, _ = w.Write([]byte(`[]`))
 	case r.Method == "GET" && len(rest) == 3 && rest[0] == "releases" && rest[1] == "tags":
 		for _, t := range rp.releases {
 			if t == rest[2] {
@@ -421,5 +450,114 @@ func TestUsage(t *testing.T) {
 	}
 	if c := Main([]string{"--help"}, nil, nil, "", &o, &e); c != 0 {
 		t.Errorf("help: exit %d", c)
+	}
+}
+
+func labelWrites(f *fake) map[string][]string {
+	out := map[string][]string{}
+	for _, w := range f.writes {
+		if w.method == "POST" && strings.HasSuffix(w.path, "/labels") {
+			var ls []string
+			for _, l := range w.body["labels"].([]any) {
+				ls = append(ls, l.(string))
+			}
+			out[strings.TrimSuffix(strings.TrimPrefix(w.path, "/repos/"+Org+"/"), "/labels")] = ls
+		}
+	}
+	return out
+}
+
+func TestRCAPA(t *testing.T) {
+	step := "<!-- rcapa-step: hypothesis -->\n**RCAPA step: hypothesis** · NS3-004\n\nx"
+	f := &fake{repos: []*fRepo{
+		{name: ".github"},
+		{name: "sim-tools", issues: []*fIssue{
+			// swarm-routing/sim-tools#362 and #374: opened through the API, no labels
+			{num: 362, title: "[rcapa] NS3-004 AODV", body: acOpen, created: ago(1)},
+			{num: 374, title: "[RCAPA] NS3-005 OLSR", body: acOpen, labels: []string{"ns3"}, created: ago(5), notes: []string{"a plain comment"}},
+			{num: 380, title: "[rcapa] NS3-006 logged", body: acDone, labels: []string{"rcapa"}, created: ago(9), notes: []string{"hi", step}},
+			{num: 381, title: "[rcapa] NS3-007 a PR on it", body: acDone, labels: []string{"rcapa"}, created: ago(9), xrefPR: true},
+			{num: 382, title: "[rcapa] NS3-008 new", body: acOpen, labels: []string{"rcapa"}, created: ago(1)},
+			{num: 383, title: "about [rcapa] tickets", body: "x", created: ago(9)},
+		}},
+		{name: "swarm-adapter-ns3", issues: []*fIssue{
+			{num: 7, title: "[rcapa] SWC-001 lock bump", body: acDone, labels: []string{"priority:P1"}, created: ago(3)},
+		}},
+		{name: "lab", private: true, issues: []*fIssue{
+			{num: 2, title: "[rcapa] LAB-001 x", body: acOpen, labels: []string{"rcapa"}, created: ago(9)},
+		}},
+	}}
+	out, errs, code := run(t, f, "--dry-run")
+	if code != 0 || len(f.writes) != 0 || !strings.Contains(out, "swarm-routing/sim-tools#362: dry run: would add rcapa, ns3-upstream, verification, ns3") {
+		t.Fatalf("dry run: exit %d, %d writes: %s\n%s", code, len(f.writes), errs, out)
+	}
+	out, errs, code = run(t, f)
+	if code != 0 {
+		t.Fatalf("exit %d: %s\n%s", code, errs, out)
+	}
+	got := labelWrites(f)
+	want := map[string][]string{
+		"sim-tools/issues/362":       {"rcapa", "ns3-upstream", "verification", "ns3"},
+		"sim-tools/issues/374":       {"rcapa", "ns3-upstream", "verification"}, // ns3 already there
+		"swarm-adapter-ns3/issues/7": {"rcapa", "bug"},
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("labels:\n%v\nwant\n%v", got, want)
+	}
+	// a labelled RCAPA is kept open even with every box ticked
+	if c := closed(f); len(c) != 0 {
+		t.Errorf("closed %v", c)
+	}
+	var report string
+	for _, w := range f.writes {
+		if w.method == "POST" && w.path == "/repos/"+Org+"/.github/issues" {
+			report = w.body["body"].(string)
+		}
+	}
+	for _, s := range []string{
+		"### RCAPA tickets given their form's labels this run (3)",
+		"swarm-routing/sim-tools#362: added `rcapa`, `ns3-upstream`, `verification`, `ns3`",
+		"swarm-routing/swarm-adapter-ns3#7: added `rcapa`, `bug`",
+		"### RCAPA tickets with no recorded investigation (3)",
+		"- swarm-routing/sim-tools#374: opened 5 days ago, no logged step and no linked PR",
+		"- swarm-routing/swarm-adapter-ns3#7: opened 3 days ago",
+		"- private repositories: 1 tickets",
+	} {
+		if !strings.Contains(report, s) {
+			t.Errorf("report misses %q:\n%s", s, report)
+		}
+	}
+	unrec := strings.SplitN(strings.SplitN(report, "### RCAPA tickets with no recorded", 2)[1], "### No checkbox", 2)[0]
+	for _, s := range []string{"#362", "#380", "#381", "#382", "#383", "lab"} { // new, logged, a PR, new, not an RCAPA, private
+		if strings.Contains(unrec, s) {
+			t.Errorf("unrecorded lists %q:\n%s", s, unrec)
+		}
+	}
+	if strings.Contains(report+out, "/lab") || strings.Contains(report+out, "LAB-") {
+		t.Errorf("a private repository named:\n%s", report+out)
+	}
+	if !strings.Contains(out, "rcapa labelled 3, unrecorded 3;") {
+		t.Errorf("summary:\n%s", out)
+	}
+	// the next run adds nothing
+	f.writes = nil
+	if _, _, code := run(t, f); code != 0 || len(labelWrites(f)) != 0 {
+		t.Errorf("second run labelled %v", labelWrites(f))
+	}
+}
+
+func TestRCAPALabelBudget(t *testing.T) {
+	r := &fRepo{name: "many"}
+	for n := 1; n <= MaxLabels+3; n++ {
+		r.issues = append(r.issues, &fIssue{num: n, title: fmt.Sprintf("[rcapa] MNY-%03d x", n), body: acOpen, created: ago(1)})
+	}
+	f := &fake{repos: []*fRepo{{name: ".github"}, r}}
+	out, _, code := run(t, f)
+	if code != 0 || len(labelWrites(f)) != MaxLabels || !strings.Contains(out, "deferred (20 a run)") {
+		t.Fatalf("exit %d, %d labelled:\n%s", code, len(labelWrites(f)), out)
+	}
+	f.writes = nil
+	if _, _, code := run(t, f); code != 0 || len(labelWrites(f)) != 3 {
+		t.Errorf("second run labelled %d", len(labelWrites(f)))
 	}
 }
