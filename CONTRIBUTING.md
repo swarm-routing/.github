@@ -1832,7 +1832,7 @@ rate limit and was archived from its tag by `zenodo.py create` on 2026-11-11
 | HOPNET | [10.5281/zenodo.24125265](https://doi.org/10.5281/zenodo.24125265) | v0.2.1 [10.5281/zenodo.24536510](https://doi.org/10.5281/zenodo.24536510) |
 | sim-containers | [10.5281/zenodo.24202109](https://doi.org/10.5281/zenodo.24202109) | v1.1.0 [10.5281/zenodo.24542596](https://doi.org/10.5281/zenodo.24542596) |
 | sim-tools | [10.5281/zenodo.24136068](https://doi.org/10.5281/zenodo.24136068) | v1.1.4 [10.5281/zenodo.24511691](https://doi.org/10.5281/zenodo.24511691) |
-| swarm-adapter-ns3 | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v2.1.1 [10.5281/zenodo.24538201](https://doi.org/10.5281/zenodo.24538201) |
+| swarm-adapter-ns3 | [10.5281/zenodo.24138628](https://doi.org/10.5281/zenodo.24138628) | v2.2.0 [10.5281/zenodo.24564538](https://doi.org/10.5281/zenodo.24564538) |
 | swarm-adapter-omnet | [10.5281/zenodo.24476619](https://doi.org/10.5281/zenodo.24476619) | v2.1.0 [10.5281/zenodo.24535744](https://doi.org/10.5281/zenodo.24535744) |
 | swarm-core | [10.5281/zenodo.24476619](https://doi.org/10.5281/zenodo.24476619) | v2.1.0 [10.5281/zenodo.24535744](https://doi.org/10.5281/zenodo.24535744) |
 | Termite | [10.5281/zenodo.24124722](https://doi.org/10.5281/zenodo.24124722) | v0.1.0 [10.5281/zenodo.24124723](https://doi.org/10.5281/zenodo.24124723) |
