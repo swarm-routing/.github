@@ -213,7 +213,10 @@ def markers(path):
 # lists the repository, only for the indexes the config names, each with the
 # id the index issued its listing (never derived from owner/name):
 # `indexes = { m8ven-mcp = "<id>" }`, or `{ id = "<id>", variant = "verified" }`
-# per entry (INDEXES; an unknown index, id or variant is a config error).
+# per entry, or `{ id = "<id>", verify_id = "<verify id>" }` for the verified
+# publisher's badge in place of the score badge (#968; INDEXES; an unknown
+# index, id, variant or verify id, or a variant with a verify id, is a config
+# error).
 # `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security,
 # maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
@@ -240,18 +243,29 @@ BASE_BADGES = [
     "ns3-bugs",
 ]
 # The external indexes a repository may opt into (`indexes`): name -> (alt,
-# image, link, variants), image and link formats of the listing's `{id}`, and
-# each accepted `variant` -> the image's query. The Indexes group is for
+# image, link, variants, verify), image and link formats of the listing's
+# `{id}`, each accepted `variant` -> the image's query, and `verify`, None or
+# (alt, image, link, pattern) of the badge the index issues a verified
+# publisher by a separate `verify_id` (#968). The Indexes group is for
 # directories that list or score a repository from outside; OpenSSF Best
 # Practices stays in Trust (a certification the project answers, #23).
 INDEXES = {
     # the M8ven Trust Index of public MCP servers: the id M8ven issued once the
     # publisher claimed the listing; `verified` once the publisher is verified
+    # (the score badge's verified look, kept for #963's configs); `verify_id`
+    # the id of the "M8ven Verified" badge M8ven issues a verified publisher,
+    # its URLs exactly as M8ven gives them (#968)
     "m8ven-mcp": (
         "M8ven Score",
         "https://m8ven.ai/badge/mcp/{id}",
         "https://m8ven.ai/mcp/{id}?s=readme",
         {"verified": "?variant=verified"},
+        (
+            "M8ven Verified",
+            "https://m8ven.ai/api/agent-verify/badge?id={id}",
+            "https://m8ven.ai/verified/verify?id={id}",
+            re.compile(r"[0-9a-f]{16}"),
+        ),
     ),
 }
 INDEX_ID = re.compile(r"[a-z0-9][a-z0-9-]*")
@@ -867,8 +881,9 @@ def load_config(repo_dir, slug=None):
 
 def check_indexes(indexes):
     """`indexes`: a table keyed by a known index (INDEXES), each the listing id the
-    index issued, or `{ id = "<id>", variant = "<variant>" }`; returns name ->
-    (id, variant or None)."""
+    index issued, or `{ id = "<id>", variant = "<variant>" }`, or
+    `{ id = "<id>", verify_id = "<verify id>" }`; returns name -> (id, variant or
+    None, verify id or None)."""
     usage = (
         f"org-sync: {CONFIG}: indexes must be a table keyed by a known index "
         f"({', '.join(INDEXES)}), each the listing id the index issued "
@@ -886,7 +901,7 @@ def check_indexes(indexes):
         variants = INDEXES[name][3]
         if (
             not isinstance(entry, dict)
-            or set(entry) - {"id", "variant"}
+            or set(entry) - {"id", "variant", "verify_id"}
             or not isinstance(entry.get("id"), str)
             or not INDEX_ID.fullmatch(entry["id"])
         ):
@@ -897,7 +912,21 @@ def check_indexes(indexes):
                 f"org-sync: {CONFIG}: indexes.{name}: variant must be one of "
                 f"{', '.join(variants) or '(none)'}; got {variant!r}"
             )
-        out[name] = (entry["id"], variant)
+        verify_id = entry.get("verify_id")
+        verify = INDEXES[name][4]
+        if verify_id is not None and (
+            verify is None
+            or not isinstance(verify_id, str)
+            or not verify[3].fullmatch(verify_id)
+            or variant is not None
+        ):
+            sys.exit(
+                f"org-sync: {CONFIG}: indexes.{name}: verify_id must match "
+                f"{verify[3].pattern if verify else '(none: the index issues no verify badge)'}"
+                f" and replaces variant (the verified badge is a different badge); "
+                f"got {entry!r}"
+            )
+        out[name] = (entry["id"], variant, verify_id)
     return out
 
 
@@ -1553,9 +1582,15 @@ def badges_by_kind(cfg, repo_dir):
             # the external indexes the repository opted into, in INDEXES order,
             # each by the listing id the index issued
             cells = []
-            for name, (alt, image, link, variants) in INDEXES.items():
+            for name, (alt, image, link, variants, verify) in INDEXES.items():
                 if name in cfg["indexes"]:
-                    lid, variant = cfg["indexes"][name]
+                    lid, variant, verify_id = cfg["indexes"][name]
+                    if verify_id:
+                        # the verified publisher's badge, in place of the score (#968)
+                        valt, vimg, vlink, _ = verify
+                        img, url = vimg.format(id=verify_id), vlink.format(id=verify_id)
+                        cells.append(f"[![{valt}]({img})]({url})")
+                        continue
                     img = image.format(id=lid) + (variants[variant] if variant else "")
                     cells.append(f"[![{alt}]({img})]({link.format(id=lid)})")
             out[b] = " ".join(cells)

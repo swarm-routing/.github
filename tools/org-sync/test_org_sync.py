@@ -719,6 +719,31 @@ check(
     and run("check", di)[0] == 0,
     'variant = "verified" adds ?variant=verified to the badge, the link unchanged; check is clean',
 )
+# verify_id (#968): the "M8ven Verified" badge M8ven issues a verified publisher,
+# exactly its URLs, in place of the score badge
+edit(
+    di,
+    ".github/org-sync.toml",
+    'variant = "verified" }',
+    'verify_id = "a770df99a2438405" }',
+)
+run("apply", di)
+ri = read(os.path.join(di, "README.md")).splitlines()
+check(
+    "| Indexes | [![M8ven Verified](https://m8ven.ai/api/agent-verify/badge?id=a770df99a2438405)]"
+    "(https://m8ven.ai/verified/verify?id=a770df99a2438405) |"
+    in ri
+    and "m8ven.ai/badge/mcp/" not in "".join(ri)
+    and run("check", di)[0] == 0,
+    "verify_id renders the M8ven Verified badge and link as M8ven issued them, no score"
+    " badge; check is clean",
+)
+edit(
+    di,
+    ".github/org-sync.toml",
+    'verify_id = "a770df99a2438405" }',
+    'variant = "verified" }',
+)
 good = 'indexes = { m8ven-mcp = { id = "swarm-routing-demo-abc123", variant = "verified" } }'
 for bad, why, msg in (
     ('indexes = { no-such-index = "x" }', "an unknown index", "unknown index 'no-such-index'"),
@@ -733,6 +758,21 @@ for bad, why, msg in (
     ('indexes = { m8ven-mcp = { id = "a", extra = 1 } }', "an unknown entry key", "got m8ven-mcp"),
     ('indexes = ["m8ven-mcp"]', "the old list form", "indexes must be a table"),
     ("indexes = { m8ven-mcp = 7 }", "a non-string id", "got m8ven-mcp = 7"),
+    (
+        'indexes = { m8ven-mcp = { id = "a", verify_id = "A770DF99A243840" } }',
+        "a verify id outside [0-9a-f]{16}",
+        "verify_id must match [0-9a-f]{16}",
+    ),
+    (
+        'indexes = { m8ven-mcp = { id = "a", verify_id = 7 } }',
+        "a non-string verify id",
+        "verify_id must match",
+    ),
+    (
+        'indexes = { m8ven-mcp = { id = "a", variant = "verified", verify_id = "a770df99a2438405" } }',
+        "a variant with a verify id",
+        "replaces variant",
+    ),
 ):
     edit(di, ".github/org-sync.toml", good, bad)
     rc, _, _ = run_err("plan", di)
