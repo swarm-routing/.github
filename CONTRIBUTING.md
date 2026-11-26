@@ -384,18 +384,20 @@ the form's labels, so whoever opens it that way sets them: `rcapa`,
 `rcapa` and `bug` for a regression (`ISSUE_TEMPLATE/rcapa-regression.yml`).
 `tools/rcapa/rcapa.py open` does it: the next free ID, the form's title,
 labels and sections, read from the form. Each investigation step is posted
-on the ticket as it happens, with `rcapa.py log` (one comment with a
+on the ticket as it happens, with `tools/rcapa/rcapa.py log` (one comment with a
 `<!-- rcapa-step: <step> -->` marker): the hypothesis, the source read, each
 reproducer run with its versions or commits and result, each fix tried, the
 duplicate search. The RCAPA document and its register row are written from
-the ticket (`rcapa.py doc` drafts the timeline and evidence table).
+the ticket (`tools/rcapa/rcapa.py doc` drafts the timeline and evidence
+table). The tool lives here, in swarm-routing/.github: run it from a clone of
+this repository, as `python3 -I tools/rcapa/rcapa.py ...`.
 
 For a regression in a published library:
 
 1. **Open the ticket first**, in that library's repository, from the form
    *Regression in a release (RCAPA)* (`ISSUE_TEMPLATE/rcapa-regression.yml`)
-   or `rcapa.py open --repo <repo> auto "<short description>" --kind
-   regression`: title `[rcapa] <PREFIX>-NNN <short description>`, labels
+   or `python3 -I tools/rcapa/rcapa.py open --repo <repo> auto "<short
+   description>" --kind regression`: title `[rcapa] <PREFIX>-NNN <short description>`, labels
    `rcapa` and `bug`, a priority and a model suggestion. `NNN` is the next
    free number in that repository's `docs/rcapa/README.md` and its `[rcapa]`
    issues.
@@ -438,12 +440,13 @@ investigating it, opened from the form *ns-3 bug (RCAPA)*
 (`ISSUE_TEMPLATE/rcapa.yml`: labels `rcapa`, `ns3-upstream`, `verification`,
 `ns3`; title
 `[rcapa] NS3-NNN ...`, the next free ID of the index and of the `[rcapa]`
-issues) or, through the API, with `tools/rcapa/rcapa.py open --repo
+issues) or, through the API, with `python3 -I tools/rcapa/rcapa.py open --repo
 sim-tools auto "<short description>" --kind ns3`, which sets those labels (the
 API applies none of a form's; "RCAPA" above). It holds the ns-3
 versions and modules, the symptom, a reproducer (command, `ns3-dev` image tag
 and digest, seed, expected vs actual), the evidence and the workarounds in our
-repositories, and each investigation step as it happens (`rcapa.py log`). The
+repositories, and each investigation step as it happens
+(`tools/rcapa/rcapa.py log`). The
 register follows the ticket, written from it:
 
 - `docs/ns3-bugs.md` in swarm-routing/sim-tools is the index, one row per
