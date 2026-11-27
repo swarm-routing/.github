@@ -357,12 +357,13 @@ ADOPT = {
         r"(?<=^% this header alone\.\n)",
     ),
     # the release caller's push gate (#1012): the `release` job's comment lines
-    # from "Saves a runner" and its `if:` line, every caller's shape since #636;
-    # one without that `if:` right below the comments is a conflict, never rewritten
+    # from "Saves a runner" and its `if:`, every caller's shape since #636, with
+    # the lines indented deeper than the key (a folded `if: >-` value); one
+    # without that `if:` right below the comments is a conflict, never rewritten
     (RELEASE, "release-gate"): (
         r"^    # Saves a runner on ordinary pushes; the workflow itself checks the PR\.[^\n]*\n"
         r"(?:    #[^\n]*\n)*    if: [^\n]*\n",
-        r"(?<=\n)(?!    #|    if: )",
+        r"(?<=\n)(?!    #|    if: |     )",
     ),
 }
 # Adopted sections whose old text is the org's, not the repository's: a
@@ -1371,12 +1372,17 @@ def sonar_key(cfg):
     return cfg.get("quality", {}).get("sonar_key") or cfg["repo"].replace("/", "_")
 
 
+# a job's `uses:` of reusable-release.yml, any repository and ref: a `run:` or
+# a comment naming the file is no call
+RELEASE_CALL = re.compile(r"^[ \t]*uses:[ \t]*[\"']?[^\s#\"']*/reusable-release\.yml@", re.M)
+
+
 def release_caller(repo_dir):
     """True when .github/workflows/release.yml calls reusable-release.yml (a
     comment naming it does not count): its push gate is then the org's (#1012).
     A release workflow of the repository's own (AntHocNet's) is left alone."""
     text = read(os.path.join(repo_dir, RELEASE)) or ""
-    return any("reusable-release.yml" in ln.split("#", 1)[0] for ln in text.splitlines())
+    return bool(RELEASE_CALL.search(text))
 
 
 def calls_workflow(repo_dir, reusable):
@@ -2881,6 +2887,7 @@ def base_drift(repo_dir, base, slug, pin=None):
         cfg["swarm_core_mode"] = swarm_core_mode(tmp)
         # the references, judged at the commit HEAD pins (the templates checked against)
         cfg["ref_files"] = ref_files(tmp)
+        cfg["release_caller"] = release_caller(tmp)  # the gate, as the base's release.yml has it
         cfg["pin"] = pin
         return {
             drift_key(item, status)

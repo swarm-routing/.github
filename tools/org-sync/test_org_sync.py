@@ -2978,5 +2978,48 @@ check(
     "release-gate" not in out and read(os.path.join(dg, REL)) == own_rel,
     "release-gate: a release workflow of the repository's own is not managed",
 )
+named = own_rel.replace("make dist", "echo reusable-release.yml@main")
+write(os.path.join(dg, REL), named)
+rc, out = run("plan", dg)
+check(
+    "release-gate" not in out,
+    "release-gate: a run: naming reusable-release.yml is no call, not managed",
+)
+# a folded `if: >-`: its deeper-indented lines are the gate's, never left behind
+folded = caller(
+    "",
+    "    if: >-\n      ${{ github.event_name != 'push' ||\n"
+    "          startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}\n",
+)
+write(os.path.join(dg, REL), folded)
+run("apply", dg)
+got = read(os.path.join(dg, REL))
+check(
+    "head_commit" not in got
+    and "# org-sync:end release-gate\n    permissions:" in got
+    and run("check", dg)[0] == 0,
+    "release-gate: a folded if: is adopted whole, the next key right after the block",
+)
+# --changed-only: an old gate already on the base is the base's drift, a warning
+write(os.path.join(dg, REL), caller("", HEAD_GATE))
+
+
+def gate_commit(msg):
+    g = ["git", "-C", dg, "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "commit", "-q", "-m", msg], check=True)
+    return subprocess.run(
+        ["git", "-C", dg, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+base = gate_commit("main with a head-only gate")
+write(os.path.join(dg, "notes.txt"), "a PR that touches no managed file\n")
+gate_commit("the PR")
+rc, out = run("check", "--changed-only", base, dg)
+check(
+    rc == 0 and "::warning title=org-sync::.github/workflows/release.yml#release-gate" in out,
+    "release-gate: --changed-only reads the base's caller; its old gate is a warning",
+)
 
 print("org-sync self-test: OK")
