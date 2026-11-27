@@ -606,6 +606,10 @@ check(
 )
 write(
     os.path.join(dr, ".github/workflows/release.yml"),
+    # the caller's push gate is the org's (#1012): apply adopts it
+    "jobs:\n  release:\n"
+    "    # Saves a runner on ordinary pushes; the workflow itself checks the PR.\n"
+    "    if: ${{ github.event_name != 'push' }}\n"
     "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main # the org's\n",
 )
 run("apply", dr)
@@ -2891,5 +2895,88 @@ check(
     "an existing dependabot.yml is the repository's own",
 )
 check(org_sync.dependabot_entries(fresh()) == [("github-actions", "/")], "an empty repo: actions")
+
+# the release caller's push gate (#1012): a caller of reusable-release.yml gets
+# the org's gate on every commit of the push, adopted from the old head-only
+# gate; the rest of the caller (its inputs, vcpkg-ports, its own jobs) and a
+# release workflow of the repository's own are never touched
+REL = ".github/workflows/release.yml"
+HEAD_GATE = (
+    "    if: \"${{ github.event_name != 'push' || "
+    "startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}\"\n"
+)
+PUSH_GATE = (
+    "    if: \"${{ github.event_name != 'push' || "
+    "contains(toJSON(github.event.commits.*.message), 'chore(release): bump version ') }}\"\n"
+)
+CALLER = (
+    "name: Release\non:\n  workflow_dispatch:\n    inputs:\n"
+    '      mode:\n        description: "the repository\'s own words"\n'
+    "        type: choice\n        options: [dry-run, bump, release-notes]\n"
+    "  push:\n    branches: [main]\njobs:\n  release:\n"
+    "    # Saves a runner on ordinary pushes; the workflow itself checks the PR.@EXTRA@\n"
+    "@GATE@"
+    "    permissions: { contents: write }\n"
+    "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n"
+    "    with:\n      mode: ${{ inputs.mode }}\n      vcpkg-ports: demo-core   # its own\n"
+    "  image:\n    needs: release\n    if: ${{ needs.release.outputs.mode == 'release' }}\n"
+    "    uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@main\n"
+)
+
+
+def caller(extra, gate):
+    return CALLER.replace("@EXTRA@", extra).replace("@GATE@", gate)
+
+
+gate_block = "# org-sync:begin release-gate\n" + read(
+    os.path.join(ORG, "templates/release/gate.yml")
+)
+check(PUSH_GATE in gate_block, "release-gate: the template gates on every commit of the push")
+dg = fresh()
+run("init", dg, "--kind", "data")
+os.makedirs(os.path.join(dg, ".github/workflows"), exist_ok=True)
+for extra, gate, what in (
+    ("", HEAD_GATE, "the head-only gate"),
+    (" Any\n    # commit of the push, not only its head (#943).", PUSH_GATE, "a fixed gate"),
+):
+    old = caller(extra, gate)
+    write(os.path.join(dg, REL), old)
+    rc, out = run("check", dg)
+    check(rc == 1 and "release-gate" in out, f"release-gate: {what} without markers is drift")
+    run("apply", dg)
+    got = read(os.path.join(dg, REL))
+    head, _, tail = old.partition("    # Saves a runner")
+    tail = tail.partition(gate)[2]
+    check(
+        got == head + gate_block + "# org-sync:end release-gate\n" + tail
+        and "startsWith" not in got
+        and run("check", dg)[0] == 0,
+        f"release-gate: apply adopts {what}; the rest of the caller byte for byte, check clean",
+    )
+edit(dg, REL, "github.event.commits.*.message", "github.event.head_commit.message")
+rc, out = run("check", dg)
+check(rc == 1 and "release-gate" in out, "release-gate: a hand edit inside the markers is drift")
+run("apply", dg)
+check(PUSH_GATE in read(os.path.join(dg, REL)), "release-gate: apply restores the org's gate")
+# no recognisable gate: a conflict, the file left as it is
+odd = caller("", HEAD_GATE).replace("    # Saves a runner", "    # A runner")
+write(os.path.join(dg, REL), odd)
+rc, out = run("apply", dg)
+check(
+    rc == 1 and "release-gate" in out and read(os.path.join(dg, REL)) == odd,
+    "release-gate: a caller without the recognisable gate is a conflict, left as it is",
+)
+# a release workflow of the repository's own (AntHocNet's): not a caller, not managed
+own_rel = caller("", HEAD_GATE).replace(
+    "    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@main\n",
+    "    runs-on: ubuntu-24.04   # not reusable-release.yml\n    steps: [{ run: make dist }]\n",
+)
+write(os.path.join(dg, REL), own_rel)
+rc, out = run("plan", dg)
+run("apply", dg)
+check(
+    "release-gate" not in out and read(os.path.join(dg, REL)) == own_rel,
+    "release-gate: a release workflow of the repository's own is not managed",
+)
 
 print("org-sync self-test: OK")

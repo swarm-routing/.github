@@ -1953,8 +1953,11 @@ actor), so the bump goes through a PR and the tag follows the merge
    swarm-routing/sim-containers#252's `04571a4`, and the caller's
    head-commit gate skipped the run). The caller's gate must read the whole
    push too (`contains(toJSON(github.event.commits.*.message), …)`, in the
-   caller below); `release_check.py ready` fails a gate on
-   `head_commit.message`. A bump that merged and never released is published
+   caller below): it is org-managed, the `release-gate` section of every
+   caller's `.github/workflows/release.yml` (`templates/release/gate.yml`,
+   #1012), so org-bot's refresh adopts it from an old head-only gate and a hand
+   edit is drift; the rest of the caller stays the repository's.
+   `release_check.py ready` fails a gate on `head_commit.message`. A bump that merged and never released is published
    by hand with mode `publish` and `sha: <the bump commit's full SHA>`
    ("A publish that fails, or waits", below). Before merging, read the bump PR's `CHANGELOG.md` diff: a
    version whose section would be empty (a milestone bump with no `feat`/`fix`,
@@ -2202,10 +2205,13 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
+# org-sync:begin release-gate
     # Saves a runner on ordinary pushes; the workflow itself checks the PR.
-    # Every commit of the push, never only its head: a merge queue batches (#943).
+    # Every commit of the push, never only its head: a merge queue batches the
+    # bump PR below another (swarm-routing/.github#943, swarm-routing/.github#1012).
     # Quoted: the expression holds ': ', which YAML reads as a mapping in a plain scalar.
     if: "${{ github.event_name != 'push' || contains(toJSON(github.event.commits.*.message), 'chore(release): bump version ') }}"
+# org-sync:end release-gate
     permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@<sha> # main@<date>  (ADR-0004)
     with:

@@ -94,6 +94,15 @@ swarm-routing/.github, whose backstop.yml then dispatches what is overdue
 swarm-routing/.github's own workflows use, so one dropped schedule leaves the
 others. Without the key the file is not managed.
 
+The release caller's push gate (#1012): where `.github/workflows/release.yml`
+calls reusable-release.yml, the `release` job's comment lines from "Saves a
+runner" and its `if:` are the org's section `release-gate`
+(templates/release/gate.yml), reading every commit of the push, so a merge
+queue's batch with the bump PR below another still releases. The old gate,
+head-only or not, is adopted and replaced; the rest of the caller (inputs,
+vcpkg-ports, image or PyPI jobs) stays the repository's, and a release
+workflow of its own (AntHocNet's) is not managed.
+
 A `[settings]` table holds the repository's GitHub settings (description,
 homepage, topics, ruleset profile, required checks, and overrides of the
 profile's features, security features and release environment), which
@@ -170,6 +179,7 @@ import bib  # noqa: E402  (tools/fidelity/bib.py: the docs/references.bib reader
 
 CONFIG = ".github/org-sync.toml"
 LOCK = ".github/org-sync.lock"  # the swarm-routing/.github commit last rendered from (#586)
+RELEASE = ".github/workflows/release.yml"  # the release caller, its push gate the org's (#1012)
 LOCK_LINE = re.compile(r'^commit = "([0-9a-f]{40})"[ \t]*$', re.M)
 KINDS = ("protocol", "c-cpp", "python", "container", "data", "site", "skills")
 CXX_KINDS = ("protocol", "c-cpp")
@@ -346,10 +356,18 @@ ADOPT = {
         r"\A% docs/references\.bib: ",
         r"(?<=^% this header alone\.\n)",
     ),
+    # the release caller's push gate (#1012): the `release` job's comment lines
+    # from "Saves a runner" and its `if:` line, every caller's shape since #636;
+    # one without that `if:` right below the comments is a conflict, never rewritten
+    (RELEASE, "release-gate"): (
+        r"^    # Saves a runner on ordinary pushes; the workflow itself checks the PR\.[^\n]*\n"
+        r"(?:    #[^\n]*\n)*    if: [^\n]*\n",
+        r"(?<=\n)(?!    #|    if: )",
+    ),
 }
 # Adopted sections whose old text is the org's, not the repository's: a
 # difference from the template is replaced, not a conflict (#343)
-ADOPT_REPLACE = {("docs/references.bib", "bib-header")}
+ADOPT_REPLACE = {("docs/references.bib", "bib-header"), (RELEASE, "release-gate")}
 # The shared parts of two seeds (#615): a seed written before its section was
 # managed carries the org's text unmarked, in pieces. `apply` adopts a piece only
 # when it is, byte for byte, the template's text or one it rendered before
@@ -888,6 +906,7 @@ def load_config(repo_dir, slug=None):
     # the commit every reference to this repository names: the lock's (apply may move it)
     cfg["pin"] = read_lock(repo_dir)
     cfg["ref_files"] = ref_files(repo_dir)
+    cfg["release_caller"] = release_caller(repo_dir)
     cfg["references"] = check_references(cfg.get("references", []))
     if cfg["references"] and bib_references(repo_dir) is not None:
         print(
@@ -1350,6 +1369,14 @@ def sonar_key(cfg):
     """The SonarQube Cloud project key: `[quality] sonar_key`, else
     `<owner>_<repo>` as SonarQube Cloud names an imported GitHub repository."""
     return cfg.get("quality", {}).get("sonar_key") or cfg["repo"].replace("/", "_")
+
+
+def release_caller(repo_dir):
+    """True when .github/workflows/release.yml calls reusable-release.yml (a
+    comment naming it does not count): its push gate is then the org's (#1012).
+    A release workflow of the repository's own (AntHocNet's) is left alone."""
+    text = read(os.path.join(repo_dir, RELEASE)) or ""
+    return any("reusable-release.yml" in ln.split("#", 1)[0] for ln in text.splitlines())
 
 
 def calls_workflow(repo_dir, reusable):
@@ -1996,6 +2023,12 @@ def items(cfg):
         out.append(
             ("file", ".github/workflows/backstop-tick.yml", "workflows/backstop-tick.yml", None)
         )
+    if cfg.get("release_caller"):
+        # the release caller's push gate (#1012): every commit of the push, so a
+        # merge queue's batch with the bump PR below another still releases; the
+        # rest of the caller (its inputs, vcpkg-ports, image or PyPI jobs) stays
+        # the repository's own
+        out.append(("section", RELEASE, "release/gate.yml", "release-gate"))
     if cfg.get("forms"):
         # opt-in for a repository with its own .github/ISSUE_TEMPLATE/, which
         # hides the org's default forms: each org form is a whole file there;
