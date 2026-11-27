@@ -55,6 +55,13 @@ In the order the 2026-11-22 audit ranked them:
    AGENTS.md whose org-sync sections pass 23,200 B, and its self-test fails a
    template PR that would (#793). A template PR states its byte delta
    (`token_audit.py files` before and after).
+7. **A coordinator's state lives on its handoff issue, never a local file**
+   (#1009): each pass is `tools/issues/handoff.py append REPO#N --status
+   FILE ...` (FILE: `tools/status/status.py --json`), a marked comment in a
+   fixed shape (Closed, Released, Running workers, Maintainer items,
+   Scheduled) that also replaces the issue body's state section; a new
+   session starts from `handoff.py read REPO#N`. A local `ROADMAP_STATE.md`
+   was lost with its container and re-posted to #921 by hand.
 
 ## Large outputs and PR waits (#794)
 
