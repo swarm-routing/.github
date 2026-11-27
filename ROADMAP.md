@@ -1014,7 +1014,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#672](https://github.com/swarm-routing/.github/issues/672) Swarm-Routing Architecture & Migration Roadmap (Hexagonal Multi-Runtime) | In progress | 3 / 17 |
 | [#881](https://github.com/swarm-routing/.github/issues/881) every c++ release on vcpkg, with class docs and install guides per simulator; set up the new repositories | In progress | 7 / 9 |
 | [#970](https://github.com/swarm-routing/.github/issues/970) List the org in external indexes (MCP, plugin, ns-3, research archives) | In progress | 2 / 7 |
-| [#1005](https://github.com/swarm-routing/.github/issues/1005) Orchestrator: a reusable session task controller (coordinator + per-repository workers) | In progress | 2 / 6 |
+| [#1005](https://github.com/swarm-routing/.github/issues/1005) Orchestrator: a reusable session task controller (coordinator + per-repository workers) | In progress | 4 / 6 |
 | [#35](https://github.com/swarm-routing/.github/issues/35) code quality across the org — order of work and maintainer decisions | Planned | no sub-issues yet |
 | [#48](https://github.com/swarm-routing/.github/issues/48) Other simulators: container and tooling repos for OMNeT++/INET and Veins (deferred; ns-3 first) | Planned | 0 / 2 |
 | [#216](https://github.com/swarm-routing/.github/issues/216) every public repository releases and is archived on zenodo: sim-containers, benchmarks, skills, the site and .github too | Planned | 0 / 5 |
@@ -1228,7 +1228,7 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 8 / 12 |
+| [#3](https://github.com/swarm-routing/swarm-core/issues/3) Extract swarm-core (C++23 ports, the daemon's 4-byte wire envelope, ProtocolContractTest) & release v1.0.0 | In progress | 9 / 12 |
 | [#62](https://github.com/swarm-routing/swarm-core/issues/62) swarm-core 3.0.0: the host contract, so a protocol core runs on any host | Planned | 0 / 5 |
 
 ### [swarm-mcp](https://github.com/swarm-routing/swarm-mcp)
