@@ -709,7 +709,7 @@ def branch_rules(gh, repo, base, cache):
     key = (repo, base)
     if key not in cache:
         names, strict, queue = set(), False, False
-        for rule in gh.get(f"repos/{repo}/rules/branches/{base}") or []:
+        for rule in gh.paged(f"repos/{repo}/rules/branches/{base}"):  # every page
             queue = queue or rule.get("type") == "merge_queue"
             if rule.get("type") == "required_status_checks":
                 params = rule.get("parameters") or {}
@@ -1420,7 +1420,7 @@ class SimGitHub(GitHub):
             return {
                 "behind_by": int(pr["mergeable_state"] == "behind" or pr.get("outdated", False))
             }
-        if rest == "rules/branches/main":
+        if rest.startswith("rules/branches/main?"):
             names = self.required.get(repo, [])
             params = {"required_status_checks": [{"context": c} for c in names]}
             params["strict_required_status_checks_policy"] = repo in self.strict
@@ -1709,7 +1709,7 @@ def self_test():
     }
     data[f"repos/swarm-routing/alpha/commits/{sha}/status"] = {"state": "pending", "statuses": []}
     required = ["lint", "python / python", "title / title"]
-    data["repos/swarm-routing/alpha/rules/branches/main"] = [
+    data["repos/swarm-routing/alpha/rules/branches/main?per_page=100&page=1"] = [
         {"type": "deletion"},
         {
             "type": "required_status_checks",
@@ -2315,6 +2315,14 @@ def self_test():
         "merge: a merge queue on the base stops before a direct merge, naming auto-merge",
         rc == 1 and not gh.puts and out == f"alpha#4 4444444 merge queue on main: {QUEUE_HINT}\n",
     )
+    rules = "repos/swarm-routing/alpha/rules/branches/main?per_page=100&page="
+    paged_rules = FakeGitHub(
+        {f"{rules}1": [{"type": "deletion"}] * 100, f"{rules}2": [{"type": "merge_queue"}]}
+    )
+    check(
+        "merge: a merge_queue rule on the rules' second page is found",
+        branch_rules(paged_rules, "swarm-routing/alpha", "main", {})[2] is True,
+    )
     gh = SimGitHub({("alpha", 3): {}}, required={"alpha": ["gate"]})
     rc, out, _ = merge(["alpha#3"], gh, "--dry-run")
     check(
@@ -2523,7 +2531,7 @@ def self_test():
                 "user": {"login": "coderabbitai[bot]"},
                 "body": CR_BODY,
             },
-            "repos/swarm-routing/beta/rules/branches/main": [
+            "repos/swarm-routing/beta/rules/branches/main?per_page=100&page=1": [
                 {
                     "type": "required_status_checks",
                     "parameters": {"required_status_checks": [{"context": "ci"}]},
