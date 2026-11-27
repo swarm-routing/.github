@@ -66,6 +66,8 @@ and `ns3-tools` is sim-tools. A repository marked *deferred* is planned for late
 not scheduled (ROADMAP decision 23): it starts when the maintainer re-plans it.
 Since 2026-11-24 the deferred repositories may set up and build a tested
 skeleton; releases still wait for the maintainer.
+The layers, hosts, version flow and licence boundary on one page:
+[docs/architecture.md](https://github.com/swarm-routing/.github/blob/main/docs/architecture.md).
 
 Every badge below is live: the latest release, each repository's SonarQube
 Cloud quality gate and its Codecov line coverage on `main` (report-only,
