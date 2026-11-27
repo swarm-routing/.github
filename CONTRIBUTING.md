@@ -1631,10 +1631,18 @@ publisher, linking `https://m8ven.ai/mcp/<id>?s=readme`; with `verify_id`
 instead the "M8ven Verified" badge
 `https://m8ven.ai/api/agent-verify/badge?id=<verify id>`, linking
 `https://m8ven.ai/verified/verify?id=<verify id>`, exactly as M8ven issues
-them). An unknown index, an id outside `[a-z0-9][a-z0-9-]*`, an unknown
-variant, a verify id outside `[0-9a-f]{16}` or a `variant` with a `verify_id`
-fails `org_sync.py plan`, `apply` and `check`; a new index is a new `INDEXES`
-entry. OpenSSF Best Practices stays in Trust: it is a certification the
+them) and `glama` (Glama's [MCP server directory](https://glama.ai/mcp/servers),
+`indexes = { glama = "<namespace>/<slug>" }`, the listing's path, #990; its
+score badge `https://glama.ai/mcp/servers/<id>/badges/score.svg` linking
+`https://glama.ai/mcp/servers/<id>`, alt text `<slug> MCP server – quality
+and maintenance score on Glama`, exactly as the listing's "GitHub badge" page
+gives them; no variant, no verified badge). One row holds every index the
+repository names, in `INDEXES` order (`m8ven-mcp`, `glama`) whatever the
+config's order. An unknown index, an id outside its index's pattern
+(`m8ven-mcp`: `[a-z0-9][a-z0-9-]*`; `glama`: one `owner/name`), an unknown
+variant, a verify id outside `[0-9a-f]{16}` (or for an index that issues
+none) or a `variant` with a `verify_id` fails `org_sync.py plan`, `apply` and
+`check`; a new index is a new `INDEXES` entry. OpenSSF Best Practices stays in Trust: it is a certification the
 project answers, not a listing. A repository's `badges` list
 says which appear, never their order. A badge of the repository's own (a
 coverage endpoint, a sponsor link) is an `[[extra_badges]]` entry in
