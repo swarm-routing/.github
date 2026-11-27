@@ -64,7 +64,7 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 | [#436](https://github.com/swarm-routing/.github/issues/436) C++ packages through a vcpkg git registry (swarm-routing/vcpkg-registry) | In progress | 15 / 18 |
 | [#467](https://github.com/swarm-routing/.github/issues/467) release automation, less duplication, correctness guards (2026-11 improvement round) | In progress | 11 / 23 |
 | [#531](https://github.com/swarm-routing/.github/issues/531) migrate pipeline tools from Python to Go | In progress | 2 / 2 |
-| [#672](https://github.com/swarm-routing/.github/issues/672) Swarm-Routing Architecture & Migration Roadmap (Hexagonal Multi-Runtime) | In progress | 3 / 17 |
+| [#672](https://github.com/swarm-routing/.github/issues/672) Swarm-Routing Architecture & Migration Roadmap (Hexagonal Multi-Runtime) | In progress | 4 / 18 |
 | [#881](https://github.com/swarm-routing/.github/issues/881) every c++ release on vcpkg, with class docs and install guides per simulator; set up the new repositories | In progress | 7 / 9 |
 | [#970](https://github.com/swarm-routing/.github/issues/970) List the org in external indexes (MCP, plugin, ns-3, research archives) | In progress | 2 / 7 |
 | [#1005](https://github.com/swarm-routing/.github/issues/1005) Orchestrator: a reusable session task controller (coordinator + per-repository workers) | In progress | 4 / 6 |
