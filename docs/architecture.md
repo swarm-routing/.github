@@ -118,6 +118,19 @@ run the swarm-routingd binary (decision 24).
 | Linux | [swarm-routingd](https://github.com/swarm-routing/swarm-routingd) | *deferred*: a building, tested skeleton (`swarm-routingd --version`) on swarm-core through vcpkg; the reactor (swarm-routing/swarm-routingd#32) waits for the maintainer. Planned: a single-threaded `epoll` reactor with `timerfd` and `signalfd`, routes through rtnetlink, a TUN catch-all ([AGENTS.md](https://github.com/swarm-routing/swarm-routingd/blob/main/AGENTS.md#what-this-repo-is)); the vertical slice on it is phase 2, deferred | `MIT OR GPL-2.0-only` ([LICENSING.md](https://github.com/swarm-routing/swarm-routingd/blob/main/LICENSING.md)) |
 | OMNeT++/INET | [swarm-adapter-omnet](https://github.com/swarm-routing/swarm-adapter-omnet) | *deferred*: set up, no code yet; no OMNeT++ CI image yet ([AGENTS.md](https://github.com/swarm-routing/swarm-adapter-omnet/blob/main/AGENTS.md#what-this-repo-is)); OMNeT++ and Shadow wait for ns-3 and Linux parity (decision 8) | `GPL-2.0-only` |
 
+### Which protocol core runs on which host
+
+Each protocol repository declares the hosts its core runs on as `hosts` in
+its `.github/org-sync.toml` (`hosts = ["ns3"]`; one of `ns3`, `routingd`,
+`omnet`, each needing its module directory, which `org_sync.py check`
+enforces). The table is generated from those keys by `tools/org-sync/org_sync.py
+hosts`, proposed by org-bot's daily `hosts` task, and the weekly `epics`
+workflow fails when it is stale
+([#260](https://github.com/swarm-routing/.github/issues/260)).
+
+<!-- org-sync:begin hosts -->
+<!-- org-sync:end hosts -->
+
 Results off ns-3 stay qualitative: published numbers come from ns-3 only,
 and parity is judged on named scenes
 ([#268](https://github.com/swarm-routing/.github/issues/268); decision 14).

@@ -7,12 +7,28 @@ Usage: org_sync.py {init,plan,apply,conflicts,check,seeds,settings,refs} [REPO_D
        org_sync.py reseed FILE [REPO_DIR]
        org_sync.py citation-refs [REPO_DIR] [--check]
        org_sync.py profile [REPO_DIR] [--check]
+       org_sync.py hosts [REPO_DIR] [--data FILE] [--configs DIR] [--check]
 
 `profile` (swarm-routing/.github only) renders the org's badge table into
 profile/README.md, between `<!-- org-sync:begin badges -->` and its end
 marker: the profile's groups and badges from PROFILE_BADGES, each
 badge live or a fixed fact, never a typed number; `--check` exits 1 when the
 section is not today's render.
+
+The hosts a protocol core runs on (#260): `hosts = ["ns3"]` in a repository's
+`.github/org-sync.toml`, distinct names from HOSTS (ns3, routingd, omnet),
+each needing its module directory of the same name (`ns3/`); every command
+that reads the config refuses another value, and `check` a listed host
+without its directory in the checked tree (the hosts table reads each
+repository's main, which its own `check` gated). `init --kind protocol` writes it from the directories present (a
+commented default when none is). `hosts` (swarm-routing/.github only) renders
+docs/architecture.md's hosts x protocols table, between `<!-- org-sync:begin
+hosts -->` and its end marker, from the `hosts` of every public repository of
+kind `protocol` (the list `epics.py fetch --no-epics` gives, or `--data`; each
+config read from main through `gh api`, or `--configs DIR/<repo>.toml`): `yes`
+per declared host, `?` across a repository that declares none. org-bot's
+`hosts` task proposes it daily; `--check` (the weekly epics.yml) exits 1 when
+the table is not today's render.
 
 The repository describes itself in `.github/org-sync.toml` (`init` writes it).
 Each managed item is one of:
@@ -183,6 +199,17 @@ RELEASE = ".github/workflows/release.yml"  # the release caller, its push gate t
 LOCK_LINE = re.compile(r'^commit = "([0-9a-f]{40})"[ \t]*$', re.M)
 KINDS = ("protocol", "c-cpp", "python", "container", "data", "site", "skills")
 CXX_KINDS = ("protocol", "c-cpp")
+# The hosts a protocol core runs on (#260): the `hosts` key's values, each the
+# repository directory of that host's module (decision 13: each protocol keeps
+# its ns3/), and the column docs/architecture.md's hosts table gives it, in order
+HOSTS = {
+    "ns3": "ns-3",
+    "routingd": "Linux (swarm-routingd)",
+    "omnet": "OMNeT++/INET",
+}
+REPO_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]*")
+ARCHITECTURE = "docs/architecture.md"  # its `hosts` section: the hosts x protocols table
+EPICS = os.path.join(ORG, "tools", "epics", "epics.py")  # `fetch --no-epics`: the repository list
 MAKE_TARGETS = ("help", "build", "test", "lint", "format", "check", "clean", "shell", "ci")
 BEGIN = "<!-- org-sync:begin {} -->"
 END = "<!-- org-sync:end {} -->"
@@ -903,6 +930,9 @@ def load_config(repo_dir, slug=None):
     # C++ library, adapter or daemon only when it says so (`ns3 = true`)
     if not isinstance(cfg.setdefault("ns3", cfg["kind"] == "protocol"), bool):
         sys.exit(f"org-sync: {CONFIG}: ns3 must be true or false (does it build on ns-3?)")
+    err = hosts_error(cfg.get("hosts"))
+    if err:
+        sys.exit(f"org-sync: {CONFIG}: {err}")
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
     # the commit every reference to this repository names: the lock's (apply may move it)
     cfg["pin"] = read_lock(repo_dir)
@@ -916,6 +946,24 @@ def load_config(repo_dir, slug=None):
             file=sys.stderr,
         )
     return cfg
+
+
+def hosts_error(hosts):
+    """Why a `hosts` value is invalid (None when absent or valid): a list of
+    distinct names from HOSTS."""
+    if hosts is None:
+        return None
+    if (
+        not isinstance(hosts, list)
+        or not all(isinstance(h, str) and h in HOSTS for h in hosts)
+        or len(set(hosts)) != len(hosts)
+    ):
+        return (
+            "hosts must be a list of distinct host names, each one of "
+            + ", ".join(HOSTS)
+            + ' (e.g. hosts = ["ns3"])'
+        )
+    return None
 
 
 def check_indexes(indexes):
@@ -2637,6 +2685,15 @@ def cmd_init(a):
         lines.append("dual = [" + ", ".join(f'"{d}"' for d in a.dual) + "]")
     if a.dockerfile:
         lines.append(f'dockerfile = "{a.dockerfile}"')
+    if a.kind == "protocol":
+        # the hosts its core runs on (#260), each needing its module directory:
+        # set once ns3/ exists, a commented default before
+        on = [h for h in HOSTS if os.path.isdir(os.path.join(a.repo, h))]
+        lines.append(
+            "hosts = [" + ", ".join(f'"{h}"' for h in on) + "]"
+            if on
+            else '# hosts = ["ns3"]  # the hosts its core runs on, once each module directory exists'
+        )
     if a.kind not in ("site", "skills"):
         # a new repository has no page on the site until site/hub/projects.json lists it,
         # so its arena badge waits for the id (#96)
@@ -2904,6 +2961,17 @@ def drift_key(item, status):
 
 def cmd_check(a):
     cfg = load_config(a.repo)
+    # each listed host's module directory, in the checked tree itself (#260); not in
+    # load_config, which also reads a base's or a pin's config in a tree without them
+    missing = [h for h in cfg.get("hosts", []) if not os.path.isdir(os.path.join(a.repo, h))]
+    if missing:
+        print(
+            f"org-sync: {CONFIG}: hosts lists {', '.join(missing)}, but the repository has no "
+            + ", ".join(f"{h}/" for h in missing)
+            + " module directory (#260)",
+            file=sys.stderr,
+        )
+        return 1
     drift = [
         (item, status, detail)
         for item, status, _, detail in plan(cfg, a.repo)
@@ -3106,6 +3174,112 @@ def cmd_profile(a):
     return 0
 
 
+def repo_configs(names, configs_dir=None):
+    """{name: .github/org-sync.toml text or None}: from `configs_dir/<name>.toml`
+    when given (the self-test), else each public repository's main through `gh api`."""
+    out = {}
+    for name in names:
+        # a GitHub repository name, never a path or an option (the list is read from a file)
+        if not REPO_NAME.fullmatch(name) or name in (".", ".."):
+            sys.exit(f"org-sync hosts: {name!r} is not a repository name")
+        if configs_dir:
+            out[name] = read(os.path.join(configs_dir, f"{name}.toml"))
+            continue
+        r = subprocess.run(
+            ["gh", "api", "-H", "Accept: application/vnd.github.raw+json"]
+            + [f"repos/swarm-routing/{name}/contents/{CONFIG}"],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode and "HTTP 404" in r.stderr + r.stdout:
+            out[name] = None
+        elif r.returncode:
+            sys.exit(f"org-sync hosts: cannot read {name}'s {CONFIG}: {r.stderr.strip()}")
+        else:
+            out[name] = r.stdout
+    return out
+
+
+def hosts_rows(configs):
+    """[(name, hosts or None)] for every protocol repository, by name; None: no
+    `hosts` key. A repository whose key is invalid stops the render."""
+    rows = []
+    for name, text in configs.items():
+        try:
+            cfg = tomllib.loads(text) if text else {}
+        except tomllib.TOMLDecodeError as e:
+            sys.exit(f"org-sync hosts: {name}'s {CONFIG} does not parse: {e}")
+        if cfg.get("kind") != "protocol":
+            continue
+        err = hosts_error(cfg.get("hosts"))
+        if err:
+            sys.exit(f"org-sync hosts: {name}'s {CONFIG}: {err}")
+        rows.append((name, cfg.get("hosts")))
+    return sorted(rows, key=lambda r: r[0].lower())
+
+
+def hosts_section(rows):
+    head = "| Protocol | " + " | ".join(HOSTS.values()) + " |"
+    lines = [
+        "<!-- Generated by swarm-routing/.github tools/org-sync/org_sync.py hosts from each "
+        "protocol repository's `hosts` in .github/org-sync.toml (#260); set the key there, "
+        "never edit this table. -->",
+        "",
+        head,
+        "|" + "---|" * (len(HOSTS) + 1),
+    ]
+    undeclared = False
+    for name, hosts in rows:
+        if hosts is None:
+            undeclared = True
+            cells = ["?"] * len(HOSTS)
+        else:
+            cells = ["yes" if h in hosts else "—" for h in HOSTS]
+        lines.append(
+            f"| [{name}](https://github.com/swarm-routing/{name}) | " + " | ".join(cells) + " |"
+        )
+    if not rows:
+        lines.append("| *no protocol repository listed* |" + " |" * len(HOSTS))
+    if undeclared:
+        lines += ["", "`?`: the repository's `.github/org-sync.toml` declares no `hosts` yet."]
+    return "\n".join(lines) + "\n"
+
+
+def cmd_hosts(a):
+    path = os.path.join(a.repo, ARCHITECTURE)
+    cur = read(path)
+    begin, end = BEGIN.format("hosts"), END.format("hosts")
+    pat = re.compile(f"({re.escape(begin)}\n).*?({re.escape(end)})", re.S)
+    if cur is None or not pat.search(cur):
+        print(f"org-sync hosts: {ARCHITECTURE} has no org-sync hosts markers")
+        return 1
+    if a.data:
+        with open(a.data, encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        r = subprocess.run(
+            [sys.executable, "-I", EPICS, "fetch", "--no-epics"], capture_output=True, text=True
+        )
+        if r.returncode:
+            sys.exit(f"org-sync hosts: epics.py fetch: {r.stderr.strip()}")
+        data = json.loads(r.stdout)
+    names = [r["name"] for r in data["repos"]]  # public, not archived, not forks
+    rows = hosts_rows(repo_configs(names, a.configs))
+    new = pat.sub(lambda m: m.group(1) + hosts_section(rows) + m.group(2), cur, count=1)
+    if new == cur:
+        print(f"org-sync hosts: {ARCHITECTURE} hosts table up to date ({len(rows)} protocols)")
+        return 0
+    if a.check:
+        print(
+            f"org-sync hosts: {ARCHITECTURE} hosts table is stale; run `org_sync.py hosts` "
+            "(org-bot's `hosts` task proposes it daily)"
+        )
+        return 1
+    write(a.repo, ARCHITECTURE, new)
+    print(f"org-sync hosts: {ARCHITECTURE} hosts table rewritten ({len(rows)} protocols)")
+    return 0
+
+
 def cmd_settings(a):
     cfg = load_config(a.repo)
     repo = cfg["repo"]
@@ -3155,6 +3329,7 @@ def main(argv=None):
         "settings",
         "citation-refs",
         "profile",
+        "hosts",
         "refs",
     ):
         s = sub.add_parser(name)
@@ -3179,8 +3354,18 @@ def main(argv=None):
                 nargs="*",
                 help="dual-licensed roots, e.g. core/ tools/ ('' = the whole repo)",
             )
-        if name in ("profile", "refs"):
+        if name in ("profile", "hosts", "refs"):
             s.add_argument("--check", action="store_true", help="change nothing; exit 1 on drift")
+        if name == "hosts":
+            s.add_argument(
+                "--data",
+                help="saved `epics.py fetch` output: the repositories to read (default: fetched)",
+            )
+            s.add_argument(
+                "--configs",
+                help="a directory of <repo>.toml files instead of each repository's "
+                ".github/org-sync.toml on main (self-test)",
+            )
         if name == "refs":
             s.add_argument(
                 "--rev",
