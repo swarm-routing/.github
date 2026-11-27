@@ -3113,6 +3113,14 @@ try:
 except SystemExit as e:
     bad_key = "POSANT's .github/org-sync.toml: hosts must be" in str(e.code)
 check(bad_key, "hosts: an invalid key in a repository stops the render, naming it")
+write(os.path.join(cdir, "POSANT.toml"), 'kind = "protocol"\n')
+for bad in ("../x", "--jq"):
+    write(data_h, '{"repos": [{"name": "%s"}]}' % bad)
+    try:
+        refused = "is not a repository name" in str(run(*hargs, "--check"))
+    except SystemExit as e:
+        refused = "is not a repository name" in str(e.code)
+    check(refused, f"hosts: a listed name {bad!r} is refused, never a path or an option")
 write(arch, "# arch\n")
 check(run(*hargs)[0] == 1, "hosts: no markers, exit 1")
 real = read(os.path.join(ORG, "docs/architecture.md"))

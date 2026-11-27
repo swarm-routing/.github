@@ -206,6 +206,7 @@ HOSTS = {
     "routingd": "Linux (swarm-routingd)",
     "omnet": "OMNeT++/INET",
 }
+REPO_NAME = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_.-]*")
 ARCHITECTURE = "docs/architecture.md"  # its `hosts` section: the hosts x protocols table
 EPICS = os.path.join(ORG, "tools", "epics", "epics.py")  # `fetch --no-epics`: the repository list
 MAKE_TARGETS = ("help", "build", "test", "lint", "format", "check", "clean", "shell", "ci")
@@ -3173,6 +3174,9 @@ def repo_configs(names, configs_dir=None):
     when given (the self-test), else each public repository's main through `gh api`."""
     out = {}
     for name in names:
+        # a GitHub repository name, never a path or an option (the list is read from a file)
+        if not REPO_NAME.fullmatch(name) or name in (".", ".."):
+            sys.exit(f"org-sync hosts: {name!r} is not a repository name")
         if configs_dir:
             out[name] = read(os.path.join(configs_dir, f"{name}.toml"))
             continue
