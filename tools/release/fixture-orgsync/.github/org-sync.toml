@@ -49,4 +49,5 @@ skip = [
   "docs/rcapa/README.md",
   "docs/rcapa/_template.md",
   "CITATION.cff",
+  ".github/workflows/release.yml#release-gate",
 ]

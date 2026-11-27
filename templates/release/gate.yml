@@ -1,0 +1,5 @@
+    # Saves a runner on ordinary pushes; the workflow itself checks the PR.
+    # Every commit of the push, never only its head: a merge queue batches the
+    # bump PR below another (swarm-routing/.github#943, swarm-routing/.github#1012).
+    # Quoted: the expression holds ': ', which YAML reads as a mapping in a plain scalar.
+    if: "${{ github.event_name != 'push' || contains(toJSON(github.event.commits.*.message), 'chore(release): bump version ') }}"
