@@ -105,6 +105,67 @@ check(
     "a fully dual repo's Makefile is dual",
 )
 
+# a python repo's make lint/format run ruff as reusable-python-ci.yml does (#997):
+# the org ruff.toml unless the repo has its own config, and a warning off RUFF_VERSION
+if shutil.which("make"):
+    org_dir, bin_dir = tempfile.mkdtemp(), tempfile.mkdtemp()
+    # an ORG_DIR whose fetch fails offline: make uses it as it is, no network
+    subprocess.run(["git", "-C", org_dir, "init", "-q"], check=True)
+    subprocess.run(
+        ["git", "-C", org_dir, "remote", "add", "origin", os.path.join(org_dir, "none")],
+        check=True,
+    )
+    os.makedirs(os.path.join(org_dir, "tools"))
+    write(os.path.join(org_dir, "ruff.toml"), "")
+    write(os.path.join(org_dir, "tools", "versions.env"), "RUFF_VERSION=9.9.9\n")
+    ruff_log = os.path.join(bin_dir, "log")
+    write(
+        os.path.join(bin_dir, "ruff"),
+        f'#!/bin/sh\n[ "$1" = --version ] && {{ echo "ruff $FAKE_RUFF"; exit 0; }}\n'
+        f'echo "$*" >> "{ruff_log}"\n',
+    )
+    os.chmod(os.path.join(bin_dir, "ruff"), 0o755)
+
+    def make(target, version):
+        if os.path.exists(ruff_log):
+            os.remove(ruff_log)
+        env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_RUFF=version)
+        p = subprocess.run(
+            ["make", "-s", target, f"ORG_DIR={org_dir}"],
+            cwd=d,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        return p.returncode, p.stderr, read(ruff_log) if os.path.exists(ruff_log) else ""
+
+    org_cfg = f"--config {os.path.join(org_dir, 'ruff.toml')}"
+    rc, err, calls = make("lint", "9.9.9")
+    check(
+        rc == 0 and calls.splitlines() == [f"check {org_cfg} .", f"format --check {org_cfg} ."],
+        "make lint passes the org ruff.toml in a repo without its own ruff config",
+    )
+    check("CI runs" not in err, "make lint says nothing at the org's RUFF_VERSION")
+    rc, err, calls = make("format", "0.1.0")
+    check(
+        rc == 0 and calls.splitlines() == [f"format {org_cfg} ."],
+        "make format passes the org ruff.toml too",
+    )
+    check(
+        "ruff 0.1.0, CI runs 9.9.9: pip install ruff==9.9.9" in err,
+        "a local ruff off RUFF_VERSION is named with the install command",
+    )
+    for own, text in (("ruff.toml", ""), ("pyproject.toml", "[tool.ruff]\n")):
+        write(os.path.join(d, own), text)
+        rc, _, calls = make("lint", "9.9.9")
+        check(
+            rc == 0 and calls.splitlines() == ["check .", "format --check ."],
+            f"make lint keeps the repo's own ruff config ({own})",
+        )
+        os.remove(os.path.join(d, own))
+    shutil.rmtree(org_dir)
+    shutil.rmtree(bin_dir)
+
 # the site badge names the project's page; the image badge only where it builds
 da = fresh()
 run("init", da, "--kind", "protocol", "--title", "ARA", "--dual", "core/", "--arena-id", "ARA")
