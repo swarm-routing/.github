@@ -71,6 +71,8 @@ jobs:
         run: python3 -I tools/rcapa/rcapa.py --self-test
       - name: criteria self-test (tools/issues)
         run: python3 -I tools/issues/criteria.py --self-test
+      - name: status self-test (tools/status)
+        run: python3 -I tools/status/status.py --self-test
       - name: pr-status self-test (tools/pr-status)
         run: python3 -I tools/pr-status/pr_status.py --self-test
       - name: rolling-tags self-test (tools/images)
