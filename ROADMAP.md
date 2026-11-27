@@ -53,7 +53,7 @@ plan it later, and also the new simulators and Linux support."
 
 | | Scheduled now | Planned later (deferred, not scheduled) |
 |---|---|---|
-| Migration | phase 0; phase 1; [phase 3a](#migration-phase-3a-the-five-released-protocols-on-the-extracted-swarm-core): the five released protocols on the extracted swarm-core with the contract tests; [phase 4](#migration-phase-4-agent-tooling-docs-paper) where it does not need a deferred track | [phase 2](#migration-phase-2-the-vertical-slice-deferred) (the vertical slice on the Linux daemon); [phase 3b](#migration-phase-3b-new-protocols-and-runtimes-deferred) (POSANT, BeeSensor, Q-Swarm; CORE/EMANE, OMNeT++, Shadow) |
+| Migration | phase 0; phase 1; [phase 3a](#migration-phase-3a-the-five-released-protocols-on-the-extracted-swarm-core): the five released protocols on the extracted swarm-core with the contract tests (done 2026-11-27); [phase 4](#migration-phase-4-agent-tooling-docs-paper) where it does not need a deferred track | [phase 2](#migration-phase-2-the-vertical-slice-deferred) (the vertical slice on the Linux daemon); [phase 3b](#migration-phase-3b-new-protocols-and-runtimes-deferred) (POSANT, BeeSensor, Q-Swarm; CORE/EMANE, OMNeT++, Shadow) |
 | Epics | swarm-core#3, swarm-adapter-ns3#228, sim-containers#210 (its ns-3 layout and canary half), .github#689 to #692; the five protocols' chores (AntHocNet#1117, ARA#220, BeeAdHoc#198, Termite#185, HOPNET#188) | swarm-routingd#3 and its children; POSANT#3, BeeSensor#3, Q-Swarm#3; swarm-web-ui#1, #2; [.github#674](https://github.com/swarm-routing/.github/issues/674) as a whole (sim-tools#277, sim-tools#279, AntHocNet#32); .github#48, #322, #324, #325; benchmarks#145 |
 | Everything else | the [release train](#the-release-train) and the ns-3 work (comparators, families, the ns-3 upstream bridge, the site) as before | — |
 
@@ -388,6 +388,8 @@ Phase 3 is split in two by decision 23: 3a is scheduled now, 3b is deferred.
 
 ### Migration phase 3a: the five released protocols on the extracted swarm-core
 
+> **Done on 2026-11-27**: its one exit criterion is met (below).
+
 The five released protocols move to swarm-core's new repository by lock
 bumps and opt into the contract tests (their chores: AntHocNet#1117, ARA#220,
 BeeAdHoc#198, Termite#185, HOPNET#188). It follows phase 1 directly: it needs
@@ -396,7 +398,7 @@ swarm-core's first release from its own repository and the contract tests
 
 **Exit criteria**
 
-- [ ] Each of the five on the extracted swarm-core's release, its contract tests green, the wire ADR's outcome applied. *Four done on 2026-11-27: BeeAdHoc#198 (BeeAdHoc#289 b9f0cb4), Termite#185 (Termite#247 9fcea55), HOPNET#188 (HOPNET#261 dc6e85e), AntHocNet#1117 (AntHocNet#1278 db6b883). Open: ARA, whose #220 closed with the pins but no contract-suite test on `main`; the rest is [ARA#296](https://github.com/swarm-routing/ARA/issues/296).*
+- [x] Each of the five on the extracted swarm-core's release, its contract tests green, the wire ADR's outcome applied. *Done on 2026-11-27: BeeAdHoc#198 (BeeAdHoc#289 b9f0cb4), Termite#185 (Termite#247 9fcea55), HOPNET#188 (HOPNET#261 dc6e85e), AntHocNet#1117 (AntHocNet#1278 db6b883), and ARA: its #220 closed with the pins, the contract suite on `main` by [ARA#296](https://github.com/swarm-routing/ARA/issues/296), closed by ARA#330 (951e998).*
 
 ### Migration phase 3b: new protocols and runtimes (deferred)
 
@@ -475,8 +477,9 @@ sim-containers#214, and sim-containers#215 and .github#692 on the
 maintainer's word (.github#689, swarm-core#6 to #11, the `v2.0.0` and
 `v2.1.0` releases, .github#691 and swarm-adapter-ns3#231 and #232 are done).
 Every phase 1 item is a sub-issue of its epic and of .github#672. Phase 3a
-has one chore left, ARA#296 (the rest of ARA#220: the contract suite); the
-other four (AntHocNet#1117, BeeAdHoc#198, Termite#185, HOPNET#188) are done.
+is done (2026-11-27): ARA#296 (the rest of ARA#220: the contract suite)
+closed by ARA#330 (951e998), the other four (AntHocNet#1117, BeeAdHoc#198,
+Termite#185, HOPNET#188) before it.
 The deferred phases and tracks wait for the maintainer (decision 23).
 
 ## Direction beyond ns-3 (proposed 2026-11-12)
@@ -745,7 +748,7 @@ flowchart LR
 | 5 Termite | [Termite#3](https://github.com/swarm-routing/Termite/issues/3) (was .github#51) | Termite as a standalone protocol: its own repo, fidelity sheet, anchor-miss analysis, `core/` on swarm-core, the three gates | version decided (ch. 4, Termite#4); fidelity sheet merged (Termite#21, #23–#26; #4 stays open on its last criterion); anchor-miss pre-registration accepted 2026-11-10 ([Termite#5](https://github.com/swarm-routing/Termite/issues/5), closed 2026-11-11; its runs are Termite#59, open); `core/` started ([Termite#28](https://github.com/swarm-routing/Termite/pull/28): the ch. 4 data path, 16 tests; the `core` check required by Termite#29); the ns-3 module `termite` on `main` ([Termite#37](https://github.com/swarm-routing/Termite/pull/37), merged 2026-11-11); `v0.1.0` released 2026-11-11 (ungated); next in [Termite#6](https://github.com/swarm-routing/Termite/issues/6), for the gated `v0.2.0` ([its ladder](https://github.com/swarm-routing/Termite/blob/main/docs/roadmap.md)): route requests, hello and seed, without which the arm delivers nothing, then the pre-registered cells (Termite#59) and the pipeline's campaigns (Termite#31) |
 | 5+ HOPNET | [HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3) (was .github#52) | HOPNET (ants + zone routing) in its own repo; the thesis's fidelity sheet first | scheduled after Termite (maintainer decision 2026-11-10, [on HOPNET#3](https://github.com/swarm-routing/HOPNET/issues/3)); fidelity sheet merged (HOPNET#4 closed) and the #5 pre-registration accepted 2026-11-10; `core/` started ([HOPNET#25](https://github.com/swarm-routing/HOPNET/pull/25): the intra-zone half; `core-test`/`core-format` required by HOPNET#26); [HOPNET#5](https://github.com/swarm-routing/HOPNET/issues/5) closed 2026-11-14: the rest of `core/` (the inter-zone half, the local repair), the ns-3 module `hopnet` (HOPNET#85, merged 2026-11-13) and the anchor against AntHocNet, recorded as a [written infeasibility verdict](https://github.com/swarm-routing/HOPNET/blob/main/docs/anchor-verdict.md) (2026-11-14: the pilot rounds missed and the anchor itself was not run), so its numbers do not count; `v0.1.0` released 2026-11-11 (ungated); the gated `v0.2.0` ([its ladder](https://github.com/swarm-routing/HOPNET/blob/main/docs/roadmap.md)) waits on the pipeline (HOPNET#28, open) |
 | Later: other simulators | [.github#48](https://github.com/swarm-routing/.github/issues/48) | `<sim>-containers` and `<sim>-tools` repos for OMNeT++/INET, Veins and CORE/EMANE, built like `sim-containers` / `ns3-tools` | deferred: ns-3 first; proposed 2026-11-12 as the last step of the portable runtime ([.github#250](https://github.com/swarm-routing/.github/issues/250)), the order decided on 2026-11-12 ([.github#253](https://github.com/swarm-routing/.github/issues/253)): standalone discrete-event host, Linux daemon, emulation, Raspberry Pi, other simulators alongside when needed; emulation (CORE/EMANE) has its own epic, [.github#324](https://github.com/swarm-routing/.github/issues/324), and #48 keeps OMNeT++/INET and Veins |
-| Migration | [.github#672](https://github.com/swarm-routing/.github/issues/672), [.github#674](https://github.com/swarm-routing/.github/issues/674) | the hexagonal multi-runtime layout: swarm-core in its own repository, swarm-adapter-ns3, swarm-routingd, three new protocols, the multi-simulator and web-UI track ([Architecture and migration](#architecture-and-migration-decided-2026-11-22)) | decided 2026-11-22 (25 decisions); phase 0 left with sim-containers#213, .github#690 and the new repositories' `[settings]` drift (#774–#776, #780, #781); phase 1 left with swarm-adapter-ns3#233, sim-containers#214, #215 and .github#692 (swarm-core `v2.1.0` released, every protocol on it); phase 3a four of five done, ARA#296 left (2026-11-27); phase 2, phase 3b and .github#674 deferred by decision 23 (the maintainer re-plans them); it supersedes the "Later: other simulators" row above, whose order now follows decision 8 |
+| Migration | [.github#672](https://github.com/swarm-routing/.github/issues/672), [.github#674](https://github.com/swarm-routing/.github/issues/674) | the hexagonal multi-runtime layout: swarm-core in its own repository, swarm-adapter-ns3, swarm-routingd, three new protocols, the multi-simulator and web-UI track ([Architecture and migration](#architecture-and-migration-decided-2026-11-22)) | decided 2026-11-22 (25 decisions); phase 0 left with sim-containers#213, .github#690 and the new repositories' `[settings]` drift (#774–#776, #780, #781); phase 1 left with swarm-adapter-ns3#233, sim-containers#214, #215 and .github#692 (swarm-core `v2.1.0` released, every protocol on it); phase 3a done (2026-11-27: ARA#296 closed by ARA#330, 951e998); phase 2, phase 3b and .github#674 deferred by decision 23 (the maintainer re-plans them); it supersedes the "Later: other simulators" row above, whose order now follows decision 8 |
 
 ## Where to start
 
