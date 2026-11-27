@@ -50,6 +50,13 @@ AntHocNet's v2.6.1 was):
     with the tag as `version`, the release's date, and the
     github.com/OWNER/NAME/tree/TAG link, so the new version names where the
     code lives now.
+  An archived version that lacks a related org work its tag's CITATION.cff
+  cites (`requires`, or `isRequiredBy` for an `adapter`) gets it by a
+  metadata edit of the published record (edit, PUT, publish: no new version,
+  no new DOI; an edit a failed run left open is carried on). Zenodo's GitHub
+  integration archives a release without them (its file
+  `OWNER/NAME-TAG.zip`): swarm-adapter-ns3 v2.0.0 to v2.2.0 held only the
+  tree link (swarm-routing/.github#1018). --dry-run says `would add ...`.
   A record of another concept is refused. A failed run leaves a draft that the
   next run reuses. Publishing makes a DOI permanent: there is no undo.
   --dry-run reads only and needs no token.
@@ -336,6 +343,7 @@ class Zenodo:
                     "version": h.get("metadata", {}).get("version", ""),
                     "doi": h.get("doi", ""),
                     "conceptdoi": h.get("conceptdoi", ""),
+                    "related": h.get("metadata", {}).get("related_identifiers") or [],
                 }
                 for h in batch
             ]
@@ -397,7 +405,16 @@ def classify(releases, versions, now, grace_hours):
             state = "predates"
         else:
             state = "stranded"
-        rows.append({**r, "state": state, "doi": v["doi"] if v else "", "age_h": round(age, 1)})
+        rows.append(
+            {
+                **r,
+                "state": state,
+                "doi": v["doi"] if v else "",
+                "id": v.get("id", "") if v else "",
+                "related": v.get("related", []) if v else [],
+                "age_h": round(age, 1),
+            }
+        )
     return rows
 
 
@@ -707,6 +724,7 @@ def cmd_sync(args, gh, zen, now):
         print(
             f"{args.repo} {r['tag']}: archived as {got['doi']} (record {got['id']}; {got['note']})"
         )
+    repair_relations(args, gh, zen, rows)
     report(args.repo, concept, rows, os.environ.get("GITHUB_STEP_SUMMARY"))
     stranded = [r["tag"] for r in rows if r["state"] == "stranded"]
     if stranded:
@@ -716,6 +734,65 @@ def cmd_sync(args, gh, zen, now):
             "maintainer decides (Zenodo's upload form can add an older version)"
         )
     return rows
+
+
+def missing_relations(cff_text, related):
+    """CITATION.cff's related org works (cff_related) a published version lacks,
+    by identifier and relation."""
+    if not cff_text:
+        return []
+    try:
+        import yaml
+    except ImportError:
+        raise Failure("zenodo: PyYAML is needed to read CITATION.cff (pip install pyyaml)")
+    have = {(bare_doi(r.get("identifier", "")), r.get("relation")) for r in related}
+    want = cff_related(yaml.safe_load(cff_text) or {})
+    return [r for r in want if (r["identifier"], r["relation"]) not in have]
+
+
+def add_relations(zen, rid, missing):
+    """A metadata edit of a published version (no new version, no new DOI): its
+    related identifiers with `missing` in place of any entry for the same DOI."""
+    try:
+        zen.call("POST", f"/deposit/depositions/{rid}/actions/edit")
+    except Failure:
+        # an edit an earlier run opened and left: carry on with it, else re-raise
+        if (zen.call("GET", f"/deposit/depositions/{rid}") or {}).get("state") != "inprogress":
+            raise
+    dep = zen.call("GET", f"/deposit/depositions/{rid}")
+    meta = dict(dep.get("metadata") or {})
+    meta.pop("prereserve_doi", None)
+    ids = {r["identifier"] for r in missing}
+    kept = [
+        r
+        for r in meta.get("related_identifiers", [])
+        if bare_doi(r.get("identifier", "")) not in ids
+    ]
+    meta["related_identifiers"] = kept + missing
+    zen.call("PUT", f"/deposit/depositions/{rid}", body={"metadata": meta})
+    zen.call("POST", f"/deposit/depositions/{rid}/actions/publish")
+
+
+def repair_relations(args, gh, zen, rows):
+    """Each archived version that lacks a related org work its tag's CITATION.cff
+    cites gets it by a metadata edit (swarm-routing/.github#1018): Zenodo's GitHub
+    integration archives a release with no `requires`/`isRequiredBy`, which only
+    this tool's paths (cff_overlay) write."""
+    for r in rows:
+        if r["state"] != "archived" or not r.get("id"):
+            continue
+        missing = missing_relations(gh.file(args.repo, "CITATION.cff", ref=r["tag"]), r["related"])
+        if not missing:
+            continue
+        what = ", ".join(f"{m['relation']} {m['identifier']}" for m in missing)
+        if args.dry_run:
+            print(f"{args.repo} {r['tag']}: would add {what} to record {r['id']} (a metadata edit)")
+            continue
+        if not zen.token:
+            raise Failure("zenodo: ZENODO_TOKEN is not set (scopes deposit:write, deposit:actions)")
+        add_relations(zen, r["id"], missing)
+        r["related"] = list(r["related"]) + missing
+        print(f"{args.repo} {r['tag']}: added {what} to record {r['id']} (a metadata edit)")
 
 
 OPT_OUT = (
@@ -1620,6 +1697,7 @@ def fake_zenodo():
             self.search = []  # what the fake's record search returns, whatever the query
             self.published = []  # the owner's published depositions, as the deposit list shows them
             self.fail_next = []  # HTTP codes the next requests get, one each, before any route
+            self.edits = {}  # published version id -> its open metadata edit (#1018)
 
     st = State()
 
@@ -1675,6 +1753,26 @@ def fake_zenodo():
                 return self.send(200, {"hits": {"hits": st.search}})
             if not authed:
                 return self.send(403, {"message": "no token"})
+            # a metadata edit of a published version: edit, read, PUT, publish (#1018)
+            m = re.fullmatch(r"/api/deposit/depositions/(\d+)(/actions/(edit|publish))?", path)
+            pub = {v["id"]: v for v in st.versions}
+            if m and m.group(1) in pub and (m.group(3) == "edit" or m.group(1) in st.edits):
+                vid, act = m.group(1), m.group(3)
+                if act == "edit":
+                    if vid in st.edits:
+                        return self.send(400, {"message": "already in edit mode"})
+                    st.edits[vid] = json.loads(json.dumps(pub[vid]["metadata"]))
+                    return self.send(201, {"id": int(vid), "state": "inprogress"})
+                if act == "publish" and method == "POST":
+                    pub[vid]["metadata"] = st.edits.pop(vid)
+                    return self.send(202, {"id": int(vid), "doi": pub[vid]["doi"]})
+                if method == "GET":
+                    return self.send(
+                        200, {"id": int(vid), "state": "inprogress", "metadata": st.edits[vid]}
+                    )
+                if method == "PUT":
+                    st.edits[vid] = json.loads(data)["metadata"]
+                    return self.send(200, {})
             if method == "GET" and path == "/api/deposit/depositions":
                 new = st.draft and st.draft.get("new")
                 listed = {"id": st.draft["id"], "metadata": st.meta or {}} if new else None
@@ -1756,7 +1854,7 @@ def fake_zenodo():
                 st.versions.append(
                     {
                         "id": str(rid),
-                        "metadata": {"version": st.meta["version"]},
+                        "metadata": json.loads(json.dumps(st.meta)),
                         "doi": f"10.0/z.{rid}",
                     }
                 )
@@ -2019,6 +2117,78 @@ def self_test():
     st.calls = []
     rows, err, out, _ = run("sync")
     check("second sync is a no-op", err is None and all(c[0] == "GET" for c in st.calls))
+    # #1018: versions Zenodo's GitHub integration archived lack CITATION.cff's related
+    # org works; sync adds them by a metadata edit (no new version), once
+    tree = {"identifier": "https://github.com/org/R/tree/v1.0.0", "relation": "isSupplementTo"}
+    st.reset()
+    st.versions[0]["metadata"]["related_identifiers"] = [tree]
+    st.versions[1]["metadata"]["related_identifiers"] = [
+        {"identifier": "10.5281/zenodo.7", "relation": "requires", "scheme": "doi"}
+    ]
+    rows, err, out, _ = run("sync", dry_run=True, token=None, cff=refs_cff)
+    check(
+        "relations: dry run names each edit and writes nothing",
+        err is None
+        and "v1.0.0: would add requires 10.5281/zenodo.24476619, requires 10.5281/zenodo.7 "
+        "to record 101 (a metadata edit)"
+        in out
+        and "v1.1.0: would add requires 10.5281/zenodo.24476619 to record 102" in out
+        and all(c[0] == "GET" for c in st.calls),
+    )
+    st.calls = []
+    rows, err, out, _ = run("sync", cff=refs_cff)
+    rel0 = st.versions[0]["metadata"]["related_identifiers"]
+    check(
+        "relations: an archived version gets requires by a metadata edit, its links kept",
+        err is None
+        and rel0[0] == tree
+        and [(r["relation"], r["identifier"]) for r in rel0[1:]]
+        == [("requires", "10.5281/zenodo.24476619"), ("requires", "10.5281/zenodo.7")]
+        and st.versions[0]["metadata"]["version"] == "v1.0.0",
+    )
+    check(
+        "relations: one edited, the other's present one not duplicated",
+        [r["identifier"] for r in st.versions[1]["metadata"]["related_identifiers"]]
+        == ["10.5281/zenodo.7", "10.5281/zenodo.24476619"],
+    )
+    check(
+        "relations: edit, read, PUT, publish per version; the new release archived by sync",
+        [c[:2] for c in st.calls if "/101" in c[1]]
+        == [
+            ("POST", "/api/deposit/depositions/101/actions/edit"),
+            ("GET", "/api/deposit/depositions/101"),
+            ("PUT", "/api/deposit/depositions/101"),
+            ("POST", "/api/deposit/depositions/101/actions/publish"),
+        ]
+        and "v1.2.0: archived as" in out
+        and "v1.0.0: added requires" in out
+        and not st.edits,
+    )
+    check(
+        "relations: a version sync archives carries them already (no edit)",
+        "v1.2.0: added" not in out
+        and "10.5281/zenodo.24476619"
+        in [r["identifier"] for r in st.versions[-1]["metadata"].get("related_identifiers", [])],
+    )
+    st.calls = []
+    rows, err, out, _ = run("sync", cff=refs_cff)
+    check(
+        "relations: a second sync edits nothing",
+        err is None and "added" not in out and all(c[0] == "GET" for c in st.calls),
+    )
+    st.reset(versions=("v1.0.0", "v1.1.0", "v1.2.0"))
+    st.edits["101"] = {"version": "v1.0.0", "related_identifiers": []}
+    rows, err, out, _ = run("sync", cff=refs_cff)
+    check(
+        "relations: an edit an earlier run left open is carried on",
+        err is None and "v1.0.0: added" in out and not st.edits,
+    )
+    st.reset()
+    rows, err, out, _ = run("sync", token=None, cff=refs_cff, releases=rel[:2])
+    check(
+        "relations: an edit without ZENODO_TOKEN is refused",
+        err and "ZENODO_TOKEN is not set" in err and not st.edits,
+    )
     # two missing releases are archived oldest first, each on top of the last
     st.reset(versions=("v1.0.0",))
     rows, err, out, _ = run("sync")
