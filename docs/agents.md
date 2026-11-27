@@ -63,6 +63,39 @@ In the order the 2026-11-22 audit ranked them:
    session starts from `handoff.py read REPO#N`. A local `ROADMAP_STATE.md`
    was lost with its container and re-posted to #921 by hand.
 
+## Worker access across repositories (#1010)
+
+A cloud session reaches GitHub only for the repositories attached to it.
+What that means for a worker, and for the coordinator that briefs it
+(epic #1005):
+
+- **Another repository's endpoints are refused.** `repos/{owner}/{repo}/...`
+  for a repository not attached answers HTTP 403 ("GitHub access to this
+  repository is not enabled for this session"), and so does every
+  `orgs/...` endpoint ("sessions are bound to their configured
+  repositories"). `port_bump.py refresh` (other repositories' descriptions)
+  and `release_check.py after` (the consumers) failed this way (#1010); a
+  tool that needs the org's repository list takes it from the checkout or
+  `--repos`, never from `orgs/swarm-routing/repos` (`pr_status.py`'s
+  `DEFAULT_REPOS`; `status.py` since #1028).
+- **Cross-repository reads a tool needs run in CI**, where the token can read
+  the public repositories: the port refresh is a job in
+  swarm-routing/vcpkg-registry (#993).
+- **`add_repo` can be refused by the permission check** (swarm-routing/ARA,
+  #1010). A refusal is final for that session: never retry it, never ask
+  another agent to attach it; report it with what stays blocked (Agent
+  pitfalls). The maintainer's settings decision on it is #1004.
+- **One worker, one repository.** A worker crossing repositories was refused,
+  and two workers in one repository collide (#1005), so the coordinator
+  splits and sequences the work. The records a worker cannot post (a comment
+  or a tick on another repository's issue, the epic's state) are the
+  coordinator's: the worker reports them, the coordinator posts them.
+- **Releases and dispatches are permission-checked.** A release session was
+  refused on its first try and allowed on a repeat (#1010); releases are cut
+  only on the maintainer's request (CONTRIBUTING "Cutting a release"), a
+  refused release or dispatch is reported, not worked around, and which
+  sessions may run them is the maintainer's decision on #1004.
+
 ## Large outputs and PR waits (#794)
 
 Every tool result stays in the context for the rest of the conversation and
