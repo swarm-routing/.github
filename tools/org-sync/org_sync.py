@@ -367,8 +367,8 @@ ADOPT_PIECES = {
             "ORG_DIR   ?= $(HOME)/.cache/swarm-routing/dotgithub\n"
             "ORG_REF   ?= main\n",
         ),
-        "own": r"^(?:(?:ORG_DIR|ORG_REF|TITLE_RE)\s*[:?+!]?=|export TITLE\b|"
-        r"(?:org-tools|org-sync-check|pre-push|doctor)\s*:(?!=))",
+        "own": r"^(?:(?:ORG_DIR|ORG_REF|TITLE_RE|RUFF_CONFIG)\s*[:?+!]?=|export TITLE\b|"
+        r"(?:org-tools|org-sync-check|pre-push|doctor|ruff-setup)\s*:(?!=))",
         "at": "end",
         "optional": False,
     },

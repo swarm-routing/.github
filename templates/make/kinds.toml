@@ -21,8 +21,8 @@ clean  = 'rm -rf build'
 [python]
 build  = 'python3 -m pip install -e .'
 test   = 'python3 -m pytest -q'
-lint   = 'ruff check . && ruff format --check .'
-format = 'ruff format .'
+lint   = '$(MAKE) -s ruff-setup && ruff check $(RUFF_CONFIG) . && ruff format --check $(RUFF_CONFIG) .'
+format = '$(MAKE) -s ruff-setup && ruff format $(RUFF_CONFIG) .'
 clean  = 'rm -rf build dist *.egg-info .pytest_cache'
 
 [container]
