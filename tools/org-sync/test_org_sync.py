@@ -3049,10 +3049,18 @@ def refused_with(d, text):
 
 
 edit(dh2, ".github/org-sync.toml", 'hosts = ["ns3"]', 'hosts = ["ns3", "omnet"]')
+err_h = io.StringIO()
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err_h):
+    rc_h = org_sync.main(["check", dh2])
 check(
-    refused_with(dh2, "hosts lists omnet, but the repository has no omnet/ module directory"),
-    "a listed host without its module directory is refused",
+    rc_h == 1
+    and "hosts lists omnet, but the repository has no omnet/ module directory" in err_h.getvalue(),
+    "check: a listed host without its module directory is refused",
 )
+# only check reads the tree for it: plan, and the base's or a pin's config that
+# --changed-only and --reseed-untouched load in a tree without the directories
+check(run("plan", dh2)[0] == 0, "plan: the host directories are check's, not load_config's")
+edit(dh2, ".github/org-sync.toml", 'hosts = ["ns3", "omnet"]', 'hosts = ["ns3"]')
 cfg_p = os.path.join(dh2, ".github/org-sync.toml")
 for bad in ('["ns-3"]', '"ns3"', '["ns3", "ns3"]'):
     write(cfg_p, re.sub(r"(?m)^hosts = .*$", lambda _: "hosts = " + bad, read(cfg_p)))

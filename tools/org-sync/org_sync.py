@@ -18,8 +18,9 @@ section is not today's render.
 The hosts a protocol core runs on (#260): `hosts = ["ns3"]` in a repository's
 `.github/org-sync.toml`, distinct names from HOSTS (ns3, routingd, omnet),
 each needing its module directory of the same name (`ns3/`); every command
-that reads the config refuses another value, or a listed host without its
-directory. `init --kind protocol` writes it from the directories present (a
+that reads the config refuses another value, and `check` a listed host
+without its directory in the checked tree (the hosts table reads each
+repository's main, which its own `check` gated). `init --kind protocol` writes it from the directories present (a
 commented default when none is). `hosts` (swarm-routing/.github only) renders
 docs/architecture.md's hosts x protocols table, between `<!-- org-sync:begin
 hosts -->` and its end marker, from the `hosts` of every public repository of
@@ -932,13 +933,6 @@ def load_config(repo_dir, slug=None):
     err = hosts_error(cfg.get("hosts"))
     if err:
         sys.exit(f"org-sync: {CONFIG}: {err}")
-    missing = [h for h in cfg.get("hosts", []) if not os.path.isdir(os.path.join(repo_dir, h))]
-    if missing:
-        sys.exit(
-            f"org-sync: {CONFIG}: hosts lists {', '.join(missing)}, but the repository has no "
-            + ", ".join(f"{h}/" for h in missing)
-            + " module directory (#260)"
-        )
     cfg["swarm_core_mode"] = swarm_core_mode(repo_dir)
     # the commit every reference to this repository names: the lock's (apply may move it)
     cfg["pin"] = read_lock(repo_dir)
@@ -2967,6 +2961,17 @@ def drift_key(item, status):
 
 def cmd_check(a):
     cfg = load_config(a.repo)
+    # each listed host's module directory, in the checked tree itself (#260); not in
+    # load_config, which also reads a base's or a pin's config in a tree without them
+    missing = [h for h in cfg.get("hosts", []) if not os.path.isdir(os.path.join(a.repo, h))]
+    if missing:
+        print(
+            f"org-sync: {CONFIG}: hosts lists {', '.join(missing)}, but the repository has no "
+            + ", ".join(f"{h}/" for h in missing)
+            + " module directory (#260)",
+            file=sys.stderr,
+        )
+        return 1
     drift = [
         (item, status, detail)
         for item, status, _, detail in plan(cfg, a.repo)
