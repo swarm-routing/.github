@@ -67,7 +67,7 @@ What is planned and in progress here: the issues labelled [`epic`](https://githu
 | [#672](https://github.com/swarm-routing/.github/issues/672) Swarm-Routing Architecture & Migration Roadmap (Hexagonal Multi-Runtime) | In progress | 4 / 18 |
 | [#881](https://github.com/swarm-routing/.github/issues/881) every c++ release on vcpkg, with class docs and install guides per simulator; set up the new repositories | In progress | 7 / 9 |
 | [#970](https://github.com/swarm-routing/.github/issues/970) List the org in external indexes (MCP, plugin, ns-3, research archives) | In progress | 2 / 7 |
-| [#1005](https://github.com/swarm-routing/.github/issues/1005) Orchestrator: a reusable session task controller (coordinator + per-repository workers) | In progress | 5 / 7 |
+| [#1005](https://github.com/swarm-routing/.github/issues/1005) Orchestrator: a reusable session task controller (coordinator + per-repository workers) | In progress | 6 / 8 |
 | [#35](https://github.com/swarm-routing/.github/issues/35) code quality across the org — order of work and maintainer decisions | Planned | no sub-issues yet |
 | [#48](https://github.com/swarm-routing/.github/issues/48) Other simulators: container and tooling repos for OMNeT++/INET and Veins (deferred; ns-3 first) | Planned | 0 / 2 |
 | [#216](https://github.com/swarm-routing/.github/issues/216) every public repository releases and is archived on zenodo: sim-containers, benchmarks, skills, the site and .github too | Planned | 0 / 5 |
