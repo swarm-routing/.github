@@ -3022,4 +3022,103 @@ check(
     "release-gate: --changed-only reads the base's caller; its old gate is a warning",
 )
 
+# hosts (#260): the key is validated against HOSTS and the module directories,
+# and docs/architecture.md's hosts x protocols table is rendered from the keys
+dh = fresh()
+run("init", dh, "--kind", "protocol", "--dual", "core/")
+cfg_h = read(os.path.join(dh, ".github/org-sync.toml"))
+check(
+    '# hosts = ["ns3"]' in cfg_h and run("check", dh)[0] == 0,
+    "init --kind protocol without ns3/: a commented hosts default, and check passes",
+)
+dh2 = fresh()
+os.makedirs(os.path.join(dh2, "ns3"))
+run("init", dh2, "--kind", "protocol", "--dual", "core/")
+check(
+    '\nhosts = ["ns3"]\n' in read(os.path.join(dh2, ".github/org-sync.toml"))
+    and run("check", dh2)[0] == 0,
+    'init --kind protocol with ns3/: hosts = ["ns3"], and check passes',
+)
+
+
+def refused_with(d, text):
+    try:
+        return text in str(run("check", d))
+    except SystemExit as e:
+        return text in str(e.code)
+
+
+edit(dh2, ".github/org-sync.toml", 'hosts = ["ns3"]', 'hosts = ["ns3", "omnet"]')
+check(
+    refused_with(dh2, "hosts lists omnet, but the repository has no omnet/ module directory"),
+    "a listed host without its module directory is refused",
+)
+cfg_p = os.path.join(dh2, ".github/org-sync.toml")
+for bad in ('["ns-3"]', '"ns3"', '["ns3", "ns3"]'):
+    write(cfg_p, re.sub(r"(?m)^hosts = .*$", lambda _: "hosts = " + bad, read(cfg_p)))
+    check(
+        refused_with(dh2, "hosts must be a list of distinct host names"),
+        f"hosts = {bad} is refused",
+    )
+
+dt = tempfile.mkdtemp()
+os.makedirs(os.path.join(dt, "docs"))
+arch = os.path.join(dt, "docs/architecture.md")
+write(
+    arch,
+    "# arch\n\nIntro.\n\n<!-- org-sync:begin hosts -->\n<!-- org-sync:end hosts -->\n\nRest.\n",
+)
+cdir = tempfile.mkdtemp()
+write(os.path.join(cdir, "ARA.toml"), 'kind = "protocol"\nhosts = ["ns3"]\n')
+write(os.path.join(cdir, "AntHocNet.toml"), 'kind = "protocol"\nhosts = ["ns3", "routingd"]\n')
+write(os.path.join(cdir, "POSANT.toml"), 'kind = "protocol"\n')
+write(os.path.join(cdir, "swarm-routingd.toml"), 'kind = "c-cpp"\nhosts = []\n')
+write(os.path.join(cdir, "settings-only.toml"), '[settings]\ndescription = "x"\n')
+data_h = os.path.join(cdir, "repos.json")
+write(
+    data_h,
+    '{"org": "swarm-routing", "repos": [{"name": "ARA"}, {"name": "POSANT"}, {"name": "AntHocNet"},'
+    ' {"name": "swarm-routingd"}, {"name": "settings-only"}, {"name": "no-config"}]}',
+)
+hargs = ("hosts", dt, "--data", data_h, "--configs", cdir)
+rc, out = run(*hargs, "--check")
+check(
+    rc == 1 and "stale" in out and "Intro" in read(arch), "hosts --check: an empty table is stale"
+)
+rc, out = run(*hargs)
+got = read(arch)
+want = (
+    "| Protocol | ns-3 | Linux (swarm-routingd) | OMNeT++/INET |\n|---|---|---|---|\n"
+    "| [AntHocNet](https://github.com/swarm-routing/AntHocNet) | yes | yes | — |\n"
+    "| [ARA](https://github.com/swarm-routing/ARA) | yes | — | — |\n"
+    "| [POSANT](https://github.com/swarm-routing/POSANT) | ? | ? | ? |\n"
+)
+check(
+    rc == 0
+    and "rewritten (3 protocols)" in out
+    and want in got
+    and "declares no `hosts` yet" in got
+    and "swarm-routingd)" in got
+    and "[swarm-routingd]" not in got
+    and got.startswith("# arch\n\nIntro.\n\n<!-- org-sync:begin hosts -->\n<!-- Generated")
+    and got.endswith("<!-- org-sync:end hosts -->\n\nRest.\n"),
+    "hosts renders the protocols by name, a row per protocol, ? where undeclared, the rest kept",
+)
+check(run(*hargs, "--check")[0] == 0, "hosts --check: the render is up to date")
+write(os.path.join(cdir, "POSANT.toml"), 'kind = "protocol"\nhosts = ["ns3"]\n')
+check(run(*hargs, "--check")[0] == 1, "hosts --check: a changed key makes the table stale")
+write(os.path.join(cdir, "POSANT.toml"), 'kind = "protocol"\nhosts = ["sim"]\n')
+try:
+    bad_key = "POSANT's .github/org-sync.toml: hosts must be" in str(run(*hargs, "--check"))
+except SystemExit as e:
+    bad_key = "POSANT's .github/org-sync.toml: hosts must be" in str(e.code)
+check(bad_key, "hosts: an invalid key in a repository stops the render, naming it")
+write(arch, "# arch\n")
+check(run(*hargs)[0] == 1, "hosts: no markers, exit 1")
+real = read(os.path.join(ORG, "docs/architecture.md"))
+check(
+    "<!-- org-sync:begin hosts -->" in real and "<!-- org-sync:end hosts -->" in real,
+    "docs/architecture.md carries the hosts section's markers",
+)
+
 print("org-sync self-test: OK")
