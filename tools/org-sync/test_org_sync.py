@@ -804,11 +804,49 @@ check(
     "verify_id renders the M8ven Verified badge and link as M8ven issued them, no score"
     " badge; check is clean",
 )
+# glama (#990): Glama's score badge, link and alt text for the listing id, exactly
+# as Glama's "GitHub badge" page gives them; with m8ven-mcp, one row in INDEXES
+# order whatever the config's order
+GLAMA = (
+    "[![demo MCP server – quality and maintenance score on Glama]"
+    "(https://glama.ai/mcp/servers/swarm-routing/demo/badges/score.svg)]"
+    "(https://glama.ai/mcp/servers/swarm-routing/demo)"
+)
 edit(
     di,
     ".github/org-sync.toml",
-    'verify_id = "a770df99a2438405" }',
-    'variant = "verified" }',
+    '{ m8ven-mcp = { id = "swarm-routing-demo-abc123", verify_id = "a770df99a2438405" } }',
+    '{ glama = { id = "swarm-routing/demo" } }',
+)
+run("apply", di)
+check(
+    f"| Indexes | {GLAMA} |" in read(os.path.join(di, "README.md")).splitlines()
+    and run("check", di)[0] == 0,
+    "indexes = { glama = { id = <owner/name> } } renders Glama's score badge and listing link;"
+    " check is clean",
+)
+edit(
+    di,
+    ".github/org-sync.toml",
+    '{ glama = { id = "swarm-routing/demo" } }',
+    '{ glama = "swarm-routing/demo", m8ven-mcp = { id = "swarm-routing-demo-abc123",'
+    ' verify_id = "a770df99a2438405" } }',
+)
+run("apply", di)
+check(
+    "| Indexes | [![M8ven Verified](https://m8ven.ai/api/agent-verify/badge?id=a770df99a2438405)]"
+    f"(https://m8ven.ai/verified/verify?id=a770df99a2438405) {GLAMA} |"
+    in read(os.path.join(di, "README.md")).splitlines()
+    and run("check", di)[0] == 0,
+    "glama + m8ven-mcp render in one Indexes row in INDEXES order (m8ven-mcp first though the"
+    " config names glama first); check is clean",
+)
+edit(
+    di,
+    ".github/org-sync.toml",
+    '{ glama = "swarm-routing/demo", m8ven-mcp = { id = "swarm-routing-demo-abc123",'
+    ' verify_id = "a770df99a2438405" } }',
+    '{ m8ven-mcp = { id = "swarm-routing-demo-abc123", variant = "verified" } }',
 )
 good = 'indexes = { m8ven-mcp = { id = "swarm-routing-demo-abc123", variant = "verified" } }'
 for bad, why, msg in (
@@ -824,6 +862,18 @@ for bad, why, msg in (
     ('indexes = { m8ven-mcp = { id = "a", extra = 1 } }', "an unknown entry key", "got m8ven-mcp"),
     ('indexes = ["m8ven-mcp"]', "the old list form", "indexes must be a table"),
     ("indexes = { m8ven-mcp = 7 }", "a non-string id", "got m8ven-mcp = 7"),
+    ('indexes = { glama = "swarm-mcp" }', "a Glama id without its namespace", "got glama = "),
+    ('indexes = { glama = "a/b/c" }', "a Glama id with an extra segment", "got glama = "),
+    (
+        'indexes = { glama = { id = "a/b", variant = "verified" } }',
+        "a variant Glama does not offer",
+        "variant must be one of (none)",
+    ),
+    (
+        'indexes = { glama = { id = "a/b", verify_id = "a770df99a2438405" } }',
+        "a verify id Glama does not issue",
+        "the index issues no verify badge",
+    ),
     (
         'indexes = { m8ven-mcp = { id = "a", verify_id = "A770DF99A243840" } }',
         "a verify id outside [0-9a-f]{16}",

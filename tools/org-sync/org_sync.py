@@ -216,7 +216,8 @@ def markers(path):
 # per entry, or `{ id = "<id>", verify_id = "<verify id>" }` for the verified
 # publisher's badge in place of the score badge (#968; INDEXES; an unknown
 # index, id, variant or verify id, or a variant with a verify id, is a config
-# error).
+# error). `glama = "<namespace>/<slug>"`: Glama's score badge for the listing
+# (#990), its id the listing's path, written out even where it is owner/name.
 # `sonar` is the four SonarQube Cloud badges (quality gate, bugs, security,
 # maintainability); `sonar-gate`, `sonar-bugs`,
 # `sonar-security` and `sonar-maintainability` pick one.
@@ -243,10 +244,12 @@ BASE_BADGES = [
     "ns3-bugs",
 ]
 # The external indexes a repository may opt into (`indexes`): name -> (alt,
-# image, link, variants, verify), image and link formats of the listing's
-# `{id}`, each accepted `variant` -> the image's query, and `verify`, None or
-# (alt, image, link, pattern) of the badge the index issues a verified
-# publisher by a separate `verify_id` (#968). The Indexes group is for
+# image, link, variants, verify, id), image and link formats of the listing's
+# `{id}` (the alt may name `{name}`, the id's last segment), each accepted
+# `variant` -> the image's query, `verify`, None or (alt, image, link, pattern)
+# of the badge the index issues a verified publisher by a separate `verify_id`
+# (#968), and the pattern of the index's listing ids. A row renders the
+# indexes in this order, whatever the config's order. The Indexes group is for
 # directories that list or score a repository from outside; OpenSSF Best
 # Practices stays in Trust (a certification the project answers, #23).
 INDEXES = {
@@ -266,9 +269,21 @@ INDEXES = {
             "https://m8ven.ai/verified/verify?id={id}",
             re.compile(r"[0-9a-f]{16}"),
         ),
+        re.compile(r"[a-z0-9][a-z0-9-]*"),
+    ),
+    # Glama's MCP server directory: the listing's `<namespace>/<slug>` (the
+    # GitHub owner/name it lists), its score badge, link and alt text exactly
+    # as the listing's "GitHub badge" page gives them, the slug as the display
+    # name (#990)
+    "glama": (
+        "{name} MCP server – quality and maintenance score on Glama",
+        "https://glama.ai/mcp/servers/{id}/badges/score.svg",
+        "https://glama.ai/mcp/servers/{id}",
+        {},
+        None,
+        re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._][A-Za-z0-9._-]*"),
     ),
 }
-INDEX_ID = re.compile(r"[a-z0-9][a-z0-9-]*")
 KIND_BADGES = {
     "protocol": ["cxx", "ns3", "ns3dev", "sonar", "codecov", "coderabbit"],
     "c-cpp": ["cxx", "ns3dev", "sonar", "codecov", "coderabbit"],
@@ -892,7 +907,7 @@ def check_indexes(indexes):
         f"org-sync: {CONFIG}: indexes must be a table keyed by a known index "
         f"({', '.join(INDEXES)}), each the listing id the index issued "
         '(e.g. indexes = { m8ven-mcp = "<id>" }) or { id = "<id>", variant = "<variant>" }; '
-        f"an id matches {INDEX_ID.pattern}"
+        "an id matches " + ", ".join(f"{n}: {e[5].pattern}" for n, e in INDEXES.items())
     )
     if not isinstance(indexes, dict):
         sys.exit(f"{usage}; got {indexes!r}")
@@ -907,7 +922,7 @@ def check_indexes(indexes):
             not isinstance(entry, dict)
             or set(entry) - {"id", "variant", "verify_id"}
             or not isinstance(entry.get("id"), str)
-            or not INDEX_ID.fullmatch(entry["id"])
+            or not INDEXES[name][5].fullmatch(entry["id"])
         ):
             sys.exit(f"{usage}; got {name} = {entry!r}")
         variant = entry.get("variant")
@@ -1586,7 +1601,7 @@ def badges_by_kind(cfg, repo_dir):
             # the external indexes the repository opted into, in INDEXES order,
             # each by the listing id the index issued
             cells = []
-            for name, (alt, image, link, variants, verify) in INDEXES.items():
+            for name, (alt, image, link, variants, verify, _) in INDEXES.items():
                 if name in cfg["indexes"]:
                     lid, variant, verify_id = cfg["indexes"][name]
                     if verify_id:
@@ -1596,6 +1611,7 @@ def badges_by_kind(cfg, repo_dir):
                         cells.append(f"[![{valt}]({img})]({url})")
                         continue
                     img = image.format(id=lid) + (variants[variant] if variant else "")
+                    alt = alt.format(name=lid.rsplit("/", 1)[-1])
                     cells.append(f"[![{alt}]({img})]({link.format(id=lid)})")
             out[b] = " ".join(cells)
         elif b == "rcapa" and "docs/rcapa/README.md" not in cfg.get("skip", []):
