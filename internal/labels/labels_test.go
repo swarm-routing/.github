@@ -130,10 +130,15 @@ func newFake() *fakeGitHub {
 
 func run(t *testing.T, f *fakeGitHub, args []string, token string) (int, string, string) {
 	t.Helper()
+	return runWith(t, f, args, token, taxonomy)
+}
+
+func runWith(t *testing.T, f *fakeGitHub, args []string, token, text string) (int, string, string) {
+	t.Helper()
 	srv := httptest.NewServer(f)
 	defer srv.Close()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "labels.json"), []byte(taxonomy), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "labels.json"), []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	wd, _ := os.Getwd()
@@ -269,6 +274,41 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+// A repository in own_release_labels keeps its release:* labels as they are,
+// and gets none it lacks; every other label, and every other repository, as
+// before (#998).
+func TestOwnReleaseLabels(t *testing.T) {
+	text := `{"own_release_labels": ["Alpha"], "labels": [
+  {"name": "bug", "color": "d73a4a", "description": "Type: defect"},
+  {"name": "release:v1.0.0", "color": "ededed", "description": "Gated by v1.0.0"},
+  {"name": "release:v2.0.0", "color": "ededed", "description": "Gated by v2.0.0"}
+]}`
+	f := newFake()
+	f.labels["alpha"] = []Label{
+		{"bug", "000000", "Type: defect"},          // colour differs: updated
+		{"Release:v1.0.0", "123456", "Ours, v1.0"}, // the repository's own: kept
+	}
+	f.labels["beta"] = []Label{{"release:v1.0.0", "123456", "theirs"}}
+	code, out, errs := runWith(t, f, []string{"--repos", "alpha,beta"}, "tok", text)
+	want := "swarm-routing/alpha: created 0 [], updated 1 [bug], 0 failed\n" +
+		"swarm-routing/beta: created 2 [bug, release:v2.0.0], updated 1 [release:v1.0.0], 0 failed\n"
+	if code != 0 || out != want {
+		t.Fatalf("exit %d\nout:\n%s\nwant:\n%s\nerr: %s", code, out, want, errs)
+	}
+	if g := f.labels["alpha"]; len(g) != 2 || g[1] != (Label{"Release:v1.0.0", "123456", "Ours, v1.0"}) {
+		t.Errorf("alpha's own release label changed, or one was added: %v", g)
+	}
+	code, out, _ = runWith(t, f, []string{"--repos", "alpha"}, "tok", text)
+	if code != 0 || out != "swarm-routing/alpha: up to date (1 labels)\n" {
+		t.Errorf("second run: %d %s", code, out)
+	}
+	for _, bad := range []string{`{"own_release_labels": ["a/b"], "labels": []}`, `{"own_release_labels": "AntHocNet"}`} {
+		if _, err := OwnRelease([]byte(bad)); err == nil {
+			t.Errorf("OwnRelease(%s) accepted", bad)
+		}
+	}
+}
+
 // The repository's own labels.json loads.
 func TestRepositoryTaxonomy(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "labels.json"))
@@ -280,6 +320,9 @@ func TestRepositoryTaxonomy(t *testing.T) {
 	}
 	if ls, err := Load(data); err != nil || len(ls) < 10 {
 		t.Fatalf("%v %d", err, len(ls))
+	}
+	if own, err := OwnRelease(data); err != nil || !own["anthocnet"] {
+		t.Fatalf("own_release_labels names AntHocNet (CONTRIBUTING's label table): %v %v", own, err)
 	}
 }
 
