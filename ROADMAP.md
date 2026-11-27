@@ -1024,6 +1024,7 @@ Every epic of every public repository, open first. A status is derived from the 
 | [#325](https://github.com/swarm-routing/.github/issues/325) Raspberry Pi testbed: the protocols on real boards, run and judged by one command | Planned | 0 / 1 |
 | [#674](https://github.com/swarm-routing/.github/issues/674) Multi-Simulator & Unified Web UI Plan (sim-tools, swarm-web-ui) | Planned | 0 / 2 |
 | [#978](https://github.com/swarm-routing/.github/issues/978) JOSS software papers: eligibility, timeline and one paper per research package | Planned | 0 / 4 |
+| [#1005](https://github.com/swarm-routing/.github/issues/1005) Orchestrator: a reusable session task controller (coordinator + per-repository workers) | Planned | 0 / 6 |
 
 <details><summary>Closed: 5 epics</summary>
 
