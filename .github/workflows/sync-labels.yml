@@ -4,7 +4,8 @@ name: Sync labels
 
 # Applies labels.json (the org taxonomy) to the calling repository: creates
 # missing labels and updates colour/description of existing ones. Never
-# deletes a label. A repo adopts it with a 10-line caller:
+# deletes a label; in a repository labels.json lists in own_release_labels,
+# touches no release:* label (#998). A repo adopts it with a 10-line caller:
 #
 #   on: { workflow_dispatch: {}, schedule: [{ cron: '17 4 1 * *' }] }
 #   permissions: { contents: read, issues: write }
@@ -44,9 +45,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
+          # a repository in own_release_labels (AntHocNet) keeps its own release:* labels (#998)
           python3 - <<'PY' > labels.tsv
-          import json
-          for l in json.load(open('.org/labels.json'))['labels']:
+          import json, os
+          tax = json.load(open('.org/labels.json'))
+          own = {r.lower() for r in tax.get('own_release_labels', [])}
+          skip = os.environ['REPO'].split('/')[-1].lower() in own
+          for l in tax['labels']:
+              if skip and l['name'].lower().startswith('release:'):
+                  continue
               print('\t'.join((l['name'], l['color'], l['description'])))
           PY
           while IFS=$'\t' read -r name color desc; do

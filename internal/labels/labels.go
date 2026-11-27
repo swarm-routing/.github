@@ -5,7 +5,9 @@
 // repository of the org, private ones included (swarm-routing/.github#570):
 // a label missing from a repository is created, one whose colour, description
 // or name's case differs is updated, and no label is ever deleted (golden rule
-// 11), so a repository's own labels stay. It is what sync-labels.yml does for
+// 11), so a repository's own labels stay; a repository labels.json lists in
+// own_release_labels (AntHocNet) gets no release:* label created or updated
+// (#998). It is what sync-labels.yml does for
 // one repository, done for all of them from this repository with the org
 // App's token, so a labels.json change reaches a private repository, which
 // runs no pipelines, as soon as it merges.
@@ -90,6 +92,43 @@ func Load(data []byte) ([]Label, error) {
 		seen[k] = true
 	}
 	return f.Labels, nil
+}
+
+// ReleasePrefix starts the release labels a repository may keep as its own.
+const ReleasePrefix = "release:"
+
+// OwnRelease reads labels.json's own_release_labels: the repositories that
+// keep their own release:* labels (AntHocNet, CONTRIBUTING's label table),
+// keyed by lower-case name (GitHub's names ignore case; #998).
+func OwnRelease(data []byte) (map[string]bool, error) {
+	var f struct {
+		Own []string `json:"own_release_labels"`
+	}
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil, err
+	}
+	if len(f.Own) > MaxRepos {
+		return nil, fmt.Errorf("own_release_labels has %d repositories (at most %d)", len(f.Own), MaxRepos)
+	}
+	out := map[string]bool{}
+	for _, n := range f.Own {
+		if !repoRe.MatchString(n) {
+			return nil, fmt.Errorf("own_release_labels: %q is not a repository name", n)
+		}
+		out[strings.ToLower(n)] = true
+	}
+	return out, nil
+}
+
+// withoutRelease is want less its release:* labels.
+func withoutRelease(want []Label) []Label {
+	var out []Label
+	for _, l := range want {
+		if !strings.HasPrefix(strings.ToLower(l.Name), ReleasePrefix) {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // GitHub is the REST client: base URL, token, HTTP client, and the wait a
@@ -236,10 +275,12 @@ func (g GitHub) pages(path string, decode func([]byte) (int, error)) error {
 	return fmt.Errorf("more than %d pages", maxPages)
 }
 
-// Repo is an org repository the labels go to.
+// Repo is an org repository the labels go to. OwnRelease: it keeps its own
+// release:* labels, so none is created or updated there (#998).
 type Repo struct {
-	Name    string
-	Private bool
+	Name       string
+	Private    bool
+	OwnRelease bool
 }
 
 // Repos lists the org's repositories that are neither archived nor disabled,
@@ -260,7 +301,7 @@ func (g GitHub) Repos() ([]Repo, error) {
 			if r.Archived || r.Disabled || !repoRe.MatchString(r.Name) {
 				continue
 			}
-			out = append(out, Repo{r.Name, r.Private})
+			out = append(out, Repo{Name: r.Name, Private: r.Private})
 		}
 		if len(out) > MaxRepos {
 			return 0, fmt.Errorf("more than %d repositories", MaxRepos)
@@ -350,7 +391,11 @@ func Run(g GitHub, want []Label, repos []Repo, dry bool, out io.Writer) error {
 			}
 			continue
 		}
-		plan := Plan(want, have)
+		w := want
+		if r.OwnRelease {
+			w = withoutRelease(want)
+		}
+		plan := Plan(w, have)
 		var created, updated []Change
 		for _, c := range plan {
 			if c.From == "" {
@@ -360,7 +405,7 @@ func Run(g GitHub, want []Label, repos []Repo, dry bool, out io.Writer) error {
 			}
 		}
 		if len(plan) == 0 {
-			fmt.Fprintf(out, "%s: up to date (%d labels)\n", name, len(want))
+			fmt.Fprintf(out, "%s: up to date (%d labels)\n", name, len(w))
 			continue
 		}
 		if dry {
@@ -427,6 +472,11 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 		fmt.Fprintf(stderr, "labels: %s: %v\n", file, err)
 		return 2
 	}
+	own, err := OwnRelease(data)
+	if err != nil {
+		fmt.Fprintf(stderr, "labels: %s: %v\n", file, err)
+		return 2
+	}
 	token := getenv("GH_TOKEN")
 	if token == "" && !dry {
 		fmt.Fprintln(stdout, "labels: no GH_TOKEN: dry run")
@@ -444,6 +494,9 @@ func Main(args []string, getenv func(string) string, client *http.Client, api st
 			fmt.Fprintln(stderr, "labels:", err)
 			return 2
 		}
+	}
+	for i := range repos {
+		repos[i].OwnRelease = own[strings.ToLower(repos[i].Name)]
 	}
 	if len(repos) == 0 {
 		fmt.Fprintln(stderr, "labels: no repository to apply to")
