@@ -43,7 +43,8 @@ pending on its head; while other checks still run it stays `ci=pending`
 (#319). `wait --merged` instead polls until each PR has merged, or stops
 at the first that needs a hand: closed unmerged, an unresolved review
 thread, a failed required check, auto-merge off (never enabled, or dropped
-from the merge queue). One line per PR (`merged`, `stopped: <reason>`,
+from the merge queue; with no `merge_queue` rule on the base branch the
+reason says to merge it directly with `merge`, #1011). One line per PR (`merged`, `stopped: <reason>`,
 `timeout: ...`; `--json`: one list at the end); exit 0 when all merged, 1 as
 soon as one needs a hand (the rest are not waited for), 2 at the timeout; a
 failed read is retried at the next poll (#341). With
@@ -102,7 +103,16 @@ repositories run independently of each other. For each PR it polls every
 - once every check on the head passed and no thread is open, it merges with
   `merge_method=squash`, `sha=<head>` and the org's squash title
   `"<PR title> (#n)"`, and only then goes on to that repository's next PR,
-  which the merge has just put behind.
+  which the merge has just put behind. That direct merge is the path in a
+  repository whose base branch has no `merge_queue` rule, where enabling
+  auto-merge on a PR already `clean` fails ("already in clean status");
+  where the rules hold a merge queue a direct merge is refused (HTTP 405), so
+  it stops at that point with `merge queue on <base>: enable auto-merge
+  (squash) and wait --merged` instead (#1011).
+
+Enabling auto-merge: the GitHub MCP `enable_pr_auto_merge` tool can answer
+`method: MERGE` while `SQUASH` was asked; a squash-only repository squashes
+all the same. `queued` prints the method REST's `auto_merge` holds (#1011).
 
 A merge or update refused by GitHub (403, 405, 422, ...) is reported as
 `refused: <message>` and the PR is handed back; a refusal because the head
@@ -583,6 +593,9 @@ def merged_poll(gh, repo, n, cache):
         again = gh.get(f"repos/{repo}/pulls/{n}") or {}
         if again.get("merged") or again.get("merged_at"):
             return "merged", (again.get("head") or {}).get("sha") or head, ""
+        if not branch_rules(gh, repo, base, cache)[2]:
+            hint = NO_QUEUE_HINT.format(base=base, ref=f"{short_repo(repo)}#{n}")
+            return "stopped", head, f"auto-merge off; {hint}"
         return "stopped", head, "auto-merge off (never enabled, or dropped from the merge queue)"
     return None
 
@@ -681,21 +694,28 @@ def cmd_wait(args, gh, sleep=time.sleep, clock=time.monotonic, wall=time.time):
 # --- merge: wait for green, squash-merge one at a time (update when needed) ---
 
 RETRY = re.compile(r"up to date|modified|behind", re.I)
+QUEUE_HINT = "enable auto-merge (squash) and `wait --merged`; a direct merge is refused"
+NO_QUEUE_HINT = (
+    "no merge queue on {base}: merge it directly, `pr_status.py merge {ref}` "
+    "(a squash at the head SHA; enabling auto-merge on a clean PR fails there)"
+)
 UPDATE_FIRST = re.compile(r"not up to date", re.I)
 
 
 def branch_rules(gh, repo, base, cache):
-    """(required check names, strict) of the base branch's rules, cached per repo
-    and branch; strict: a rule requires the branch to be up to date before merging."""
+    """(required check names, strict, queue) of the base branch's rules, cached per
+    repo and branch; strict: a rule requires the branch to be up to date before
+    merging; queue: a `merge_queue` rule, so a merge goes through the queue (#1011)."""
     key = (repo, base)
     if key not in cache:
-        names, strict = set(), False
-        for rule in gh.get(f"repos/{repo}/rules/branches/{base}") or []:
+        names, strict, queue = set(), False, False
+        for rule in gh.paged(f"repos/{repo}/rules/branches/{base}"):  # every page
+            queue = queue or rule.get("type") == "merge_queue"
             if rule.get("type") == "required_status_checks":
                 params = rule.get("parameters") or {}
                 names |= {c.get("context") for c in params.get("required_status_checks") or []}
                 strict = strict or bool(params.get("strict_required_status_checks_policy"))
-        cache[key] = (names - {None}, strict)
+        cache[key] = (names - {None}, strict, queue)
     return cache[key]
 
 
@@ -898,7 +918,7 @@ def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0, up
     if state == "dirty":
         return ("stopped", "conflict")
     base = (pr.get("base") or {}).get("ref") or "main"
-    required, strict = branch_rules(gh, repo, base, cache)
+    required, strict, queue = branch_rules(gh, repo, base, cache)
     ci = head_checks(gh, repo, job.sha, required)
     if ci["failed"]:
         return ("stopped", "failing: " + ", ".join(ci["failed"]))
@@ -953,6 +973,9 @@ def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0, up
             return ("dry", "would wait: mergeable state unknown")
         job.say("unknown", "waiting: mergeable state unknown", out)
         return None
+    if queue:
+        # a direct merge is refused there (HTTP 405): the queue merges it (#1011)
+        return ("stopped", f"merge queue on {base}: {QUEUE_HINT}")
     if dry_run:
         return ("dry", "would merge")
     fields = {"merge_method": "squash", "sha": job.sha, "commit_title": f"{job.title} (#{n})"}
@@ -962,7 +985,7 @@ def merge_step(gh, job, dry_run, cache, out, review_wait=0, age=lambda pr: 0, up
     if UPDATE_FIRST.search(got):
         # an up-to-date branch is required after all (a rule the rules endpoint
         # did not show, such as a legacy branch protection): update on the next poll
-        cache[(repo, base)] = (required, True)
+        cache[(repo, base)] = (required, True, queue)
         job.say(f"retry {job.sha}", f"waiting: merge not accepted yet ({plain(got)})", out)
         return None
     if got.startswith("HTTP 409") or RETRY.search(got):
@@ -1350,6 +1373,7 @@ class SimGitHub(GitHub):
         strict=(),
         legacy=(),
         reviews=None,
+        queue=(),
     ):
         self.prs = {}
         for (repo, n), fields in prs.items():
@@ -1365,6 +1389,7 @@ class SimGitHub(GitHub):
         self.runs = runs or {}  # sha -> workflow runs
         self.strict = set(strict)  # repos whose rules require an up-to-date branch
         self.legacy = set(legacy)  # repos that require it without the rules showing it
+        self.queue = set(queue)  # repos whose rules hold a merge queue: a direct merge is a 405
         self.reviews = reviews or {}  # (repo, n) -> reviews; default: CodeRabbit has reviewed
         self.calls, self.puts, self.updates = [], [], 0
 
@@ -1395,11 +1420,14 @@ class SimGitHub(GitHub):
             return {
                 "behind_by": int(pr["mergeable_state"] == "behind" or pr.get("outdated", False))
             }
-        if rest == "rules/branches/main":
+        if rest.startswith("rules/branches/main?"):
             names = self.required.get(repo, [])
             params = {"required_status_checks": [{"context": c} for c in names]}
             params["strict_required_status_checks_policy"] = repo in self.strict
-            return [{"type": "deletion"}, {"type": "required_status_checks", "parameters": params}]
+            rules = [{"type": "deletion"}, {"type": "required_status_checks", "parameters": params}]
+            return rules + (
+                [{"type": "merge_queue", "parameters": {}}] if repo in self.queue else []
+            )
         return None
 
     def put(self, path, fields):
@@ -1417,6 +1445,8 @@ class SimGitHub(GitHub):
             pr["mergeable_state"] = "clean"
             pr["outdated"] = False
             return True, {"message": "Updating pull request branch."}
+        if repo in self.queue:
+            return False, "HTTP 405: Changes must be made through the merge queue"
         if fields["sha"] != pr["head"]["sha"]:
             return False, "HTTP 409: Head branch was modified."
         if pr["mergeable_state"] == "behind" and repo in self.strict | self.legacy:
@@ -1679,7 +1709,7 @@ def self_test():
     }
     data[f"repos/swarm-routing/alpha/commits/{sha}/status"] = {"state": "pending", "statuses": []}
     required = ["lint", "python / python", "title / title"]
-    data["repos/swarm-routing/alpha/rules/branches/main"] = [
+    data["repos/swarm-routing/alpha/rules/branches/main?per_page=100&page=1"] = [
         {"type": "deletion"},
         {
             "type": "required_status_checks",
@@ -2264,6 +2294,35 @@ def self_test():
         and not gh.puts
         and out.splitlines() == ["alpha#1 1111111 would update", "alpha#2 2222222 would merge"],
     )
+    # #1011: no merge queue -> a direct squash at the head SHA; a merge queue -> stop, no PUT
+    gh = SimGitHub({("alpha", 4): {}})
+    rc, out, _ = merge(["alpha#4"], gh)
+    check(
+        "merge: no merge queue, a clean PR squash-merged directly with its head SHA",
+        rc == 0
+        and gh.puts
+        == [
+            (
+                "repos/swarm-routing/alpha/pulls/4/merge",
+                {"merge_method": "squash", "sha": "4" * 40, "commit_title": "feat: pr 4 (#4)"},
+            )
+        ]
+        and out == "alpha#4 4444444 merged eeeeeee\n",
+    )
+    gh = SimGitHub({("alpha", 4): {}}, queue={"alpha"})
+    rc, out, _ = merge(["alpha#4"], gh)
+    check(
+        "merge: a merge queue on the base stops before a direct merge, naming auto-merge",
+        rc == 1 and not gh.puts and out == f"alpha#4 4444444 merge queue on main: {QUEUE_HINT}\n",
+    )
+    rules = "repos/swarm-routing/alpha/rules/branches/main?per_page=100&page="
+    paged_rules = FakeGitHub(
+        {f"{rules}1": [{"type": "deletion"}] * 100, f"{rules}2": [{"type": "merge_queue"}]}
+    )
+    check(
+        "merge: a merge_queue rule on the rules' second page is found",
+        branch_rules(paged_rules, "swarm-routing/alpha", "main", {})[2] is True,
+    )
     gh = SimGitHub({("alpha", 3): {}}, required={"alpha": ["gate"]})
     rc, out, _ = merge(["alpha#3"], gh, "--dry-run")
     check(
@@ -2455,6 +2514,7 @@ def self_test():
         extra=(),
         in_queue=False,
         timeline=(),
+        queue=True,
     ):
         sha = "c" * 40
         prs = iter(pr_seq)
@@ -2471,12 +2531,13 @@ def self_test():
                 "user": {"login": "coderabbitai[bot]"},
                 "body": CR_BODY,
             },
-            "repos/swarm-routing/beta/rules/branches/main": [
+            "repos/swarm-routing/beta/rules/branches/main?per_page=100&page=1": [
                 {
                     "type": "required_status_checks",
                     "parameters": {"required_status_checks": [{"context": "ci"}]},
                 }
-            ],
+            ]
+            + ([{"type": "merge_queue"}] if queue else []),
             f"repos/swarm-routing/beta/commits/{sha}/check-runs?per_page=100&page=1": {
                 "check_runs": list(runs)
             },
@@ -2539,6 +2600,14 @@ def self_test():
         "wait --merged: auto-merge off (dropped from the queue) stops",
         rc == 1 and "auto-merge off" in out,
     )
+    rc, out = landed([{}], queue=False)
+    check(
+        "wait --merged: auto-merge off with no merge queue names the direct merge (#1011)",
+        rc == 1
+        and "auto-merge off; no merge queue on main: merge it directly, `pr_status.py merge beta#9`"
+        in out,
+    )
+    check("…with a merge queue it does not", "no merge queue" not in landed([{}])[1])
     rc, out = landed([queued], timeout=60)
     check(
         "wait --merged: the timeout exits 2",
