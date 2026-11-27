@@ -7,8 +7,9 @@ Usage:
   status.py [--repos A,B] [--json]
   status.py --self-test
 
-Read-only. For each unarchived, non-fork swarm-routing repository (or only
---repos), it prints:
+Read-only. For each repository of tools/pr-status/pr_status.py's
+DEFAULT_REPOS, the org's public repositories as this checkout lists them (or
+only --repos), it prints:
 
   REPO release TAG commit SHA doi DOI       the latest GitHub release, the commit
                                             its tag names, and the version's
@@ -31,7 +32,10 @@ opt-out, its concept lookup, the concept's versions), never typed: a
 repository with `zenodo = false` says `doi -: opted out`, one with no concept
 `doi none: no concept`, a tag Zenodo has not archived `doi none: not
 archived`. A Zenodo error is reported on the line (`doi ?: ...`) and the
-snapshot goes on; a repository GitHub will not show (a 403) is one
+snapshot goes on. Only `repos/{owner}/{repo}/...` endpoints are called, never
+`orgs/...`: a cloud session refuses the org-wide API ("sessions are bound to
+their configured repositories", HTTP 403; #1005), so the list comes from the
+checkout, not from GitHub. A repository GitHub will not show (a 403) is one
 `REPO error ...` line, the rest is still read, and the exit code is 1. The
 checkboxes are read with
 tools/issues/criteria.py's parser. `--json` prints the same facts as one JSON
@@ -51,21 +55,14 @@ import sys
 ORG = "swarm-routing"
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(HERE)
-for _d in ("zenodo", "issues"):
+for _d in ("zenodo", "issues", "pr-status"):
     sys.path.insert(0, os.path.join(TOOLS, _d))
 import criteria  # noqa: E402
 import zenodo  # noqa: E402
+from pr_status import DEFAULT_REPOS  # noqa: E402
 
 RELEASE_LABEL = re.compile(r"^release:(v\d+\.\d+\.\d+)$")
 MAINTAINER_REPO = ".github"
-
-
-def org_repos(gh):
-    return sorted(
-        r["name"]
-        for r in gh.paged(f"orgs/{ORG}/repos?type=all")
-        if not r.get("archived") and not r.get("fork")
-    )
 
 
 def open_issues(gh, repo):
@@ -151,7 +148,7 @@ def maintainer_of(issues):
 
 
 def snapshot(gh, zen, repos=None):
-    names = org_repos(gh) if not repos else repos
+    names = repos or sorted(DEFAULT_REPOS)
     out, cache = {"repos": [], "maintainer": None}, {}
     for r in names:
         try:
@@ -229,9 +226,13 @@ class FakeGitHub(zenodo.GitHub):
     def run(self, path, raw=False):
         self.calls.append(path)
         p = path.split("?")[0]
+        if p.startswith("orgs/"):  # a cloud session refuses the org-wide API
+            raise zenodo.Failure(
+                f"gh api {path}: sessions are bound to their configured repositories (HTTP 403)"
+            )
         if p.startswith(f"repos/{ORG}/secret/"):
             raise zenodo.Failure(f"gh api {path}: not enabled for this session (HTTP 403)")
-        if p.startswith("orgs/") or p.endswith("/issues"):
+        if p.endswith("/issues"):
             page = int(re.search(r"[?&]page=(\d+)", path).group(1))
             return self.routes.get(p, [])[(page - 1) * 100 : page * 100]
         return self.routes.get(p)
@@ -263,15 +264,6 @@ def self_test():
 
     R = f"repos/{ORG}"
     routes = {
-        f"orgs/{ORG}/repos": [
-            {"name": "AntHocNet"},
-            {"name": "skills"},
-            {"name": "old", "archived": True},
-            {"name": "fork", "fork": True},
-            {"name": "ARA"},
-            {"name": "new"},
-            {"name": ".github"},
-        ],
         # AntHocNet: archived on Zenodo, a release scope, a P1, a handoff
         f"{R}/AntHocNet/releases/latest": {"tag_name": "v2.7.0", "published_at": "2026-11-20"},
         f"{R}/AntHocNet/commits/v2.7.0": {"sha": "a" * 40},
@@ -317,7 +309,7 @@ def self_test():
         }
     )
     gh = FakeGitHub(routes)
-    snap = snapshot(gh, zen)
+    snap = snapshot(gh, zen, [".github", "ARA", "AntHocNet", "new", "skills"])
     got = lines(snap)
     want = [
         ".github release v0.9.0 commit dddddddddddd doi none: not archived (concept 444)",
@@ -338,7 +330,6 @@ def self_test():
     ]
     for w in want:
         ok(w in got, f"missing line: {w}")
-    ok(not any("old" in g.split()[0] or "fork" in g.split()[0] for g in got), "archived, forks")
     ok(not any("fenced" in g or "stale" in g or "a PR" in g for g in got), "fence, old, PR")
     ok(len(got) == len(want), f"extra lines: {sorted(set(got) - set(want))}")
     # --repos: only those, and the maintainer issue still read from .github
@@ -369,6 +360,13 @@ def self_test():
         f"a 403 repository: {got[:2]}",
     )
     ok(not failed(snapshot(FakeGitHub(routes), zen, ["new"])), "no error, exit 0")
+    # no --repos: the checkout's list (DEFAULT_REPOS), only repository-scoped calls,
+    # where a cloud session's 403 on orgs/... used to stop the snapshot (#1005)
+    gh = FakeGitHub(routes)
+    snap = snapshot(gh, zen)
+    ok([f["repo"] for f in snap["repos"]] == sorted(DEFAULT_REPOS), "default: DEFAULT_REPOS")
+    ok(all(c.startswith(f"repos/{ORG}/") for c in gh.calls), "default: repos/... calls only")
+    ok(not failed(snap), "default: no error with orgs/ refused")
     if fails:
         for f in fails:
             print("FAIL:", f)
@@ -382,7 +380,9 @@ def self_test():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--repos", help="comma-separated repository names (default: the org's)")
+    ap.add_argument(
+        "--repos", help="comma-separated repository names (default: pr_status.py's DEFAULT_REPOS)"
+    )
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(sys.argv[1:] if argv is None else argv)
