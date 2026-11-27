@@ -3061,6 +3061,31 @@ check(
 # --changed-only and --reseed-untouched load in a tree without the directories
 check(run("plan", dh2)[0] == 0, "plan: the host directories are check's, not load_config's")
 edit(dh2, ".github/org-sync.toml", 'hosts = ["ns3", "omnet"]', 'hosts = ["ns3"]')
+
+
+# the base declares hosts = ["ns3"] with ns3/ tracked and already drifts; an
+# unrelated PR passes, the base's drift a warning (base_drift loads the base's
+# config in a tree without ns3/, so the directory check must not be there)
+def host_commit(msg):
+    g = ["git", "-C", dh2, "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run([*g, "add", "-A"], check=True)
+    subprocess.run([*g, "commit", "-q", "-m", msg], check=True)
+    return subprocess.run(
+        ["git", "-C", dh2, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+write(os.path.join(dh2, "ns3/x.cc"), "\n")
+host_commit("init with ns3/")
+edit(dh2, "AGENTS.md", "1. **Licensing per directory", "1. **Licensing (an older template)")
+base_h = host_commit("main before the template change")
+write(os.path.join(dh2, "notes.txt"), "unrelated\n")
+host_commit("an unrelated PR")
+rc, out = run("check", "--changed-only", base_h, dh2)
+check(
+    rc == 0 and f"{WARN}AGENTS.md#org-rules: update" in out and "drift     " not in out,
+    "--changed-only with hosts on the base: an unrelated PR passes, the base's drift a warning",
+)
 cfg_p = os.path.join(dh2, ".github/org-sync.toml")
 for bad in ('["ns-3"]', '"ns3"', '["ns3", "ns3"]'):
     write(cfg_p, re.sub(r"(?m)^hosts = .*$", lambda _: "hosts = " + bad, read(cfg_p)))
