@@ -1153,8 +1153,8 @@ Every epic of every public repository, open first. A status is derived from the 
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
+| [#38](https://github.com/swarm-routing/Q-Swarm/issues/38) core/: Q-Swarm's simulator-free core, written from the reviewed fidelity sheet | In progress | 1 / 1 |
 | [#3](https://github.com/swarm-routing/Q-Swarm/issues/3) Bootstrap Q-Swarm protocol on swarm-core (QEnergyUpdater, fidelity, contract tests) | Planned | 0 / 2 |
-| [#38](https://github.com/swarm-routing/Q-Swarm/issues/38) core/: Q-Swarm's simulator-free core, written from the reviewed fidelity sheet | Planned | 0 / 1 |
 
 ### [sim-containers](https://github.com/swarm-routing/sim-containers)
 
@@ -1253,7 +1253,7 @@ No open epic: the work here is tracked as single issues.
 
 | Epic | Status | Sub-issues closed |
 |------|--------|-------------------|
-| [#3](https://github.com/swarm-routing/swarm-routingd/issues/3) Bootstrap swarm-routingd Linux daemon (epoll reactor, RtNetlinkSync, TUN, swarm-core ports) | In progress | 1 / 9 |
+| [#3](https://github.com/swarm-routing/swarm-routingd/issues/3) Bootstrap swarm-routingd Linux daemon (epoll reactor, RtNetlinkSync, TUN, swarm-core ports) | In progress | 2 / 9 |
 
 ### [swarm-web-ui](https://github.com/swarm-routing/swarm-web-ui)
 
