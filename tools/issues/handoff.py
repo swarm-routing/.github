@@ -43,6 +43,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import criteria  # noqa: E402
@@ -328,12 +329,10 @@ def self_test():
         )
         ok(items == [f"{ORG}/.github#568 merge #9"], f"from_status items: {items}")
 
-        status = os.path.join(
-            os.environ.get("TMPDIR", "/tmp"), f"handoff-selftest-{os.getpid()}.json"
-        )
-        with open(status, "w", encoding="utf-8") as f:
-            json.dump(SNAP, f)
-        try:
+        with tempfile.TemporaryDirectory() as tmp:  # a private directory, removed after
+            status = os.path.join(tmp, "status.json")
+            with open(status, "w", encoding="utf-8") as f:
+                json.dump(SNAP, f)
             rc, out = run_(
                 [
                     "append",
@@ -348,8 +347,6 @@ def self_test():
                     "2026-11-27T16:00Z",
                 ]
             )
-        finally:
-            os.remove(status)
         ok(
             rc == 0 and "pass 2026-11-27T16:00Z appended (closed 1, released 2, worker 1" in out,
             f"append: {rc} {out}",
